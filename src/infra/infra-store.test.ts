@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withTempDir } from "../test-utils/temp-dir.js";

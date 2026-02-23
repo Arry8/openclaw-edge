@@ -363,13 +363,16 @@ describe("gateway server models + voicewake", () => {
 
       const invalid = await rpcReq(ws, "voicewake.routing.set", { config: null });
       expect(invalid.ok).toBe(false);
-      expect(invalid.error?.message ?? "").toMatch(/invalid voicewake\.routing\.set params/i);
+      expect(invalid.error?.message ?? "").toMatch(
+        /voicewake\.routing\.set requires config: object/i,
+      );
     });
   });
 
   test("pushes voicewake.routing.changed to nodes on connect and on updates", async () => {
     await withTempHome(async () => {
       const nodeWs = new WebSocket(`ws://127.0.0.1:${port}`);
+      trackConnectChallengeNonce(nodeWs);
       await new Promise<void>((resolve) => nodeWs.once("open", resolve));
       const firstEventP = onceMessage<{
         type: "event";
