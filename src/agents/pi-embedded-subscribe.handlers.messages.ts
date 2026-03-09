@@ -270,6 +270,7 @@ export function handleMessageUpdate(
         if (result.looping) {
           ctx.log.warn(`Text repetition guard triggered: ${result.message}`);
           void ctx.params.session.abort();
+          return;
         }
       }
     }
