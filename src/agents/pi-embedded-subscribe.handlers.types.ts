@@ -62,6 +62,9 @@ export type EmbeddedPiSubscribeState = {
   suppressBlockChunks: boolean;
   lastReasoningSent?: string;
 
+  /** deltaBuffer length at last text-repetition-guard check (throttle). */
+  textRepetitionLastCheckedLen: number;
+
   compactionInFlight: boolean;
   pendingCompactionRetry: number;
   compactionRetryResolve?: () => void;
