@@ -99,6 +99,7 @@ const DEFAULT_MAX_SKILLS_LOADED_PER_SOURCE = 200;
 const DEFAULT_MAX_SKILLS_IN_PROMPT = 150;
 const DEFAULT_MAX_SKILLS_PROMPT_CHARS = 30_000;
 const DEFAULT_MAX_SKILL_FILE_BYTES = 256_000;
+const TRUNCATED_SKILL_NAMES_NOTE_MAX_CHARS = 1_000;
 
 function sanitizeSkillCommandName(raw: string): string {
   const normalized = raw
@@ -566,6 +567,7 @@ const COMPACT_WARNING_OVERHEAD = 150;
 
 function applySkillsPromptLimits(params: { skills: Skill[]; config?: OpenClawConfig }): {
   skillsForPrompt: Skill[];
+  omittedSkills: Skill[];
   truncated: boolean;
   compact: boolean;
 } {
@@ -609,7 +611,61 @@ function applySkillsPromptLimits(params: { skills: Skill[]; config?: OpenClawCon
     }
   }
 
-  return { skillsForPrompt, truncated, compact };
+  const omittedSkills = truncated ? params.skills.slice(skillsForPrompt.length) : [];
+  return { skillsForPrompt, omittedSkills, truncated, compact };
+}
+
+function formatTruncatedSkillNames(skills: Skill[]): string {
+  if (skills.length === 0) {
+    return "";
+  }
+
+  const names = skills.map((skill) => escapeXml(skill.name));
+  let remaining = names.length;
+  const included: string[] = [];
+
+  for (const name of names) {
+    const candidateNames = [...included, name];
+    const suffix = remaining > 1 ? `, and ${remaining - 1} more omitted` : "";
+    const candidate = candidateNames.join(", ") + suffix;
+    if (candidate.length > TRUNCATED_SKILL_NAMES_NOTE_MAX_CHARS) {
+      break;
+    }
+    included.push(name);
+    remaining -= 1;
+  }
+
+  if (included.length === 0) {
+    return `${skills.length} omitted`;
+  }
+
+  return remaining > 0
+    ? `${included.join(", ")}, and ${remaining} more omitted`
+    : included.join(", ");
+}
+
+function buildSkillsTruncationNote(params: {
+  includedCount: number;
+  totalCount: number;
+  omittedSkills: Skill[];
+  compact?: boolean;
+}): string {
+  if (params.includedCount >= params.totalCount) {
+    return "";
+  }
+
+  const omittedNames = formatTruncatedSkillNames(params.omittedSkills);
+  const omittedLine = omittedNames
+    ? `Additional installed skills not expanded here: ${omittedNames}.`
+    : "";
+
+  return [
+    `⚠️ Skills truncated: included ${params.includedCount} of ${params.totalCount}${params.compact ? " (compact format, descriptions omitted)" : ""}. Run \`openclaw skills check\` to audit.`,
+    omittedLine,
+    "If a listed skill name becomes relevant, inspect it with `openclaw skills info <name>` or `openclaw skills list` before deciding whether to read its SKILL.md.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function buildWorkspaceSkillSnapshot(
@@ -673,12 +729,17 @@ function resolveWorkspaceSkillPromptState(
   // tier decision is based on the exact strings that end up in the prompt.
   // resolvedSkills keeps canonical paths for snapshot / runtime consumers.
   const promptSkills = compactSkillPaths(resolvedSkills);
-  const { skillsForPrompt, truncated, compact } = applySkillsPromptLimits({
+  const { skillsForPrompt, omittedSkills, truncated, compact } = applySkillsPromptLimits({
     skills: promptSkills,
     config: opts?.config,
   });
   const truncationNote = truncated
-    ? `⚠️ Skills truncated: included ${skillsForPrompt.length} of ${resolvedSkills.length}${compact ? " (compact format, descriptions omitted)" : ""}. Run \`openclaw skills check\` to audit.`
+    ? buildSkillsTruncationNote({
+        includedCount: skillsForPrompt.length,
+        totalCount: resolvedSkills.length,
+        omittedSkills,
+        compact,
+      })
     : compact
       ? `⚠️ Skills catalog using compact format (descriptions omitted). Run \`openclaw skills check\` to audit.`
       : "";

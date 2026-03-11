@@ -174,7 +174,127 @@ describe("buildWorkspaceSkillSnapshot", () => {
     );
 
     expect(snapshot.prompt).toContain("⚠️ Skills truncated");
+    expect(snapshot.prompt).toContain("Additional installed skills not expanded here:");
+    expect(snapshot.prompt).toContain("skill-07");
+    expect(snapshot.prompt).toContain("openclaw skills info <name>");
     expect(snapshot.prompt.length).toBeLessThan(2000);
+  });
+
+  it("lists omitted skill names when maxSkillsInPrompt truncates the prompt", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha-skill"),
+      name: "alpha-skill",
+      description: "Alpha",
+    });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "beta-skill"),
+      name: "beta-skill",
+      description: "Beta",
+    });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "wechat-reader"),
+      name: "wechat-reader",
+      description: "WeChat messages",
+    });
+
+    const snapshot = withWorkspaceHome(workspaceDir, () =>
+      buildWorkspaceSkillSnapshot(workspaceDir, {
+        config: {
+          skills: {
+            limits: {
+              maxSkillsInPrompt: 1,
+              maxSkillsPromptChars: 5_000,
+            },
+          },
+        },
+        managedSkillsDir: path.join(workspaceDir, ".managed"),
+        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+      }),
+    );
+
+    expect(snapshot.prompt).toContain("included 1 of 3");
+    expect(snapshot.prompt).toContain("beta-skill");
+    expect(snapshot.prompt).toContain("wechat-reader");
+    expect(snapshot.prompt).toContain("openclaw skills list");
+  });
+
+  it("escapes omitted skill names before adding them to the truncation note", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "alpha-skill"),
+      name: "alpha-skill",
+      description: "Alpha",
+    });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "skill-<xml>"),
+      name: "skill-<xml>",
+      description: "Markup-looking name",
+    });
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "skill-&-tail"),
+      name: "skill-&-tail",
+      description: "Ampersand name",
+    });
+
+    const snapshot = withWorkspaceHome(workspaceDir, () =>
+      buildWorkspaceSkillSnapshot(workspaceDir, {
+        config: {
+          skills: {
+            limits: {
+              maxSkillsInPrompt: 1,
+              maxSkillsPromptChars: 5_000,
+            },
+          },
+        },
+        managedSkillsDir: path.join(workspaceDir, ".managed"),
+        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+      }),
+    );
+
+    expect(snapshot.prompt).toContain("skill-&lt;xml&gt;");
+    expect(snapshot.prompt).toContain("skill-&amp;-tail");
+    expect(snapshot.prompt).not.toContain("Additional installed skills not expanded here: skill-<xml>");
+    expect(snapshot.prompt).not.toContain("skill-&-tail.");
+  });
+
+  it("reports the remaining omitted skill count when the truncation note hits its budget", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    await writeSkill({
+      dir: path.join(workspaceDir, "skills", "anchor-skill"),
+      name: "anchor-skill",
+      description: "Anchor",
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      const suffix = String(i).padStart(2, "0");
+      const name = `tail-skill-${suffix}-${"x".repeat(320)}`;
+      await writeSkill({
+        dir: path.join(workspaceDir, "skills", `tail-skill-${suffix}`),
+        name,
+        description: `Tail ${suffix}`,
+      });
+    }
+
+    const snapshot = withWorkspaceHome(workspaceDir, () =>
+      buildWorkspaceSkillSnapshot(workspaceDir, {
+        config: {
+          skills: {
+            limits: {
+              maxSkillsInPrompt: 1,
+              maxSkillsPromptChars: 5_000,
+            },
+          },
+        },
+        managedSkillsDir: path.join(workspaceDir, ".managed"),
+        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+      }),
+    );
+
+    expect(snapshot.prompt).toContain("tail-skill-00");
+    expect(snapshot.prompt).toContain("tail-skill-01");
+    expect(snapshot.prompt).toContain("and 2 more omitted");
+    expect(snapshot.prompt).not.toContain("tail-skill-03");
   });
 
   it("limits discovery for nested repo-style skills roots (dir/skills/*)", async () => {
