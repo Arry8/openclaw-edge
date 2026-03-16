@@ -144,10 +144,12 @@ function createSessionBinding(overrides?: Partial<SessionBindingRecord>): Sessio
 function createRelayHandle(overrides?: {
   dispose?: ReturnType<typeof vi.fn>;
   notifyStarted?: ReturnType<typeof vi.fn>;
+  isTerminalStateReached?: ReturnType<typeof vi.fn>;
 }) {
   return {
     dispose: overrides?.dispose ?? vi.fn(),
     notifyStarted: overrides?.notifyStarted ?? vi.fn(),
+    isTerminalStateReached: overrides?.isTerminalStateReached ?? vi.fn().mockReturnValue(false),
   };
 }
 
@@ -1258,6 +1260,42 @@ describe("spawnAcpDirect", () => {
     expect(typeof agentCallOrder).toBe("number");
     expect(typeof notifyOrder[0]).toBe("number");
     expect(notifyOrder[0] > agentCallOrder).toBe(true);
+  });
+
+  it("skips relay replacement and start notice when the pre-registered relay already reached a terminal state", async () => {
+    const firstHandle = createRelayHandle({
+      isTerminalStateReached: vi.fn().mockReturnValue(true),
+    });
+    hoisted.startAcpSpawnParentStreamRelayMock.mockReset().mockReturnValueOnce(firstHandle);
+    hoisted.callGatewayMock.mockImplementation(async (argsUnknown: unknown) => {
+      const args = argsUnknown as { method?: string };
+      if (args.method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (args.method === "agent") {
+        return { runId: "gateway-run-123" };
+      }
+      if (args.method === "sessions.delete") {
+        return { ok: true };
+      }
+      return {};
+    });
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        streamTo: "parent",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(hoisted.startAcpSpawnParentStreamRelayMock).toHaveBeenCalledTimes(1);
+    expect(firstHandle.dispose).not.toHaveBeenCalled();
+    expect(firstHandle.notifyStarted).not.toHaveBeenCalled();
   });
 
   it("keeps inline delivery for thread-bound ACP session mode", async () => {

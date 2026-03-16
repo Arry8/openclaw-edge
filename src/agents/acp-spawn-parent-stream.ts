@@ -89,10 +89,12 @@ export function startAcpSpawnParentStreamRelay(params: {
 }): AcpSpawnParentRelayHandle {
   const runId = params.runId.trim();
   const parentSessionKey = params.parentSessionKey.trim();
+  const childSessionKey = params.childSessionKey.trim();
   if (!runId || !parentSessionKey) {
     return {
       dispose: () => {},
       notifyStarted: () => {},
+      isTerminalStateReached: () => false,
     };
   }
 
@@ -216,6 +218,7 @@ export function startAcpSpawnParentStreamRelay(params: {
   };
 
   let disposed = false;
+  let reachedTerminalState = false;
   let pendingText = "";
   let lastProgressAt = Date.now();
   let stallNotified = false;
@@ -300,11 +303,14 @@ export function startAcpSpawnParentStreamRelay(params: {
   }
 
   const unsubscribe = onAgentEvent((event) => {
-    if (disposed || event.runId !== runId) {
+    if (disposed) {
       return;
     }
 
     if (event.stream === "assistant") {
+      if (event.runId !== runId) {
+        return;
+      }
       const data = event.data;
       const deltaCandidate =
         (data as { delta?: unknown } | undefined)?.delta ??
@@ -343,8 +349,17 @@ export function startAcpSpawnParentStreamRelay(params: {
     }
 
     const phase = toTrimmedString((event.data as { phase?: unknown } | undefined)?.phase);
+    const matchesRunId = event.runId === runId;
+    const eventSessionKey = toTrimmedString(event.sessionKey);
+    const matchesChildTerminalLifecycle =
+      (phase === "end" || phase === "error") && eventSessionKey === childSessionKey;
+    if (!matchesRunId && !matchesChildTerminalLifecycle) {
+      return;
+    }
+
     logEvent("lifecycle", { phase: phase ?? "unknown", data: event.data });
     if (phase === "end") {
+      reachedTerminalState = true;
       flushPending();
       const startedAt = toFiniteNumber(
         (event.data as { startedAt?: unknown } | undefined)?.startedAt,
@@ -367,6 +382,7 @@ export function startAcpSpawnParentStreamRelay(params: {
     }
 
     if (phase === "error") {
+      reachedTerminalState = true;
       flushPending();
       const errorText = toTrimmedString((event.data as { error?: unknown } | undefined)?.error);
       if (errorText) {
@@ -393,10 +409,12 @@ export function startAcpSpawnParentStreamRelay(params: {
   return {
     dispose,
     notifyStarted: emitStartNotice,
+    isTerminalStateReached: () => reachedTerminalState,
   };
 }
 
 export type AcpSpawnParentRelayHandle = {
   dispose: () => void;
   notifyStarted: () => void;
+  isTerminalStateReached: () => boolean;
 };
