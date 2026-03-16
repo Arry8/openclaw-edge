@@ -501,7 +501,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     const queryVec = await this.embedQueryWithTimeout(cleaned);
     const hasVector = queryVec.some((v) => v !== 0);
     const vectorResults = hasVector
-      ? await this.searchVector(queryVec, candidates).catch(() => [])
+      ? await this.searchVector(queryVec, cleaned, candidates).catch(() => [])
       : [];
 
     if (!hybrid.enabled || !this.fts.enabled || !this.fts.available) {
@@ -576,6 +576,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
 
   private async searchVector(
     queryVec: number[],
+    queryText: string,
     limit: number,
   ): Promise<Array<MemorySearchResult & { id: string }>> {
     // This method should never be called without a provider
@@ -587,6 +588,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       vectorTable: VECTOR_TABLE,
       providerModel: this.provider.model,
       queryVec,
+      queryText,
       limit,
       snippetMaxChars: SNIPPET_MAX_CHARS,
       ensureVectorReady: async (dimensions) => await this.ensureVectorReady(dimensions),
