@@ -10,6 +10,72 @@ const vectorToBlob = (embedding: number[]): Buffer =>
 const FTS_QUERY_TOKEN_RE = /[\p{L}\p{N}_]+/gu;
 const SHORT_CJK_TRIGRAM_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u3131-\u3163]/u;
 
+/**
+ * Extract a relevant snippet window around the query match in the text.
+ * If the query is found, returns a window centered on the match.
+ * Otherwise falls back to the beginning of the text.
+ */
+function extractRelevantSnippet(
+  text: string,
+  query: string,
+  maxChars: number,
+): { snippet: string; offsetLines: number } {
+  if (text.length <= maxChars) {
+    return { snippet: text, offsetLines: 0 };
+  }
+
+  // Try to find the query (case-insensitive) in the text
+  const lowerText = text.toLowerCase();
+  const queryTerms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 2);
+
+  let matchIndex = -1;
+
+  // Find the first matching term
+  for (const term of queryTerms) {
+    const idx = lowerText.indexOf(term);
+    if (idx !== -1) {
+      matchIndex = idx;
+      break;
+    }
+  }
+
+  // If no match found, fall back to beginning
+  if (matchIndex === -1) {
+    return { snippet: truncateUtf16Safe(text, maxChars), offsetLines: 0 };
+  }
+
+  // Calculate window start, trying to center the match
+  const halfWindow = Math.floor(maxChars / 2);
+  let windowStart = Math.max(0, matchIndex - halfWindow);
+  let windowEnd = Math.min(text.length, windowStart + maxChars);
+
+  // Adjust if we're near the end
+  if (windowEnd === text.length && windowEnd - windowStart < maxChars) {
+    windowStart = Math.max(0, windowEnd - maxChars);
+  }
+
+  // Try to start at a line boundary for cleaner output
+  if (windowStart > 0) {
+    const lineStart = text.lastIndexOf("\n", windowStart);
+    if (lineStart !== -1 && windowStart - lineStart < 100) {
+      windowStart = lineStart + 1;
+      // Recalculate windowEnd to maintain maxChars length after snap
+      windowEnd = Math.min(text.length, windowStart + maxChars);
+    }
+  }
+
+  // Count lines before the window to adjust startLine/endLine display
+  const textBeforeWindow = text.substring(0, windowStart);
+  const offsetLines = (textBeforeWindow.match(/\n/g) || []).length;
+
+  const snippet = text.substring(windowStart, windowEnd);
+  return { snippet: truncateUtf16Safe(snippet, maxChars), offsetLines };
+}
+
+
 export type SearchSource = string;
 
 export type SearchRowResult = {
