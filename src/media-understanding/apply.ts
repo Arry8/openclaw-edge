@@ -44,6 +44,8 @@ export type ApplyMediaUnderstandingResult = {
 };
 
 const CAPABILITY_ORDER: MediaUnderstandingCapability[] = ["image", "audio", "video"];
+const EMPTY_VOICE_NOTE_PLACEHOLDER =
+  "[Voice note was empty or contained only silence — no speech detected]";
 const EXTRA_TEXT_MIMES = [
   "application/xml",
   "text/xml",
@@ -291,6 +293,32 @@ function resolveTextMimeFromName(name?: string): string | undefined {
   return TEXT_EXT_MIME.get(ext);
 }
 
+function buildSyntheticSkippedAudioOutputs(
+  decisions: MediaUnderstandingDecision[],
+): MediaUnderstandingOutput[] {
+  const audioDecision = decisions.find((decision) => decision.capability === "audio");
+  if (!audioDecision) {
+    return [];
+  }
+  return audioDecision.attachments.flatMap((attachment) => {
+    const reason = attachment.attempts
+      .map((attempt) => attempt.reason?.trim())
+      .find((value): value is string => Boolean(value));
+    if (!reason?.startsWith("tooSmall")) {
+      return [];
+    }
+    return [
+      {
+        kind: "audio.transcription" as const,
+        attachmentIndex: attachment.attachmentIndex,
+        text: EMPTY_VOICE_NOTE_PLACEHOLDER,
+        provider: "openclaw",
+        model: "synthetic-empty-audio",
+      },
+    ];
+  });
+}
+
 function isBinaryMediaMime(mime?: string): boolean {
   if (!mime) {
     return false;
@@ -501,6 +529,10 @@ export async function applyMediaUnderstanding(params: {
         outputs.push(output);
       }
       decisions.push(entry.decision);
+    }
+
+    if (!outputs.some((output) => output.kind === "audio.transcription")) {
+      outputs.push(...buildSyntheticSkippedAudioOutputs(decisions));
     }
 
     if (decisions.length > 0) {
