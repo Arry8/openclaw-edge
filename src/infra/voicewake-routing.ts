@@ -1,5 +1,6 @@
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { normalizeAgentId } from "../routing/session-key.js";
 import { createAsyncLock, readJsonFile, writeJsonAtomic } from "./json-files.js";
 
 export type VoiceWakeRouteTarget =
@@ -32,7 +33,12 @@ function resolvePath(baseDir?: string) {
 }
 
 export function normalizeVoiceWakeTriggerWord(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, ""))
+    .filter(Boolean)
+    .join(" ");
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -55,7 +61,7 @@ function normalizeRouteTarget(value: unknown): VoiceWakeRouteTarget | null {
   const agentId = normalizeOptionalString(rec.agentId);
   const sessionKey = normalizeOptionalString(rec.sessionKey);
   if (agentId && !sessionKey) {
-    return { agentId };
+    return { agentId: normalizeAgentId(agentId) };
   }
   if (sessionKey && !agentId) {
     return { sessionKey };

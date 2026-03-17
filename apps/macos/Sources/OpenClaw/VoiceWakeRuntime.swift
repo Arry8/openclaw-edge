@@ -498,13 +498,38 @@ actor VoiceWakeRuntime {
             return
         }
         self.logger.info("voicewake runtime detected (trigger-only pause)")
-        await self.beginCapture(command: "", triggerEndTime: nil, triggerWord: nil, config: config)
+        let matchedTrigger = self.matchedTriggerWord(transcript: lastText, triggers: triggers)
+        await self.beginCapture(
+            command: "",
+            triggerEndTime: nil,
+            triggerWord: matchedTrigger,
+            config: config)
     }
 
     private func isTriggerOnly(transcript: String, triggers: [String]) -> Bool {
         guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
         guard VoiceWakeTextUtils.startsWithTrigger(transcript: transcript, triggers: triggers) else { return false }
         return Self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
+    }
+
+    private func matchedTriggerWord(transcript: String, triggers: [String]) -> String? {
+        let transcriptTokens = transcript
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
+        guard !transcriptTokens.isEmpty else { return nil }
+
+        for trigger in triggers {
+            let triggerTokens = trigger
+                .split(whereSeparator: { $0.isWhitespace })
+                .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
+                .filter { !$0.isEmpty }
+            guard !triggerTokens.isEmpty, transcriptTokens.count >= triggerTokens.count else { continue }
+            if zip(triggerTokens, transcriptTokens.prefix(triggerTokens.count)).allSatisfy({ $0 == $1 }) {
+                return triggerTokens.joined(separator: " ")
+            }
+        }
+        return nil
     }
 
     private func preDetectSilenceCheck(
@@ -573,7 +598,8 @@ actor VoiceWakeRuntime {
                 source: .wakeWord,
                 text: snapshot,
                 attributed: attributed,
-                forwardEnabled: true)
+                forwardEnabled: true,
+                voiceWakeTrigger: triggerWord)
         }
 
         // Keep the "ears" boosted for the capture window so the status icon animates while recording.
@@ -651,7 +677,8 @@ actor VoiceWakeRuntime {
                     token: token,
                     text: finalTranscript,
                     sendChime: sendChime,
-                    autoSendAfter: delay)
+                    autoSendAfter: delay,
+                    voiceWakeTrigger: triggerWord)
             }
         } else if !finalTranscript.isEmpty {
             if sendChime != .none {
