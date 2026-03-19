@@ -35,6 +35,18 @@ struct VoiceWakeRuntimeTests {
         #expect(VoiceWakeRuntime._testHasContentAfterTrigger(text, triggers: triggers))
     }
 
+    @Test func `trigger only allows filler before trigger`() {
+        let triggers = ["openclaw"]
+        let text = "uh openclaw"
+        #expect(VoiceWakeRuntime._testIsTriggerOnly(text, triggers: triggers))
+    }
+
+    @Test func `matched trigger finds trigger not at transcript start`() {
+        let triggers = ["openclaw"]
+        let text = "uh openclaw"
+        #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "openclaw")
+    }
+
     @Test func `trims after chinese trigger keeps post speech`() {
         let triggers = ["小爪", "openclaw"]
         let text = "嘿 小爪 帮我打开设置"

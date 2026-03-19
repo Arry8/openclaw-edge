@@ -499,10 +499,9 @@ extension GatewayConnection {
         if let timeout = invocation.timeoutSeconds {
             params["timeout"] = AnyCodable(timeout)
         }
-        if let trigger = invocation.voiceWakeTrigger?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !trigger.isEmpty
-        {
-            params["voiceWakeTrigger"] = AnyCodable(trigger)
+        if let trigger = invocation.voiceWakeTrigger {
+            params["voiceWakeTrigger"] = AnyCodable(
+                trigger.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
         do {

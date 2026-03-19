@@ -507,26 +507,40 @@ actor VoiceWakeRuntime {
     }
 
     private func isTriggerOnly(transcript: String, triggers: [String]) -> Bool {
-        guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
-        guard VoiceWakeTextUtils.startsWithTrigger(transcript: transcript, triggers: triggers) else { return false }
-        return Self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
+        Self.isTriggerOnlyText(transcript: transcript, triggers: triggers)
     }
 
     private func matchedTriggerWord(transcript: String, triggers: [String]) -> String? {
+        Self.matchedTriggerWordText(transcript: transcript, triggers: triggers)
+    }
+
+    private static func isTriggerOnlyText(transcript: String, triggers: [String]) -> Bool {
+        guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
+        return self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
+    }
+
+    private static func matchedTriggerWordText(transcript: String, triggers: [String]) -> String? {
         let transcriptTokens = transcript
             .split(whereSeparator: { $0.isWhitespace })
             .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
             .filter { !$0.isEmpty }
         guard !transcriptTokens.isEmpty else { return nil }
 
-        for trigger in triggers {
-            let triggerTokens = trigger
+        let normalizedTriggers = triggers.compactMap { trigger in
+            let tokens = trigger
                 .split(whereSeparator: { $0.isWhitespace })
                 .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
                 .filter { !$0.isEmpty }
-            guard !triggerTokens.isEmpty, transcriptTokens.count >= triggerTokens.count else { continue }
-            if zip(triggerTokens, transcriptTokens.prefix(triggerTokens.count)).allSatisfy({ $0 == $1 }) {
-                return triggerTokens.joined(separator: " ")
+            return tokens.isEmpty ? nil : tokens
+        }
+
+        for index in 0..<transcriptTokens.count {
+            for triggerTokens in normalizedTriggers {
+                guard transcriptTokens.count - index >= triggerTokens.count else { continue }
+                let candidate = transcriptTokens[index..<(index + triggerTokens.count)]
+                if zip(triggerTokens, candidate).allSatisfy({ $0 == $1 }) {
+                    return triggerTokens.joined(separator: " ")
+                }
             }
         }
         return nil
@@ -809,6 +823,14 @@ actor VoiceWakeRuntime {
 
     static func _testHasContentAfterTrigger(_ text: String, triggers: [String]) -> Bool {
         !self.trimmedAfterTrigger(text, triggers: triggers).isEmpty
+    }
+
+    static func _testIsTriggerOnly(_ text: String, triggers: [String]) -> Bool {
+        self.isTriggerOnlyText(transcript: text, triggers: triggers)
+    }
+
+    static func _testMatchedTriggerWord(_ text: String, triggers: [String]) -> String? {
+        self.matchedTriggerWordText(transcript: text, triggers: triggers)
     }
 
     static func _testAttributedColor(isFinal: Bool) -> NSColor {
