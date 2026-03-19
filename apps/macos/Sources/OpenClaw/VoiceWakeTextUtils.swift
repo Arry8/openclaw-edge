@@ -45,4 +45,37 @@ enum VoiceWakeTextUtils {
         guard trimmed.count >= minCommandLength else { return nil }
         return trimmed
     }
+
+    static func matchedTriggerWord(transcript: String, triggers: [String]) -> String? {
+        let transcriptTokens = transcript
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { self.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
+        guard !transcriptTokens.isEmpty else { return nil }
+
+        var bestEndIndex = -1
+        var bestTokenCount = -1
+        var bestTokens: [String]?
+
+        for trigger in triggers {
+            let triggerTokens = trigger
+                .split(whereSeparator: { $0.isWhitespace })
+                .map { self.normalizeToken(String($0)) }
+                .filter { !$0.isEmpty }
+            guard !triggerTokens.isEmpty, transcriptTokens.count >= triggerTokens.count else { continue }
+            for index in 0...(transcriptTokens.count - triggerTokens.count) {
+                let candidate = transcriptTokens[index..<(index + triggerTokens.count)]
+                guard zip(triggerTokens, candidate).allSatisfy({ $0 == $1 }) else { continue }
+                let endIndex = index + triggerTokens.count - 1
+                if endIndex > bestEndIndex || (endIndex == bestEndIndex && triggerTokens.count > bestTokenCount)
+                {
+                    bestEndIndex = endIndex
+                    bestTokenCount = triggerTokens.count
+                    bestTokens = triggerTokens
+                }
+            }
+        }
+
+        return bestTokens?.joined(separator: " ")
+    }
 }

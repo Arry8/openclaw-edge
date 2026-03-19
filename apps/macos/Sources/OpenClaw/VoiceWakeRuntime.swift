@@ -520,30 +520,7 @@ actor VoiceWakeRuntime {
     }
 
     private static func matchedTriggerWordText(transcript: String, triggers: [String]) -> String? {
-        let transcriptTokens = transcript
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
-            .filter { !$0.isEmpty }
-        guard !transcriptTokens.isEmpty else { return nil }
-
-        let normalizedTriggers = triggers.compactMap { trigger in
-            let tokens = trigger
-                .split(whereSeparator: { $0.isWhitespace })
-                .map { VoiceWakeTextUtils.normalizeToken(String($0)) }
-                .filter { !$0.isEmpty }
-            return tokens.isEmpty ? nil : tokens
-        }
-
-        for index in 0..<transcriptTokens.count {
-            for triggerTokens in normalizedTriggers {
-                guard transcriptTokens.count - index >= triggerTokens.count else { continue }
-                let candidate = transcriptTokens[index..<(index + triggerTokens.count)]
-                if zip(triggerTokens, candidate).allSatisfy({ $0 == $1 }) {
-                    return triggerTokens.joined(separator: " ")
-                }
-            }
-        }
-        return nil
+        VoiceWakeTextUtils.matchedTriggerWord(transcript: transcript, triggers: triggers)
     }
 
     private func preDetectSilenceCheck(

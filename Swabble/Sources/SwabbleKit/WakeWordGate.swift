@@ -66,6 +66,8 @@ public enum WakeWordGate {
 
     private struct MatchCandidate {
         let index: Int
+        let endIndex: Int
+        let tokenCount: Int
         let triggerEnd: TimeInterval
         let gap: TimeInterval
         let trigger: String
@@ -96,9 +98,19 @@ public enum WakeWordGate {
                 let gap = nextToken.start - triggerEnd
                 if gap < config.minPostTriggerGap { continue }
 
-                if let best, i <= best.index { continue }
+                let endIndex = i + count - 1
+                if let best {
+                    if endIndex < best.endIndex { continue }
+                    if endIndex == best.endIndex, count <= best.tokenCount { continue }
+                }
 
-                best = MatchCandidate(index: i, triggerEnd: triggerEnd, gap: gap, trigger: trigger.source)
+                best = MatchCandidate(
+                    index: i,
+                    endIndex: endIndex,
+                    tokenCount: count,
+                    triggerEnd: triggerEnd,
+                    gap: gap,
+                    trigger: trigger.source)
             }
         }
 
