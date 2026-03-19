@@ -631,17 +631,18 @@ export async function runReplyAgent(params: {
         costUsd,
         durationMs: Date.now() - runStartedAt,
       };
-      // Include user-facing content when explicitly opted in via config.
+      // Include model-originated content when explicitly opted in via config.
+      // Intentionally uses replyPayloads (pre-guard) rather than guardedReplyPayloads:
+      // gen_ai.completion should capture model-originated output, not system-injected
+      // post-processing like reminder notes or usage lines.
       if (cfg.diagnostics?.otel?.includeContent) {
         if (typeof followupRun.prompt === "string") {
           usageEvent.inputText = followupRun.prompt;
         }
         const outputTexts = replyPayloads
-          ?.filter(
-            (p): p is typeof p & { text: string } => typeof p.text === "string" && !p.isError,
-          )
+          .filter((p): p is typeof p & { text: string } => typeof p.text === "string" && !p.isError)
           .map((p) => p.text);
-        if (outputTexts && outputTexts.length > 0) {
+        if (outputTexts.length > 0) {
           usageEvent.outputText = outputTexts.join("\n");
         }
       }

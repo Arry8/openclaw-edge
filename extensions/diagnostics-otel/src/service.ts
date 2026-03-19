@@ -54,6 +54,23 @@ function formatError(err: unknown): string {
   }
 }
 
+/** Truncate a string to at most `maxBytes` UTF-8 bytes, avoiding mid-codepoint cuts. */
+function truncateToBytes(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= maxBytes) {
+    return text;
+  }
+  // Decode back to avoid splitting a multi-byte character.
+  return (
+    buf
+      .subarray(0, maxBytes)
+      .toString("utf8")
+      .replace(/\uFFFD$/, "") + "…[truncated]"
+  );
+}
+
+const MAX_CONTENT_ATTR_BYTES = 32 * 1024; // 32 KB per content attribute
+
 function redactOtelAttributes(attributes: Record<string, string | number | boolean>) {
   const redactedAttributes: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(attributes)) {
@@ -353,7 +370,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
               timestamp: meta?.date ?? new Date(),
             });
           } catch (err) {
-            ctx.logger.error(`diagnostics-otel: log transport failed: ${formatError(err)}`);
+            // Use stderr directly — never route transport failures back through the logger
+            // pipeline, as the transport is attached to that same logger (recursive loop).
+            process.stderr.write(`[diagnostics-otel] log transport failed: ${formatError(err)}\n`);
           }
         });
       }
@@ -443,14 +462,21 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
           spanAttrs["gen_ai.usage.cost"] = evt.costUsd;
         }
         // Content capture: standard gen_ai.* attrs (primary), Langfuse compat (secondary).
-        // All content is redacted before export.
+        // All content is redacted then truncated to MAX_CONTENT_ATTR_BYTES before export
+        // to avoid silent drops or rejections by OTEL backends with attribute size limits.
         if (evt.inputText) {
-          const redactedInput = redactSensitiveText(evt.inputText);
+          const redactedInput = truncateToBytes(
+            redactSensitiveText(evt.inputText),
+            MAX_CONTENT_ATTR_BYTES,
+          );
           spanAttrs["gen_ai.prompt"] = redactedInput;
           spanAttrs["langfuse.observation.input"] = redactedInput;
         }
         if (evt.outputText) {
-          const redactedOutput = redactSensitiveText(evt.outputText);
+          const redactedOutput = truncateToBytes(
+            redactSensitiveText(evt.outputText),
+            MAX_CONTENT_ATTR_BYTES,
+          );
           spanAttrs["gen_ai.completion"] = redactedOutput;
           spanAttrs["langfuse.observation.output"] = redactedOutput;
         }
