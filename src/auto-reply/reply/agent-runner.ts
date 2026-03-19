@@ -608,7 +608,7 @@ export async function runReplyAgent(params: {
         config: cfg,
       });
       const costUsd = estimateUsageCost({ usage, cost: costConfig });
-      emitDiagnosticEvent({
+      const usageEvent: Parameters<typeof emitDiagnosticEvent>[0] & { type: "model.usage" } = {
         type: "model.usage",
         sessionKey,
         sessionId: followupRun.run.sessionId,
@@ -630,7 +630,22 @@ export async function runReplyAgent(params: {
         },
         costUsd,
         durationMs: Date.now() - runStartedAt,
-      });
+      };
+      // Include user-facing content when explicitly opted in via config.
+      if (cfg.diagnostics?.otel?.includeContent) {
+        if (typeof followupRun.prompt === "string") {
+          usageEvent.inputText = followupRun.prompt;
+        }
+        const outputTexts = replyPayloads
+          ?.filter(
+            (p): p is typeof p & { text: string } => typeof p.text === "string" && !p.isError,
+          )
+          .map((p) => p.text);
+        if (outputTexts && outputTexts.length > 0) {
+          usageEvent.outputText = outputTexts.join("\n");
+        }
+      }
+      emitDiagnosticEvent(usageEvent);
     }
 
     const responseUsageRaw =
