@@ -949,8 +949,13 @@ export async function spawnAcpDirect(
         childSessionKey: sessionKey,
         agentId: targetAgentId,
         logPath: streamLogPath,
+        allowSessionKeyErrorFallback: false,
         emitStartNotice: false,
       });
+    } else if (!relayReachedTerminalState) {
+      // Once the gateway acknowledges the run, session-key fallback must stop so
+      // later turns on the same persistent session cannot terminate this relay.
+      parentRelay?.markRunIdResolved();
     }
     if (!relayReachedTerminalState) {
       parentRelay?.notifyStarted();

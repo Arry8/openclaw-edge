@@ -81,6 +81,7 @@ export function startAcpSpawnParentStreamRelay(params: {
   agentId: string;
   logPath?: string;
   surfaceUpdates?: boolean;
+  allowSessionKeyErrorFallback?: boolean;
   streamFlushMs?: number;
   noOutputNoticeMs?: number;
   noOutputPollMs?: number;
@@ -93,6 +94,7 @@ export function startAcpSpawnParentStreamRelay(params: {
   if (!runId || !parentSessionKey) {
     return {
       dispose: () => {},
+      markRunIdResolved: () => {},
       notifyStarted: () => {},
       isTerminalStateReached: () => false,
     };
@@ -224,6 +226,12 @@ export function startAcpSpawnParentStreamRelay(params: {
   let stallNotified = false;
   let flushTimer: NodeJS.Timeout | undefined;
   let relayLifetimeTimer: NodeJS.Timeout | undefined;
+  const relayCreatedAt = Date.now();
+  let allowSessionKeyErrorFallback = params.allowSessionKeyErrorFallback !== false;
+  let observedChildRunId: string | undefined;
+
+  const matchesTrackedRunId = (candidateRunId: string) =>
+    candidateRunId === runId || candidateRunId === observedChildRunId;
 
   const clearFlushTimer = () => {
     if (!flushTimer) {
@@ -308,7 +316,7 @@ export function startAcpSpawnParentStreamRelay(params: {
     }
 
     if (event.stream === "assistant") {
-      if (event.runId !== runId) {
+      if (!matchesTrackedRunId(event.runId)) {
         return;
       }
       const data = event.data;
@@ -349,11 +357,29 @@ export function startAcpSpawnParentStreamRelay(params: {
     }
 
     const phase = toTrimmedString((event.data as { phase?: unknown } | undefined)?.phase);
-    const matchesRunId = event.runId === runId;
     const eventSessionKey = toTrimmedString(event.sessionKey);
-    const matchesChildTerminalLifecycle =
-      (phase === "end" || phase === "error") && eventSessionKey === childSessionKey;
-    if (!matchesRunId && !matchesChildTerminalLifecycle) {
+    const matchesChildSessionKey =
+      eventSessionKey === childSessionKey && event.ts >= relayCreatedAt;
+
+    if (
+      phase === "start" &&
+      matchesChildSessionKey &&
+      !observedChildRunId &&
+      event.runId !== runId
+    ) {
+      observedChildRunId = event.runId;
+      logEvent("lifecycle_run_id_observed", {
+        observedRunId: observedChildRunId,
+      });
+    }
+
+    const matchesRunId = matchesTrackedRunId(event.runId);
+    const matchesChildErrorFallback =
+      phase === "error" &&
+      allowSessionKeyErrorFallback &&
+      matchesChildSessionKey &&
+      (observedChildRunId == null || event.runId === observedChildRunId);
+    if (!matchesRunId && !matchesChildErrorFallback) {
       return;
     }
 
@@ -408,6 +434,9 @@ export function startAcpSpawnParentStreamRelay(params: {
 
   return {
     dispose,
+    markRunIdResolved: () => {
+      allowSessionKeyErrorFallback = false;
+    },
     notifyStarted: emitStartNotice,
     isTerminalStateReached: () => reachedTerminalState,
   };
@@ -415,6 +444,7 @@ export function startAcpSpawnParentStreamRelay(params: {
 
 export type AcpSpawnParentRelayHandle = {
   dispose: () => void;
+  markRunIdResolved: () => void;
   notifyStarted: () => void;
   isTerminalStateReached: () => boolean;
 };
