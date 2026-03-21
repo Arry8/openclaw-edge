@@ -62,10 +62,14 @@ let defaultAgentWarned = false;
 function effectiveFallbackId(cfg: OpenClawConfig): string {
   const configRaw = cfg.agents?.defaultAgentId;
   const configOverride = typeof configRaw === "string" ? configRaw.trim() : "";
-  if (configOverride) return normalizeAgentId(configOverride);
+  if (configOverride) {
+    return normalizeAgentId(configOverride);
+  }
 
   const envOverride = process.env.OPENCLAW_DEFAULT_AGENT_ID?.trim();
-  if (envOverride) return normalizeAgentId(envOverride);
+  if (envOverride) {
+    return normalizeAgentId(envOverride);
+  }
 
   return DEFAULT_AGENT_ID;
 }
