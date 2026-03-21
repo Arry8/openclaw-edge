@@ -143,6 +143,7 @@ export function parseApiErrorInfo(raw?: string): ApiErrorInfo | null {
 
   let errType: string | undefined;
   let errMessage: string | undefined;
+  let errHttpCode: string | undefined;
   if (payload.error && typeof payload.error === "object" && !Array.isArray(payload.error)) {
     const err = payload.error as Record<string, unknown>;
     if (typeof err.type === "string") {
@@ -151,13 +152,18 @@ export function parseApiErrorInfo(raw?: string): ApiErrorInfo | null {
     if (typeof err.code === "string" && !errType) {
       errType = err.code;
     }
+    if (typeof err.code === "number" && Number.isFinite(err.code)) {
+      errHttpCode = String(err.code);
+    } else if (typeof err.code === "string" && /^\d+$/.test(err.code.trim())) {
+      errHttpCode = err.code.trim();
+    }
     if (typeof err.message === "string") {
       errMessage = err.message;
     }
   }
 
   return {
-    httpCode,
+    httpCode: errHttpCode ?? httpCode,
     type: errType ?? topType,
     message: errMessage ?? topMessage,
     requestId,
