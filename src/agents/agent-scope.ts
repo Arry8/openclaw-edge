@@ -54,6 +54,19 @@ type ResolvedAgentConfig = {
 
 let defaultAgentWarned = false;
 
+/**
+ * Resolve the effective fallback agent ID from config.
+ * Checks `agents.defaultAgentId` first, then falls back to the
+ * hardcoded `DEFAULT_AGENT_ID` (`"main"`).
+ */
+function effectiveFallbackId(cfg: OpenClawConfig): string {
+  const override =
+    typeof cfg.agents?.defaultAgentId === "string"
+      ? cfg.agents.defaultAgentId.trim()
+      : "";
+  return override ? normalizeAgentId(override) : DEFAULT_AGENT_ID;
+}
+
 export function listAgentEntries(cfg: OpenClawConfig): AgentEntry[] {
   const list = cfg.agents?.list;
   if (!Array.isArray(list)) {
@@ -65,7 +78,7 @@ export function listAgentEntries(cfg: OpenClawConfig): AgentEntry[] {
 export function listAgentIds(cfg: OpenClawConfig): string[] {
   const agents = listAgentEntries(cfg);
   if (agents.length === 0) {
-    return [DEFAULT_AGENT_ID];
+    return [effectiveFallbackId(cfg)];
   }
   const seen = new Set<string>();
   const ids: string[] = [];
@@ -77,13 +90,14 @@ export function listAgentIds(cfg: OpenClawConfig): string[] {
     seen.add(id);
     ids.push(id);
   }
-  return ids.length > 0 ? ids : [DEFAULT_AGENT_ID];
+  return ids.length > 0 ? ids : [effectiveFallbackId(cfg)];
 }
 
 export function resolveDefaultAgentId(cfg: OpenClawConfig): string {
+  const fallback = effectiveFallbackId(cfg);
   const agents = listAgentEntries(cfg);
   if (agents.length === 0) {
-    return DEFAULT_AGENT_ID;
+    return fallback;
   }
   const defaults = agents.filter((agent) => agent?.default);
   if (defaults.length > 1 && !defaultAgentWarned) {
@@ -91,7 +105,7 @@ export function resolveDefaultAgentId(cfg: OpenClawConfig): string {
     getLog().warn("Multiple agents marked default=true; using the first entry as default.");
   }
   const chosen = (defaults[0] ?? agents[0])?.id?.trim();
-  return normalizeAgentId(chosen || DEFAULT_AGENT_ID);
+  return normalizeAgentId(chosen || fallback);
 }
 
 export function resolveSessionAgentIds(params: {

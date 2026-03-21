@@ -102,4 +102,16 @@ export type AgentConfig = {
 export type AgentsConfig = {
   defaults?: AgentDefaultsConfig;
   list?: AgentConfig[];
+  /**
+   * Override the fallback agent ID used when no agent entry is marked
+   * `default: true` and no `agents.list` is configured.
+   *
+   * Defaults to `"main"` for backward compatibility.
+   *
+   * Example (`openclaw.json`):
+   * ```json
+   * { "agents": { "defaultAgentId": "maine-lobster" } }
+   * ```
+   */
+  defaultAgentId?: string;
 };
