@@ -17,6 +17,7 @@ const hoisted = vi.hoisted(() => ({
   setRuntimeApiKeyMock: vi.fn(),
   discoverModelsMock: vi.fn(),
   fetchMock: vi.fn(),
+  resolveModelWithRegistryMock: vi.fn(),
 }));
 const {
   completeMock,
@@ -27,6 +28,7 @@ const {
   setRuntimeApiKeyMock,
   discoverModelsMock,
   fetchMock,
+  resolveModelWithRegistryMock,
 } = hoisted;
 
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
@@ -52,6 +54,10 @@ vi.mock("../agents/pi-model-discovery-runtime.js", () => ({
     setRuntimeApiKey: setRuntimeApiKeyMock,
   }),
   discoverModels: discoverModelsMock,
+}));
+
+vi.mock("../../agents/pi-embedded-runner/model.js", () => ({
+  resolveModelWithRegistry: resolveModelWithRegistryMock,
 }));
 
 let describeImageWithModel: typeof import("./image.js").describeImageWithModel;
@@ -85,6 +91,9 @@ describe("describeImageWithModel", () => {
         setRuntimeApiKey: setRuntimeApiKeyMock,
       }),
       discoverModels: discoverModelsMock,
+    }));
+    vi.doMock("../../agents/pi-embedded-runner/model.js", () => ({
+      resolveModelWithRegistry: resolveModelWithRegistryMock,
     }));
     ({ describeImageWithModel } = await import("./image.js"));
     vi.clearAllMocks();
@@ -339,5 +348,57 @@ describe("describeImageWithModel", () => {
       }),
     );
     expect(setRuntimeApiKeyMock).toHaveBeenCalledWith("google", "oauth-test");
+  });
+
+  it("falls back to resolveModelWithRegistry for OpenRouter models not in registry", async () => {
+    discoverModelsMock.mockReturnValue({
+      find: vi.fn(() => null),
+    });
+    const syntheticModel = {
+      id: "anthropic/claude-3-opus",
+      name: "anthropic/claude-3-opus",
+      api: "openai-completions",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      input: ["text", "image"],
+      reasoning: false,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 8192,
+    };
+    resolveModelWithRegistryMock.mockReturnValue(syntheticModel);
+    completeMock.mockResolvedValue({
+      role: "assistant",
+      api: "openai-completions",
+      provider: "openrouter",
+      model: "anthropic/claude-3-opus",
+      stopReason: "stop",
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "openrouter image ok" }],
+    });
+
+    const result = await describeImageWithModel({
+      cfg: {},
+      agentDir: "/tmp/openclaw-agent",
+      provider: "openrouter",
+      model: "anthropic/claude-3-opus",
+      buffer: Buffer.from("png-bytes"),
+      fileName: "image.png",
+      mime: "image/png",
+      prompt: "Describe the image.",
+      timeoutMs: 1000,
+    });
+
+    expect(result).toEqual({
+      text: "openrouter image ok",
+      model: "anthropic/claude-3-opus",
+    });
+    expect(resolveModelWithRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openrouter",
+        modelId: "anthropic/claude-3-opus",
+      }),
+    );
+    expect(completeMock).toHaveBeenCalledOnce();
   });
 });
