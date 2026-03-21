@@ -152,10 +152,18 @@ export function parseApiErrorInfo(raw?: string): ApiErrorInfo | null {
     if (typeof err.code === "string" && !errType) {
       errType = err.code;
     }
-    if (typeof err.code === "number" && Number.isFinite(err.code)) {
+    if (
+      typeof err.code === "number" &&
+      Number.isFinite(err.code) &&
+      err.code >= 100 &&
+      err.code < 600
+    ) {
       errHttpCode = String(err.code);
     } else if (typeof err.code === "string" && /^\d+$/.test(err.code.trim())) {
-      errHttpCode = err.code.trim();
+      const normalizedCode = Number(err.code.trim());
+      if (normalizedCode >= 100 && normalizedCode < 600) {
+        errHttpCode = err.code.trim();
+      }
     }
     if (typeof err.message === "string") {
       errMessage = err.message;
