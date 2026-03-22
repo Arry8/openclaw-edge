@@ -1343,7 +1343,10 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       ...mediaPayload,
     });
 
-    if (kind === "direct") {
+    {
+      // Persist delivery context for all session types (including threads).
+      // Without threadId here, cron/heartbeat wakeups into a thread-scoped session
+      // lose thread context and deliver to channel root (issue #45082 case 2).
       const sessionCfg = cfg.session;
       const storePath = core.channel.session.resolveStorePath(sessionCfg?.store, {
         agentId: route.agentId,
@@ -1355,6 +1358,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           channel: "mattermost",
           to,
           accountId: route.accountId,
+          threadId: effectiveReplyToId,
         },
       });
     }
