@@ -29,6 +29,7 @@ import {
   DEFAULT_JOB_TIMEOUT_MS,
   applyJobResult,
   executeJobCore,
+  executeJobCoreWithTimeout,
   onTimer,
   runMissedJobs,
 } from "./service/timer.js";
@@ -1121,6 +1122,45 @@ describe("Cron issue regressions", () => {
     const job = state.store?.jobs.find((entry) => entry.id === "agentturn-default-safety-window");
     expect(job?.state.lastStatus).toBe("ok");
     expect(job?.state.lastError).toBeUndefined();
+  });
+
+  it("passes the outer cron deadline to isolated runs with timeoutSeconds", async () => {
+    const scheduledAt = Date.parse("2026-02-15T13:00:00.000Z");
+    const timeoutSeconds = 120;
+    const cronJob = createIsolatedRegressionJob({
+      id: "deadline-propagation",
+      name: "deadline propagation",
+      scheduledAt,
+      schedule: { kind: "at", at: new Date(scheduledAt).toISOString() },
+      payload: { kind: "agentTurn", message: "work", timeoutSeconds },
+      state: { nextRunAtMs: scheduledAt },
+    });
+
+    let observedDeadlineAtMs: number | undefined;
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: "/tmp/cron-deadline-propagation.json",
+      log: noopLogger,
+      nowMs: () => scheduledAt,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob: vi.fn(async ({ deadlineAtMs }) => {
+        observedDeadlineAtMs = deadlineAtMs;
+        return { status: "ok" as const, summary: "done" };
+      }),
+    });
+
+    const wallNow = Date.now();
+    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(wallNow);
+
+    try {
+      const result = await executeJobCoreWithTimeout(state, cronJob);
+
+      expect(result).toMatchObject({ status: "ok", summary: "done" });
+      expect(observedDeadlineAtMs).toBe(wallNow + timeoutSeconds * 1000);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it("aborts isolated runs when cron timeout fires", async () => {
