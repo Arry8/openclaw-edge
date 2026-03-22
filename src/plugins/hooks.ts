@@ -13,6 +13,8 @@ import type {
   PluginHookAfterToolCallEvent,
   PluginHookAgentContext,
   PluginHookAgentEndEvent,
+  PluginHookAgentErrorEvent,
+  PluginHookAgentErrorResult,
   PluginHookBeforeAgentReplyEvent,
   PluginHookBeforeAgentReplyResult,
   PluginHookBeforeAgentStartEvent,
@@ -87,6 +89,8 @@ export type {
   PluginHookLlmInputEvent,
   PluginHookLlmOutputEvent,
   PluginHookAgentEndEvent,
+  PluginHookAgentErrorEvent,
+  PluginHookAgentErrorResult,
   PluginHookBeforeCompactionEvent,
   PluginHookBeforeResetEvent,
   PluginHookInboundClaimContext,
@@ -583,6 +587,26 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     ctx: PluginHookAgentContext,
   ): Promise<void> {
     return runVoidHook("agent_end", event, ctx);
+  }
+
+  /**
+   * Run agent_error hook.
+   * Allows plugins to replace the error text broadcast to the user when an
+   * agent run ends with an error (e.g. billing limit → friendly message).
+   * Runs sequentially so each plugin sees the previous plugin's replacement.
+   */
+  async function runAgentError(
+    event: PluginHookAgentErrorEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<PluginHookAgentErrorResult | undefined> {
+    return runModifyingHook<"agent_error", PluginHookAgentErrorResult>(
+      "agent_error",
+      event,
+      ctx,
+      (acc, next) => ({
+        message: next.message ?? acc?.message,
+      }),
+    );
   }
 
   /**
@@ -1112,6 +1136,7 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     runLlmInput,
     runLlmOutput,
     runAgentEnd,
+    runAgentError,
     runBeforeCompaction,
     runAfterCompaction,
     runBeforeReset,
