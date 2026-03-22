@@ -83,15 +83,16 @@ function isHeartbeatNoiseEvent(evt: string): boolean {
   );
 }
 
-// Pre-compiled regex for exec completion matching (called on every system event)
-const EXEC_COMPLETION_RE = /exec (?:completed|failed|killed) \(/;
+// Pre-compiled regex for exec completion matching (called on every system event).
+// Start-anchored to avoid false positives on free-form cron text like
+// "Nightly backup exec failed (see logs)".
+const EXEC_COMPLETION_RE = /^exec (?:completed|failed|killed) \(/;
 
 export function isExecCompletionEvent(evt: string): boolean {
   const lower = evt.toLowerCase();
   // "exec finished" — emitExecSystemEvent (gateway/node approval path)
   // "Exec completed/failed/killed (" — maybeNotifyOnExit (backgrounded allowlisted commands)
-  // Anchored to the parenthesised format to avoid false positives in free-form cron text
-  return lower.includes("exec finished") || EXEC_COMPLETION_RE.test(lower);
+  return lower.startsWith("exec finished") || EXEC_COMPLETION_RE.test(lower);
 }
 
 // Returns true when a system event should be treated as real cron reminder content.
