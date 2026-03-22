@@ -993,6 +993,55 @@ describe("gateway agent handler", () => {
     expect(callArgs.sessionKey).toBe("agent:main:main");
   });
 
+  it("ignores bare voice wake session routes that would canonicalize through the default agent", async () => {
+    mocks.loadVoiceWakeRoutingConfig.mockResolvedValue({
+      version: 1,
+      defaultTarget: { mode: "current" },
+      routes: [],
+      updatedAtMs: 0,
+    });
+    mocks.resolveVoiceWakeRouteByTrigger.mockReturnValue({ sessionKey: "research" });
+
+    mocks.loadSessionEntry.mockReturnValue({
+      cfg: {},
+      storePath: "/tmp/sessions.json",
+      entry: {
+        sessionId: "main-session-id",
+        updatedAt: Date.now(),
+      },
+      canonicalKey: "agent:main:main",
+    });
+    mocks.updateSessionStore.mockResolvedValue(undefined);
+    mocks.agentCommand.mockResolvedValue({
+      payloads: [{ text: "ok" }],
+      meta: { durationMs: 100 },
+    });
+
+    const context = makeContext();
+    const respond = vi.fn();
+    await agentHandlers.agent({
+      params: {
+        message: "do thing",
+        sessionKey: "main",
+        voiceWakeTrigger: "robot wake",
+        idempotencyKey: "test-voice-route-bare-session",
+      },
+      respond,
+      context,
+      req: { type: "req", id: "voice-2b", method: "agent" },
+      client: null,
+      isWebchatConnect: () => false,
+    });
+
+    await vi.waitFor(() => expect(mocks.agentCommand).toHaveBeenCalled());
+    const callArgs = mocks.agentCommand.mock.calls.at(-1)?.[0] as { sessionKey?: string };
+    expect(callArgs.sessionKey).toBe("agent:main:main");
+    expect(context.logGateway.warn).toHaveBeenCalledWith(
+      expect.stringContaining('voicewake routing ignored non-canonical sessionKey="research"'),
+    );
+    expect(mocks.loadSessionEntry).not.toHaveBeenCalledWith("research");
+  });
+
   it("applies default voice wake route when trigger field is present but empty", async () => {
     mocks.loadVoiceWakeRoutingConfig.mockResolvedValue({
       version: 1,

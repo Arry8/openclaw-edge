@@ -1,8 +1,19 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withTempDir } from "../test-utils/temp-dir.js";
+import {
+  getChannelActivity,
+  recordChannelActivity,
+  resetChannelActivityForTest,
+} from "./channel-activity.js";
+import { createDedupeCache } from "./dedupe.js";
+import {
+  emitDiagnosticEvent,
+  onDiagnosticEvent,
+  resetDiagnosticEventsForTest,
+} from "./diagnostic-events.js";
 import { readSessionStoreJson5 } from "./state-migrations.fs.js";
 import {
   loadVoiceWakeRoutingConfig,

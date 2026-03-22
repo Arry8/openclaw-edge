@@ -64,6 +64,17 @@ struct VoiceWakeRuntimeTests {
         #expect(match?.trigger == "openclaw")
     }
 
+    @Test func `text only fallback keeps the first trigger phrase when later words match another trigger`() {
+        let transcript = "openclaw tell me about computer vision"
+        let config = WakeWordGateConfig(triggers: ["openclaw", "computer"], minCommandLength: 1)
+        let match = VoiceWakeRecognitionDebugSupport.textOnlyFallbackMatch(
+            transcript: transcript,
+            triggers: ["openclaw", "computer"],
+            config: config,
+            trimWake: VoiceWakeRuntime._testTrimmedAfterTrigger)
+        #expect(match?.trigger == "openclaw")
+    }
+
     @Test func `trims after chinese trigger keeps post speech`() {
         let triggers = ["小爪", "openclaw"]
         let text = "嘿 小爪 帮我打开设置"

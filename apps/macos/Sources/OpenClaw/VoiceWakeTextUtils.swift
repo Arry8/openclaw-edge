@@ -53,7 +53,7 @@ enum VoiceWakeTextUtils {
             .filter { !$0.isEmpty }
         guard !transcriptTokens.isEmpty else { return nil }
 
-        var bestEndIndex = -1
+        var bestStartIndex = Int.max
         var bestTokenCount = -1
         var bestTokens: [String]?
 
@@ -66,10 +66,8 @@ enum VoiceWakeTextUtils {
             for index in 0...(transcriptTokens.count - triggerTokens.count) {
                 let candidate = transcriptTokens[index..<(index + triggerTokens.count)]
                 guard zip(triggerTokens, candidate).allSatisfy({ $0 == $1 }) else { continue }
-                let endIndex = index + triggerTokens.count - 1
-                if endIndex > bestEndIndex || (endIndex == bestEndIndex && triggerTokens.count > bestTokenCount)
-                {
-                    bestEndIndex = endIndex
+                if index < bestStartIndex || (index == bestStartIndex && triggerTokens.count > bestTokenCount) {
+                    bestStartIndex = index
                     bestTokenCount = triggerTokens.count
                     bestTokens = triggerTokens
                 }
