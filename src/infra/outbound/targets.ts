@@ -267,9 +267,11 @@ export function resolveHeartbeatDeliveryTarget(params: {
   entry?: SessionEntry;
   heartbeat?: AgentDefaultsConfig["heartbeat"];
   turnSource?: DeliveryContext;
+  forceLastTargetWhenNone?: boolean;
 }): OutboundTarget {
   const { cfg, entry } = params;
   const heartbeat = params.heartbeat ?? cfg.agents?.defaults?.heartbeat;
+  const forceLastTargetWhenNone = params.forceLastTargetWhenNone === true;
   const rawTarget = heartbeat?.target;
   let target: HeartbeatTarget = "none";
   if (rawTarget === "none" || rawTarget === "last") {
@@ -282,12 +284,19 @@ export function resolveHeartbeatDeliveryTarget(params: {
   }
 
   if (target === "none") {
-    const base = resolveSessionDeliveryTarget({ entry });
-    return buildNoHeartbeatDeliveryTarget({
-      reason: "target-none",
-      lastChannel: base.lastChannel,
-      lastAccountId: base.lastAccountId,
-    });
+    if (!forceLastTargetWhenNone) {
+      const base = resolveSessionDeliveryTarget({ entry });
+      return buildNoHeartbeatDeliveryTarget({
+        reason: "target-none",
+        lastChannel: base.lastChannel,
+        lastAccountId: base.lastAccountId,
+      });
+    }
+    // For async exec completion events, always fall back to the session's last
+    // delivery target even when heartbeat target is explicitly set to "none".
+    // Ignore explicit to/accountId so stale config fields don't override the
+    // session's true last target (see codex review feedback on PR #50818).
+    target = "last";
   }
 
   const resolvedTurnSource =
@@ -295,10 +304,14 @@ export function resolveHeartbeatDeliveryTarget(params: {
       ? mergeDeliveryContext(params.turnSource, deliveryContextFromSession(entry))
       : undefined;
 
+  // When forced from "none" → "last", ignore heartbeat.to and heartbeat.accountId
+  // so the session's actual last target is used, not a stale configured destination.
+  const forcedToLast = forceLastTargetWhenNone && (rawTarget === "none" || rawTarget == null);
+
   const resolvedTarget = resolveSessionDeliveryTarget({
     entry,
     requestedChannel: target === "last" ? "last" : target,
-    explicitTo: heartbeat?.to,
+    explicitTo: forcedToLast ? undefined : heartbeat?.to,
     mode: "heartbeat",
     turnSourceChannel:
       resolvedTurnSource?.channel && isDeliverableMessageChannel(resolvedTurnSource.channel)
@@ -314,7 +327,7 @@ export function resolveHeartbeatDeliveryTarget(params: {
     turnSourceThreadId: params.turnSource?.threadId,
   });
 
-  const heartbeatAccountId = heartbeat?.accountId?.trim();
+  const heartbeatAccountId = forcedToLast ? undefined : heartbeat?.accountId?.trim();
   // Use explicit accountId from heartbeat config if provided, otherwise fall back to session
   let effectiveAccountId = heartbeatAccountId || resolvedTarget.accountId;
 
@@ -368,7 +381,9 @@ export function resolveHeartbeatDeliveryTarget(params: {
   }
 
   const sessionChatTypeHint =
-    target === "last" && !heartbeat?.to ? normalizeChatType(entry?.chatType) : undefined;
+    target === "last" && (forcedToLast || !heartbeat?.to)
+      ? normalizeChatType(entry?.chatType)
+      : undefined;
   const deliveryChatType = resolveHeartbeatDeliveryChatType({
     channel: resolvedTarget.channel,
     to: resolved.to,

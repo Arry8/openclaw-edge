@@ -20,6 +20,8 @@ describe("heartbeat-reason", () => {
     { value: "interval", expected: "interval" },
     { value: "manual", expected: "manual" },
     { value: "exec-event", expected: "exec-event" },
+    // maybeNotifyOnExit backgrounded exec path: exec:<sessionId>:exit
+    { value: "exec:abc12345abc12345:exit", expected: "exec-event" },
     { value: "wake", expected: "wake" },
     { value: "acp:spawn:stream", expected: "wake" },
     { value: "acp:spawn:", expected: "wake" },
@@ -36,6 +38,7 @@ describe("heartbeat-reason", () => {
 
   it.each([
     { value: "exec-event", expected: true },
+    { value: "exec:abc123:exit", expected: true },
     { value: "cron:job-1", expected: true },
     { value: "wake", expected: true },
     { value: "acp:spawn:stream", expected: true },
@@ -50,6 +53,7 @@ describe("heartbeat-reason", () => {
   it.each([
     { value: "manual", expected: true },
     { value: "exec-event", expected: true },
+    { value: "exec:abc123:exit", expected: true },
     { value: "hook:wake", expected: true },
     { value: "interval", expected: false },
     { value: "cron:job-1", expected: false },

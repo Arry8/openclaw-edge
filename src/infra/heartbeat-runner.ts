@@ -610,6 +610,7 @@ export async function runHeartbeatOnce(opts: {
     // Reusing base-session turnSource routing here can pin later isolated runs
     // to stale channels/threads because that base-session event context remains queued.
     turnSource: useIsolatedSession ? undefined : preflight.turnSourceDeliveryContext,
+    forceLastTargetWhenNone: preflight.isExecEventReason,
   });
   const heartbeatAccountId = heartbeat?.accountId?.trim();
   if (delivery.reason === "unknown-account") {

@@ -91,3 +91,36 @@ describe("heartbeat event classification", () => {
     expect(isCronSystemEvent(value)).toBe(expected);
   });
 });
+
+describe("isExecCompletionEvent", () => {
+  it("matches emitExecSystemEvent (gateway/node approval path) events", () => {
+    expect(isExecCompletionEvent("Exec finished (gateway id=g1, session=s1, code 0)")).toBe(true);
+    expect(isExecCompletionEvent("exec finished (node=n1, code 1)\nsome output")).toBe(true);
+  });
+
+  it("matches maybeNotifyOnExit (backgrounded allowlisted commands) events", () => {
+    expect(isExecCompletionEvent("Exec completed (abc12345, code 0) :: some output")).toBe(true);
+    expect(isExecCompletionEvent("Exec completed (abc12345, code 0)")).toBe(true);
+    expect(isExecCompletionEvent("Exec failed (abc12345, code 1) :: error text")).toBe(true);
+    expect(isExecCompletionEvent("Exec failed (abc12345, signal SIGTERM)")).toBe(true);
+    expect(isExecCompletionEvent("Exec killed (abc12345, signal SIGKILL)")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isExecCompletionEvent("EXEC COMPLETED (abc12345, code 0)")).toBe(true);
+    expect(isExecCompletionEvent("exec failed (abc12345, code 2)")).toBe(true);
+  });
+
+  it("does not match non-exec events", () => {
+    expect(isExecCompletionEvent("Exec running (gateway id=g1, session=s1, >5s): ls")).toBe(false);
+    expect(isExecCompletionEvent("Exec denied (gateway id=g1, reason): rm -rf /")).toBe(false);
+    expect(isExecCompletionEvent("Heartbeat wake")).toBe(false);
+    expect(isExecCompletionEvent("")).toBe(false);
+  });
+
+  it("does not false-positive on free-form cron text containing exec phrases", () => {
+    expect(isExecCompletionEvent("Nightly backup exec failed – see logs")).toBe(false);
+    expect(isExecCompletionEvent("Cron: check if exec completed successfully")).toBe(false);
+    expect(isExecCompletionEvent("exec killed the process manually")).toBe(false);
+  });
+});
