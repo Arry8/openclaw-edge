@@ -1,3 +1,20 @@
+import {
+  listLineAccountIds,
+  normalizeAccountId as normalizeLineAccountId,
+  resolveDefaultLineAccountId,
+  resolveLineAccount,
+  buildTemplateMessageFromPayload,
+  createQuickReplyItems,
+  pushFlexMessage,
+  pushLocationMessage,
+  pushMessageLine,
+  pushMessagesLine,
+  pushTemplateMessage,
+  pushTextMessageWithQuickReplies,
+  monitorLineProvider,
+  probeLineBot,
+  sendMessageLine,
+} from "../../../extensions/line/runtime-api.js";
 import { resolveEffectiveMessagesConfig, resolveHumanDelayConfig } from "../../agents/identity.js";
 import {
   chunkByNewline,
