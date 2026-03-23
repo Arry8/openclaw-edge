@@ -1,6 +1,10 @@
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import { normalizeAgentId } from "../routing/session-key.js";
+import {
+  classifySessionKeyShape,
+  isValidAgentId,
+  normalizeAgentId,
+} from "../routing/session-key.js";
 import { createAsyncLock, readJsonFile, writeJsonAtomic } from "./json-files.js";
 
 export type VoiceWakeRouteTarget =
@@ -126,9 +130,21 @@ function validateRouteTargetInput(
     };
   }
   if (agentId !== undefined) {
+    if (!isValidAgentId(agentId)) {
+      return {
+        ok: false,
+        message: `${label}.agentId must be a valid agent id`,
+      };
+    }
     return { ok: true };
   }
   if (sessionKey !== undefined) {
+    if (classifySessionKeyShape(sessionKey) !== "agent") {
+      return {
+        ok: false,
+        message: `${label}.sessionKey must be a canonical agent session key`,
+      };
+    }
     return { ok: true };
   }
   return {

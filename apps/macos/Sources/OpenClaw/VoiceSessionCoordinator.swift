@@ -93,18 +93,20 @@ final class VoiceSessionCoordinator {
     func sendNow(token: UUID, reason: String = "explicit") {
         guard let session, session.token == token else { return }
         let text = session.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let voiceWakeTrigger = session.voiceWakeTrigger
+        let sendChime = session.sendChime
         guard !text.isEmpty else {
             self.logger.info("coordinator sendNow \(reason) empty -> dismiss")
             VoiceWakeOverlayController.shared.dismiss(token: token, reason: .empty, outcome: .empty)
             self.clearSession()
             return
         }
-        VoiceWakeOverlayController.shared.beginSendUI(token: token, sendChime: session.sendChime)
+        VoiceWakeOverlayController.shared.beginSendUI(token: token, sendChime: sendChime)
         Task.detached {
             _ = await VoiceWakeForwarder.forward(
                 transcript: text,
                 options: .init(
-                    voiceWakeTrigger: session.voiceWakeTrigger))
+                    voiceWakeTrigger: voiceWakeTrigger))
         }
     }
 

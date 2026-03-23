@@ -382,6 +382,26 @@ describe("gateway server models + voicewake", () => {
         /config\.routes\[0\]\.target cannot include both agentId and sessionKey/i,
       );
 
+      const badAgentId = await rpcReq(ws, "voicewake.routing.set", {
+        config: {
+          routes: [{ trigger: "robot wake", target: { agentId: "!!!" } }],
+        },
+      });
+      expect(badAgentId.ok).toBe(false);
+      expect(badAgentId.error?.message ?? "").toMatch(
+        /config\.routes\[0\]\.target\.agentId must be a valid agent id/i,
+      );
+
+      const badSessionKey = await rpcReq(ws, "voicewake.routing.set", {
+        config: {
+          routes: [{ trigger: "robot wake", target: { sessionKey: "agent::main" } }],
+        },
+      });
+      expect(badSessionKey.ok).toBe(false);
+      expect(badSessionKey.error?.message ?? "").toMatch(
+        /config\.routes\[0\]\.target\.sessionKey must be a canonical agent session key/i,
+      );
+
       const stillStored = await rpcReq<{
         config?: { routes?: Array<{ trigger?: string; target?: unknown }> };
       }>(ws, "voicewake.routing.get");

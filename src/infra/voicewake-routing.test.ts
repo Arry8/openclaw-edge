@@ -3,6 +3,7 @@ import {
   normalizeVoiceWakeRoutingConfig,
   normalizeVoiceWakeTriggerWord,
   resolveVoiceWakeRouteByTrigger,
+  validateVoiceWakeRoutingConfigInput,
 } from "./voicewake-routing.js";
 
 describe("voicewake routing normalization", () => {
@@ -26,6 +27,28 @@ describe("voicewake routing normalization", () => {
     });
     expect(resolveVoiceWakeRouteByTrigger({ trigger: "hey bot", config })).toEqual({
       sessionKey: "agent:main:voice",
+    });
+  });
+
+  it("rejects invalid route agent ids instead of normalizing them to main", () => {
+    expect(
+      validateVoiceWakeRoutingConfigInput({
+        routes: [{ trigger: "wake", target: { agentId: "!!!" } }],
+      }),
+    ).toEqual({
+      ok: false,
+      message: "config.routes[0].target.agentId must be a valid agent id",
+    });
+  });
+
+  it("rejects malformed session keys instead of persisting dead routes", () => {
+    expect(
+      validateVoiceWakeRoutingConfigInput({
+        routes: [{ trigger: "wake", target: { sessionKey: "agent::main" } }],
+      }),
+    ).toEqual({
+      ok: false,
+      message: "config.routes[0].target.sessionKey must be a canonical agent session key",
     });
   });
 });
