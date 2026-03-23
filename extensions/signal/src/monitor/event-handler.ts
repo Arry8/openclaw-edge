@@ -1,5 +1,10 @@
-import { resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
-import { logTypingFailure } from "openclaw/plugin-sdk/channel-feedback";
+import { resolveAckReaction, resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
+import {
+  createStatusReactionController,
+  logTypingFailure,
+  shouldAckReaction,
+  type StatusReactionController,
+} from "openclaw/plugin-sdk/channel-feedback";
 import {
   buildMentionRegexes,
   createChannelInboundDebouncer,
@@ -48,6 +53,7 @@ import {
   type SignalSender,
 } from "../identity.js";
 import { normalizeSignalMessagingTarget } from "../normalize.js";
+import { sendReactionSignal } from "../send-reactions.js";
 import { sendMessageSignal, sendReadReceiptSignal, sendTypingSignal } from "../send.js";
 import { handleSignalDirectMessageAccess, resolveSignalAccessState } from "./access-policy.js";
 import type {
@@ -307,27 +313,123 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       },
     });
 
-    const { queuedFinal } = await dispatchInboundMessage({
-      ctx: ctxPayload,
-      cfg: deps.cfg,
-      dispatcher,
-      replyOptions: {
-        ...replyOptions,
-        disableBlockStreaming:
-          typeof deps.blockStreaming === "boolean" ? !deps.blockStreaming : undefined,
-        onModelSelected,
-      },
+    // Status reactions: show emoji on the inbound message as agent progresses
+    const statusReactionsConfig = deps.cfg.messages?.statusReactions;
+    const ackEmoji = resolveAckReaction(deps.cfg, route.agentId, {
+      channel: "signal",
+      accountId: deps.accountId,
     });
-    markDispatchIdle();
-    if (!queuedFinal) {
-      if (entry.isGroup && historyKey) {
-        clearHistoryEntriesIfEnabled({
-          historyMap: deps.groupHistories,
-          historyKey,
-          limit: deps.historyLimit,
-        });
+    const canAckReact =
+      Boolean(ackEmoji) &&
+      shouldAckReaction({
+        scope: deps.cfg.messages?.ackReactionScope,
+        isDirect: !entry.isGroup,
+        isGroup: entry.isGroup,
+        isMentionableGroup: entry.isGroup,
+        requireMention: false,
+        canDetectMention: true,
+        effectiveWasMentioned: entry.wasMentioned === true,
+      });
+    const statusReactionsEnabled =
+      statusReactionsConfig?.enabled === true && canAckReact && Boolean(entry.timestamp);
+    let statusReactions: StatusReactionController | null = null;
+    if (statusReactionsEnabled && entry.timestamp) {
+      const msgTimestamp = entry.timestamp;
+      const reactionRecipient = entry.isGroup ? "" : (entry.senderRecipient ?? "");
+      const reactionGroupId = entry.isGroup ? (entry.groupId ?? undefined) : undefined;
+      const reactionOpts = {
+        cfg: deps.cfg,
+        baseUrl: deps.baseUrl,
+        account: deps.account,
+        accountId: deps.accountId,
+        targetAuthor: entry.senderRecipient,
+        groupId: reactionGroupId,
+      };
+      statusReactions = createStatusReactionController({
+        enabled: true,
+        adapter: {
+          // Signal auto-replaces reactions (one per user per message).
+          // No explicit removal needed — just send the new emoji.
+          setReaction: async (emoji: string) => {
+            try {
+              await sendReactionSignal(reactionRecipient, msgTimestamp, emoji, reactionOpts);
+            } catch (err) {
+              logVerbose(`signal status-reaction set failed: ${String(err)}`);
+            }
+          },
+        },
+        initialEmoji: ackEmoji,
+        emojis: deps.cfg.messages?.statusReactions?.emojis,
+        timing: deps.cfg.messages?.statusReactions?.timing,
+        onError: (err) => {
+          logVerbose(`signal status-reaction error: ${String(err)}`);
+        },
+      });
+      void statusReactions.setQueued();
+      // Start thinking debounce early (before dispatch) so the 700ms
+      // timer has time to fire — matches Telegram's approach.
+      void statusReactions.setThinking();
+    }
+
+    let dispatchError = false;
+    try {
+      const { queuedFinal } = await dispatchInboundMessage({
+        ctx: ctxPayload,
+        cfg: deps.cfg,
+        dispatcher,
+        replyOptions: {
+          ...replyOptions,
+          disableBlockStreaming:
+            typeof deps.blockStreaming === "boolean" ? !deps.blockStreaming : undefined,
+          onModelSelected,
+          ...(statusReactions
+            ? {
+                onReplyStart: async () => {
+                  await replyOptions.onReplyStart?.();
+                  await statusReactions!.setThinking();
+                },
+                onReasoningStream: async () => {
+                  await statusReactions!.setThinking();
+                },
+                onToolStart: async (payload: { name?: string }) => {
+                  await statusReactions!.setTool(payload.name);
+                },
+                onCompactionStart: async () => {
+                  await statusReactions!.setCompacting();
+                },
+                onCompactionEnd: async () => {
+                  statusReactions!.cancelPending();
+                  await statusReactions!.setThinking();
+                },
+              }
+            : {}),
+        },
+      });
+      markDispatchIdle();
+      if (!queuedFinal) {
+        if (entry.isGroup && historyKey) {
+          clearHistoryEntriesIfEnabled({
+            historyMap: deps.groupHistories,
+            historyKey,
+            limit: deps.historyLimit,
+          });
+        }
+        if (statusReactions) {
+          void statusReactions.restoreInitial();
+        }
+        return;
       }
-      return;
+    } catch (err) {
+      dispatchError = true;
+      throw err;
+    } finally {
+      if (statusReactions) {
+        if (dispatchError) {
+          void statusReactions.setError();
+        } else {
+          void statusReactions.setDone();
+        }
+      }
     }
     if (entry.isGroup && historyKey) {
       clearHistoryEntriesIfEnabled({
