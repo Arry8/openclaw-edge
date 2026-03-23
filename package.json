@@ -541,10 +541,6 @@
       "types": "./dist/plugin-sdk/line-core.d.ts",
       "default": "./dist/plugin-sdk/line-core.js"
     },
-    "./plugin-sdk/line-runtime": {
-      "types": "./dist/plugin-sdk/line-runtime.d.ts",
-      "default": "./dist/plugin-sdk/line-runtime.js"
-    },
     "./plugin-sdk/line-surface": {
       "types": "./dist/plugin-sdk/line-surface.d.ts",
       "default": "./dist/plugin-sdk/line-surface.js"
