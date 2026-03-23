@@ -2,7 +2,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createPluginSetupWizardStatus } from "../../../test/helpers/plugins/setup-wizard.js";
 import { signalPlugin } from "./channel.js";
-import * as clientModule from "./client.js";
+import * as clientModule from "./client-adapter.js";
 import { classifySignalCliLogLine } from "./daemon.js";
 import {
   looksLikeUuid,
