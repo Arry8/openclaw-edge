@@ -59,7 +59,7 @@ export async function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
           { error: errorText },
           { sessionKey: ctx.params.sessionKey },
         );
-        if (hookResult?.message != null) {
+        if (typeof hookResult?.message === "string") {
           errorText = hookResult.message;
         }
       } catch {
