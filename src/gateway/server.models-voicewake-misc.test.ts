@@ -327,10 +327,7 @@ describe("gateway server models + voicewake", () => {
       }>(ws, "voicewake.routing.set", {
         config: {
           defaultTarget: { mode: "current" },
-          routes: [
-            { trigger: "  Robot   Wake ", target: { agentId: "main" } },
-            { trigger: "", target: { sessionKey: "agent:main:main" } },
-          ],
+          routes: [{ trigger: "  Robot   Wake ", target: { agentId: "main" } }],
         },
       });
       expect(setRes.ok).toBe(true);
@@ -366,6 +363,32 @@ describe("gateway server models + voicewake", () => {
       expect(invalid.error?.message ?? "").toMatch(
         /voicewake\.routing\.set requires config: object/i,
       );
+
+      const badRoutes = await rpcReq(ws, "voicewake.routing.set", {
+        config: { routes: "oops" },
+      });
+      expect(badRoutes.ok).toBe(false);
+      expect(badRoutes.error?.message ?? "").toMatch(/config\.routes must be an array/i);
+
+      const badTarget = await rpcReq(ws, "voicewake.routing.set", {
+        config: {
+          routes: [
+            { trigger: "robot wake", target: { agentId: "main", sessionKey: "agent:main:main" } },
+          ],
+        },
+      });
+      expect(badTarget.ok).toBe(false);
+      expect(badTarget.error?.message ?? "").toMatch(
+        /config\.routes\[0\]\.target cannot include both agentId and sessionKey/i,
+      );
+
+      const stillStored = await rpcReq<{
+        config?: { routes?: Array<{ trigger?: string; target?: unknown }> };
+      }>(ws, "voicewake.routing.get");
+      expect(stillStored.ok).toBe(true);
+      expect(stillStored.payload?.config?.routes).toEqual([
+        { trigger: "robot wake", target: { agentId: "main" } },
+      ]);
     });
   });
 

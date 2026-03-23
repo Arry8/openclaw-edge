@@ -89,6 +89,100 @@ function normalizeRouteRule(value: unknown): VoiceWakeRouteRule | null {
   return { trigger, target };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateRouteTargetInput(
+  value: unknown,
+  label: string,
+): { ok: true } | { ok: false; message: string } {
+  if (!isPlainObject(value)) {
+    return { ok: false, message: `${label} must be an object` };
+  }
+  const rec = value as { mode?: unknown; agentId?: unknown; sessionKey?: unknown };
+  const mode = normalizeOptionalString(rec.mode);
+  const agentId = normalizeOptionalString(rec.agentId);
+  const sessionKey = normalizeOptionalString(rec.sessionKey);
+  if (mode !== undefined) {
+    if (mode !== "current") {
+      return {
+        ok: false,
+        message: `${label}.mode must be "current" when provided`,
+      };
+    }
+    if (agentId !== undefined || sessionKey !== undefined) {
+      return {
+        ok: false,
+        message: `${label} cannot mix mode with agentId or sessionKey`,
+      };
+    }
+    return { ok: true };
+  }
+  if (agentId !== undefined && sessionKey !== undefined) {
+    return {
+      ok: false,
+      message: `${label} cannot include both agentId and sessionKey`,
+    };
+  }
+  if (agentId !== undefined) {
+    return { ok: true };
+  }
+  if (sessionKey !== undefined) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    message: `${label} must include mode, agentId, or sessionKey`,
+  };
+}
+
+export function validateVoiceWakeRoutingConfigInput(
+  input: unknown,
+): { ok: true } | { ok: false; message: string } {
+  if (!isPlainObject(input)) {
+    return { ok: false, message: "config must be an object" };
+  }
+  const rec = input as {
+    defaultTarget?: unknown;
+    routes?: unknown;
+  };
+  if (rec.defaultTarget !== undefined) {
+    const validatedDefaultTarget = validateRouteTargetInput(
+      rec.defaultTarget,
+      "config.defaultTarget",
+    );
+    if (!validatedDefaultTarget.ok) {
+      return validatedDefaultTarget;
+    }
+  }
+  if (rec.routes !== undefined && !Array.isArray(rec.routes)) {
+    return { ok: false, message: "config.routes must be an array" };
+  }
+  if (Array.isArray(rec.routes)) {
+    for (const [index, route] of rec.routes.entries()) {
+      if (!isPlainObject(route)) {
+        return { ok: false, message: `config.routes[${index}] must be an object` };
+      }
+      const trigger = normalizeOptionalString(route.trigger);
+      if (!trigger || !normalizeVoiceWakeTriggerWord(trigger)) {
+        return {
+          ok: false,
+          message: `config.routes[${index}].trigger must be a non-empty string`,
+        };
+      }
+      const validatedTarget = validateRouteTargetInput(
+        route.target,
+        `config.routes[${index}].target`,
+      );
+      if (!validatedTarget.ok) {
+        return validatedTarget;
+      }
+    }
+  }
+  return { ok: true };
+}
+
 export function normalizeVoiceWakeRoutingConfig(input: unknown): VoiceWakeRoutingConfig {
   if (!input || typeof input !== "object") {
     return { ...DEFAULT_ROUTING };

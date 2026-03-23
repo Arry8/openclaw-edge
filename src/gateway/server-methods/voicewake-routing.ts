@@ -2,6 +2,7 @@ import {
   loadVoiceWakeRoutingConfig,
   normalizeVoiceWakeRoutingConfig,
   setVoiceWakeRoutingConfig,
+  validateVoiceWakeRoutingConfigInput,
 } from "../../infra/voicewake-routing.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -26,6 +27,11 @@ export const voicewakeRoutingHandlers: GatewayRequestHandlers = {
         undefined,
         errorShape(ErrorCodes.INVALID_REQUEST, "voicewake.routing.set requires config: object"),
       );
+      return;
+    }
+    const validated = validateVoiceWakeRoutingConfigInput(params.config);
+    if (!validated.ok) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, validated.message));
       return;
     }
     try {
