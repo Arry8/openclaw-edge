@@ -54,16 +54,11 @@ function resolveRuntimeAuthProfileStore(agentDir?: string): AuthProfileStore | n
   if (runtimeSnapshotsLoadedAtMs > 0) {
     const mainMtime = readAuthStoreMtimeMs(mainKey);
     const isMainStale = mainMtime !== null && mainMtime > runtimeSnapshotsLoadedAtMs;
-    const isRequestedStale =
-      requestedKey !== mainKey &&
-      (() => {
-        const t = readAuthStoreMtimeMs(requestedKey);
-        return t !== null && t > runtimeSnapshotsLoadedAtMs;
-      })();
+    const requestedMtime = requestedKey !== mainKey ? readAuthStoreMtimeMs(requestedKey) : null;
+    const isRequestedStale = requestedMtime !== null && requestedMtime > runtimeSnapshotsLoadedAtMs;
     if (isMainStale || isRequestedStale) {
       runtimeAuthStoreSnapshots.clear();
       runtimeSnapshotsLoadedAtMs = 0;
-      loadedAuthStoreCache.clear();
       return null;
     }
   }
@@ -96,9 +91,13 @@ function resolveRuntimeAuthProfileStore(agentDir?: string): AuthProfileStore | n
 
 export function replaceRuntimeAuthProfileStoreSnapshots(
   entries: Array<{ agentDir?: string; store: AuthProfileStore }>,
+  /** Timestamp when the disk reads that produced `entries` started.
+   *  Defaults to `Date.now()` for backward compatibility, but callers
+   *  should pass the actual read time to close the preparation window. */
+  readAtMs?: number,
 ): void {
   runtimeAuthStoreSnapshots.clear();
-  runtimeSnapshotsLoadedAtMs = Date.now();
+  runtimeSnapshotsLoadedAtMs = readAtMs ?? Date.now();
   for (const entry of entries) {
     runtimeAuthStoreSnapshots.set(
       resolveRuntimeStoreKey(entry.agentDir),
