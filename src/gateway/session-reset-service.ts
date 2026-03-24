@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getAcpSessionManager } from "../acp/control-plane/manager.js";
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { clearBootstrapSnapshot } from "../agents/bootstrap-cache.js";
 import { abortEmbeddedPiRun, waitForEmbeddedPiRunEnd } from "../agents/pi-embedded.js";
 import { stopSubagentsForRequester } from "../auto-reply/reply/abort.js";
@@ -26,6 +26,7 @@ import {
   archiveSessionTranscripts,
   loadSessionEntry,
   migrateAndPruneGatewaySessionStoreKey,
+  readSessionMessages,
   resolveGatewaySessionStoreTarget,
   resolveSessionModelRef,
 } from "./session-utils.js";
@@ -250,6 +251,48 @@ export async function cleanupSessionBeforeMutation(params: {
   });
 }
 
+function emitGatewayBeforeResetPluginHook(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  key: string;
+  target: ReturnType<typeof resolveGatewaySessionStoreTarget>;
+  storePath: string;
+  entry?: SessionEntry;
+  reason: "new" | "reset";
+}): void {
+  const hookRunner = getGlobalHookRunner();
+  if (!hookRunner?.hasHooks("before_reset")) {
+    return;
+  }
+
+  const sessionKey = params.target.canonicalKey ?? params.key;
+  const sessionId = params.entry?.sessionId;
+  const sessionFile = params.entry?.sessionFile;
+  const agentId = normalizeAgentId(params.target.agentId ?? resolveDefaultAgentId(params.cfg));
+  const workspaceDir = resolveAgentWorkspaceDir(params.cfg, agentId);
+  const messages =
+    typeof sessionId === "string" && sessionId.trim().length > 0
+      ? readSessionMessages(sessionId, params.storePath, sessionFile)
+      : [];
+
+  void hookRunner
+    .runBeforeReset(
+      {
+        sessionFile,
+        messages,
+        reason: params.reason,
+      },
+      {
+        agentId,
+        sessionKey,
+        sessionId,
+        workspaceDir,
+      },
+    )
+    .catch((err) => {
+      logVerbose(`before_reset hook failed: ${String(err)}`);
+    });
+}
+
 export async function performGatewaySessionReset(params: {
   key: string;
   reason: "new" | "reset";
@@ -277,6 +320,14 @@ export async function performGatewaySessionReset(params: {
     },
   );
   await triggerInternalHook(hookEvent);
+  emitGatewayBeforeResetPluginHook({
+    cfg,
+    key: params.key,
+    target,
+    storePath,
+    entry,
+    reason: params.reason,
+  });
   const mutationCleanupError = await cleanupSessionBeforeMutation({
     cfg,
     key: params.key,
