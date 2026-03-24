@@ -19,6 +19,7 @@ import {
   type DaemonActionResponse,
   emitDaemonActionJson,
 } from "./response.js";
+import { filterContainerGenericHints } from "./shared.js";
 
 type DaemonLifecycleOptions = {
   json?: boolean;
@@ -81,7 +82,9 @@ async function handleServiceNotLoaded(params: {
   json: boolean;
   emit: ReturnType<typeof createActionIO>["emit"];
 }) {
-  const hints = await maybeAugmentSystemdHints(params.renderStartHints());
+  const hints = filterContainerGenericHints(
+    await maybeAugmentSystemdHints(params.renderStartHints()),
+  );
   params.emit({
     ok: true,
     result: "not-loaded",
@@ -339,6 +342,22 @@ export async function runServiceRestart(params: {
   const { stdout, emit, fail } = createActionIO({ action: "restart", json });
   const warnings: string[] = [];
   let handledNotLoaded: NotLoadedActionResult | null = null;
+  const emitScheduledRestart = (
+    restartStatus: ReturnType<typeof describeGatewayServiceRestart>,
+    serviceLoaded: boolean,
+  ) => {
+    emit({
+      ok: true,
+      result: restartStatus.daemonActionResult,
+      message: restartStatus.message,
+      service: buildDaemonServiceSnapshot(params.service, serviceLoaded),
+      warnings: warnings.length ? warnings : undefined,
+    });
+    if (!json) {
+      defaultRuntime.log(restartStatus.message);
+    }
+    return true;
+  };
 
   const loaded = await resolveServiceLoadedOrFail({
     serviceNoun: params.serviceNoun,
@@ -423,34 +442,14 @@ export async function runServiceRestart(params: {
     }
     let restartStatus = describeGatewayServiceRestart(params.serviceNoun, restartResult);
     if (restartStatus.scheduled) {
-      emit({
-        ok: true,
-        result: restartStatus.daemonActionResult,
-        message: restartStatus.message,
-        service: buildDaemonServiceSnapshot(params.service, loaded),
-        warnings: warnings.length ? warnings : undefined,
-      });
-      if (!json) {
-        defaultRuntime.log(restartStatus.message);
-      }
-      return true;
+      return emitScheduledRestart(restartStatus, loaded);
     }
     if (params.postRestartCheck) {
       const postRestartResult = await params.postRestartCheck({ json, stdout, warnings, fail });
       if (postRestartResult) {
         restartStatus = describeGatewayServiceRestart(params.serviceNoun, postRestartResult);
         if (restartStatus.scheduled) {
-          emit({
-            ok: true,
-            result: restartStatus.daemonActionResult,
-            message: restartStatus.message,
-            service: buildDaemonServiceSnapshot(params.service, loaded),
-            warnings: warnings.length ? warnings : undefined,
-          });
-          if (!json) {
-            defaultRuntime.log(restartStatus.message);
-          }
-          return true;
+          return emitScheduledRestart(restartStatus, loaded);
         }
       }
     }
