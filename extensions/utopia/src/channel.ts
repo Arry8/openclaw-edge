@@ -57,9 +57,7 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
         String(entry),
       ),
     formatAllowFrom: ({ allowFrom }) =>
-      allowFrom
-        .map((entry) => String(entry).trim())
-        .filter(Boolean),
+      allowFrom.map((entry) => String(entry).trim()).filter(Boolean),
   },
 
   pairing: {
@@ -121,7 +119,7 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
       return {
         channel: "utopia" as const,
         to,
-        messageId: `utopia-${Date.now()}`,
+        messageId: `utopia-${crypto.randomUUID()}`,
       };
     },
   },
@@ -301,7 +299,8 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
         await getUtopiaRuntime().config.writeConfigFile(nextCfg);
       }
 
-      const loggedOut = !resolveUtopiaAccount({ cfg: cleared ? nextCfg : cfg, accountId }).configured;
+      const loggedOut = !resolveUtopiaAccount({ cfg: cleared ? nextCfg : cfg, accountId })
+        .configured;
       return { cleared, loggedOut };
     },
   },
