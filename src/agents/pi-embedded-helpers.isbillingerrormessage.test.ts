@@ -55,6 +55,14 @@ function expectMessageMatches(
   }
 }
 
+function expectTimeoutFailoverSamples(samples: readonly string[]) {
+  for (const sample of samples) {
+    expect(isTimeoutErrorMessage(sample)).toBe(true);
+    expect(classifyFailoverReason(sample)).toBe("timeout");
+    expect(isFailoverErrorMessage(sample)).toBe(true);
+  }
+}
+
 describe("isAuthPermanentErrorMessage", () => {
   it.each([
     {
@@ -567,36 +575,26 @@ describe("isFailoverErrorMessage", () => {
   });
 
   it("matches abort stop-reason timeout variants", () => {
-    const samples = [
+    expectTimeoutFailoverSamples([
       "Unhandled stop reason: abort",
       "Unhandled stop reason: error",
       "stop reason: abort",
       "stop reason: error",
       "reason: abort",
       "reason: error",
-    ];
-    for (const sample of samples) {
-      expect(isTimeoutErrorMessage(sample)).toBe(true);
-      expect(classifyFailoverReason(sample)).toBe("timeout");
-      expect(isFailoverErrorMessage(sample)).toBe(true);
-    }
+    ]);
   });
 
   it("matches Gemini MALFORMED_RESPONSE stop reason as timeout (#42149)", () => {
-    const samples = [
+    expectTimeoutFailoverSamples([
       "Unhandled stop reason: MALFORMED_RESPONSE",
       "Unhandled stop reason: malformed_response",
       "stop reason: MALFORMED_RESPONSE",
-    ];
-    for (const sample of samples) {
-      expect(isTimeoutErrorMessage(sample)).toBe(true);
-      expect(classifyFailoverReason(sample)).toBe("timeout");
-      expect(isFailoverErrorMessage(sample)).toBe(true);
-    }
+    ]);
   });
 
   it("matches network errno codes in serialized error messages", () => {
-    const samples = [
+    expectTimeoutFailoverSamples([
       "Error: connect ETIMEDOUT 10.0.0.1:443",
       "Error: connect ESOCKETTIMEDOUT 10.0.0.1:443",
       "Error: connect EHOSTUNREACH 10.0.0.1:443",
@@ -604,25 +602,15 @@ describe("isFailoverErrorMessage", () => {
       "Error: write EPIPE",
       "Error: read ENETRESET",
       "Error: connect EHOSTDOWN 192.168.1.1:443",
-    ];
-    for (const sample of samples) {
-      expect(isTimeoutErrorMessage(sample)).toBe(true);
-      expect(classifyFailoverReason(sample)).toBe("timeout");
-      expect(isFailoverErrorMessage(sample)).toBe(true);
-    }
+    ]);
   });
 
   it("matches z.ai network_error stop reason as timeout", () => {
-    const samples = [
+    expectTimeoutFailoverSamples([
       "Unhandled stop reason: network_error",
       "stop reason: network_error",
       "reason: network_error",
-    ];
-    for (const sample of samples) {
-      expect(isTimeoutErrorMessage(sample)).toBe(true);
-      expect(classifyFailoverReason(sample)).toBe("timeout");
-      expect(isFailoverErrorMessage(sample)).toBe(true);
-    }
+    ]);
   });
 
   it("does not classify MALFORMED_FUNCTION_CALL as timeout", () => {
@@ -865,11 +853,72 @@ describe("classifyFailoverReason", () => {
     expect(classifyFailoverReason("key has been disabled")).toBe("auth_permanent");
     expect(classifyFailoverReason("account has been deactivated")).toBe("auth_permanent");
   });
-  it("classifies JSON api_error internal server failures as timeout", () => {
+  it("classifies JSON api_error with transient signal as timeout", () => {
     expect(
       classifyFailoverReason(
         '{"type":"error","error":{"type":"api_error","message":"Internal server error"}}',
       ),
     ).toBe("timeout");
+    // MiniMax non-standard message
+    expect(
+      classifyFailoverReason('{"type":"api_error","message":"unknown error, 520 (1000)"}'),
+    ).toBe("timeout");
+    // Overloaded variant
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"Service temporarily unavailable"}}',
+      ),
+    ).toBe("timeout");
+  });
+  it("does not classify non-transient api_error payloads as timeout", () => {
+    // Context overflow - not transient
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"Request size exceeds model context window"}}',
+      ),
+    ).not.toBe("timeout");
+    // Schema/validation error - not transient
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"messages.1.content.1.tool_use.id should match pattern"}}',
+      ),
+    ).not.toBe("timeout");
+    // Generic unknown api_error without transient wording - should not be retried
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"invalid input format"}}',
+      ),
+    ).not.toBe("timeout");
+  });
+  it("does not shadow billing errors that carry api_error type", () => {
+    // A provider may wrap a billing error in a JSON payload with "type":"api_error".
+    // The billing classifier must win over the broad api_error transient match.
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"insufficient credits"}}',
+      ),
+    ).toBe("billing");
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"Payment required"}}',
+      ),
+    ).toBe("billing");
+  });
+  it("does not shadow auth errors that carry api_error type", () => {
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"invalid api key"}}',
+      ),
+    ).toBe("auth");
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"unauthorized"}}',
+      ),
+    ).toBe("auth");
+    expect(
+      classifyFailoverReason(
+        '{"type":"error","error":{"type":"api_error","message":"permission_error"}}',
+      ),
+    ).toBe("auth_permanent");
   });
 });
