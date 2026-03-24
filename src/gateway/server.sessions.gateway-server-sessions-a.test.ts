@@ -1754,6 +1754,7 @@ describe("gateway server sessions", () => {
       waitCallCountAtSnapshotClear.push(embeddedRunMock.waitCalls.length);
     });
 
+    beforeResetHookState.hasBeforeResetHook = true;
     embeddedRunMock.activeIds.add("sess-main");
     embeddedRunMock.waitResults.set("sess-main", false);
 
@@ -1770,6 +1771,7 @@ describe("gateway server sessions", () => {
       ["main", "agent:main:main", "sess-main"],
       "sess-main",
     );
+    expect(beforeResetHookMocks.runBeforeReset).not.toHaveBeenCalled();
     expect(waitCallCountAtSnapshotClear).toEqual([1]);
     expect(browserSessionTabMocks.closeTrackedBrowserTabsForSessions).not.toHaveBeenCalled();
 
