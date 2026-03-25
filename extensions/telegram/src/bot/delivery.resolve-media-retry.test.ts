@@ -41,7 +41,7 @@ const BOT_TOKEN = "tok123";
 function makeCtx(
   mediaField: "voice" | "audio" | "photo" | "video" | "document" | "animation" | "sticker",
   getFile: TelegramContext["getFile"],
-  opts?: { file_name?: string },
+  opts?: { file_name?: string; mime_type?: string },
 ): TelegramContext {
   const msg: Record<string, unknown> = {
     message_id: 1,
@@ -49,7 +49,12 @@ function makeCtx(
     chat: { id: 1, type: "private" },
   };
   if (mediaField === "voice") {
-    msg.voice = { file_id: "v1", duration: 5, file_unique_id: "u1" };
+    msg.voice = {
+      file_id: "v1",
+      duration: 5,
+      file_unique_id: "u1",
+      ...(opts?.mime_type && { mime_type: opts.mime_type }),
+    };
   }
   if (mediaField === "audio") {
     msg.audio = {
@@ -57,6 +62,7 @@ function makeCtx(
       duration: 5,
       file_unique_id: "u2",
       ...(opts?.file_name && { file_name: opts.file_name }),
+      ...(opts?.mime_type && { mime_type: opts.mime_type }),
     };
   }
   if (mediaField === "photo") {
@@ -75,6 +81,7 @@ function makeCtx(
       file_id: "d1",
       file_unique_id: "u4",
       ...(opts?.file_name && { file_name: opts.file_name }),
+      ...(opts?.mime_type && { mime_type: opts.mime_type }),
     };
   }
   if (mediaField === "animation") {
@@ -362,13 +369,18 @@ describe("resolveMedia getFile retry", () => {
   it("uses local absolute file paths directly for media downloads", async () => {
     const getFile = vi.fn().mockResolvedValue({ file_path: "/var/lib/telegram-bot-api/file.pdf" });
 
-    const result = await resolveMedia(makeCtx("document", getFile), MAX_MEDIA_BYTES, BOT_TOKEN);
+    const result = await resolveMedia(
+      makeCtx("document", getFile, { mime_type: "application/pdf" }),
+      MAX_MEDIA_BYTES,
+      BOT_TOKEN,
+    );
 
     expect(fetchRemoteMedia).not.toHaveBeenCalled();
     expect(saveMediaBuffer).not.toHaveBeenCalled();
     expect(result).toEqual(
       expect.objectContaining({
         path: "/var/lib/telegram-bot-api/file.pdf",
+        contentType: "application/pdf",
         placeholder: "<media:document>",
       }),
     );
