@@ -116,12 +116,11 @@ describe("session key canonicalization", () => {
 });
 
 describe("scopedHeartbeatWakeOptions", () => {
-  it("strips sessionKey for cron sessions", () => {
+  it("scopes cron sessions to agent main key instead of transient cron key", () => {
     const result = scopedHeartbeatWakeOptions("agent:main:cron:backup:run:abc", {
       reason: "exec:123:exit",
     });
-    expect(result).toEqual({ reason: "exec:123:exit" });
-    expect("sessionKey" in result).toBe(false);
+    expect(result).toEqual({ reason: "exec:123:exit", sessionKey: "agent:main:main" });
   });
 
   it("preserves sessionKey for regular agent sessions", () => {

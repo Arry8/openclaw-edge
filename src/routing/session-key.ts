@@ -42,6 +42,14 @@ export function scopedHeartbeatWakeOptions<T extends object>(
     return wakeOptions;
   }
   if (isCronSessionKey(sessionKey)) {
+    // Cron sessions are transient — don't scope to the cron session key itself,
+    // but DO scope to the originating agent's main session key to prevent
+    // unscoped wakes from fanning out to all agents.
+    const parsed = parseAgentSessionKey(sessionKey);
+    if (parsed) {
+      const agentMainKey = buildAgentMainSessionKey({ agentId: parsed.agentId });
+      return { ...wakeOptions, sessionKey: agentMainKey };
+    }
     return wakeOptions;
   }
   return { ...wakeOptions, sessionKey };
