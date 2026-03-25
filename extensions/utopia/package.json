@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-utopia",
+  "name": "@openclaw/utopia",
   "version": "2026.3.10",
   "description": "OpenClaw Utopia messenger channel plugin",
   "type": "module",
@@ -15,7 +15,7 @@
       "./index.ts"
     ],
     "channel": {
-      "id": "openclaw-utopia",
+      "id": "utopia",
       "label": "Utopia",
       "selectionLabel": "Utopia (Decentralized Messenger)",
       "docsPath": "/channels/utopia",
@@ -25,7 +25,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "openclaw-utopia",
+      "npmSpec": "utopia",
       "localPath": "extensions/utopia",
       "defaultChoice": "npm"
     }
