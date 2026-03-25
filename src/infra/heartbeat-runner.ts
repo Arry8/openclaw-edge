@@ -601,6 +601,11 @@ export async function runHeartbeatOnce(opts: {
     runStorePath = cronSession.storePath;
   }
 
+  // Only force target-none fallback for actual exec completion events, not all
+  // exec-event wakes (exec.started, exec.denied would otherwise bypass target:none).
+  const hasExecCompletionPending =
+    preflight.shouldInspectPendingEvents &&
+    preflight.pendingEventEntries.some((e) => isExecCompletionEvent(e.text));
   const delivery = resolveHeartbeatDeliveryTarget({
     cfg,
     entry,
@@ -610,7 +615,7 @@ export async function runHeartbeatOnce(opts: {
     // Reusing base-session turnSource routing here can pin later isolated runs
     // to stale channels/threads because that base-session event context remains queued.
     turnSource: useIsolatedSession ? undefined : preflight.turnSourceDeliveryContext,
-    forceLastTargetWhenNone: preflight.isExecEventReason,
+    forceLastTargetWhenNone: hasExecCompletionPending,
   });
   const heartbeatAccountId = heartbeat?.accountId?.trim();
   if (delivery.reason === "unknown-account") {
