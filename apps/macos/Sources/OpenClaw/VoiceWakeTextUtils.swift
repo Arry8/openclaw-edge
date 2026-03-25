@@ -5,26 +5,9 @@ enum VoiceWakeTextUtils {
     private static let whitespaceAndPunctuation = CharacterSet.whitespacesAndNewlines
         .union(.punctuationCharacters)
         .union(.symbols)
-    private static let triggerOnlyLeadInTokens: Set<String> = [
-        "ah",
-        "eh",
-        "er",
-        "erm",
-        "hello",
-        "hey",
-        "hi",
-        "hmm",
-        "mm",
-        "oh",
-        "uh",
-        "um",
-        "yo",
-        "啊",
-        "哎",
-        "嘿",
-        "喂",
-        "嗨",
-        "呀",
+    private static let wakePrefixFillers: Set<String> = [
+        "a", "ah", "eh", "er", "erm", "hey", "hmm", "huh", "mhm", "mm", "oh", "uh", "um",
+        "yo", "呃", "嗯", "啊", "诶", "欸",
     ]
     typealias TrimWake = (String, [String]) -> String
 
@@ -34,15 +17,57 @@ enum VoiceWakeTextUtils {
             .lowercased()
     }
 
-    static func startsWithTrigger(transcript: String, triggers: [String]) -> Bool {
-        self.bestTriggerMatch(transcript: transcript, triggers: triggers)?.startIndex == 0
+    private static func normalizedTriggerTokens(_ trigger: String) -> [String] {
+        trigger
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { self.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
     }
 
-    static func hasTriggerOnlyLeadIn(transcript: String, triggers: [String]) -> Bool {
-        guard let match = self.bestTriggerMatch(transcript: transcript, triggers: triggers) else {
-            return false
+    private static func bestRawTriggerMatch(
+        transcript: String,
+        triggers: [String]) -> (range: Range<String.Index>, normalizedTrigger: String)?
+    {
+        var bestMatch: (range: Range<String.Index>, normalizedTrigger: String, tokenCount: Int)?
+
+        for trigger in triggers {
+            let normalizedTokens = self.normalizedTriggerTokens(trigger)
+            guard !normalizedTokens.isEmpty else { continue }
+            let rawTrigger = trigger.trimmingCharacters(in: self.whitespaceAndPunctuation)
+            guard !rawTrigger.isEmpty,
+                  let range = transcript.range(
+                      of: rawTrigger,
+                      options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive])
+            else { continue }
+
+            let tokenCount = normalizedTokens.count
+            if let bestMatch {
+                if range.lowerBound > bestMatch.range.lowerBound { continue }
+                if range.lowerBound == bestMatch.range.lowerBound && tokenCount <= bestMatch.tokenCount {
+                    continue
+                }
+            }
+
+            bestMatch = (range, normalizedTokens.joined(separator: " "), tokenCount)
         }
-        return match.prefixTokens.allSatisfy { self.triggerOnlyLeadInTokens.contains($0) }
+
+        return bestMatch.map { (range: $0.range, normalizedTrigger: $0.normalizedTrigger) }
+    }
+
+    static func startsWithTrigger(transcript: String, triggers: [String]) -> Bool {
+        let tokens = transcript
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { self.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
+        guard !tokens.isEmpty else { return false }
+        for trigger in triggers {
+            let triggerTokens = self.normalizedTriggerTokens(trigger)
+            guard !triggerTokens.isEmpty, tokens.count >= triggerTokens.count else { continue }
+            if zip(triggerTokens, tokens.prefix(triggerTokens.count)).allSatisfy({ $0 == $1 }) {
+                return true
+            }
+        }
+        return false
     }
 
     static func textOnlyCommand(
@@ -60,61 +85,44 @@ enum VoiceWakeTextUtils {
         return trimmed
     }
 
-    static func matchedTriggerWord(transcript: String, triggers: [String]) -> String? {
-        self.bestTriggerMatch(transcript: transcript, triggers: triggers)?.trigger
+    static func hasOnlyFillerBeforeTrigger(transcript: String, triggers: [String]) -> Bool {
+        guard let match = self.bestRawTriggerMatch(transcript: transcript, triggers: triggers) else { return false }
+        let prefixTokens = transcript[..<match.range.lowerBound]
+            .split(whereSeparator: { $0.isWhitespace || self.whitespaceAndPunctuation.contains($0.unicodeScalars.first!) })
+            .map { self.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
+        return prefixTokens.allSatisfy { self.wakePrefixFillers.contains($0) }
     }
 
-    private static func bestTriggerMatch(
-        transcript: String,
-        triggers: [String]) -> (trigger: String, startIndex: Int, prefixTokens: [String])?
-    {
-        let normalizedTranscript = self.normalizeComparableText(transcript)
-        guard !normalizedTranscript.isEmpty else { return nil }
+    static func matchedTriggerWord(transcript: String, triggers: [String]) -> String? {
+        if let rawMatch = self.bestRawTriggerMatch(transcript: transcript, triggers: triggers) {
+            return rawMatch.normalizedTrigger
+        }
 
-        var best: (trigger: String, startIndex: Int, prefixTokens: [String])?
+        let transcriptTokens = transcript
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { self.normalizeToken(String($0)) }
+            .filter { !$0.isEmpty }
+        guard !transcriptTokens.isEmpty else { return nil }
+
+        var bestStartIndex = Int.max
+        var bestTokenCount = -1
+        var bestTokens: [String]?
 
         for trigger in triggers {
-            let normalizedTrigger = self.normalizeComparableText(trigger)
-            guard !normalizedTrigger.isEmpty else { continue }
-            guard let range = normalizedTranscript.range(of: normalizedTrigger) else { continue }
-            let startIndex = normalizedTranscript.distance(
-                from: normalizedTranscript.startIndex,
-                to: range.lowerBound)
-            let prefixTokens = normalizedTranscript[..<range.lowerBound]
-                .split(separator: " ")
-                .map(String.init)
-            if let best {
-                if startIndex > best.startIndex {
-                    continue
-                }
-                if startIndex == best.startIndex, normalizedTrigger.count <= best.trigger.count {
-                    continue
+            let triggerTokens = self.normalizedTriggerTokens(trigger)
+            guard !triggerTokens.isEmpty, transcriptTokens.count >= triggerTokens.count else { continue }
+            for index in 0...(transcriptTokens.count - triggerTokens.count) {
+                let candidate = transcriptTokens[index..<(index + triggerTokens.count)]
+                guard zip(triggerTokens, candidate).allSatisfy({ $0 == $1 }) else { continue }
+                if index < bestStartIndex || (index == bestStartIndex && triggerTokens.count > bestTokenCount) {
+                    bestStartIndex = index
+                    bestTokenCount = triggerTokens.count
+                    bestTokens = triggerTokens
                 }
             }
-            best = (normalizedTrigger, startIndex, prefixTokens)
         }
 
-        return best
-    }
-
-    private static func normalizeComparableText(_ text: String) -> String {
-        let folded = text.folding(
-            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-            locale: nil)
-        var output = ""
-        output.reserveCapacity(folded.count)
-        var previousWasSeparator = false
-        for scalar in folded.unicodeScalars {
-            if self.whitespaceAndPunctuation.contains(scalar) {
-                if !previousWasSeparator {
-                    output.append(" ")
-                }
-                previousWasSeparator = true
-            } else {
-                output.append(String(scalar))
-                previousWasSeparator = false
-            }
-        }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bestTokens?.joined(separator: " ")
     }
 }

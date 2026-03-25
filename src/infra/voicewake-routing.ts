@@ -24,13 +24,14 @@ export type VoiceWakeRoutingConfig = {
   updatedAtMs: number;
 };
 
+const MAX_VOICEWAKE_ROUTES = 32;
+
 const DEFAULT_ROUTING: VoiceWakeRoutingConfig = {
   version: 1,
   defaultTarget: { mode: "current" },
   routes: [],
   updatedAtMs: 0,
 };
-const MAX_VOICEWAKE_ROUTES = 32;
 
 function resolvePath(baseDir?: string) {
   const root = baseDir ?? resolveStateDir();
@@ -52,15 +53,6 @@ function normalizeOptionalString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function isCanonicalAgentSessionKey(value: string): boolean {
-  const raw = value.trim().toLowerCase();
-  const parts = raw.split(":");
-  if (parts.length < 3 || parts[0] !== "agent") {
-    return false;
-  }
-  return parts.every((part) => part.length > 0);
 }
 
 function normalizeRouteTarget(value: unknown): VoiceWakeRouteTarget | null {
@@ -101,6 +93,14 @@ function normalizeRouteRule(value: unknown): VoiceWakeRouteRule | null {
     return null;
   }
   return { trigger, target };
+}
+
+function isCanonicalAgentSessionKey(value: string): boolean {
+  const trimmed = value.trim();
+  if (classifySessionKeyShape(trimmed) !== "agent") {
+    return false;
+  }
+  return !trimmed.split(":").some((part) => part.length === 0);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -149,10 +149,7 @@ function validateRouteTargetInput(
     return { ok: true };
   }
   if (sessionKey !== undefined) {
-    if (
-      classifySessionKeyShape(sessionKey) !== "agent" ||
-      !isCanonicalAgentSessionKey(sessionKey)
-    ) {
+    if (!isCanonicalAgentSessionKey(sessionKey)) {
       return {
         ok: false,
         message: `${label}.sessionKey must be a canonical agent session key`,
@@ -192,29 +189,30 @@ export function validateVoiceWakeRoutingConfigInput(
     if (rec.routes.length > MAX_VOICEWAKE_ROUTES) {
       return {
         ok: false,
-        message: `config.routes must include at most ${MAX_VOICEWAKE_ROUTES} entries`,
+        message: `config.routes must contain at most ${MAX_VOICEWAKE_ROUTES} entries`,
       };
     }
-    const seenTriggers = new Set<string>();
+    const normalizedTriggers = new Map<string, number>();
     for (const [index, route] of rec.routes.entries()) {
       if (!isPlainObject(route)) {
         return { ok: false, message: `config.routes[${index}] must be an object` };
       }
       const trigger = normalizeOptionalString(route.trigger);
       const normalizedTrigger = trigger ? normalizeVoiceWakeTriggerWord(trigger) : "";
-      if (!normalizedTrigger) {
+      if (!trigger || !normalizedTrigger) {
         return {
           ok: false,
           message: `config.routes[${index}].trigger must be a non-empty string`,
         };
       }
-      if (seenTriggers.has(normalizedTrigger)) {
+      const duplicateIndex = normalizedTriggers.get(normalizedTrigger);
+      if (duplicateIndex !== undefined) {
         return {
           ok: false,
-          message: `config.routes[${index}].trigger duplicates another normalized trigger`,
+          message: `config.routes[${index}].trigger duplicates config.routes[${duplicateIndex}].trigger after normalization`,
         };
       }
-      seenTriggers.add(normalizedTrigger);
+      normalizedTriggers.set(normalizedTrigger, index);
       const validatedTarget = validateRouteTargetInput(
         route.target,
         `config.routes[${index}].target`,
@@ -226,7 +224,6 @@ export function validateVoiceWakeRoutingConfigInput(
   }
   return { ok: true };
 }
-
 export function normalizeVoiceWakeRoutingConfig(input: unknown): VoiceWakeRoutingConfig {
   if (!input || typeof input !== "object") {
     return { ...DEFAULT_ROUTING };
@@ -238,19 +235,10 @@ export function normalizeVoiceWakeRoutingConfig(input: unknown): VoiceWakeRoutin
     updatedAtMs?: unknown;
   };
   const defaultTarget = normalizeRouteTarget(rec.defaultTarget) ?? { mode: "current" as const };
-  const seenTriggers = new Set<string>();
   const routes = Array.isArray(rec.routes)
     ? rec.routes
         .map((entry) => normalizeRouteRule(entry))
         .filter((entry): entry is VoiceWakeRouteRule => Boolean(entry))
-        .filter((entry) => {
-          if (seenTriggers.has(entry.trigger)) {
-            return false;
-          }
-          seenTriggers.add(entry.trigger);
-          return true;
-        })
-        .slice(0, MAX_VOICEWAKE_ROUTES)
     : [];
   const updatedAtMs =
     typeof rec.updatedAtMs === "number" && Number.isFinite(rec.updatedAtMs) && rec.updatedAtMs > 0

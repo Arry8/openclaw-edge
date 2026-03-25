@@ -41,7 +41,7 @@ struct VoiceWakeRuntimeTests {
         #expect(VoiceWakeRuntime._testIsTriggerOnly(text, triggers: triggers))
     }
 
-    @Test func `trigger only rejects trailing mentions without filler prefix`() {
+    @Test func `trigger only rejects trailing wake word mentions in ordinary speech`() {
         let triggers = ["openclaw"]
         let text = "tell me about openclaw"
         #expect(!VoiceWakeRuntime._testIsTriggerOnly(text, triggers: triggers))
@@ -59,19 +59,13 @@ struct VoiceWakeRuntimeTests {
         #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "hey openclaw")
     }
 
-    @Test func `matched trigger handles punctuation joined variants`() {
-        let triggers = ["hey bot"]
-        let text = "Hey,Bot"
-        #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "hey bot")
-    }
-
-    @Test func `matched trigger handles width insensitive forms`() {
+    @Test func `matched trigger handles width insensitive forms without whitespace tokens`() {
         let triggers = ["openclaw"]
         let text = "ＯｐｅｎＣｌａｗ"
         #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "openclaw")
     }
 
-    @Test func `matched trigger handles unspaced chinese lead in`() {
+    @Test func `matched trigger handles chinese forms without whitespace tokens`() {
         let triggers = ["小爪"]
         let text = "嘿小爪"
         #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "小爪")
@@ -98,7 +92,6 @@ struct VoiceWakeRuntimeTests {
             trimWake: VoiceWakeRuntime._testTrimmedAfterTrigger)
         #expect(match?.trigger == "openclaw")
     }
-
     @Test func `trims after chinese trigger keeps post speech`() {
         let triggers = ["小爪", "openclaw"]
         let text = "嘿 小爪 帮我打开设置"

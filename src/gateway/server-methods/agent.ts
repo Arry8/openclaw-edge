@@ -443,15 +443,9 @@ export const agentHandlers: GatewayRequestHandlers = {
 
     const voiceWakeTrigger =
       typeof request.voiceWakeTrigger === "string" ? request.voiceWakeTrigger.trim() : "";
-    const hasExplicitReplyTo =
-      typeof request.replyTo === "string"
-        ? request.replyTo.trim().length > 0
-        : request.replyTo !== undefined && request.replyTo !== null;
-    const hasExplicitTo =
-      typeof request.to === "string"
-        ? request.to.trim().length > 0
-        : request.to !== undefined && request.to !== null;
-    const canAutoRouteVoiceWake = !effectiveAgentId && !hasExplicitReplyTo && !hasExplicitTo;
+    const replyTo = typeof request.replyTo === "string" ? request.replyTo.trim() : "";
+    const to = typeof request.to === "string" ? request.to.trim() : "";
+    const canAutoRouteVoiceWake = !effectiveAgentId && !replyTo && !to;
     const hasVoiceWakeTriggerField = Object.prototype.hasOwnProperty.call(
       request,
       "voiceWakeTrigger",
@@ -476,7 +470,7 @@ export const agentHandlers: GatewayRequestHandlers = {
             );
           }
         } else if ("sessionKey" in route) {
-          if (classifySessionKeyShape(route.sessionKey) === "agent") {
+          if (classifySessionKeyShape(route.sessionKey) !== "malformed_agent") {
             const canonicalRouteSession = loadSessionEntry(route.sessionKey).canonicalKey;
             const routedAgentId = resolveAgentIdFromSessionKey(canonicalRouteSession);
             if (knownAgents.includes(routedAgentId)) {
@@ -489,7 +483,7 @@ export const agentHandlers: GatewayRequestHandlers = {
             }
           } else {
             context.logGateway.warn(
-              `voicewake routing ignored non-canonical sessionKey="${route.sessionKey}" trigger="${voiceWakeTrigger}"`,
+              `voicewake routing ignored malformed sessionKey="${route.sessionKey}" trigger="${voiceWakeTrigger}"`,
             );
           }
         }

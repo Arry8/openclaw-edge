@@ -52,7 +52,7 @@ describe("voicewake routing normalization", () => {
     });
   });
 
-  it("rejects canonical-looking session keys with empty path segments", () => {
+  it("rejects session keys with empty path segments", () => {
     expect(
       validateVoiceWakeRoutingConfigInput({
         routes: [{ trigger: "wake", target: { sessionKey: "agent:main:main:" } }],
@@ -67,27 +67,27 @@ describe("voicewake routing normalization", () => {
     expect(
       validateVoiceWakeRoutingConfigInput({
         routes: [
-          { trigger: "Hey Bot", target: { agentId: "main" } },
-          { trigger: "hey, bot", target: { sessionKey: "agent:main:voice" } },
+          { trigger: "Hey Bot", target: { mode: "current" } },
+          { trigger: "hey, bot", target: { agentId: "main" } },
         ],
       }),
     ).toEqual({
       ok: false,
-      message: "config.routes[1].trigger duplicates another normalized trigger",
+      message: "config.routes[1].trigger duplicates config.routes[0].trigger after normalization",
     });
   });
 
-  it("rejects oversized voicewake route tables", () => {
+  it("rejects oversized route lists", () => {
     expect(
       validateVoiceWakeRoutingConfigInput({
         routes: Array.from({ length: 33 }, (_, index) => ({
           trigger: `wake ${index}`,
-          target: { agentId: "main" },
+          target: { mode: "current" as const },
         })),
       }),
     ).toEqual({
       ok: false,
-      message: "config.routes must include at most 32 entries",
+      message: "config.routes must contain at most 32 entries",
     });
   });
 });

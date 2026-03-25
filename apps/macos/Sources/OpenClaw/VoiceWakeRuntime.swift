@@ -516,9 +516,10 @@ actor VoiceWakeRuntime {
 
     private static func isTriggerOnlyText(transcript: String, triggers: [String]) -> Bool {
         guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
-        guard VoiceWakeTextUtils.hasTriggerOnlyLeadIn(transcript: transcript, triggers: triggers) else {
-            return false
-        }
+        guard
+            VoiceWakeTextUtils.startsWithTrigger(transcript: transcript, triggers: triggers)
+                || VoiceWakeTextUtils.hasOnlyFillerBeforeTrigger(transcript: transcript, triggers: triggers)
+        else { return false }
         return self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
     }
 
@@ -803,14 +804,6 @@ actor VoiceWakeRuntime {
 
     static func _testHasContentAfterTrigger(_ text: String, triggers: [String]) -> Bool {
         !self.trimmedAfterTrigger(text, triggers: triggers).isEmpty
-    }
-
-    static func _testIsTriggerOnly(_ text: String, triggers: [String]) -> Bool {
-        self.isTriggerOnlyText(transcript: text, triggers: triggers)
-    }
-
-    static func _testMatchedTriggerWord(_ text: String, triggers: [String]) -> String? {
-        self.matchedTriggerWordText(transcript: text, triggers: triggers)
     }
 
     static func _testAttributedColor(isFinal: Bool) -> NSColor {
