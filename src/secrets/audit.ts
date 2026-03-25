@@ -299,6 +299,7 @@ function collectAuthStoreSecrets(params: {
           provider: entry.provider,
         });
         trackAuthProviderState(params.collector, entry.provider, entry.kind);
+        continue;
       }
       if (isNonEmptyString(entry.value)) {
         addFinding(params.collector, {
