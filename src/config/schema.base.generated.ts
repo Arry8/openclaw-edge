@@ -13931,6 +13931,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
       help: "When enabled, rewrites the session JSONL file after compaction to remove entries that were summarized. Prevents unbounded file growth in long-running sessions with many compaction cycles. Default: false.",
       tags: ["advanced"],
     },
+    "agents.defaults.compaction.notifyUser": {
+      label: "Compaction Notify User",
+      help: "When enabled, sends a brief compaction notice to the user (e.g. '🧹 Compacting context...') when compaction starts. Disabled by default to keep compaction silent and non-intrusive.",
+      tags: ["advanced"],
+    },
     "agents.defaults.compaction.memoryFlush": {
       label: "Compaction Memory Flush",
       help: "Pre-compaction memory flush settings that run an agentic memory write before heavy compaction. Keep enabled for long sessions so salient context is persisted before aggressive trimming.",
