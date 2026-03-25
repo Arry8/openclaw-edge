@@ -443,7 +443,15 @@ export const agentHandlers: GatewayRequestHandlers = {
 
     const voiceWakeTrigger =
       typeof request.voiceWakeTrigger === "string" ? request.voiceWakeTrigger.trim() : "";
-    const canAutoRouteVoiceWake = !effectiveAgentId && !request.replyTo && !request.to;
+    const hasExplicitReplyTo =
+      typeof request.replyTo === "string"
+        ? request.replyTo.trim().length > 0
+        : request.replyTo !== undefined && request.replyTo !== null;
+    const hasExplicitTo =
+      typeof request.to === "string"
+        ? request.to.trim().length > 0
+        : request.to !== undefined && request.to !== null;
+    const canAutoRouteVoiceWake = !effectiveAgentId && !hasExplicitReplyTo && !hasExplicitTo;
     const hasVoiceWakeTriggerField = Object.prototype.hasOwnProperty.call(
       request,
       "voiceWakeTrigger",

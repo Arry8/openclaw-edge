@@ -41,6 +41,12 @@ struct VoiceWakeRuntimeTests {
         #expect(VoiceWakeRuntime._testIsTriggerOnly(text, triggers: triggers))
     }
 
+    @Test func `trigger only rejects trailing mentions without filler prefix`() {
+        let triggers = ["openclaw"]
+        let text = "tell me about openclaw"
+        #expect(!VoiceWakeRuntime._testIsTriggerOnly(text, triggers: triggers))
+    }
+
     @Test func `matched trigger finds trigger not at transcript start`() {
         let triggers = ["openclaw"]
         let text = "uh openclaw"
@@ -51,6 +57,24 @@ struct VoiceWakeRuntimeTests {
         let triggers = ["openclaw", "hey openclaw"]
         let text = "hey openclaw"
         #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "hey openclaw")
+    }
+
+    @Test func `matched trigger handles punctuation joined variants`() {
+        let triggers = ["hey bot"]
+        let text = "Hey,Bot"
+        #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "hey bot")
+    }
+
+    @Test func `matched trigger handles width insensitive forms`() {
+        let triggers = ["openclaw"]
+        let text = "ＯｐｅｎＣｌａｗ"
+        #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "openclaw")
+    }
+
+    @Test func `matched trigger handles unspaced chinese lead in`() {
+        let triggers = ["小爪"]
+        let text = "嘿小爪"
+        #expect(VoiceWakeRuntime._testMatchedTriggerWord(text, triggers: triggers) == "小爪")
     }
 
     @Test func `text only fallback populates matched trigger`() {

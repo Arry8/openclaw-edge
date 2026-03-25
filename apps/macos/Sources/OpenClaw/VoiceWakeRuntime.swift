@@ -516,6 +516,9 @@ actor VoiceWakeRuntime {
 
     private static func isTriggerOnlyText(transcript: String, triggers: [String]) -> Bool {
         guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
+        guard VoiceWakeTextUtils.hasTriggerOnlyLeadIn(transcript: transcript, triggers: triggers) else {
+            return false
+        }
         return self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
     }
 
