@@ -467,8 +467,8 @@ export async function runAgentTurnWithFallback(params: {
                         // Only notify the user if explicitly opted in via config.
                         // Default is silent (notifyUser: false) to avoid spamming.
                         const notifyUser =
-                          params.followupRun.run.config.agents?.defaults?.compaction
-                            ?.notifyUser === true;
+                          params.followupRun.run.config.agents?.defaults?.compaction?.notifyUser ===
+                          true;
                         if (notifyUser) {
                           // Send directly via opts.onBlockReply (bypassing the
                           // pipeline) so the notice does not cause final payloads
