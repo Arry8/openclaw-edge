@@ -135,6 +135,16 @@ describe("scopedHeartbeatWakeOptions", () => {
     expect(result).toEqual({ reason: "test" });
     expect("sessionKey" in result).toBe(false);
   });
+
+  it("strips sessionKey for global-scope sessions to preserve unscoped wake behavior", () => {
+    // In session.scope = "global" setups, resolveMainSessionKeyFromConfig() returns "global".
+    // Passing "global" as sessionKey into requestHeartbeatNow would create a targeted wake
+    // that can fail to resolve, breaking hook-triggered heartbeats. scopedHeartbeatWakeOptions
+    // must strip it to preserve the old unscoped behavior.
+    const result = scopedHeartbeatWakeOptions("global", { reason: "hook:wake" });
+    expect(result).toEqual({ reason: "hook:wake" });
+    expect("sessionKey" in result).toBe(false);
+  });
 });
 
 describe("resolveEventSessionKey", () => {

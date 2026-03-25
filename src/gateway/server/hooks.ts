@@ -7,6 +7,7 @@ import type { CronJob } from "../../cron/types.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import { scopedHeartbeatWakeOptions } from "../../routing/session-key.js";
 import {
   normalizeHookDispatchSessionKey,
   type HookAgentDispatchPayload,
@@ -37,7 +38,7 @@ export function createGatewayHooksRequestHandler(params: {
     const sessionKey = resolveMainSessionKeyFromConfig();
     enqueueSystemEvent(value.text, { sessionKey });
     if (value.mode === "now") {
-      requestHeartbeatNow({ reason: "hook:wake", sessionKey });
+      requestHeartbeatNow(scopedHeartbeatWakeOptions(sessionKey, { reason: "hook:wake" }));
     }
   };
 
@@ -95,7 +96,9 @@ export function createGatewayHooksRequestHandler(params: {
             sessionKey: mainSessionKey,
           });
           if (value.wakeMode === "now") {
-            requestHeartbeatNow({ reason: `hook:${jobId}`, sessionKey: mainSessionKey });
+            requestHeartbeatNow(
+              scopedHeartbeatWakeOptions(mainSessionKey, { reason: `hook:${jobId}` }),
+            );
           }
         }
       } catch (err) {
@@ -104,7 +107,9 @@ export function createGatewayHooksRequestHandler(params: {
           sessionKey: mainSessionKey,
         });
         if (value.wakeMode === "now") {
-          requestHeartbeatNow({ reason: `hook:${jobId}:error`, sessionKey: mainSessionKey });
+          requestHeartbeatNow(
+            scopedHeartbeatWakeOptions(mainSessionKey, { reason: `hook:${jobId}:error` }),
+          );
         }
       }
     })();
