@@ -493,7 +493,7 @@ export function handleMessageEnd(
     } else if (ctx.state.abortedByTextRepetitionGuard && ctx.blockChunker?.hasBuffered()) {
       // Guard fired — discard buffered repetitive content instead of emitting it.
       ctx.blockChunker.reset();
-    } else if (text !== ctx.state.lastBlockReplyText) {
+    } else if (text !== ctx.state.lastBlockReplyText && !ctx.state.abortedByTextRepetitionGuard) {
       // Check for duplicates before emitting (same logic as emitBlockChunk).
       const normalizedText = normalizeTextForComparison(text);
       if (
