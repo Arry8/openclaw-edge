@@ -92,7 +92,7 @@ describe("describeImageWithModel", () => {
       }),
       discoverModels: discoverModelsMock,
     }));
-    vi.doMock("../../agents/pi-embedded-runner/model.js", () => ({
+    vi.doMock("../agents/pi-embedded-runner/model.js", () => ({
       resolveModelWithRegistry: resolveModelWithRegistryMock,
     }));
     ({ describeImageWithModel } = await import("./image.js"));
