@@ -1,46 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createDiscordOutboundHoisted,
+  createDiscordSendModuleMock,
+  createDiscordThreadBindingsModuleMock,
+  resetDiscordOutboundMocks,
+} from "./outbound-adapter.test-harness.js";
 
-const hoisted = vi.hoisted(() => ({
-  sendDiscordComponentMessageMock: vi.fn(),
-  sendMessageDiscordMock: vi.fn(),
-  sendPollDiscordMock: vi.fn(),
-  sendWebhookMessageDiscordMock: vi.fn(),
-  getThreadBindingManagerMock: vi.fn(),
-}));
+const hoisted = createDiscordOutboundHoisted();
 
-vi.mock("./send.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./send.js")>();
-  return {
-    ...actual,
-    sendDiscordComponentMessage: (...args: unknown[]) =>
-      hoisted.sendDiscordComponentMessageMock(...args),
-    sendMessageDiscord: (...args: unknown[]) => hoisted.sendMessageDiscordMock(...args),
-    sendPollDiscord: (...args: unknown[]) => hoisted.sendPollDiscordMock(...args),
-    sendWebhookMessageDiscord: (...args: unknown[]) =>
-      hoisted.sendWebhookMessageDiscordMock(...args),
-  };
-});
+const sendModule = await import("./send.js");
+const mockedSendModule = await createDiscordSendModuleMock(hoisted, async () => sendModule);
+vi.spyOn(sendModule, "sendMessageDiscord").mockImplementation(mockedSendModule.sendMessageDiscord);
+vi.spyOn(sendModule, "sendDiscordComponentMessage").mockImplementation(
+  mockedSendModule.sendDiscordComponentMessage,
+);
+vi.spyOn(sendModule, "sendPollDiscord").mockImplementation(mockedSendModule.sendPollDiscord);
+vi.spyOn(sendModule, "sendWebhookMessageDiscord").mockImplementation(
+  mockedSendModule.sendWebhookMessageDiscord,
+);
 
-vi.mock("./monitor/thread-bindings.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./monitor/thread-bindings.js")>();
-  return {
-    ...actual,
-    getThreadBindingManager: (...args: unknown[]) => hoisted.getThreadBindingManagerMock(...args),
-  };
-});
+const threadBindingsModule = await import("./monitor/thread-bindings.js");
+const mockedThreadBindingsModule = await createDiscordThreadBindingsModuleMock(
+  hoisted,
+  async () => threadBindingsModule,
+);
+vi.spyOn(threadBindingsModule, "getThreadBindingManager").mockImplementation(
+  mockedThreadBindingsModule.getThreadBindingManager,
+);
 
 const { discordOutbound } = await import("./outbound-adapter.js");
 
 describe("discordOutbound shared interactive ordering", () => {
   beforeEach(() => {
-    hoisted.sendDiscordComponentMessageMock.mockReset().mockResolvedValue({
+    resetDiscordOutboundMocks(hoisted);
+    hoisted.sendDiscordComponentMessageMock.mockResolvedValue({
       messageId: "msg-1",
       channelId: "123456",
     });
-    hoisted.sendMessageDiscordMock.mockReset();
-    hoisted.sendPollDiscordMock.mockReset();
-    hoisted.sendWebhookMessageDiscordMock.mockReset();
-    hoisted.getThreadBindingManagerMock.mockReset().mockReturnValue(null);
   });
 
   it("keeps shared text blocks in authored order without hoisting fallback text", async () => {
