@@ -165,6 +165,65 @@ describe("hooks", () => {
       await triggerInternalHook(event);
       expect(injectedHandler).toHaveBeenCalledWith(event);
     });
+
+    it("should prevent re-entrant triggers for the same event", async () => {
+      const callCount = { value: 0 };
+      const reentrantHandler = vi.fn(async () => {
+        callCount.value++;
+        // Simulate a re-entrant trigger (e.g., embedded agent turn re-triggering the same hook)
+        if (callCount.value < 5) {
+          const event = createInternalHookEvent("command", "new", "test-session");
+          await triggerInternalHook(event);
+        }
+      });
+
+      registerInternalHook("command:new", reentrantHandler);
+
+      const event = createInternalHookEvent("command", "new", "test-session");
+      await triggerInternalHook(event);
+
+      // The handler should only be called once; re-entrant calls are blocked
+      expect(reentrantHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it("should allow sequential triggers after the first completes", async () => {
+      const handler = vi.fn();
+      registerInternalHook("command:new", handler);
+
+      const event = createInternalHookEvent("command", "new", "test-session");
+      await triggerInternalHook(event);
+      await triggerInternalHook(event);
+
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it("should not block different session keys", async () => {
+      const handler = vi.fn();
+      registerInternalHook("command:new", handler);
+
+      const event1 = createInternalHookEvent("command", "new", "session-a");
+      const event2 = createInternalHookEvent("command", "new", "session-b");
+
+      // Trigger both concurrently
+      await Promise.all([triggerInternalHook(event1), triggerInternalHook(event2)]);
+
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it("should not block different event types", async () => {
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+      registerInternalHook("command:new", handler1);
+      registerInternalHook("command:reset", handler2);
+
+      const event1 = createInternalHookEvent("command", "new", "test-session");
+      const event2 = createInternalHookEvent("command", "reset", "test-session");
+
+      await Promise.all([triggerInternalHook(event1), triggerInternalHook(event2)]);
+
+      expect(handler1).toHaveBeenCalledTimes(1);
+      expect(handler2).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("createInternalHookEvent", () => {

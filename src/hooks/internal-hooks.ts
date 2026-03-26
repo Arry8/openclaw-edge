@@ -275,6 +275,24 @@ export function hasInternalHookListeners(type: InternalHookEventType, action: st
 }
 
 /**
+ * Re-entrant guard for triggerInternalHook.
+ *
+ * Prevents infinite loops when a handler registers NEW handlers for the same
+ * event (e.g., plugin hooks that load the plugin during an embedded agent turn,
+ * which registers additional command:new handlers). Without this guard, each
+ * subsequent call to triggerInternalHook picks up the expanded handler list,
+ * causing exponential amplification.
+ *
+ * Uses a global singleton so the guard works correctly even when the bundler
+ * emits multiple copies of this module (bundle splitting).
+ */
+const TRIGGER_GUARD_KEY = Symbol.for("openclaw.internalHookTriggerGuard");
+const triggerGuard = resolveGlobalSingleton<Map<string, boolean>>(
+  TRIGGER_GUARD_KEY,
+  () => new Map<string, boolean>(),
+);
+
+/**
  * Trigger a hook event
  *
  * Calls all handlers registered for:
@@ -284,6 +302,10 @@ export function hasInternalHookListeners(type: InternalHookEventType, action: st
  * Handlers are called in registration order. Errors are caught and logged
  * but don't prevent other handlers from running.
  *
+ * A re-entrant guard prevents the same `type:action:sessionKey` combination
+ * from being triggered concurrently (e.g., when a handler spawns an embedded
+ * agent turn that triggers the same hook again).
+ *
  * @param event - The event to trigger
  */
 export async function triggerInternalHook(event: InternalHookEvent): Promise<void> {
@@ -291,17 +313,27 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
     return;
   }
 
-  const typeHandlers = handlers.get(event.type) ?? [];
-  const specificHandlers = handlers.get(`${event.type}:${event.action}`) ?? [];
-  const allHandlers = [...typeHandlers, ...specificHandlers];
+  const guardKey = `${event.type}:${event.action}:${event.sessionKey}`;
+  if (triggerGuard.get(guardKey)) {
+    log.debug(`Skipping re-entrant trigger for ${guardKey}`);
+    return;
+  }
+  triggerGuard.set(guardKey, true);
+  try {
+    const typeHandlers = handlers.get(event.type) ?? [];
+    const specificHandlers = handlers.get(`${event.type}:${event.action}`) ?? [];
+    const allHandlers = [...typeHandlers, ...specificHandlers];
 
-  for (const handler of allHandlers) {
-    try {
-      await handler(event);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
+    for (const handler of allHandlers) {
+      try {
+        await handler(event);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
+      }
     }
+  } finally {
+    triggerGuard.delete(guardKey);
   }
 }
 
