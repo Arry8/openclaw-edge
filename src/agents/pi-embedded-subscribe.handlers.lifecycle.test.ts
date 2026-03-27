@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { handleAgentEnd } from "./pi-embedded-subscribe.handlers.lifecycle.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
@@ -7,18 +7,16 @@ vi.mock("../infra/agent-events.js", () => ({
   emitAgentEvent: vi.fn(),
 }));
 
-let _globalHookRunner: {
-  hasHooks: ReturnType<typeof vi.fn>;
-  runAgentError: ReturnType<typeof vi.fn>;
-} | null = null;
-
 vi.mock("../plugins/hook-runner-global.js", () => ({
-  getGlobalHookRunner: () => _globalHookRunner,
+  getGlobalHookRunner: () => null,
 }));
 
 function createContext(
   lastAssistant: unknown,
-  overrides?: { onAgentEvent?: (event: unknown) => void },
+  overrides?: {
+    onAgentEvent?: (event: unknown) => void;
+    hookRunner?: EmbeddedPiSubscribeContext["hookRunner"];
+  },
 ): EmbeddedPiSubscribeContext {
   const onBlockReply = vi.fn();
   return {
@@ -29,6 +27,7 @@ function createContext(
       onAgentEvent: overrides?.onAgentEvent,
       onBlockReply,
     },
+    hookRunner: overrides?.hookRunner,
     state: {
       lastAssistant: lastAssistant as EmbeddedPiSubscribeContext["state"]["lastAssistant"],
       pendingCompactionRetry: 0,
@@ -190,16 +189,8 @@ describe("handleAgentEnd", () => {
   });
 
   describe("agent_error hook", () => {
-    afterEach(() => {
-      _globalHookRunner = null;
-    });
-
     it("broadcasts hook replacement message instead of raw error", async () => {
       const onAgentEvent = vi.fn();
-      _globalHookRunner = {
-        hasHooks: vi.fn(() => true),
-        runAgentError: vi.fn(async () => ({ message: "⚠️ Me he quedado sin tokens" })),
-      };
       const ctx = createContext(
         {
           role: "assistant",
@@ -207,7 +198,13 @@ describe("handleAgentEnd", () => {
           errorMessage: "403: Key limit exceeded",
           content: [{ type: "text", text: "" }],
         },
-        { onAgentEvent },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => ({ message: "⚠️ Me he quedado sin tokens" })),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
       );
 
       await handleAgentEnd(ctx);
@@ -223,10 +220,6 @@ describe("handleAgentEnd", () => {
 
     it("broadcasts original error when hook returns no message", async () => {
       const onAgentEvent = vi.fn();
-      _globalHookRunner = {
-        hasHooks: vi.fn(() => true),
-        runAgentError: vi.fn(async () => undefined),
-      };
       const ctx = createContext(
         {
           role: "assistant",
@@ -234,7 +227,13 @@ describe("handleAgentEnd", () => {
           errorMessage: "connection refused",
           content: [{ type: "text", text: "" }],
         },
-        { onAgentEvent },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => undefined),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
       );
 
       await handleAgentEnd(ctx);
@@ -251,12 +250,6 @@ describe("handleAgentEnd", () => {
 
     it("broadcasts original error when hook throws", async () => {
       const onAgentEvent = vi.fn();
-      _globalHookRunner = {
-        hasHooks: vi.fn(() => true),
-        runAgentError: vi.fn(async () => {
-          throw new Error("hook failure");
-        }),
-      };
       const ctx = createContext(
         {
           role: "assistant",
@@ -264,7 +257,15 @@ describe("handleAgentEnd", () => {
           errorMessage: "connection refused",
           content: [{ type: "text", text: "" }],
         },
-        { onAgentEvent },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => {
+              throw new Error("hook failure");
+            }),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
       );
 
       await handleAgentEnd(ctx);
