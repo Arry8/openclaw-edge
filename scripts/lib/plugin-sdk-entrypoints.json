@@ -1,7 +1,6 @@
 [
   "index",
   "core",
-  "ollama-setup",
   "provider-setup",
   "sandbox",
   "self-hosted-provider-setup",
@@ -111,6 +110,7 @@
   "msteams",
   "nextcloud-talk",
   "nostr",
+  "ollama",
   "provider-auth",
   "provider-auth-api-key",
   "provider-auth-result",
@@ -152,5 +152,6 @@
   "whatsapp-core",
   "whatsapp-shared",
   "zalo",
-  "zalouser"
+  "zalouser",
+  "zod"
 ]

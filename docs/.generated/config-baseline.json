@@ -5298,7 +5298,7 @@
         "advanced"
       ],
       "label": "Agent ACP Harness Agent",
-      "help": "Optional ACP harness agent id to use for this OpenClaw agent (for example codex, claude).",
+      "help": "Optional ACP harness agent id to use for this OpenClaw agent (for example codex, claude, cursor, gemini, openclaw).",
       "hasChildren": false
     },
     {
@@ -8401,7 +8401,6 @@
     {
       "path": "channels",
       "kind": "core",
-      "type": "object",
       "required": false,
       "deprecated": false,
       "sensitive": false,
@@ -8773,8 +8772,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -9320,8 +9324,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -11106,8 +11115,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -11369,8 +11383,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -11739,8 +11758,14 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "media",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -14376,8 +14401,14 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "media",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -14527,8 +14558,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -14757,8 +14793,12 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -15356,8 +15396,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -15482,8 +15527,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -15774,8 +15824,12 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -16366,8 +16420,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -16975,8 +17034,12 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -17034,8 +17097,12 @@
       "type": "object",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -17648,8 +17715,12 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -17707,8 +17778,12 @@
       "type": "object",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -19782,8 +19857,13 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -19832,8 +19912,13 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -20594,8 +20679,13 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -20732,8 +20822,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "access",
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -20742,8 +20838,13 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -20941,8 +21042,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security",
+        "storage"
+      ],
       "hasChildren": false
     },
     {
@@ -20994,8 +21101,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "access",
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -21004,8 +21117,13 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -21213,8 +21331,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security",
+        "storage"
+      ],
       "hasChildren": false
     },
     {
@@ -21258,8 +21382,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "access",
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -21399,13 +21529,7 @@
       "required": false,
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "access",
-        "channels",
-        "network"
-      ],
-      "label": "Matrix Allow Bot Messages",
-      "help": "Allow messages from other configured Matrix bot accounts to trigger replies (default: false). Set \"mentions\" to only accept bot messages that visibly mention this bot.",
+      "tags": [],
       "hasChildren": false
     },
     {
@@ -21907,8 +22031,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -22452,8 +22581,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -22927,12 +23061,7 @@
       "required": false,
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "channels",
-        "network"
-      ],
-      "label": "Mattermost Base URL",
-      "help": "Base URL for your Mattermost server (e.g., https://chat.example.com).",
+      "tags": [],
       "hasChildren": false
     },
     {
@@ -23001,8 +23130,6 @@
         "network",
         "security"
       ],
-      "label": "Mattermost Bot Token",
-      "help": "Bot token from Mattermost System Console -> Integrations -> Bot Accounts.",
       "hasChildren": true
     },
     {
@@ -23067,12 +23194,7 @@
       ],
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "channels",
-        "network"
-      ],
-      "label": "Mattermost Chat Mode",
-      "help": "Reply to channel messages on mention (\"oncall\"), on trigger chars (\">\" or \"!\") (\"onchar\"), or on every message (\"onmessage\").",
+      "tags": [],
       "hasChildren": false
     },
     {
@@ -23152,12 +23274,7 @@
       "required": false,
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "channels",
-        "network"
-      ],
-      "label": "Mattermost Config Writes",
-      "help": "Allow Mattermost to write config in response to channel events/commands (default: true).",
+      "tags": [],
       "hasChildren": false
     },
     {
@@ -23378,12 +23495,7 @@
       "required": false,
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "channels",
-        "network"
-      ],
-      "label": "Mattermost Onchar Prefixes",
-      "help": "Trigger prefixes for onchar mode (default: [\">\", \"!\"]).",
+      "tags": [],
       "hasChildren": true
     },
     {
@@ -23418,12 +23530,7 @@
       "required": false,
       "deprecated": false,
       "sensitive": false,
-      "tags": [
-        "channels",
-        "network"
-      ],
-      "label": "Mattermost Require Mention",
-      "help": "Require @mention in channels before responding (default: true).",
+      "tags": [],
       "hasChildren": false
     },
     {
@@ -23500,8 +23607,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -24517,8 +24629,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -24640,8 +24757,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -24680,8 +24802,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security",
+        "storage"
+      ],
       "hasChildren": false
     },
     {
@@ -25115,8 +25243,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -25238,8 +25371,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -25278,8 +25416,14 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security",
+        "storage"
+      ],
       "hasChildren": false
     },
     {
@@ -27637,8 +27781,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -27730,8 +27879,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -28580,8 +28734,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -28771,8 +28930,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -29980,8 +30144,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -30571,8 +30740,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -32271,8 +32445,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -34416,8 +34595,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -36724,8 +36908,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -36916,8 +37105,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -36992,8 +37186,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -37194,8 +37393,13 @@
       ],
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "channels",
+        "network",
+        "security"
+      ],
       "hasChildren": true
     },
     {
@@ -52422,6 +52626,24 @@
       "hasChildren": false
     },
     {
+      "path": "plugins.entries.openshell.config.mode",
+      "kind": "plugin",
+      "type": "string",
+      "required": false,
+      "enumValues": [
+        "mirror",
+        "remote"
+      ],
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "advanced"
+      ],
+      "label": "Mode",
+      "help": "Sandbox mode. Use mirror for the default local-workspace flow or remote for a fully remote workspace.",
+      "hasChildren": false
+    },
+    {
       "path": "plugins.entries.openshell.config.policy",
       "kind": "plugin",
       "type": "string",
@@ -55103,8 +55325,11 @@
       "type": "string",
       "required": false,
       "deprecated": false,
-      "sensitive": false,
-      "tags": [],
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "security"
+      ],
       "hasChildren": false
     },
     {
@@ -59813,7 +60038,7 @@
         "tools"
       ],
       "label": "Enable apply_patch",
-      "help": "Experimental. Enables apply_patch for OpenAI models when allowed by tool policy.",
+      "help": "Enable or disable apply_patch for OpenAI and OpenAI Codex models when allowed by tool policy (default: true).",
       "hasChildren": false
     },
     {
