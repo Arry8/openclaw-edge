@@ -226,6 +226,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "tools.web.fetch.enabled": "Enable Web Fetch Tool",
   "tools.web.fetch.maxChars": "Web Fetch Max Chars",
   "tools.web.fetch.maxCharsCap": "Web Fetch Hard Max Chars",
+  "tools.web.fetch.maxResponseBytes": "Web Fetch Max Download Size (bytes)",
   "tools.web.fetch.timeoutSeconds": "Web Fetch Timeout (sec)",
   "tools.web.fetch.cacheTtlMinutes": "Web Fetch Cache TTL (min)",
   "tools.web.fetch.maxRedirects": "Web Fetch Max Redirects",
@@ -696,6 +697,9 @@ export const FIELD_LABELS: Record<string, string> = {
   "messages.inbound.debounceMs": "Inbound Message Debounce (ms)",
   "messages.inbound.byChannel": "Inbound Debounce by Channel (ms)",
   "messages.tts": "Message Text-to-Speech",
+  "messages.tts.providers": "TTS Provider Settings",
+  "messages.tts.providers.*": "TTS Provider Config",
+  "messages.tts.providers.*.apiKey": "TTS Provider API Key", // pragma: allowlist secret
   "talk.provider": "Talk Active Provider",
   "talk.providers": "Talk Provider Settings",
   "talk.providers.*.voiceId": "Talk Provider Voice ID",
