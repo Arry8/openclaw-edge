@@ -1,10 +1,12 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createProviderApiKeyAuthMethod } from "openclaw/plugin-sdk/provider-auth-api-key";
 import { ensureModelAllowlistEntry } from "openclaw/plugin-sdk/provider-onboard";
+import { createVolcengineCacheWrapper } from "./cache.js";
 import { buildDoubaoCodingProvider, buildDoubaoProvider } from "./provider-catalog.js";
 
 const PROVIDER_ID = "volcengine";
 const VOLCENGINE_DEFAULT_MODEL_REF = "volcengine-plan/ark-code-latest";
+const VOLCENGINE_PROVIDER_ALIASES = ["volcengine-plan"];
 
 export default definePluginEntry({
   id: PROVIDER_ID,
@@ -15,6 +17,7 @@ export default definePluginEntry({
       id: PROVIDER_ID,
       label: "Volcengine",
       docsPath: "/concepts/model-providers#volcano-engine-doubao",
+      aliases: VOLCENGINE_PROVIDER_ALIASES,
       envVars: ["VOLCANO_ENGINE_API_KEY"],
       auth: [
         createProviderApiKeyAuthMethod({
@@ -57,6 +60,7 @@ export default definePluginEntry({
           };
         },
       },
+      wrapStreamFn: (ctx) => createVolcengineCacheWrapper(ctx.streamFn, ctx.extraParams),
     });
   },
 });
