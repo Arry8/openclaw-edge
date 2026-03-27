@@ -20,9 +20,14 @@ function extractRelevantSnippet(
   text: string,
   query: string,
   maxChars: number,
-): { snippet: string; offsetLines: number; snippetLines: number } {
+): { snippet: string; offsetLines: number; snippetLines: number; anchorFound: boolean } {
   if (text.length <= maxChars) {
-    return { snippet: text, offsetLines: 0, snippetLines: (text.match(/\n/g) || []).length };
+    return {
+      snippet: text,
+      offsetLines: 0,
+      snippetLines: (text.match(/\n/g) || []).length,
+      anchorFound: true,
+    };
   }
 
   // Use the same tokenizer as the search engine so CJK terms and
@@ -48,6 +53,7 @@ function extractRelevantSnippet(
       snippet: fallback,
       offsetLines: 0,
       snippetLines: (fallback.match(/\n/g) || []).length,
+      anchorFound: false,
     };
   }
 
@@ -77,7 +83,7 @@ function extractRelevantSnippet(
 
   const snippet = truncateUtf16Safe(text.substring(windowStart, windowEnd), maxChars);
   const snippetLines = (snippet.match(/\n/g) || []).length;
-  return { snippet, offsetLines, snippetLines };
+  return { snippet, offsetLines, snippetLines, anchorFound: true };
 }
 
 export type SearchSource = string;
@@ -183,17 +189,24 @@ export async function searchVector(params: {
       dist: number;
     }>;
     return rows.map((row) => {
-      const { snippet, offsetLines, snippetLines } = extractRelevantSnippet(
+      const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
         row.text,
         params.queryText,
         params.snippetMaxChars,
       );
       const adjustedStart = row.start_line + offsetLines;
+      // When no anchor was found the snippet is a fallback window; preserve
+      // the chunk's full line span so semantic matches later in the text are
+      // not excluded.  Always clamp to the chunk's original end_line to
+      // guard against synthetic newlines inflating the count.
+      const endLine = anchorFound
+        ? Math.min(adjustedStart + snippetLines, row.end_line)
+        : row.end_line;
       return {
         id: row.id,
         path: row.path,
         startLine: adjustedStart,
-        endLine: adjustedStart + snippetLines,
+        endLine,
         score: 1 - row.dist,
         snippet,
         source: row.source,
@@ -216,17 +229,20 @@ export async function searchVector(params: {
     .toSorted((a, b) => b.score - a.score)
     .slice(0, params.limit)
     .map((entry) => {
-      const { snippet, offsetLines, snippetLines } = extractRelevantSnippet(
+      const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
         entry.chunk.text,
         params.queryText,
         params.snippetMaxChars,
       );
       const adjustedStart = entry.chunk.startLine + offsetLines;
+      const endLine = anchorFound
+        ? Math.min(adjustedStart + snippetLines, entry.chunk.endLine)
+        : entry.chunk.endLine;
       return {
         id: entry.chunk.id,
         path: entry.chunk.path,
         startLine: adjustedStart,
-        endLine: adjustedStart + snippetLines,
+        endLine,
         score: entry.score,
         snippet,
         source: entry.chunk.source,
@@ -336,17 +352,20 @@ export async function searchKeyword(params: {
 
   return rows.map((row) => {
     const textScore = plan.matchQuery ? params.bm25RankToScore(row.rank) : 1;
-    const { snippet, offsetLines, snippetLines } = extractRelevantSnippet(
+    const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
       row.text,
       params.query,
       params.snippetMaxChars,
     );
     const adjustedStart = row.start_line + offsetLines;
+    const endLine = anchorFound
+      ? Math.min(adjustedStart + snippetLines, row.end_line)
+      : row.end_line;
     return {
       id: row.id,
       path: row.path,
       startLine: adjustedStart,
-      endLine: adjustedStart + snippetLines,
+      endLine,
       score: textScore,
       textScore,
       snippet,
