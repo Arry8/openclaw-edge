@@ -4,6 +4,7 @@ import {
   getPendingUpload,
   getPendingUploadCount,
   removePendingUpload,
+  setPendingUploadActivityId,
   storePendingUpload,
 } from "./pending-uploads.js";
 
@@ -126,6 +127,25 @@ describe("pending-uploads", () => {
       // TTL timers should have been cleared — no side-effects after advance
       vi.advanceTimersByTime(5 * 60 * 1000 + 1);
       expect(getPendingUploadCount()).toBe(0);
+    });
+  });
+
+  describe("setPendingUploadActivityId", () => {
+    it("sets the consentCardActivityId on an existing upload", () => {
+      const id = storePendingUpload({
+        buffer: Buffer.from("data"),
+        filename: "file.txt",
+        conversationId: "conv-1",
+      });
+
+      expect(getPendingUpload(id)?.consentCardActivityId).toBeUndefined();
+
+      setPendingUploadActivityId(id, "activity-xyz");
+      expect(getPendingUpload(id)?.consentCardActivityId).toBe("activity-xyz");
+    });
+
+    it("is a no-op for unknown upload id", () => {
+      expect(() => setPendingUploadActivityId("non-existent", "activity-xyz")).not.toThrow();
     });
   });
 

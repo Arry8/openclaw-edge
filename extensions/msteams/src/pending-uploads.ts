@@ -92,6 +92,17 @@ export function removePendingUpload(id?: string): void {
 }
 
 /**
+ * Set the consent card activity ID on an existing pending upload.
+ * Called after the FileConsentCard is sent and we know its activity ID.
+ */
+export function setPendingUploadActivityId(uploadId: string, activityId: string): void {
+  const entry = pendingUploads.get(uploadId);
+  if (entry) {
+    entry.consentCardActivityId = activityId;
+  }
+}
+
+/**
  * Get the count of pending uploads (for monitoring/debugging).
  */
 export function getPendingUploadCount(): number {

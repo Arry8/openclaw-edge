@@ -186,6 +186,34 @@ describe("msteams file consent invoke authz", () => {
     );
   });
 
+  it("does not send file info card via sendActivity when updateActivity succeeds", async () => {
+    const { handler, context, sendActivity, updateActivity } = createConsentInvokeHarness({
+      invokeConversationId: "19:victim@thread.v2;messageid=abc123",
+      action: "accept",
+      consentCardActivityId: "consent-card-activity-id-happy",
+    });
+
+    await handler.run?.(context);
+
+    // updateActivity should replace the consent card in-place
+    expect(updateActivity).toHaveBeenCalledTimes(1);
+
+    // sendActivity should only be called once for the invokeResponse, NOT for the file info card
+    expect(sendActivity).toHaveBeenCalledTimes(1);
+    expect(sendActivity).toHaveBeenCalledWith(expect.objectContaining({ type: "invokeResponse" }));
+
+    // Explicitly verify no file info card was sent via sendActivity
+    for (const call of sendActivity.mock.calls) {
+      const arg = call[0] as Record<string, unknown>;
+      if (typeof arg === "object" && arg !== null && "attachments" in arg) {
+        const attachments = arg.attachments as Array<{ contentType?: string }>;
+        for (const att of attachments) {
+          expect(att.contentType).not.toBe("application/vnd.microsoft.teams.card.file.info");
+        }
+      }
+    }
+  });
+
   it("does not call updateActivity when no consentCardActivityId is stored", async () => {
     const { handler, context, updateActivity } = createConsentInvokeHarness({
       invokeConversationId: "19:victim@thread.v2;messageid=abc123",
