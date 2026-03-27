@@ -194,14 +194,19 @@ export async function searchVector(params: {
         params.queryText,
         params.snippetMaxChars,
       );
-      const adjustedStart = row.start_line + offsetLines;
+      // Session chunks use sparse remapped line numbers (from JSONL lineMap)
+      // that are not contiguous, so applying a text-based offset can produce
+      // synthetic line numbers that don't exist.  Keep original range for sessions.
+      const isSessionSource = row.source === "sessions";
+      const adjustedStart = isSessionSource ? row.start_line : row.start_line + offsetLines;
       // When no anchor was found the snippet is a fallback window; preserve
       // the chunk's full line span so semantic matches later in the text are
       // not excluded.  Always clamp to the chunk's original end_line to
       // guard against synthetic newlines inflating the count.
-      const endLine = anchorFound
-        ? Math.min(adjustedStart + snippetLines, row.end_line)
-        : row.end_line;
+      const endLine =
+        !isSessionSource && anchorFound
+          ? Math.min(adjustedStart + snippetLines, row.end_line)
+          : row.end_line;
       return {
         id: row.id,
         path: row.path,
@@ -234,10 +239,15 @@ export async function searchVector(params: {
         params.queryText,
         params.snippetMaxChars,
       );
-      const adjustedStart = entry.chunk.startLine + offsetLines;
-      const endLine = anchorFound
-        ? Math.min(adjustedStart + snippetLines, entry.chunk.endLine)
-        : entry.chunk.endLine;
+      // Session chunks use sparse remapped line numbers; skip offset adjustment.
+      const isSessionSource = entry.chunk.source === "sessions";
+      const adjustedStart = isSessionSource
+        ? entry.chunk.startLine
+        : entry.chunk.startLine + offsetLines;
+      const endLine =
+        !isSessionSource && anchorFound
+          ? Math.min(adjustedStart + snippetLines, entry.chunk.endLine)
+          : entry.chunk.endLine;
       return {
         id: entry.chunk.id,
         path: entry.chunk.path,
@@ -357,10 +367,13 @@ export async function searchKeyword(params: {
       params.query,
       params.snippetMaxChars,
     );
-    const adjustedStart = row.start_line + offsetLines;
-    const endLine = anchorFound
-      ? Math.min(adjustedStart + snippetLines, row.end_line)
-      : row.end_line;
+    // Session chunks use sparse remapped line numbers; skip offset adjustment.
+    const isSessionSource = row.source === "sessions";
+    const adjustedStart = isSessionSource ? row.start_line : row.start_line + offsetLines;
+    const endLine =
+      !isSessionSource && anchorFound
+        ? Math.min(adjustedStart + snippetLines, row.end_line)
+        : row.end_line;
     return {
       id: row.id,
       path: row.path,
