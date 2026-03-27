@@ -143,6 +143,9 @@ describe("Feishu bot menu handler", () => {
       expect.objectContaining({
         to: "user:ou_user1",
         card: expect.objectContaining({
+          config: expect.objectContaining({
+            enable_forward: true,
+          }),
           header: expect.objectContaining({
             title: expect.objectContaining({ content: "Quick actions" }),
           }),
