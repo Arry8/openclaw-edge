@@ -178,8 +178,12 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
             sessionKey: pendingWake.sessionKey,
           });
           const lastRan = lastRanAtByTarget.get(targetKey);
-          if (lastRan != null && Date.now() - lastRan < SUBAGENT_WAKE_COOLDOWN_MS) {
-            continue;
+          if (lastRan != null) {
+            if (Date.now() - lastRan < SUBAGENT_WAKE_COOLDOWN_MS) {
+              continue; // still within cooldown, suppress
+            }
+            // Expired — evict the stale entry immediately
+            lastRanAtByTarget.delete(targetKey);
           }
         }
 
@@ -252,6 +256,9 @@ export function setHeartbeatWakeHandler(next: HeartbeatWakeHandler | null): () =
     // `scheduled === true` can cause spurious immediate re-runs.
     running = false;
     scheduled = false;
+    // Clear subagent cooldown state so wakes are not suppressed in the new
+    // lifecycle based on activity from before the handler was replaced.
+    lastRanAtByTarget.clear();
   }
   if (handler && pendingWakes.size > 0) {
     schedule(DEFAULT_COALESCE_MS, "normal");
