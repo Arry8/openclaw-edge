@@ -85,10 +85,8 @@ export {
 export {
   createTelegramThreadBindingManager,
   getTelegramThreadBindingManager,
+  resetTelegramThreadBindingsForTests,
   setTelegramThreadBindingIdleTimeoutBySessionKey,
   setTelegramThreadBindingMaxAgeBySessionKey,
 } from "./src/thread-bindings.js";
-export { __testing as telegramThreadBindingTesting } from "./src/thread-bindings.js";
 export { resolveTelegramToken } from "./src/token.js";
-
-export const telegramSessionBindingAdapterChannels = ["telegram"] as const;
