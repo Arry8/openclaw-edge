@@ -16,6 +16,14 @@ export {
   normalizeOptionalAccountId,
 } from "./account-id.js";
 
+/**
+ * Hardcoded default agent ID. Prefer `resolveDefaultAgentId(cfg)` from
+ * `agents/agent-scope.ts` at call sites that have access to config — it
+ * respects `agents.defaultAgentId`, `OPENCLAW_DEFAULT_AGENT_ID`, and the
+ * `agents.list` default flag.
+ *
+ * @deprecated Use `resolveDefaultAgentId(cfg)` instead where config is available.
+ */
 export const DEFAULT_AGENT_ID = "main";
 export const DEFAULT_MAIN_KEY = "main";
 export type SessionKeyShape = "missing" | "agent" | "legacy_or_alias" | "malformed_agent";

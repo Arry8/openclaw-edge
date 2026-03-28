@@ -5,6 +5,7 @@ import { TranscribeAudioSchema } from "./zod-schema.core.js";
 
 export const AgentsSchema = z
   .object({
+    defaultAgentId: z.string().optional(),
     defaults: z.lazy(() => AgentDefaultsSchema).optional(),
     list: z.array(AgentEntrySchema).optional(),
   })
