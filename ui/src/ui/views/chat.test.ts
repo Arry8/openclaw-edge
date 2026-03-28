@@ -851,6 +851,49 @@ describe("chat view", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends provider-qualified model value for non-Anthropic models (#50115)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+      } satisfies Partial<Response>),
+    );
+    const nonAnthropicCatalog: ModelCatalogEntry[] = [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", provider: "anthropic" },
+      { id: "grok-4-1-fast", name: "Grok 4.1 Fast", provider: "xai" },
+      { id: "gemma3:1b", name: "gemma3:1b", provider: "ollama" },
+    ];
+    const { state, request } = createChatHeaderState({ models: nonAnthropicCatalog });
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const modelSelect = container.querySelector<HTMLSelectElement>(
+      'select[data-chat-model-select="true"]',
+    );
+    expect(modelSelect).not.toBeNull();
+
+    // Verify option values include provider prefix for all models
+    const optionValues = Array.from(modelSelect?.querySelectorAll("option") ?? []).map(
+      (option) => option.value,
+    );
+    expect(optionValues).toContain("xai/grok-4-1-fast");
+    expect(optionValues).toContain("ollama/gemma3:1b");
+    expect(optionValues).toContain("anthropic/claude-sonnet-4-6");
+
+    // Select a non-Anthropic model and verify the qualified value is sent
+    modelSelect!.value = "xai/grok-4-1-fast";
+    modelSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushTasks();
+
+    expect(request).toHaveBeenCalledWith("sessions.patch", {
+      key: "main",
+      model: "xai/grok-4-1-fast",
+    });
+    expect(state.sessionsResult?.sessions[0]?.modelProvider).toBe("xai");
+    expect(state.sessionsResult?.sessions[0]?.model).toBe("grok-4-1-fast");
+    vi.unstubAllGlobals();
+  });
+
   it("clears the session model override back to the default model", async () => {
     vi.stubGlobal(
       "fetch",
