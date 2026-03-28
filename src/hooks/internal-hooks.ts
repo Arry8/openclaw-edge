@@ -10,6 +10,7 @@ import type { CliDeps } from "../cli/deps.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { SessionsPatchParams } from "../gateway/protocol/index.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
@@ -277,19 +278,22 @@ export function hasInternalHookListeners(type: InternalHookEventType, action: st
 /**
  * Re-entrant guard for triggerInternalHook.
  *
- * Prevents infinite loops when a handler registers NEW handlers for the same
- * event (e.g., plugin hooks that load the plugin during an embedded agent turn,
- * which registers additional command:new handlers). Without this guard, each
- * subsequent call to triggerInternalHook picks up the expanded handler list,
- * causing exponential amplification.
+ * Prevents infinite loops when a handler re-triggers the same hook event
+ * (e.g., a command:new handler that spawns an embedded agent turn which
+ * triggers command:new again). Without this guard, each subsequent call
+ * picks up the expanded handler list, causing exponential amplification.
+ *
+ * Uses AsyncLocalStorage so the guard only blocks calls within the same
+ * async call chain (true re-entrancy), while allowing independent concurrent
+ * triggers for the same key to proceed without being silently dropped.
  *
  * Uses a global singleton so the guard works correctly even when the bundler
  * emits multiple copies of this module (bundle splitting).
  */
 const TRIGGER_GUARD_KEY = Symbol.for("openclaw.internalHookTriggerGuard");
-const triggerGuard = resolveGlobalSingleton<Map<string, boolean>>(
+const reentrantGuard = resolveGlobalSingleton<AsyncLocalStorage<Set<string>>>(
   TRIGGER_GUARD_KEY,
-  () => new Map<string, boolean>(),
+  () => new AsyncLocalStorage<Set<string>>(),
 );
 
 /**
@@ -303,8 +307,9 @@ const triggerGuard = resolveGlobalSingleton<Map<string, boolean>>(
  * but don't prevent other handlers from running.
  *
  * A re-entrant guard prevents the same `type:action:sessionKey` combination
- * from being triggered concurrently (e.g., when a handler spawns an embedded
- * agent turn that triggers the same hook again).
+ * from being triggered within the same async call chain (e.g., when a handler
+ * spawns an embedded agent turn that triggers the same hook again). Independent
+ * concurrent triggers for the same key are NOT blocked.
  *
  * @param event - The event to trigger
  */
@@ -313,13 +318,25 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
     return;
   }
 
-  const guardKey = `${event.type}:${event.action}:${event.sessionKey}`;
-  if (triggerGuard.get(guardKey)) {
-    log.debug(`Skipping re-entrant trigger for ${guardKey}`);
+  // Use \0 as separator — cannot appear in type/action/sessionKey values,
+  // eliminating the collision risk noted in review (P2).
+  const guardKey = `${event.type}\0${event.action}\0${event.sessionKey}`;
+
+  // Check for re-entrancy within the current async call chain only.
+  // AsyncLocalStorage.getStore() returns undefined for independent concurrent
+  // calls, so those are never blocked (P1 fix).
+  const currentGuards = reentrantGuard.getStore();
+  if (currentGuards?.has(guardKey)) {
+    log.debug(`Skipping re-entrant trigger for ${event.type}:${event.action}:${event.sessionKey}`);
     return;
   }
-  triggerGuard.set(guardKey, true);
-  try {
+
+  // Create a new store inheriting any existing guards from the parent context,
+  // plus our new key. This propagates through the entire async call chain.
+  const store = new Set(currentGuards);
+  store.add(guardKey);
+
+  await reentrantGuard.run(store, async () => {
     const typeHandlers = handlers.get(event.type) ?? [];
     const specificHandlers = handlers.get(`${event.type}:${event.action}`) ?? [];
     const allHandlers = [...typeHandlers, ...specificHandlers];
@@ -332,9 +349,7 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
         log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
       }
     }
-  } finally {
-    triggerGuard.delete(guardKey);
-  }
+  });
 }
 
 /**
