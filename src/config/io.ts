@@ -950,6 +950,14 @@ function sameFingerprint(
   );
 }
 
+// In-process dedup for clobbered config snapshots. When writeConfigHealthState
+// fails silently (e.g. during doctor --fix migration), the on-disk
+// lastObservedSuspiciousSignature is never persisted, causing every subsequent
+// readConfigFile to generate a new timestamped .clobbered.* backup file.
+// This Set tracks signatures already observed in the current process lifetime,
+// covering both the async and sync code paths.
+const observedSuspiciousSignatures = new Set<string>();
+
 async function observeConfigSnapshot(
   deps: Required<ConfigIoDeps>,
   snapshot: ConfigFileSnapshot,
@@ -1006,6 +1014,13 @@ async function observeConfigSnapshot(
   if (entry.lastObservedSuspiciousSignature === suspiciousSignature) {
     return;
   }
+  // In-process dedup: if we already observed this signature in this process
+  // (writeConfigHealthState may have failed silently), skip the snapshot.
+  const dedupKey = `${snapshot.path}:${suspiciousSignature}`;
+  if (observedSuspiciousSignatures.has(dedupKey)) {
+    return;
+  }
+  observedSuspiciousSignatures.add(dedupKey);
 
   const backup =
     (backupBaseline?.hash ? backupBaseline : null) ??
@@ -1132,6 +1147,12 @@ function observeConfigSnapshotSync(
   if (entry.lastObservedSuspiciousSignature === suspiciousSignature) {
     return;
   }
+  // In-process dedup (sync path): same guard as the async path above.
+  const dedupKey = `${snapshot.path}:${suspiciousSignature}`;
+  if (observedSuspiciousSignatures.has(dedupKey)) {
+    return;
+  }
+  observedSuspiciousSignatures.add(dedupKey);
 
   const backup =
     (backupBaseline?.hash ? backupBaseline : null) ??
