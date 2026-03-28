@@ -45,6 +45,14 @@ let timerKind: WakeTimerKind | null = null;
 
 const DEFAULT_COALESCE_MS = 250;
 const DEFAULT_RETRY_MS = 1_000;
+/**
+ * Cooldown period for subagent stream wakes (acp:spawn:*). After a handler
+ * fires for a given wake target, subsequent subagent wakes within this window
+ * are dropped to prevent cascading heartbeat polls when multiple subagent
+ * completions arrive in quick succession.
+ */
+const SUBAGENT_WAKE_COOLDOWN_MS = 60_000;
+const lastRanAtByTarget = new Map<string, number>();
 const REASON_PRIORITY = {
   RETRY: 0,
   INTERVAL: 1,
@@ -64,6 +72,10 @@ function resolveReasonPriority(reason: string): number {
     return REASON_PRIORITY.ACTION;
   }
   return REASON_PRIORITY.DEFAULT;
+}
+
+function isSubagentStreamWake(reason: string): boolean {
+  return reason.startsWith("acp:spawn:");
 }
 
 function normalizeWakeReason(reason?: string): string {
@@ -157,12 +169,33 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
     running = true;
     try {
       for (const pendingWake of pendingBatch) {
+        // Subagent stream wakes (acp:spawn:*) are subject to a cooldown to
+        // prevent cascading heartbeat polls when multiple subagent completions
+        // fire in rapid succession (issue #56049).
+        if (isSubagentStreamWake(pendingWake.reason)) {
+          const targetKey = getWakeTargetKey({
+            agentId: pendingWake.agentId,
+            sessionKey: pendingWake.sessionKey,
+          });
+          const lastRan = lastRanAtByTarget.get(targetKey);
+          if (lastRan != null && Date.now() - lastRan < SUBAGENT_WAKE_COOLDOWN_MS) {
+            continue;
+          }
+        }
+
         const wakeOpts = {
           reason: pendingWake.reason ?? undefined,
           ...(pendingWake.agentId ? { agentId: pendingWake.agentId } : {}),
           ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
         };
         const res = await active(wakeOpts);
+        if (res.status === "ran") {
+          const targetKey = getWakeTargetKey({
+            agentId: pendingWake.agentId,
+            sessionKey: pendingWake.sessionKey,
+          });
+          lastRanAtByTarget.set(targetKey, Date.now());
+        }
         if (res.status === "skipped" && res.reason === "requests-in-flight") {
           // The main lane is busy; retry this wake target soon.
           queuePendingWakeReason({
@@ -265,6 +298,7 @@ export function resetHeartbeatWakeStateForTests() {
   timerDueAt = null;
   timerKind = null;
   pendingWakes.clear();
+  lastRanAtByTarget.clear();
   scheduled = false;
   running = false;
   handlerGeneration += 1;
