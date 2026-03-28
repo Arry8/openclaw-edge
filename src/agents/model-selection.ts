@@ -6,15 +6,17 @@ import {
   toAgentModelListLike,
 } from "../config/model-input.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { resolveRuntimeCliBackends } from "../plugins/cli-backends.runtime.js";
+import { normalizeProviderModelIdWithPlugin } from "../plugins/provider-runtime.js";
 import { sanitizeForLog } from "../terminal/ansi.js";
 import {
   resolveAgentConfig,
   resolveAgentEffectiveModelPrimary,
   resolveAgentModelFallbacksOverride,
 } from "./agent-scope.js";
+import { resolveConfiguredProviderFallback } from "./configured-provider-fallback.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import type { ModelCatalogEntry } from "./model-catalog.js";
-import { normalizeGoogleModelId, normalizeXaiModelId } from "./model-id-normalization.js";
 import { splitTrailingAuthProfile } from "./model-ref-profile.js";
 import {
   findNormalizedProviderKey,
@@ -80,10 +82,9 @@ export {
 
 export function isCliProvider(provider: string, cfg?: OpenClawConfig): boolean {
   const normalized = normalizeProviderId(provider);
-  if (normalized === "claude-cli") {
-    return true;
-  }
-  if (normalized === "codex-cli") {
+  if (
+    resolveRuntimeCliBackends().some((backend) => normalizeProviderId(backend.id) === normalized)
+  ) {
     return true;
   }
   const backends = cfg?.agents?.defaults?.cliBackends ?? {};
@@ -123,12 +124,6 @@ function normalizeProviderModelId(provider: string, model: string): string {
       return `anthropic/${normalizedAnthropicModel}`;
     }
   }
-  if (provider === "google" || provider === "google-vertex") {
-    return normalizeGoogleModelId(model);
-  }
-  if (provider === "xai") {
-    return normalizeXaiModelId(model);
-  }
   // OpenRouter-native models (e.g. "openrouter/aurora-alpha") need the full
   // "openrouter/<name>" as the model ID sent to the API. Models from external
   // providers already contain a slash (e.g. "anthropic/claude-sonnet-4-5") and
@@ -136,7 +131,15 @@ function normalizeProviderModelId(provider: string, model: string): string {
   if (provider === "openrouter" && !model.includes("/")) {
     return `openrouter/${model}`;
   }
-  return model;
+  return (
+    normalizeProviderModelIdWithPlugin({
+      provider,
+      context: {
+        provider,
+        modelId: model,
+      },
+    }) ?? model
+  );
 }
 
 export function normalizeModelRef(provider: string, model: string): ModelRef {
@@ -323,23 +326,12 @@ export function resolveConfiguredModelRef(params: {
   // is actually available. If it isn't but other providers are configured, prefer
   // the first configured provider's first model to avoid reporting a stale default
   // from a removed provider. (See #38880)
-  const configuredProviders = params.cfg.models?.providers;
-  if (configuredProviders && typeof configuredProviders === "object") {
-    const hasDefaultProvider = Boolean(configuredProviders[params.defaultProvider]);
-    if (!hasDefaultProvider) {
-      const availableProvider = Object.entries(configuredProviders).find(
-        ([, providerCfg]) =>
-          providerCfg &&
-          Array.isArray(providerCfg.models) &&
-          providerCfg.models.length > 0 &&
-          providerCfg.models[0]?.id,
-      );
-      if (availableProvider) {
-        const [providerName, providerCfg] = availableProvider;
-        const firstModel = providerCfg.models[0];
-        return { provider: providerName, model: firstModel.id };
-      }
-    }
+  const fallbackProvider = resolveConfiguredProviderFallback({
+    cfg: params.cfg,
+    defaultProvider: params.defaultProvider,
+  });
+  if (fallbackProvider) {
+    return fallbackProvider;
   }
   return { provider: params.defaultProvider, model: params.defaultModel };
 }
