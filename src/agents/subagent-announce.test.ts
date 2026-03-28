@@ -259,6 +259,47 @@ describe("subagent announce seam flow", () => {
     expect(agentSpy).not.toHaveBeenCalled();
   });
 
+  it("inherits session lastChannel/lastTo for completion announce when requesterOrigin lacks to", async () => {
+    loadSessionStoreMock.mockImplementation(() => ({
+      "agent:main:main": {
+        sessionId: "session-tg-group",
+        updatedAt: Date.now(),
+        lastChannel: "telegram",
+        lastTo: "-1001234567890",
+        lastAccountId: "bot:123",
+      },
+    }));
+
+    ({ runSubagentAnnounceFlow } = await import("./subagent-announce.js"));
+    const didAnnounce = await runSubagentAnnounceFlow({
+      childSessionKey: "agent:main:subagent:tg",
+      childRunId: "run-tg-group-completion",
+      requesterSessionKey: "agent:main:main",
+      requesterOrigin: { channel: "telegram" },
+      requesterDisplayKey: "main",
+      task: "telegram group task",
+      timeoutMs: 10,
+      cleanup: "keep",
+      waitForCompletion: false,
+      startedAt: 10,
+      endedAt: 20,
+      outcome: { status: "ok" },
+      roundOneReply: "task done",
+      expectsCompletionMessage: true,
+    });
+
+    expect(didAnnounce).toBe(true);
+    expect(agentSpy).toHaveBeenCalledTimes(1);
+    const agentCall = agentSpy.mock.calls[0]?.[0];
+    expect(agentCall?.params).toEqual(
+      expect.objectContaining({
+        deliver: true,
+        channel: "telegram",
+        to: "-1001234567890",
+      }),
+    );
+  });
+
   it("keeps completion direct announce session-only when requester origin is webchat", async () => {
     const didAnnounce = await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:webchat",
@@ -334,4 +375,5 @@ describe("subagent announce seam flow", () => {
     expect(params.accountId).toBeUndefined();
     expect(params.threadId).toBeUndefined();
   });
+
 });
