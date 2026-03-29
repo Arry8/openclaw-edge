@@ -227,42 +227,24 @@ describe("ensureGlobalUndiciEnvProxyDispatcher", () => {
 });
 
 describe("module-level autoSelectFamily bootstrap", () => {
-  it("sets net-level autoSelectFamily defaults on module load", async () => {
+  it("bumps autoSelectFamily attempt timeout from Node default on module load", async () => {
     vi.resetModules();
-    getDefaultAutoSelectFamily.mockReturnValue(true); // Node 22 default
     getDefaultAutoSelectFamilyAttemptTimeout.mockReturnValue(250); // Node 22 default
-    setDefaultAutoSelectFamily.mockClear();
     setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
 
     await import("./undici-global-dispatcher.js");
 
-    expect(setDefaultAutoSelectFamily).toHaveBeenCalledWith(true);
     expect(setDefaultAutoSelectFamilyAttemptTimeout).toHaveBeenCalledWith(300);
   });
 
   it("does not override explicitly configured timeout", async () => {
     vi.resetModules();
-    getDefaultAutoSelectFamily.mockReturnValue(true);
     getDefaultAutoSelectFamilyAttemptTimeout.mockReturnValue(500); // operator set via CLI
-    setDefaultAutoSelectFamily.mockClear();
     setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
 
     await import("./undici-global-dispatcher.js");
 
-    expect(setDefaultAutoSelectFamily).toHaveBeenCalledWith(true);
     expect(setDefaultAutoSelectFamilyAttemptTimeout).not.toHaveBeenCalled();
-  });
-
-  it("does not override when autoSelectFamily was explicitly disabled", async () => {
-    vi.resetModules();
-    getDefaultAutoSelectFamily.mockReturnValue(false); // operator used --no-network-family-autoselection
-    getDefaultAutoSelectFamilyAttemptTimeout.mockReturnValue(250);
-    setDefaultAutoSelectFamily.mockClear();
-    setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
-
-    await import("./undici-global-dispatcher.js");
-
-    expect(setDefaultAutoSelectFamily).not.toHaveBeenCalled();
   });
 });
 

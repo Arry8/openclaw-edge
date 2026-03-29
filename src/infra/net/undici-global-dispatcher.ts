@@ -16,15 +16,9 @@ try {
   const NODE_DEFAULT_AUTO_SELECT_FAMILY = true; // Node.js 22+ default
   const NODE_DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT = 250; // Node.js 22+ default
 
-  if (
-    typeof net.getDefaultAutoSelectFamily === "function" &&
-    typeof net.setDefaultAutoSelectFamily === "function" &&
-    net.getDefaultAutoSelectFamily() === NODE_DEFAULT_AUTO_SELECT_FAMILY
-  ) {
-    // Value matches Node default — safe to keep enabled (no-op on Node 22+ but ensures
-    // the setting is active on older versions where the default was false).
-    net.setDefaultAutoSelectFamily(true);
-  }
+  // autoSelectFamily: on Node 22+ this defaults to true, so no action needed.
+  // On older versions (default false), we intentionally do not override — operators
+  // on those versions should opt in explicitly via CLI flags if desired.
   if (
     typeof net.getDefaultAutoSelectFamilyAttemptTimeout === "function" &&
     typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function" &&
