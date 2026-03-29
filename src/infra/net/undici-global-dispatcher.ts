@@ -10,11 +10,28 @@ const AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS = 300;
 // NOT use the undici global dispatcher) also gets IPv4/IPv6 happy-eyeballs fallback.
 // Without this, built-in fetch on IPv6-broken networks hangs until timeout because
 // it resolves AAAA records first and never falls back to A records.
+// Respects explicit runtime overrides: only sets values when they match Node.js defaults,
+// meaning no CLI flag (--no-network-family-autoselection, etc.) has changed them.
 try {
-  if (typeof net.setDefaultAutoSelectFamily === "function") {
+  const NODE_DEFAULT_AUTO_SELECT_FAMILY = true; // Node.js 22+ default
+  const NODE_DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT = 250; // Node.js 22+ default
+
+  if (
+    typeof net.getDefaultAutoSelectFamily === "function" &&
+    typeof net.setDefaultAutoSelectFamily === "function" &&
+    net.getDefaultAutoSelectFamily() === NODE_DEFAULT_AUTO_SELECT_FAMILY
+  ) {
+    // Value matches Node default — safe to keep enabled (no-op on Node 22+ but ensures
+    // the setting is active on older versions where the default was false).
     net.setDefaultAutoSelectFamily(true);
   }
-  if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function") {
+  if (
+    typeof net.getDefaultAutoSelectFamilyAttemptTimeout === "function" &&
+    typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function" &&
+    net.getDefaultAutoSelectFamilyAttemptTimeout() === NODE_DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT
+  ) {
+    // Default 250ms timeout — bump to our preferred value for faster fallback.
+    // If the operator explicitly set a different timeout via CLI, we respect it.
     net.setDefaultAutoSelectFamilyAttemptTimeout(AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS);
   }
 } catch {
