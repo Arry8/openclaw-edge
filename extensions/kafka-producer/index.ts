@@ -107,8 +107,11 @@ export default definePluginEntry({
         }
       })();
 
-      await startupPromise;
-      startupPromise = null;
+      try {
+        await startupPromise;
+      } finally {
+        startupPromise = null;
+      }
     });
 
     api.on("gateway_stop", async () => {

@@ -41,6 +41,13 @@ export function parseSessionKey(sessionKey: string): {
     return { agentId, channel: null, accountId: null, peerKind: null, peerId: null };
   }
 
+  // Subagent keys (agent:<id>:subagent:<uuid>) and other non-channel
+  // keys don't follow the channel/account/peer pattern. Only parse
+  // channel routing fields from keys that start with a known channel token.
+  if (rest[0] === "subagent" || rest[0] === "cron" || rest[0] === "acp") {
+    return { agentId, channel: null, accountId: null, peerKind: null, peerId: null };
+  }
+
   // Scan from the right — peer kind is always near the end of the key.
   // Scanning from the left would misparse accountIds that happen to
   // match a peer kind name (e.g. "direct" as an account name).
