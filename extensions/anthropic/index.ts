@@ -353,6 +353,7 @@ export default definePluginEntry({
     api.registerProvider({
       id: PROVIDER_ID,
       label: "Anthropic",
+      hookAliases: ["claude-cli"],
       docsPath: "/providers/models",
       envVars: ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
       deprecatedProfileIds: [CLAUDE_CLI_PROFILE_ID],
