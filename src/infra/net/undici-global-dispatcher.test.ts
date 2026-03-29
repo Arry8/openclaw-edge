@@ -9,6 +9,8 @@ const {
   setCurrentDispatcher,
   getCurrentDispatcher,
   getDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamilyAttemptTimeout,
 } = vi.hoisted(() => {
   class Agent {
     constructor(public readonly options?: Record<string, unknown>) {}
@@ -33,6 +35,8 @@ const {
   };
   const getCurrentDispatcher = () => currentDispatcher;
   const getDefaultAutoSelectFamily = vi.fn(() => undefined as boolean | undefined);
+  const setDefaultAutoSelectFamily = vi.fn();
+  const setDefaultAutoSelectFamilyAttemptTimeout = vi.fn();
 
   return {
     Agent,
@@ -43,6 +47,8 @@ const {
     setCurrentDispatcher,
     getCurrentDispatcher,
     getDefaultAutoSelectFamily,
+    setDefaultAutoSelectFamily,
+    setDefaultAutoSelectFamilyAttemptTimeout,
   };
 });
 
@@ -57,6 +63,8 @@ vi.mock("undici", () => ({
 
 vi.mock("node:net", () => ({
   getDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamilyAttemptTimeout,
 }));
 
 vi.mock("./proxy-env.js", () => ({
@@ -211,6 +219,19 @@ describe("ensureGlobalUndiciEnvProxyDispatcher", () => {
 
     expect(setGlobalDispatcher).toHaveBeenCalledTimes(2);
     expect(getCurrentDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
+  });
+});
+
+describe("module-level autoSelectFamily bootstrap", () => {
+  it("sets net-level autoSelectFamily defaults on module load", async () => {
+    vi.resetModules();
+    setDefaultAutoSelectFamily.mockClear();
+    setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
+
+    await import("./undici-global-dispatcher.js");
+
+    expect(setDefaultAutoSelectFamily).toHaveBeenCalledWith(true);
+    expect(setDefaultAutoSelectFamilyAttemptTimeout).toHaveBeenCalledWith(300);
   });
 });
 

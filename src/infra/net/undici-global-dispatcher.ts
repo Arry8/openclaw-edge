@@ -6,6 +6,21 @@ export const DEFAULT_UNDICI_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 
 const AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS = 300;
 
+// Enable autoSelectFamily at the net level so Node.js built-in fetch (which does
+// NOT use the undici global dispatcher) also gets IPv4/IPv6 happy-eyeballs fallback.
+// Without this, built-in fetch on IPv6-broken networks hangs until timeout because
+// it resolves AAAA records first and never falls back to A records.
+try {
+  if (typeof net.setDefaultAutoSelectFamily === "function") {
+    net.setDefaultAutoSelectFamily(true);
+  }
+  if (typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function") {
+    net.setDefaultAutoSelectFamilyAttemptTimeout(AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS);
+  }
+} catch {
+  // Best-effort; older Node versions may not support these APIs.
+}
+
 let lastAppliedTimeoutKey: string | null = null;
 let lastAppliedProxyBootstrap = false;
 
