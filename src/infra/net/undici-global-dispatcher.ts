@@ -13,19 +13,17 @@ const AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS = 300;
 // Respects explicit runtime overrides: only sets values when they match Node.js defaults,
 // meaning no CLI flag (--no-network-family-autoselection, etc.) has changed them.
 try {
-  const NODE_DEFAULT_AUTO_SELECT_FAMILY = true; // Node.js 22+ default
-  const NODE_DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT = 250; // Node.js 22+ default
-
   // autoSelectFamily: on Node 22+ this defaults to true, so no action needed.
   // On older versions (default false), we intentionally do not override — operators
   // on those versions should opt in explicitly via CLI flags if desired.
+  //
+  // Timeout: only bump from Node's default 250ms to our preferred value.
+  // If the operator explicitly set a different timeout via CLI, we respect it.
   if (
     typeof net.getDefaultAutoSelectFamilyAttemptTimeout === "function" &&
     typeof net.setDefaultAutoSelectFamilyAttemptTimeout === "function" &&
-    net.getDefaultAutoSelectFamilyAttemptTimeout() === NODE_DEFAULT_AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT
+    net.getDefaultAutoSelectFamilyAttemptTimeout() === 250 // Node.js 22+ default
   ) {
-    // Default 250ms timeout — bump to our preferred value for faster fallback.
-    // If the operator explicitly set a different timeout via CLI, we respect it.
     net.setDefaultAutoSelectFamilyAttemptTimeout(AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS);
   }
 } catch {
