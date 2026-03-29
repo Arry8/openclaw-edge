@@ -1,6 +1,5 @@
 import os from "node:os";
 import {
-  createSyntheticSourceInfo,
   formatSkillsForPrompt,
   type Skill,
 } from "@mariozechner/pi-coding-agent";
@@ -19,12 +18,8 @@ function makeSkill(name: string, desc = "A skill", filePath = `/skills/${name}/S
     description: desc,
     filePath,
     baseDir: `/skills/${name}`,
-    sourceInfo: createSyntheticSourceInfo(filePath, {
-      source: "workspace",
-      baseDir: `/skills/${name}`,
-    }),
     disableModelInvocation: false,
-  };
+  }as unknown as Skill;
 }
 
 function makeEntry(skill: Skill): SkillEntry {

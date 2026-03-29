@@ -440,8 +440,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
 
   const spec = findInstallSpec(entry, params.installId);
   const warnings = await collectSkillInstallScanWarnings(entry);
-  const skillSource = entry.skill.sourceInfo?.source?.trim() || "unknown";
-
+const skillSource = (entry.skill as { sourceInfo?: { source?: string } }).sourceInfo?.source?.trim() || "unknown";
   // Warn when install is triggered from a non-bundled source.
   // Workspace/project/personal agent skills can contain attacker-controlled metadata.
   const trustedInstallSources = new Set(["openclaw-bundled", "openclaw-managed", "openclaw-extra"]);
