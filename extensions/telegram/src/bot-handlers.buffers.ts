@@ -142,6 +142,10 @@ export function createTelegramInboundBufferRuntime(params: {
     if (!replyMessage || !hasInboundMedia(replyMessage)) {
       return [];
     }
+    // Don't inject media from bot's own messages (issue #57278)
+    if (typeof ctx.me?.id === "number" && replyMessage.from?.id === ctx.me.id) {
+      return [];
+    }
     const replyFileId = resolveInboundMediaFileId(replyMessage);
     if (!replyFileId) {
       return [];
