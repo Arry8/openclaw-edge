@@ -23,21 +23,41 @@ export type HeartbeatSummary = {
 
 const DEFAULT_HEARTBEAT_TARGET = "none";
 
-function hasExplicitHeartbeatAgents(cfg: OpenClawConfig) {
-  const list = cfg.agents?.list ?? [];
-  return list.some((entry) => Boolean(entry?.heartbeat));
-}
-
 export function isHeartbeatEnabledForAgent(cfg: OpenClawConfig, agentId?: string): boolean {
   const resolvedAgentId = normalizeAgentId(agentId ?? resolveDefaultAgentId(cfg));
   const list = cfg.agents?.list ?? [];
-  const hasExplicit = hasExplicitHeartbeatAgents(cfg);
-  if (hasExplicit) {
-    return list.some(
-      (entry) => Boolean(entry?.heartbeat) && normalizeAgentId(entry?.id) === resolvedAgentId,
-    );
+  const defaults = cfg.agents?.defaults?.heartbeat;
+  const defaultAgentId = resolveDefaultAgentId(cfg);
+
+  // Find the agent entry for this agent ID
+  const agentEntry = list.find((entry) => normalizeAgentId(entry?.id) === resolvedAgentId);
+
+  // If agent is not in the list, only enable if it's the default agent
+  if (!agentEntry) {
+    // Default agent without explicit list entry
+    if (resolvedAgentId === defaultAgentId) {
+      // Default agent: enabled if defaults exist, or by legacy behavior
+      return Boolean(defaults) || list.length === 0;
+    }
+    // Non-default agent not in list -> not enabled
+    return false;
   }
-  return resolvedAgentId === resolveDefaultAgentId(cfg);
+
+  // Agent is in the list
+  // If agent has explicit heartbeat config, use it (could be intentionally enabled or disabled)
+  if (agentEntry.heartbeat !== undefined) {
+    return Boolean(agentEntry.heartbeat);
+  }
+
+  // Agent has no explicit heartbeat config:
+  // - If defaults.heartbeat exists, inherit from defaults (enabled)
+  // - Otherwise, only default agent is enabled (legacy behavior)
+  if (defaults) {
+    return true;
+  }
+
+  // No defaults, no explicit heartbeat -> only default agent is enabled
+  return resolvedAgentId === defaultAgentId;
 }
 
 export function resolveHeartbeatIntervalMs(
