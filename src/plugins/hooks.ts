@@ -27,7 +27,9 @@ import type {
   PluginHookInboundClaimEvent,
   PluginHookInboundClaimResult,
   PluginHookLlmInputEvent,
+  PluginHookLlmInputResult,
   PluginHookLlmOutputEvent,
+  PluginHookLlmOutputResult,
   PluginHookBeforeResetEvent,
   PluginHookBeforeToolCallEvent,
   PluginHookBeforeToolCallResult,
@@ -75,7 +77,9 @@ export type {
   PluginHookBeforePromptBuildEvent,
   PluginHookBeforePromptBuildResult,
   PluginHookLlmInputEvent,
+  PluginHookLlmInputResult,
   PluginHookLlmOutputEvent,
+  PluginHookLlmOutputResult,
   PluginHookAgentEndEvent,
   PluginHookBeforeCompactionEvent,
   PluginHookBeforeResetEvent,
@@ -622,20 +626,38 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
 
   /**
    * Run llm_input hook.
-   * Allows plugins to observe the exact input payload sent to the LLM.
-   * Runs in parallel (fire-and-forget).
+   * Allows plugins to observe, modify, or block the LLM call before it is made.
+   * Runs sequentially so plugins can inspect and alter the prompt or block the call.
    */
-  async function runLlmInput(event: PluginHookLlmInputEvent, ctx: PluginHookAgentContext) {
-    return runVoidHook("llm_input", event, ctx);
+  async function runLlmInput(
+    event: PluginHookLlmInputEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<PluginHookLlmInputResult | undefined> {
+    return runModifyingHook<"llm_input", PluginHookLlmInputResult>("llm_input", event, ctx, {
+      mergeResults: (acc, next) => ({
+        block: next.block ?? acc?.block,
+        blockReason: next.blockReason ?? acc?.blockReason,
+        prompt: next.prompt ?? acc?.prompt,
+        systemPrompt: next.systemPrompt ?? acc?.systemPrompt,
+      }),
+      shouldStop: (result) => result.block === true,
+    });
   }
 
   /**
    * Run llm_output hook.
-   * Allows plugins to observe the exact output payload returned by the LLM.
-   * Runs in parallel (fire-and-forget).
+   * Allows plugins to observe or modify the LLM response (e.g. redact sensitive content).
+   * Runs sequentially so plugins can alter the assistant response.
    */
-  async function runLlmOutput(event: PluginHookLlmOutputEvent, ctx: PluginHookAgentContext) {
-    return runVoidHook("llm_output", event, ctx);
+  async function runLlmOutput(
+    event: PluginHookLlmOutputEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<PluginHookLlmOutputResult | undefined> {
+    return runModifyingHook<"llm_output", PluginHookLlmOutputResult>("llm_output", event, ctx, {
+      mergeResults: (acc, next) => ({
+        assistantTexts: next.assistantTexts ?? acc?.assistantTexts,
+      }),
+    });
   }
 
   /**

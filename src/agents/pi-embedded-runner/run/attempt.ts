@@ -1512,7 +1512,7 @@ export async function runEmbeddedAttempt(
 
           // Detect and load images referenced in the prompt for vision-capable models.
           // Images are prompt-local only (pi-like behavior).
-          const imageResult = await detectAndLoadPromptImages({
+          let imageResult = await detectAndLoadPromptImages({
             prompt: effectivePrompt,
             workspaceDir: effectiveWorkspace,
             model: params.model,
@@ -1553,8 +1553,8 @@ export async function runEmbeddedAttempt(
           }
 
           if (hookRunner?.hasHooks("llm_input")) {
-            hookRunner
-              .runLlmInput(
+            try {
+              const llmInputResult = await hookRunner.runLlmInput(
                 {
                   runId: params.runId,
                   sessionId: params.sessionId,
@@ -1575,10 +1575,49 @@ export async function runEmbeddedAttempt(
                   trigger: params.trigger,
                   channelId: params.messageChannel ?? params.messageProvider ?? undefined,
                 },
-              )
-              .catch((err) => {
-                log.warn(`llm_input hook failed: ${String(err)}`);
-              });
+              );
+
+              if (llmInputResult?.block) {
+                const reason = llmInputResult.blockReason ?? "Blocked by llm_input plugin hook";
+                log.warn(`llm_input hook blocked LLM call: ${reason}`);
+                // Throw to skip the LLM call. The outer catch records this as
+                // promptError so callers see a clear blocked status and the
+                // attempt result includes the error context.
+                throw new Error(`LLM call blocked by plugin: ${reason}`);
+              }
+
+              if (llmInputResult?.prompt) {
+                effectivePrompt = llmInputResult.prompt;
+              }
+              if (llmInputResult?.systemPrompt !== undefined) {
+                systemPromptText = llmInputResult.systemPrompt;
+              }
+
+              // Re-detect images when the hook rewrote the prompt, so the
+              // model receives attachments matching the updated text.
+              if (llmInputResult?.prompt) {
+                imageResult = await detectAndLoadPromptImages({
+                  prompt: effectivePrompt,
+                  workspaceDir: effectiveWorkspace,
+                  model: params.model,
+                  existingImages: params.images,
+                  maxBytes: MAX_IMAGE_BYTES,
+                  maxDimensionPx: resolveImageSanitizationLimits(params.config).maxDimensionPx,
+                  workspaceOnly: effectiveFsWorkspaceOnly,
+                  sandbox:
+                    sandbox?.enabled && sandbox?.fsBridge
+                      ? { root: sandbox.workspaceDir, bridge: sandbox.fsBridge }
+                      : undefined,
+                });
+              }
+            } catch (err) {
+              // Re-throw block errors so the outer catch records them as promptError
+              // and the LLM call is skipped. Only swallow non-block hook failures.
+              if (err instanceof Error && err.message.startsWith("LLM call blocked by plugin:")) {
+                throw err;
+              }
+              log.warn(`llm_input hook failed: ${String(err)}`);
+            }
           }
 
           const btwSnapshotMessages = activeSession.messages.slice(-MAX_BTW_SNAPSHOT_MESSAGES);
@@ -1840,6 +1879,8 @@ export async function runEmbeddedAttempt(
         .toReversed()
         .find((m) => m.role === "assistant");
 
+      let finalAssistantTexts = assistantTexts;
+
       const toolMetasNormalized = toolMetas
         .filter(
           (entry): entry is { toolName: string; meta?: string } =>
@@ -1848,8 +1889,8 @@ export async function runEmbeddedAttempt(
         .map((entry) => ({ toolName: entry.toolName, meta: entry.meta }));
 
       if (hookRunner?.hasHooks("llm_output")) {
-        hookRunner
-          .runLlmOutput(
+        try {
+          const llmOutputResult = await hookRunner.runLlmOutput(
             {
               runId: params.runId,
               sessionId: params.sessionId,
@@ -1871,10 +1912,14 @@ export async function runEmbeddedAttempt(
               trigger: params.trigger,
               channelId: params.messageChannel ?? params.messageProvider ?? undefined,
             },
-          )
-          .catch((err) => {
-            log.warn(`llm_output hook failed: ${String(err)}`);
-          });
+          );
+
+          if (llmOutputResult?.assistantTexts) {
+            finalAssistantTexts = llmOutputResult.assistantTexts;
+          }
+        } catch (err) {
+          log.warn(`llm_output hook failed: ${String(err)}`);
+        }
       }
 
       return {
@@ -1887,7 +1932,7 @@ export async function runEmbeddedAttempt(
         bootstrapPromptWarningSignature: bootstrapPromptWarning.signature,
         systemPromptReport,
         messagesSnapshot,
-        assistantTexts,
+        assistantTexts: finalAssistantTexts,
         toolMetas: toolMetasNormalized,
         lastAssistant,
         lastToolError: getLastToolError?.(),

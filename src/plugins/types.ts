@@ -1999,6 +1999,17 @@ export type PluginHookLlmInputEvent = {
   imagesCount: number;
 };
 
+export type PluginHookLlmInputResult = {
+  /** If true, the LLM call is blocked entirely. */
+  block?: boolean;
+  /** Reason for blocking — logged and surfaced to the user. */
+  blockReason?: string;
+  /** Override the prompt text sent to the LLM. */
+  prompt?: string;
+  /** Override the system prompt sent to the LLM. */
+  systemPrompt?: string;
+};
+
 // llm_output hook
 export type PluginHookLlmOutputEvent = {
   runId: string;
@@ -2016,6 +2027,11 @@ export type PluginHookLlmOutputEvent = {
   };
   /** Raw rate limit headers from the LLM provider, if available. */
   rateLimits?: Record<string, string>;
+};
+
+export type PluginHookLlmOutputResult = {
+  /** Replace the assistant response texts. Useful for redaction or filtering. */
+  assistantTexts?: string[];
 };
 
 // agent_end hook
@@ -2503,11 +2519,14 @@ export type PluginHookHandlerMap = {
     event: PluginHookBeforeAgentStartEvent,
     ctx: PluginHookAgentContext,
   ) => Promise<PluginHookBeforeAgentStartResult | void> | PluginHookBeforeAgentStartResult | void;
-  llm_input: (event: PluginHookLlmInputEvent, ctx: PluginHookAgentContext) => Promise<void> | void;
+  llm_input: (
+    event: PluginHookLlmInputEvent,
+    ctx: PluginHookAgentContext,
+  ) => Promise<PluginHookLlmInputResult | void> | PluginHookLlmInputResult | void;
   llm_output: (
     event: PluginHookLlmOutputEvent,
     ctx: PluginHookAgentContext,
-  ) => Promise<void> | void;
+  ) => Promise<PluginHookLlmOutputResult | void> | PluginHookLlmOutputResult | void;
   agent_end: (event: PluginHookAgentEndEvent, ctx: PluginHookAgentContext) => Promise<void> | void;
   before_compaction: (
     event: PluginHookBeforeCompactionEvent,
