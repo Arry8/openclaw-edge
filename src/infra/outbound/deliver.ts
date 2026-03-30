@@ -364,13 +364,23 @@ function createMessageSentEmitter(params: {
   channel: Exclude<OutboundChannel, "none">;
   to: string;
   accountId?: string;
+  conversationId?: string;
+  agentId?: string;
+  sessionKey?: string;
   sessionKeyForInternalHooks?: string;
   mirrorIsGroup?: boolean;
   mirrorGroupId?: string;
-}): { emitMessageSent: (event: MessageSentEvent) => void; hasMessageSentHooks: boolean } {
+}): {
+  emitMessageSent: (
+    event: MessageSentEvent & { threadId?: string | number; conversationId?: string },
+  ) => void;
+  hasMessageSentHooks: boolean;
+} {
   const hasMessageSentHooks = params.hookRunner?.hasHooks("message_sent") ?? false;
   const canEmitInternalHook = Boolean(params.sessionKeyForInternalHooks);
-  const emitMessageSent = (event: MessageSentEvent) => {
+  const emitMessageSent = (
+    event: MessageSentEvent & { threadId?: string | number; conversationId?: string },
+  ) => {
     if (!hasMessageSentHooks && !canEmitInternalHook) {
       return;
     }
@@ -381,8 +391,11 @@ function createMessageSentEmitter(params: {
       error: event.error,
       channelId: params.channel,
       accountId: params.accountId ?? undefined,
-      conversationId: params.to,
+      conversationId: event.conversationId ?? params.conversationId ?? params.to,
       messageId: event.messageId,
+      threadId: event.threadId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
       isGroup: params.mirrorIsGroup,
       groupId: params.mirrorGroupId,
     });
@@ -419,6 +432,31 @@ function createMessageSentEmitter(params: {
   return { emitMessageSent, hasMessageSentHooks };
 }
 
+function resolveOutboundHookMetadata(params: {
+  channel: Exclude<OutboundChannel, "none">;
+  to: string;
+  conversationId?: string;
+  replyToId?: string | null;
+  threadId?: string | number | null;
+  session?: OutboundSessionContext;
+  mirror?: DeliverOutboundPayloadsCoreParams["mirror"];
+}): {
+  conversationId: string;
+  threadId?: string | number;
+  sessionKey?: string;
+  agentId?: string;
+} {
+  const resolvedThreadId =
+    params.threadId ??
+    (params.channel === "slack" && params.replyToId ? params.replyToId : undefined);
+  return {
+    conversationId: params.conversationId ?? params.to,
+    threadId: resolvedThreadId,
+    sessionKey: params.mirror?.sessionKey ?? params.session?.key,
+    agentId: params.mirror?.agentId ?? params.session?.agentId,
+  };
+}
+
 async function applyMessageSendingHook(params: {
   hookRunner: ReturnType<typeof getGlobalHookRunner>;
   enabled: boolean;
@@ -427,6 +465,10 @@ async function applyMessageSendingHook(params: {
   to: string;
   channel: Exclude<OutboundChannel, "none">;
   accountId?: string;
+  conversationId?: string;
+  threadId?: string | number | null;
+  sessionKey?: string;
+  agentId?: string;
 }): Promise<{
   cancelled: boolean;
   payload: ReplyPayload;
@@ -447,12 +489,17 @@ async function applyMessageSendingHook(params: {
         metadata: {
           channel: params.channel,
           accountId: params.accountId,
+          conversationId: params.conversationId ?? params.to,
+          threadId: params.threadId ?? undefined,
+          sessionKey: params.sessionKey,
+          agentId: params.agentId,
           mediaUrls: params.payloadSummary.mediaUrls,
         },
       },
       {
         channelId: params.channel,
         accountId: params.accountId ?? undefined,
+        conversationId: params.conversationId ?? params.to,
       },
     );
     if (sendingResult?.cancel) {
@@ -635,7 +682,16 @@ async function deliverOutboundPayloadsCore(
   };
   const normalizedPayloads = normalizePayloadsForChannelDelivery(payloads, channel, handler);
   const hookRunner = getGlobalHookRunner();
-  const sessionKeyForInternalHooks = params.mirror?.sessionKey ?? params.session?.key;
+  const hookMetadata = resolveOutboundHookMetadata({
+    channel,
+    to,
+    conversationId: to,
+    replyToId: params.replyToId,
+    threadId: params.threadId,
+    session: params.session,
+    mirror: params.mirror,
+  });
+  const sessionKeyForInternalHooks = hookMetadata.sessionKey;
   const mirrorIsGroup = params.mirror?.isGroup;
   const mirrorGroupId = params.mirror?.groupId;
   const { emitMessageSent, hasMessageSentHooks } = createMessageSentEmitter({
@@ -643,23 +699,35 @@ async function deliverOutboundPayloadsCore(
     channel,
     to,
     accountId,
+    conversationId: hookMetadata.conversationId,
+    agentId: hookMetadata.agentId,
+    sessionKey: hookMetadata.sessionKey,
     sessionKeyForInternalHooks,
     mirrorIsGroup,
     mirrorGroupId,
   });
   const hasMessageSendingHooks = hookRunner?.hasHooks("message_sending") ?? false;
-  if (hasMessageSentHooks && params.session?.agentId && !sessionKeyForInternalHooks) {
+  if (hasMessageSentHooks && hookMetadata.agentId && !sessionKeyForInternalHooks) {
     log.warn(
       "deliverOutboundPayloads: session.agentId present without session key; internal message:sent hook will be skipped",
       {
         channel,
         to,
-        agentId: params.session.agentId,
+        agentId: hookMetadata.agentId,
       },
     );
   }
   for (const payload of normalizedPayloads) {
     let payloadSummary = buildPayloadSummary(payload);
+    let payloadHookMetadata = resolveOutboundHookMetadata({
+      channel,
+      to,
+      conversationId: to,
+      replyToId: payload.replyToId ?? params.replyToId,
+      threadId: params.threadId,
+      session: params.session,
+      mirror: params.mirror,
+    });
     try {
       throwIfAborted(abortSignal);
 
@@ -672,6 +740,10 @@ async function deliverOutboundPayloadsCore(
         to,
         channel,
         accountId,
+        conversationId: payloadHookMetadata.conversationId,
+        threadId: payloadHookMetadata.threadId,
+        sessionKey: payloadHookMetadata.sessionKey,
+        agentId: payloadHookMetadata.agentId,
       });
       if (hookResult.cancelled) {
         continue;
@@ -686,6 +758,15 @@ async function deliverOutboundPayloadsCore(
         audioAsVoice: effectivePayload.audioAsVoice === true ? true : undefined,
         forceDocument: params.forceDocument,
       };
+      payloadHookMetadata = resolveOutboundHookMetadata({
+        channel,
+        to,
+        conversationId: to,
+        replyToId: sendOverrides.replyToId,
+        threadId: sendOverrides.threadId,
+        session: params.session,
+        mirror: params.mirror,
+      });
       if (
         handler.sendPayload &&
         hasReplyPayloadContent({
@@ -699,6 +780,8 @@ async function deliverOutboundPayloadsCore(
           success: true,
           content: payloadSummary.text,
           messageId: delivery.messageId,
+          conversationId: payloadHookMetadata.conversationId,
+          threadId: payloadHookMetadata.threadId,
         });
         continue;
       }
@@ -714,6 +797,8 @@ async function deliverOutboundPayloadsCore(
           success: results.length > beforeCount,
           content: payloadSummary.text,
           messageId,
+          conversationId: payloadHookMetadata.conversationId,
+          threadId: payloadHookMetadata.threadId,
         });
         continue;
       }
@@ -740,6 +825,8 @@ async function deliverOutboundPayloadsCore(
           success: results.length > beforeCount,
           content: payloadSummary.text,
           messageId,
+          conversationId: payloadHookMetadata.conversationId,
+          threadId: payloadHookMetadata.threadId,
         });
         continue;
       }
@@ -769,12 +856,16 @@ async function deliverOutboundPayloadsCore(
         success: true,
         content: payloadSummary.text,
         messageId: lastMessageId,
+        conversationId: payloadHookMetadata.conversationId,
+        threadId: payloadHookMetadata.threadId,
       });
     } catch (err) {
       emitMessageSent({
         success: false,
         content: payloadSummary.text,
         error: err instanceof Error ? err.message : String(err),
+        conversationId: payloadHookMetadata.conversationId,
+        threadId: payloadHookMetadata.threadId,
       });
       if (!params.bestEffort) {
         throw err;
