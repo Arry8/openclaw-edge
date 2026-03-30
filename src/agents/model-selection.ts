@@ -654,6 +654,36 @@ export function resolveAllowedModelRef(params: {
     defaultModel: params.defaultModel,
   });
   if (!status.allowed) {
+    // Only attempt auto-correction when the original input didn't specify a provider.
+    // This prevents silently overriding explicit provider/model requests.
+    const hasExplicitProvider = params.raw.includes("/");
+    if (!hasExplicitProvider) {
+      const modelId = resolved.ref.model;
+      const configuredProviders = params.cfg.models?.providers;
+      if (configuredProviders && typeof configuredProviders === "object") {
+        // Build the allowed set once outside the loop for efficiency.
+        const allowedSet = buildAllowedModelSet({
+          cfg: params.cfg,
+          catalog: params.catalog,
+          defaultProvider: params.defaultProvider,
+          defaultModel: params.defaultModel,
+        });
+        for (const [providerName, providerCfg] of Object.entries(configuredProviders)) {
+          if (providerCfg && Array.isArray(providerCfg.models)) {
+            const modelInProvider = providerCfg.models.find((m) => m.id === modelId);
+            if (modelInProvider) {
+              // Normalize the provider ID to match how keys are built in the allowlist.
+              const normalizedProvider = normalizeProviderId(providerName);
+              const correctedRef: ModelRef = { provider: normalizedProvider, model: modelId };
+              const key = modelKey(normalizedProvider, modelId);
+              if (allowedSet.allowAny || allowedSet.allowedKeys.has(key)) {
+                return { ref: correctedRef, key };
+              }
+            }
+          }
+        }
+      }
+    }
     return { error: `model not allowed: ${status.key}` };
   }
 
