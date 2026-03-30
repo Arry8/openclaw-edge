@@ -108,7 +108,6 @@ export const ChannelsSchema: z.ZodType<ChannelsConfig | undefined> = z
       .object({
         groupPolicy: GroupPolicySchema.optional(),
         heartbeat: ChannelHeartbeatVisibilitySchema,
-        defaultChannel: z.string().optional(),
       })
       .strict()
       .optional(),
