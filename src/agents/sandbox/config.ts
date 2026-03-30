@@ -273,5 +273,8 @@ export function resolveSandboxConfigForAgent(
       globalPrune: agent?.prune,
       agentPrune: agentSandbox?.prune,
     }),
+    dangerouslyAllowUnsandboxedSubagentSpawn:
+      agentSandbox?.dangerouslyAllowUnsandboxedSubagentSpawn ??
+      agent?.dangerouslyAllowUnsandboxedSubagentSpawn,
   };
 }

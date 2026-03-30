@@ -459,19 +459,21 @@ export async function spawnSubagentDirect(
     cfg,
     sessionKey: childSessionKey,
   });
-  if (!childRuntime.sandboxed && (requesterRuntime.sandboxed || sandboxMode === "require")) {
-    if (requesterRuntime.sandboxed) {
-      return {
-        status: "forbidden",
-        error:
-          "Sandboxed sessions cannot spawn unsandboxed subagents. Set a sandboxed target agent or use the same agent runtime.",
-      };
-    }
+  if (!childRuntime.sandboxed && sandboxMode === "require") {
     return {
       status: "forbidden",
       error:
         'sessions_spawn sandbox="require" needs a sandboxed target runtime. Pick a sandboxed agentId or use sandbox="inherit".',
     };
+  }
+  if (!childRuntime.sandboxed && requesterRuntime.sandboxed) {
+    if (!requesterRuntime.dangerouslyAllowUnsandboxedSubagentSpawn) {
+      return {
+        status: "forbidden",
+        error:
+          "Sandboxed sessions cannot spawn unsandboxed subagents. Set a sandboxed target agent, use the same agent runtime, or set agents.defaults.sandbox.dangerouslyAllowUnsandboxedSubagentSpawn=true only when you fully trust this runtime.",
+      };
+    }
   }
   const childDepth = callerDepth + 1;
   const spawnedByKey = requesterInternalKey;
