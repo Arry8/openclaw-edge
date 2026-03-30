@@ -8,7 +8,7 @@ import { resolveAgentOutboundIdentity } from "../infra/outbound/identity.js";
 import { buildOutboundSessionContext } from "../infra/outbound/session-context.js";
 import { getChildLogger } from "../logging.js";
 import { resolveDeliveryTarget } from "./isolated-agent/delivery-target.js";
-import type { CronDelivery, CronDeliveryMode, CronJob, CronMessageChannel } from "./types.js";
+import type { CronDelivery, CronDeliveryMode, CronDeliveryTarget, CronJob, CronMessageChannel } from "./types.js";
 
 export type CronDeliveryPlan = {
   mode: CronDeliveryMode;
@@ -16,6 +16,8 @@ export type CronDeliveryPlan = {
   to?: string;
   /** Explicit channel account id from the delivery config, if set. */
   accountId?: string;
+  /** Additional delivery targets for multi-channel delivery */
+  additionalTargets?: CronDeliveryTarget[];
   source: "delivery" | "payload";
   requested: boolean;
 };
@@ -77,11 +79,24 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
   );
   if (hasDelivery) {
     const resolvedMode = mode ?? "announce";
+    // Extract and normalize additionalTargets from delivery config
+    const deliveryAdditionalTargets = (delivery as { additionalTargets?: unknown })?.additionalTargets;
+    const additionalTargets = Array.isArray(deliveryAdditionalTargets)
+      ? deliveryAdditionalTargets
+        .filter((t): t is Record<string, unknown> => t != null && typeof t === "object")
+        .map((t) => ({
+          channel: normalizeChannel(t.channel),
+          to: normalizeTo(t.to),
+          accountId: normalizeAccountId(t.accountId),
+        }))
+        .filter((t) => t.channel !== undefined || t.to !== undefined || t.accountId !== undefined)
+      : undefined;
     return {
       mode: resolvedMode,
       channel: resolvedMode === "announce" ? channel : undefined,
       to,
       accountId: deliveryAccountId,
+      additionalTargets,
       source: "delivery",
       requested: resolvedMode === "announce",
     };
