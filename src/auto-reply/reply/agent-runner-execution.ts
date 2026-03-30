@@ -535,9 +535,14 @@ export async function runAgentTurnWithFallback(params: {
                   if (evt.stream === "compaction") {
                     const phase = typeof evt.data.phase === "string" ? evt.data.phase : "";
                     if (phase === "start") {
-                      if (params.opts?.onCompactionStart) {
+                      // Only notify the user if explicitly opted in via config.
+                      // Default is silent (notifyUser: false) to avoid spamming.
+                      const notifyUser =
+                        params.followupRun.run.config.agents?.defaults?.compaction?.notifyUser ===
+                        true;
+                      if (notifyUser && params.opts?.onCompactionStart) {
                         await params.opts.onCompactionStart();
-                      } else if (params.opts?.onBlockReply) {
+                      } else if (notifyUser && params.opts?.onBlockReply) {
                         // Send directly via opts.onBlockReply (bypassing the
                         // pipeline) so the notice does not cause final payloads
                         // to be discarded on non-streaming model paths.
