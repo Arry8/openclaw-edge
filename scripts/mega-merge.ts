@@ -140,6 +140,7 @@ const SKIP_LIST = new Set<number>([
   51722, // sandbox/browser.ts:94 duplicate object property — TS1117
   45782, // fs-safe.ts + pairing-store.ts TS errors in error handling
   47225, // stream-payload-utils.ts TS error in toolsOverride field
+  12296, // session-tool-result-guard.ts: removed getRawSessionAppendMessage + sessionKey — breaks transcript-rewrite.ts consumers
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.
