@@ -194,13 +194,29 @@ export function resolveMattermostThreadSessionContext(params: {
   postId?: string | null;
   replyToMode: "off" | "first" | "all";
   threadRootId?: string | null;
-}): { effectiveReplyToId?: string; sessionKey: string; parentSessionKey?: string } {
+}): {
+  effectiveReplyToId?: string;
+  messageThreadId?: string;
+  sessionKey: string;
+  parentSessionKey?: string;
+} {
   const effectiveReplyToId = resolveMattermostEffectiveReplyToId({
     kind: params.kind,
     postId: params.postId,
     replyToMode: params.replyToMode,
     threadRootId: params.threadRootId,
   });
+  // messageThreadId reflects the actual thread the inbound message came from,
+  // regardless of replyToMode. This ensures MessageThreadId is always set for
+  // thread messages even when replyToMode is "off" (which only controls session
+  // forking, not delivery routing).
+  // Exception: direct messages are never threaded by contract (resolveMattermostReplyToMode
+  // hardcodes "off" for DMs), so we don't pull from threadRootId for DMs — a DM
+  // reply that happens to have post.root_id should still go to the main DM window.
+  const messageThreadId =
+    params.kind !== "direct"
+      ? params.threadRootId?.trim() || effectiveReplyToId
+      : effectiveReplyToId;
   const threadKeys = resolveThreadSessionKeys({
     baseSessionKey: params.baseSessionKey,
     threadId: effectiveReplyToId,
@@ -208,6 +224,7 @@ export function resolveMattermostThreadSessionContext(params: {
   });
   return {
     effectiveReplyToId,
+    messageThreadId,
     sessionKey: threadKeys.sessionKey,
     parentSessionKey: threadKeys.parentSessionKey,
   };
@@ -480,7 +497,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           Surface: "mattermost" as const,
           MessageSid: `interaction:${opts.postId}:${opts.actionId}`,
           ReplyToId: threadContext.effectiveReplyToId,
-          MessageThreadId: threadContext.effectiveReplyToId,
+          MessageThreadId: threadContext.messageThreadId,
           WasMentioned: true,
           CommandAuthorized: false,
           OriginatingChannel: "mattermost" as const,
@@ -504,7 +521,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           channel: "mattermost",
           accountId: account.accountId,
           typing: {
-            start: () => sendTypingIndicator(opts.channelId, threadContext.effectiveReplyToId),
+            start: () => sendTypingIndicator(opts.channelId, threadContext.messageThreadId),
             onStartError: (err) => {
               logTypingFailure({
                 log: (message) => logger.debug?.(message),
@@ -528,7 +545,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
                 accountId: account.accountId,
                 agentId: route.agentId,
                 replyToId: resolveMattermostReplyRootId({
-                  threadRootId: threadContext.effectiveReplyToId,
+                  threadRootId: threadContext.messageThreadId,
                   replyToId: payload.replyToId,
                 }),
                 textLimit,
@@ -633,6 +650,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     teamId?: string;
     postId: string;
     effectiveReplyToId?: string;
+    messageThreadId?: string;
     deliverReplies?: boolean;
   }): Promise<string> => {
     const to = params.kind === "direct" ? `user:${params.senderId}` : `channel:${params.channelId}`;
@@ -667,7 +685,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       Surface: "mattermost" as const,
       MessageSid: `interaction:${params.postId}:${Date.now()}`,
       ReplyToId: params.effectiveReplyToId,
-      MessageThreadId: params.effectiveReplyToId,
+      MessageThreadId: params.messageThreadId,
       Timestamp: Date.now(),
       WasMentioned: true,
       CommandAuthorized: params.commandAuthorized,
@@ -697,7 +715,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       accountId: account.accountId,
       typing: shouldDeliverReplies
         ? {
-            start: () => sendTypingIndicator(params.channelId, params.effectiveReplyToId),
+            start: () => sendTypingIndicator(params.channelId, params.messageThreadId),
             onStartError: (err) => {
               logTypingFailure({
                 log: (message) => logger.debug?.(message),
@@ -735,7 +753,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
             accountId: account.accountId,
             agentId: params.route.agentId,
             replyToId: resolveMattermostReplyRootId({
-              threadRootId: params.effectiveReplyToId,
+              threadRootId: params.messageThreadId,
               replyToId: trimmedPayload.replyToId,
             }),
             textLimit,
@@ -958,6 +976,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
           teamId,
           postId: params.payload.post_id,
           effectiveReplyToId: threadContext.effectiveReplyToId,
+          messageThreadId: threadContext.messageThreadId,
           deliverReplies: true,
         });
         const updatedModel = resolveMattermostModelPickerCurrentModel({
@@ -1183,7 +1202,11 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     });
 
     const baseSessionKey = route.sessionKey;
-    const threadRootId = post.root_id?.trim() || undefined;
+    // Don't thread if channel lookup failed and the websocket event didn't include
+    // channel_type — we might be in a DM masquerading as "channel" via the
+    // mapMattermostChannelTypeToChatType fallback.
+    const channelTypeKnown = channelInfo != null || payload.data?.channel_type != null;
+    const threadRootId = channelTypeKnown ? (post.root_id?.trim() || undefined) : undefined;
     const replyToMode = resolveMattermostReplyToMode(account, kind);
     const threadContext = resolveMattermostThreadSessionContext({
       baseSessionKey,
@@ -1192,7 +1215,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       replyToMode,
       threadRootId,
     });
-    const { effectiveReplyToId, sessionKey, parentSessionKey } = threadContext;
+    const { effectiveReplyToId, messageThreadId, sessionKey, parentSessionKey } = threadContext;
     const historyKey = kind === "direct" ? null : sessionKey;
 
     const mentionRegexes = core.channel.mentions.buildMentionRegexes(cfg, route.agentId);
@@ -1378,7 +1401,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       MessageSidLast:
         allMessageIds.length > 1 ? allMessageIds[allMessageIds.length - 1] : undefined,
       ReplyToId: effectiveReplyToId,
-      MessageThreadId: effectiveReplyToId,
+      MessageThreadId: messageThreadId,
       Timestamp: typeof post.create_at === "number" ? post.create_at : undefined,
       WasMentioned: kind !== "direct" ? mentionDecision.effectiveWasMentioned : undefined,
       CommandAuthorized: commandAuthorized,
@@ -1428,7 +1451,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       channel: "mattermost",
       accountId: account.accountId,
       typing: {
-        start: () => sendTypingIndicator(channelId, effectiveReplyToId),
+        start: () => sendTypingIndicator(channelId, messageThreadId),
         onStartError: (err) => {
           logTypingFailure({
             log: (message) => logger.debug?.(message),
@@ -1453,7 +1476,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
             accountId: account.accountId,
             agentId: route.agentId,
             replyToId: resolveMattermostReplyRootId({
-              threadRootId: effectiveReplyToId,
+              threadRootId: messageThreadId,
               replyToId: payload.replyToId,
             }),
             textLimit,
