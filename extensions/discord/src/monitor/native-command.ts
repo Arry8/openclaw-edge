@@ -67,6 +67,7 @@ import { handleDiscordDmCommandDecision } from "./dm-command-decision.js";
 import { resolveDiscordChannelInfo } from "./message-utils.js";
 import { buildDiscordNativeCommandContext } from "./native-command-context.js";
 import { resolveDiscordNativeInteractionRouteState } from "./native-command-route.js";
+import { resolveDiscordClaimOwnership } from "./instance-claims.js";
 import {
   buildDiscordCommandArgMenu,
   createDiscordCommandArgFallbackButton as createDiscordCommandArgFallbackButtonUi,
@@ -364,6 +365,18 @@ async function resolveDiscordNativeAutocompleteAuthorized(params: {
     threadParentId = parentInfo.id;
     threadParentName = parentInfo.name;
     threadParentSlug = threadParentName ? normalizeDiscordSlug(threadParentName) : "";
+  }
+  const claimOwnership = interaction.guild
+    ? await resolveDiscordClaimOwnership({
+        cfg,
+        accountId,
+        guildId: interaction.guild?.id,
+        channelId: rawChannelId,
+        parentId: threadParentId,
+      })
+    : { status: "owned" as const, instanceKey: "" };
+  if (claimOwnership.status === "not-owned" || claimOwnership.status === "claimed-by-other") {
+    return false;
   }
   const channelConfig = interaction.guild
     ? resolveDiscordChannelConfigWithFallback({
@@ -747,6 +760,18 @@ async function dispatchDiscordCommandInteraction(params: {
     threadParentId = parentInfo.id;
     threadParentName = parentInfo.name;
     threadParentSlug = threadParentName ? normalizeDiscordSlug(threadParentName) : "";
+  }
+  const claimOwnership = interaction.guild
+    ? await resolveDiscordClaimOwnership({
+        cfg,
+        accountId,
+        guildId: interaction.guild?.id,
+        channelId: rawChannelId,
+        parentId: threadParentId,
+      })
+    : { status: "owned" as const, instanceKey: "" };
+  if (claimOwnership.status === "not-owned" || claimOwnership.status === "claimed-by-other") {
+    return;
   }
   const channelConfig = interaction.guild
     ? resolveDiscordChannelConfigWithFallback({
