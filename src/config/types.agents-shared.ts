@@ -5,6 +5,19 @@ import type {
   SandboxSshSettings,
 } from "./types.sandbox.js";
 
+/**
+ * Per-chat-type model overrides.
+ * Allows specifying different models for direct messages vs group chats.
+ */
+export type AgentModelByChatType = {
+  /** Model to use for direct/DM conversations. */
+  direct?: string;
+  /** Model to use for group chats. */
+  group?: string;
+  /** Model to use for channel conversations. */
+  channel?: string;
+};
+
 export type AgentModelConfig =
   | string
   | {
@@ -12,6 +25,8 @@ export type AgentModelConfig =
       primary?: string;
       /** Per-agent model fallbacks (provider/model). */
       fallbacks?: string[];
+      /** Per-chat-type model overrides (direct/group/channel). */
+      byChatType?: AgentModelByChatType;
     };
 
 export type AgentSandboxConfig = {
