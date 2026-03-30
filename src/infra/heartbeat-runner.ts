@@ -152,9 +152,12 @@ function resolveHeartbeatConfig(
 
 function resolveHeartbeatAgents(cfg: OpenClawConfig): HeartbeatAgent[] {
   const list = cfg.agents?.list ?? [];
-  if (hasExplicitHeartbeatAgents(cfg)) {
+  const hasDefaults = Boolean(cfg.agents?.defaults?.heartbeat);
+  if (hasExplicitHeartbeatAgents(cfg) || hasDefaults) {
+    // Include any agent that has an explicit heartbeat config OR inherits from defaults.
+    // Without this, agents that rely solely on agents.defaults.heartbeat are silently excluded.
     return list
-      .filter((entry) => entry?.heartbeat)
+      .filter((entry) => entry?.heartbeat || hasDefaults)
       .map((entry) => {
         const id = normalizeAgentId(entry.id);
         return { agentId: id, heartbeat: resolveHeartbeatConfig(cfg, id) };
