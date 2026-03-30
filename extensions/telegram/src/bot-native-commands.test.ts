@@ -1,16 +1,15 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import { TELEGRAM_COMMAND_NAME_PATTERN } from "openclaw/plugin-sdk/config-runtime";
+import type { TelegramAccountConfig } from "openclaw/plugin-sdk/config-runtime";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { STATE_DIR } from "openclaw/plugin-sdk/state-paths";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../../src/config/config.js";
-import { STATE_DIR } from "../../../src/config/paths.js";
-import { TELEGRAM_COMMAND_NAME_PATTERN } from "../../../src/config/telegram-custom-commands.js";
-import type { TelegramAccountConfig } from "../../../src/config/types.js";
-import type { RuntimeEnv } from "../../../src/runtime.js";
-import {
-  pluginCommandMocks,
-  resetPluginCommandMocks,
-} from "../../../test/helpers/plugins/telegram-plugin-command.js";
+import { pluginCommandMocks, resetPluginCommandMocks } from "./test-support/plugin-command.js";
 
 let registerTelegramNativeCommands: typeof import("./bot-native-commands.js").registerTelegramNativeCommands;
+let parseTelegramNativeCommandCallbackData: typeof import("./bot-native-commands.js").parseTelegramNativeCommandCallbackData;
 import {
+  createCommandBot,
   createNativeCommandTestParams,
   createPrivateCommandContext,
   deliverReplies,
@@ -22,7 +21,8 @@ import {
 describe("registerTelegramNativeCommands", () => {
   beforeAll(async () => {
     vi.resetModules();
-    ({ registerTelegramNativeCommands } = await import("./bot-native-commands.js"));
+    ({ registerTelegramNativeCommands, parseTelegramNativeCommandCallbackData } =
+      await import("./bot-native-commands.js"));
   });
 
   beforeEach(() => {
@@ -162,6 +162,30 @@ describe("registerTelegramNativeCommands", () => {
     expect(registeredCommands.some((entry) => entry.command === "plugin_status")).toBe(true);
     expect(registeredCommands.some((entry) => entry.command === "plugin-status")).toBe(false);
     expect(registeredCommands.some((entry) => entry.command === "custom-bad")).toBe(false);
+  });
+
+  it("prefixes native command menu callback data so callback handlers can preserve native routing", async () => {
+    const { bot, commandHandlers, sendMessage } = createCommandBot();
+
+    registerTelegramNativeCommands({
+      ...createNativeCommandTestParams({}, { bot }),
+    });
+
+    const handler = commandHandlers.get("fast");
+    expect(handler).toBeTruthy();
+    await handler?.(createPrivateCommandContext());
+
+    const replyMarkup = sendMessage.mock.calls[0]?.[2]?.reply_markup as
+      | { inline_keyboard?: Array<Array<{ callback_data?: string }>> }
+      | undefined;
+    const callbackData = replyMarkup?.inline_keyboard
+      ?.flat()
+      .map((button) => button.callback_data)
+      .filter(Boolean);
+
+    expect(callbackData).toEqual(["tgcmd:/fast status", "tgcmd:/fast on", "tgcmd:/fast off"]);
+    expect(parseTelegramNativeCommandCallbackData("tgcmd:/fast status")).toBe("/fast status");
+    expect(parseTelegramNativeCommandCallbackData("tgcmd:fast status")).toBeNull();
   });
 
   it("passes agent-scoped media roots for plugin command replies with media", async () => {
