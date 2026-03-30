@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeSkill } from "../skills.e2e-test-helpers.js";
 import { resolveBundledSkillsContext } from "./bundled-context.js";
+import * as skillsModule from "../skills.js";
 
 describe("resolveBundledSkillsContext", () => {
   let tempDir: string;
@@ -78,5 +79,25 @@ description: Skill with whitespace-only name
 
     // Should not include empty/whitespace-only names
     expect(context.names.size).toBe(0);
+  });
+
+  it("coerces numeric skill names to strings", async () => {
+    // Mock loadSkillsFromDir to return a skill with numeric name
+    // This simulates the case where YAML parses unquoted numbers as number type
+    const mockSkill = {
+      name: 12306 as any, // Simulate numeric type from YAML
+      description: "Test skill with numeric name",
+      content: "# Test Skill\n\nThis skill has a numeric name.",
+    };
+
+    vi.spyOn(skillsModule, "loadSkillsFromDir").mockResolvedValue([mockSkill]);
+
+    const context = resolveBundledSkillsContext();
+
+    // The String() coercion should convert numeric name to string
+    expect(context.names.has("12306")).toBe(true);
+    expect(typeof Array.from(context.names)[0]).toBe("string");
+
+    vi.restoreAllMocks();
   });
 });
