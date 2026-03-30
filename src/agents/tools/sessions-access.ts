@@ -197,6 +197,15 @@ export async function createSessionVisibilityGuard(params: {
 
   const check = (targetSessionKey: string): SessionAccessResult => {
     const targetAgentId = resolveAgentIdFromSessionKey(targetSessionKey);
+    const isSpawnedTreeTarget =
+      params.visibility === "tree" &&
+      targetSessionKey !== params.requesterSessionKey &&
+      spawnedKeys?.has(targetSessionKey);
+
+    if (isSpawnedTreeTarget) {
+      return { allowed: true };
+    }
+
     const isCrossAgent = targetAgentId !== requesterAgentId;
     if (isCrossAgent) {
       // For "send", a2a policy is the authorization gate — sending does not
