@@ -1,10 +1,19 @@
+import fs from "node:fs/promises";
 import { resolveFastModeState } from "../../agents/fast-mode.js";
 import { formatThreadBindingDurationLabel } from "../../channels/thread-bindings-messages.js";
 import { parseDurationMs } from "../../cli/parse-duration.js";
 import { isRestartEnabled } from "../../config/commands.js";
+import { parseSessionThreadInfo } from "../../config/sessions/delivery-info.js";
 import { logVerbose } from "../../globals.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
 import type { SessionBindingRecord } from "../../infra/outbound/session-binding-service.js";
+import type { RestartSentinelPayload } from "../../infra/restart-sentinel.js";
+import {
+  formatDoctorNonInteractiveHint,
+  readRestartSentinel,
+  resolveRestartSentinelPath,
+  writeRestartSentinel,
+} from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart, triggerOpenClawRestart } from "../../infra/restart.js";
 import { loadCostUsageSummary, loadSessionCostSummary } from "../../infra/session-cost-usage.js";
 import { createPluginRuntime } from "../../plugins/runtime/index.js";
@@ -743,8 +752,39 @@ export const handleRestartCommand: CommandHandler = async (params, allowTextComm
       },
     };
   }
+  // Write restart sentinel only after confirming restart will proceed,
+  // so a failed restart doesn't leave a stale sentinel on disk.
+  let sentinelTs: number | undefined;
+  async function writeSentinel() {
+    const dc = params.sessionEntry?.deliveryContext;
+    const deliveryContext = dc
+      ? { channel: dc.channel, to: dc.to, accountId: dc.accountId }
+      : undefined;
+    const { threadId } = parseSessionThreadInfo(params.sessionKey);
+    const ts = Date.now();
+    const sentinelPayload: RestartSentinelPayload = {
+      kind: "restart",
+      status: "ok",
+      ts,
+      sessionKey: params.sessionKey,
+      deliveryContext,
+      threadId,
+      doctorHint: formatDoctorNonInteractiveHint(),
+      stats: { mode: "slash-command" },
+    };
+    try {
+      await writeRestartSentinel(sentinelPayload);
+      sentinelTs = ts;
+      return true;
+    } catch {
+      // best-effort: sentinel delivery is not critical
+      return false;
+    }
+  }
+
   const hasSigusr1Listener = process.listenerCount("SIGUSR1") > 0;
   if (hasSigusr1Listener) {
+    await writeSentinel();
     scheduleGatewaySigusr1Restart({ reason: "/restart" });
     return {
       shouldContinue: false,
@@ -753,8 +793,21 @@ export const handleRestartCommand: CommandHandler = async (params, allowTextComm
       },
     };
   }
+  // Write sentinel before triggerOpenClawRestart() because the OS restart
+  // command (launchctl kickstart, systemctl restart) may kill this process
+  // before an async write after the trigger completes.
+  const sentinelWritten = await writeSentinel();
   const restartMethod = triggerOpenClawRestart();
   if (!restartMethod.ok) {
+    // Clean up our sentinel since restart didn't actually happen. Read first
+    // to ensure we only delete the file we wrote — another restart flow may
+    // have overwritten it between our write and this cleanup.
+    if (sentinelWritten && sentinelTs != null) {
+      const existing = await readRestartSentinel();
+      if (existing?.payload.ts === sentinelTs) {
+        await fs.unlink(resolveRestartSentinelPath()).catch(() => {});
+      }
+    }
     const detail = restartMethod.detail ? ` Details: ${restartMethod.detail}` : "";
     return {
       shouldContinue: false,
