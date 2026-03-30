@@ -43,7 +43,7 @@ enum VoiceWakeTextUtils {
             let tokenCount = normalizedTokens.count
             if let bestMatch {
                 if range.lowerBound > bestMatch.range.lowerBound { continue }
-                if range.lowerBound == bestMatch.range.lowerBound && tokenCount <= bestMatch.tokenCount {
+                if range.lowerBound == bestMatch.range.lowerBound, tokenCount <= bestMatch.tokenCount {
                     continue
                 }
             }
@@ -88,7 +88,9 @@ enum VoiceWakeTextUtils {
     static func hasOnlyFillerBeforeTrigger(transcript: String, triggers: [String]) -> Bool {
         guard let match = self.bestRawTriggerMatch(transcript: transcript, triggers: triggers) else { return false }
         let prefixTokens = transcript[..<match.range.lowerBound]
-            .split(whereSeparator: { $0.isWhitespace || self.whitespaceAndPunctuation.contains($0.unicodeScalars.first!) })
+            .split(whereSeparator: {
+                $0.isWhitespace || self.whitespaceAndPunctuation.contains($0.unicodeScalars.first!)
+            })
             .map { self.normalizeToken(String($0)) }
             .filter { !$0.isEmpty }
         return prefixTokens.allSatisfy { self.wakePrefixFillers.contains($0) }

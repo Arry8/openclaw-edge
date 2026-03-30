@@ -518,7 +518,7 @@ actor VoiceWakeRuntime {
         guard WakeWordGate.matchesTextOnly(text: transcript, triggers: triggers) else { return false }
         guard
             VoiceWakeTextUtils.startsWithTrigger(transcript: transcript, triggers: triggers)
-                || VoiceWakeTextUtils.hasOnlyFillerBeforeTrigger(transcript: transcript, triggers: triggers)
+            || VoiceWakeTextUtils.hasOnlyFillerBeforeTrigger(transcript: transcript, triggers: triggers)
         else { return false }
         return self.trimmedAfterTrigger(transcript, triggers: triggers).isEmpty
     }

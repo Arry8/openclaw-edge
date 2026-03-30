@@ -1,4 +1,3 @@
-import { KILOCODE_DEFAULT_MODEL_REF } from "../../extensions/kilocode/shared.js";
 import { resolveOpenClawAgentDir } from "../agents/agent-paths.js";
 import { upsertAuthProfile } from "../agents/auth-profiles.js";
 import type { SecretInput } from "../config/types.secrets.js";
