@@ -43,7 +43,7 @@ import {
   resolveSlackUserAllowed,
 } from "../allow-list.js";
 import { resolveSlackEffectiveAllowFrom } from "../auth.js";
-import { resolveSlackChannelConfig } from "../channel-config.js";
+import { resolveSlackChannelConfig, type SlackChannelConfigResolved } from "../channel-config.js";
 import { stripSlackMentionsForCommandDetection } from "../commands.js";
 import { normalizeSlackChannelType, type SlackMonitorContext } from "../context.js";
 import { authorizeSlackDirectMessage } from "../dm-auth.js";
@@ -262,8 +262,10 @@ function resolveSlackRoutingContext(params: {
   isGroupDm: boolean;
   isRoom: boolean;
   isRoomish: boolean;
+  channelConfig: SlackChannelConfigResolved | null;
 }): SlackRoutingContext {
-  const { ctx, account, message, isDirectMessage, isGroupDm, isRoom, isRoomish } = params;
+  const { ctx, account, message, isDirectMessage, isGroupDm, isRoom, isRoomish, channelConfig } =
+    params;
   const route = resolveAgentRoute({
     cfg: ctx.cfg,
     channel: "slack",
@@ -276,7 +278,8 @@ function resolveSlackRoutingContext(params: {
   });
 
   const chatType = isDirectMessage ? "direct" : isGroupDm ? "group" : "channel";
-  const replyToMode = resolveSlackReplyToMode(account, chatType);
+  const accountReplyToMode = resolveSlackReplyToMode(account, chatType);
+  const replyToMode = channelConfig?.replyToMode ?? accountReplyToMode;
   const threadContext = resolveSlackThreadContext({ message, replyToMode });
   const threadTs = threadContext.incomingThreadTs;
   const isThreadReply = threadContext.isThreadReply;
@@ -353,6 +356,7 @@ export async function prepareSlackMessage(params: {
     isGroupDm,
     isRoom,
     isRoomish,
+    channelConfig,
   });
   const {
     route,
@@ -779,6 +783,7 @@ export async function prepareSlackMessage(params: {
     OriginatingChannel: "slack" as const,
     OriginatingTo: slackTo,
     NativeChannelId: message.channel,
+    ReplyToMode: replyToMode,
   }) satisfies FinalizedMsgContext;
   const pinnedMainDmOwner = isDirectMessage
     ? resolvePinnedMainDmOwnerFromAllowlist({
