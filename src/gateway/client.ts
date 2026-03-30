@@ -14,6 +14,7 @@ import {
 import { normalizeFingerprint } from "../infra/tls/fingerprint.js";
 import { rawDataToString } from "../infra/ws.js";
 import { logDebug, logError } from "../logger.js";
+import { safeEqualSecret } from "../security/secret-equal.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
@@ -242,7 +243,7 @@ export class GatewayClient {
         if (!fingerprint) {
           return new Error("gateway tls fingerprint unavailable");
         }
-        if (fingerprint !== expected) {
+        if (!safeEqualSecret(fingerprint, expected)) {
           return new Error("gateway tls fingerprint mismatch");
         }
         return undefined;
@@ -805,7 +806,7 @@ export class GatewayClient {
     if (!fingerprint) {
       return new Error("gateway tls fingerprint unavailable");
     }
-    if (fingerprint !== expected) {
+    if (!safeEqualSecret(fingerprint, expected)) {
       return new Error("gateway tls fingerprint mismatch");
     }
     return null;
