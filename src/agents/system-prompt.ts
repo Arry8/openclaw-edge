@@ -522,6 +522,9 @@ export function buildAgentSystemPrompt(params: {
               }`
             : "",
           params.sandboxInfo.browserBridgeUrl ? "Sandbox browser: enabled." : "",
+          availableTools.has("cron")
+            ? "Cron is available in this sandbox session (gateway-routed via WebSocket RPC, not container-executed)."
+            : "",
           params.sandboxInfo.browserNoVncUrl
             ? `Sandbox browser observer (noVNC): ${sanitizeForPromptLiteral(params.sandboxInfo.browserNoVncUrl)}`
             : "",
