@@ -1060,6 +1060,495 @@
       "result": {
         "status": "already-applied"
       }
+    },
+    {
+      "author": "viraj1995",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0ffea47434b52b62123ed65bcf39e3540f74c7ba",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 51277,
+      "title": "fix(reply): redact sandbox security errors from public channels",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "12645da3538d96cf04d9a7ac91855bb546af00f8"
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e181cd80f7cd1bc35f92117e4745dd11dbaebbed",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 51125,
+      "title": "fix(security): normalize Cyrillic and Greek confusable chars in boundary marker sanitization",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/external-content.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "BenediktSchackenberg",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "33f4ea36f9eeca1b1162be9cb8ff14f42bb1cce3",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 51039,
+      "title": "fix(security): block SSRF in nodes-camera writeUrlToFile",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/nodes-camera.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "23049b5ef0687c1e81530c69eeef07cfb19a6025",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 50527,
+      "title": "security: add input length limits to hook agent payload metadata fields",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "3cc2ccc2f208cdd0356b51fbcb406fc5954ecb26"
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0ff684f83dc62e147b1d3b5810372e46ab2a77a8",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50525,
+      "title": "security: add periodic cleanup to control plane rate limiter",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "c9923a98b5f406b57e5b593c3d386127c019c3e6"
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5d2fafa18197eaa6fd97835bc4b96758e9901962",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50521,
+      "title": "security: reject null bytes in archive entry paths",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b9b15e7ddb09605bf6378e75ce6ac19f1dcc496f"
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e5af148e362ba45e4fdedc346acaecfc91eeec6a",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50518,
+      "title": "security: replace Math.random with crypto.randomInt in session slug generation",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "1bffbad70c84212ac1fb8a4b356db366bb1c8b3e"
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d9b52a142ee95f691e0bc379e1b906b0af20597c",
+      "isDraft": null,
+      "labels": [
+        "channel: nextcloud-talk",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 50516,
+      "title": "security: use crypto.timingSafeEqual for Nextcloud Talk webhook signatures",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "2fbf005a1f9b8ec12cbbc2082094abcc09e8c9be"
+      }
+    },
+    {
+      "author": "teddytennant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0788eedfe4bac0f082380fbda8c4d271a19c012e",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 50515,
+      "title": "security: sanitize control characters in channel error logging",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b195114e3e7193c9f0f14348ddb9cfce2651dbda"
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7f4341a44d1d5903c89ebec8f1816487831e900d",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50506,
+      "title": "security: add missing response headers to media server",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/media/server.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "dims",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "78369ca46f63f84238229d81f5ade69981f82a67",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 50180,
+      "title": "fix(ssrf): honor empty URL allowlists as deny-all",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "31b61c2c85a1c5c5b8d7de46bf63e47cd3ebbc51"
+      }
+    },
+    {
+      "author": "MatrixAdventurer",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f0d507dbcbc9be221704d7727e57cbfff70ef8df",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50042,
+      "title": "security: clarify mention gates are not a trust boundary",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts"
+        ]
+      }
+    },
+    {
+      "author": "MatrixAdventurer",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "687a2a290bee0c3a8f6ba647936e5354cf3b2235",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 50041,
+      "title": "security: clarify fail-open denyCommands audit warning",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts"
+        ]
+      }
+    },
+    {
+      "author": "rbutera",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "645d51946a386bfebe1aa77c714d678f1b028eed",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 49745,
+      "title": "fix(plugin-loader): disable tryNative to fix channel runtime crash on Node 22.6+",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/plugin-sdk/root-alias.cjs",
+          "src/plugins/loader.test.ts",
+          "src/plugins/loader.ts"
+        ]
+      }
+    },
+    {
+      "author": "techfitmaster",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3eeaaf1454fadb26184b35c945f503f5d18920f5",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 49534,
+      "title": "fix: guard ANTHROPIC_MODEL_ALIASES initialization to prevent ReferenceError crash",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/slack/src/monitor/provider.ts",
+          "src/agents/model-selection.ts",
+          "src/infra/json-files.ts"
+        ]
+      }
+    },
+    {
+      "author": "BrennerSpear",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b0edd799679c16b5a28ad6bd07d1a39c7902fcf6",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 49234,
+      "title": "fix(hooks): suppress system event injection when deliver is false",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "4a7acf6fdec6614e203cd67577ab07006c95b308"
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "95e1d3b01ff327d30395c187e3d7a4dbe02b0b46",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 49120,
+      "title": "fix(security): reject private/internal hosts in cron webhook URLs",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "4234ce181869f4dbbedf6552a6039c208cd75338"
+      }
+    },
+    {
+      "author": "haoyu-haoyu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "290dcd07c4e1eed696c72b5b8dcf098e8ba12c7a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 49083,
+      "title": "fix(security): use constant-time comparison for TLS fingerprint verification",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "380edbeac6657f369fd0f67d3585eddfaf985ebc"
+      }
+    },
+    {
+      "author": "LittleBreak",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "290b12932de82a003748654c65c22704595a151e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48958,
+      "title": "fix: prevent phantom image injection from memory context into agent prompt",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b914f27e0523d45499069ead4a53db9bb2c93e00"
+      }
+    },
+    {
+      "author": "Valentinws",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af3ef34a4d74d1ce95c863770fa4365e41926384",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 48930,
+      "title": "fix(ui): defer fs.constants eval to prevent browser bundle crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "9b6d1e010c8a2209478731b3fb3a9153037fe5f2"
+      }
+    },
+    {
+      "author": "Commandershadow9",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9324a020b8a94fc966a76777df4a2382d2890984",
+      "isDraft": null,
+      "labels": [
+        "docker",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48724,
+      "title": "fix(security): address findings #134/#135/#139 — token masking, port binding, action SHA pins",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".github/workflows/ci.yml",
+          ".gitignore",
+          "docker-setup.sh"
+        ]
+      }
+    },
+    {
+      "author": "oshoulson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f77938d034bcbc400355459c882abceee338452c",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 48565,
+      "title": "feat(rag): local RAG pipeline for workspace context injection",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "5f1c829714e2a02e7694f4c2b86d0fff74c5f1f9"
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "43c220ca411559b4b251b5cf9767a5d35feef290",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 48339,
+      "title": "fix(gateway): add Cache-Control: no-store to default security headers",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b8c70a569d5ac621be33cc72eeb3c3b78aad20a4"
+      }
+    },
+    {
+      "author": "JacobWonder",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b1d72266dd51baf4e6e4406490fe4dfe79af6960",
+      "isDraft": null,
+      "labels": [
+        "channel: imessage",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 48200,
+      "title": "fix(imessage): prevent infinite loop when running on personal account",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/imessage/src/monitor/inbound-processing.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "kn1ghtc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d8fb545c40b73a631cfb944b564069defdc2a2e1",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 48149,
+      "title": "security: prevent requester self-approval in exec.approval.resolve",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "e36cd35ddf1f6b61f2488878570f391dd61e6b78"
+      }
     }
   ]
 }

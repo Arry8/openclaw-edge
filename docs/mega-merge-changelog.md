@@ -40,3 +40,29 @@
 - [#51311](https://github.com/openclaw/openclaw/pull/51311) fix(ios): guard sendPing continuation against double-resume crash (@yuntan)
 
 ---
+## 2026-03-30 14:27 — 16 PRs merged
+
+**Base:** `3ba98bcd4e7b` → **Head:** `e36cd35ddf1f` on `mega/latest`  
+**Build:** passed  
+**Duration:** 2m
+
+### security/crash (16)
+
+- [#51277](https://github.com/openclaw/openclaw/pull/51277) fix(reply): redact sandbox security errors from public channels (@viraj1995)
+- [#50527](https://github.com/openclaw/openclaw/pull/50527) security: add input length limits to hook agent payload metadata fields (@teddytennant)
+- [#50525](https://github.com/openclaw/openclaw/pull/50525) security: add periodic cleanup to control plane rate limiter (@teddytennant)
+- [#50521](https://github.com/openclaw/openclaw/pull/50521) security: reject null bytes in archive entry paths (@teddytennant)
+- [#50518](https://github.com/openclaw/openclaw/pull/50518) security: replace Math.random with crypto.randomInt in session slug generation (@teddytennant)
+- [#50516](https://github.com/openclaw/openclaw/pull/50516) security: use crypto.timingSafeEqual for Nextcloud Talk webhook signatures (@teddytennant)
+- [#50515](https://github.com/openclaw/openclaw/pull/50515) security: sanitize control characters in channel error logging (@teddytennant)
+- [#50180](https://github.com/openclaw/openclaw/pull/50180) fix(ssrf): honor empty URL allowlists as deny-all (@dims)
+- [#49234](https://github.com/openclaw/openclaw/pull/49234) fix(hooks): suppress system event injection when deliver is false (@BrennerSpear)
+- [#49120](https://github.com/openclaw/openclaw/pull/49120) fix(security): reject private/internal hosts in cron webhook URLs (@frankentini)
+- [#49083](https://github.com/openclaw/openclaw/pull/49083) fix(security): use constant-time comparison for TLS fingerprint verification (@haoyu-haoyu)
+- [#48958](https://github.com/openclaw/openclaw/pull/48958) fix: prevent phantom image injection from memory context into agent prompt (@LittleBreak)
+- [#48930](https://github.com/openclaw/openclaw/pull/48930) fix(ui): defer fs.constants eval to prevent browser bundle crash (@Valentinws)
+- [#48565](https://github.com/openclaw/openclaw/pull/48565) feat(rag): local RAG pipeline for workspace context injection (@oshoulson)
+- [#48339](https://github.com/openclaw/openclaw/pull/48339) fix(gateway): add Cache-Control: no-store to default security headers (@frankentini)
+- [#48149](https://github.com/openclaw/openclaw/pull/48149) security: prevent requester self-approval in exec.approval.resolve (@kn1ghtc)
+
+---
