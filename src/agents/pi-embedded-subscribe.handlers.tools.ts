@@ -34,6 +34,21 @@ type ToolStartRecord = {
 /** Track tool execution start data for after_tool_call hook. */
 const toolStartData = new Map<string, ToolStartRecord>();
 
+/**
+ * Track last tool-call activity per runId. Updated on both tool start and tool
+ * end so that a run with a single long-running tool call stays marked active.
+ * Cleaned up when a run has no remaining entries in toolStartData.
+ */
+const lastRunActivity = new Map<string, number>();
+
+/**
+ * Maximum idle time (ms) for a run before its entries are considered orphaned.
+ * Only entries from runs with no tool-call activity within this window are swept.
+ * This protects long-running tool calls (e.g., exec commands) because tool-end
+ * also refreshes the activity timestamp.
+ */
+const RUN_IDLE_SWEEP_MS = 5 * 60_000; // 5 minutes
+
 function buildToolStartKey(runId: string, toolCallId: string): string {
   return `${runId}:${toolCallId}`;
 }
@@ -343,7 +358,25 @@ export async function handleToolExecutionStart(
   const runId = ctx.params.runId;
 
   // Track start time and args for after_tool_call hook
-  toolStartData.set(buildToolStartKey(runId, toolCallId), { startTime: Date.now(), args });
+  const now = Date.now();
+  toolStartData.set(buildToolStartKey(runId, toolCallId), { startTime: now, args });
+  lastRunActivity.set(runId, now);
+
+  // Sweep orphaned entries from runs that have gone completely idle.
+  // Gate on lastRunActivity.size (not toolStartData.size) so that run
+  // tracking entries are also cleaned up in the normal start/end cycle.
+  if (lastRunActivity.size > 20) {
+    for (const [entryRunId, lastActivity] of lastRunActivity) {
+      if (now - lastActivity > RUN_IDLE_SWEEP_MS) {
+        for (const key of toolStartData.keys()) {
+          if (key.startsWith(entryRunId + ":")) {
+            toolStartData.delete(key);
+          }
+        }
+        lastRunActivity.delete(entryRunId);
+      }
+    }
+  }
 
   if (toolName === "read") {
     const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -469,6 +502,21 @@ export async function handleToolExecutionEnd(
   const toolStartKey = buildToolStartKey(runId, toolCallId);
   const startData = toolStartData.get(toolStartKey);
   toolStartData.delete(toolStartKey);
+
+  // Refresh run activity on tool end so single long-running tool calls stay
+  // marked active. Also clean up the run activity entry when no more entries
+  // remain for this run (prevents lastRunActivity from growing unbounded).
+  lastRunActivity.set(runId, Date.now());
+  let hasRemainingEntries = false;
+  for (const key of toolStartData.keys()) {
+    if (key.startsWith(runId + ":")) {
+      hasRemainingEntries = true;
+      break;
+    }
+  }
+  if (!hasRemainingEntries) {
+    lastRunActivity.delete(runId);
+  }
   const callSummary = ctx.state.toolMetaById.get(toolCallId);
   const meta = callSummary?.meta;
   ctx.state.toolMetas.push({ toolName, meta });
