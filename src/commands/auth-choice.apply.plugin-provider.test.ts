@@ -282,7 +282,7 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
     );
   });
 
-  it("does not override agent model for plugin auth choices when default model application is deferred (issue #24170)", async () => {
+  it("does not override agent model when inherited default exists (issue #24170)", async () => {
     const provider = buildProvider();
     resolvePluginProviders.mockReturnValue([provider]);
 
@@ -292,6 +292,13 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
         authChoice: "provider-plugin:ollama:local",
         agentId: "worker",
         setDefaultModel: false,
+        config: {
+          agents: {
+            defaults: {
+              model: "claude-3.5-sonnet",
+            },
+          },
+        },
         prompter: {
           note,
         } as unknown as ApplyAuthChoiceParams["prompter"],
@@ -305,8 +312,9 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
       },
     );
 
-    // When setDefaultModel is false, agent should inherit from agents.defaults.model
-    // instead of baking in the provider's defaultModel. See issue #24170.
+    // When setDefaultModel is false and inherited default exists,
+    // agent should inherit from agents.defaults.model instead of
+    // baking in the provider's defaultModel. See issue #24170.
     expect(result?.agentModelOverride).toBeUndefined();
     expect(result?.config.plugins).toEqual({
       entries: {
@@ -317,6 +325,47 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
     });
     expect(runProviderModelSelectedHook).not.toHaveBeenCalled();
     // Should not show "Default model set" message when not setting default
+    expect(note).not.toHaveBeenCalledWith(
+      'Default model set to ollama/qwen3:4b for agent "worker".',
+      "Model configured",
+    );
+  });
+
+  it("returns agentModelOverride when no inherited default exists", async () => {
+    const provider = buildProvider();
+    resolvePluginProviders.mockReturnValue([provider]);
+
+    const note = vi.fn(async () => {});
+    const result = await applyAuthChoicePluginProvider(
+      buildParams({
+        authChoice: "provider-plugin:ollama:local",
+        agentId: "worker",
+        setDefaultModel: false,
+        config: {},
+        prompter: {
+          note,
+        } as unknown as ApplyAuthChoiceParams["prompter"],
+      }),
+      {
+        authChoice: "provider-plugin:ollama:local",
+        pluginId: "ollama",
+        providerId: "ollama",
+        methodId: "local",
+        label: "Ollama",
+      },
+    );
+
+    // When no inherited default model exists, we must return the provider's
+    // default as agentModelOverride to avoid creating an agent with no model.
+    expect(result?.agentModelOverride).toEqual("ollama/qwen3:4b");
+    expect(result?.config.plugins).toEqual({
+      entries: {
+        ollama: {
+          enabled: true,
+        },
+      },
+    });
+    expect(runProviderModelSelectedHook).not.toHaveBeenCalled();
     expect(note).not.toHaveBeenCalledWith(
       'Default model set to ollama/qwen3:4b for agent "worker".',
       "Model configured",
