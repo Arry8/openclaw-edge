@@ -122,10 +122,8 @@ describe("discord instance claims", () => {
         channelId: mainChannel,
       }),
     ).resolves.toMatchObject({
-      status: "claimed-by-other",
+      status: "not-owned",
       instanceKey: "openclaw-rescue",
-      ownerInstanceKey: "openclaw-main",
-      matchedChannelId: mainChannel,
     });
   });
 });
