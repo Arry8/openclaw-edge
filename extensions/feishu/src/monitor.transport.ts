@@ -17,6 +17,7 @@ import {
   FEISHU_WEBHOOK_BODY_TIMEOUT_MS,
   FEISHU_WEBHOOK_MAX_BODY_BYTES,
   feishuWebhookRateLimiter,
+  closeHttpServer,
   httpServers,
   recordWebhookStatus,
   wsClients,
@@ -286,8 +287,8 @@ export async function monitorWebhook({
   httpServers.set(accountId, server);
 
   return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      server.close();
+    const cleanup = async () => {
+      await closeHttpServer(server);
       httpServers.delete(accountId);
       botOpenIds.delete(accountId);
       botNames.delete(accountId);
@@ -295,13 +296,11 @@ export async function monitorWebhook({
 
     const handleAbort = () => {
       log(`feishu[${accountId}]: abort signal received, stopping Webhook server`);
-      cleanup();
-      resolve();
+      void cleanup().then(() => resolve(), reject);
     };
 
     if (abortSignal?.aborted) {
-      cleanup();
-      resolve();
+      void cleanup().then(() => resolve(), reject);
       return;
     }
 
