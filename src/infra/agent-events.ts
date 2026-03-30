@@ -66,10 +66,12 @@ export function getAgentRunContext(runId: string) {
 }
 
 export function clearAgentRunContext(runId: string) {
+  getAgentEventState().seqByRun.delete(runId);
   getAgentEventState().runContextById.delete(runId);
 }
 
 export function resetAgentRunContextForTest() {
+  getAgentEventState().seqByRun.clear();
   getAgentEventState().runContextById.clear();
 }
 
