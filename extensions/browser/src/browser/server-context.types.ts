@@ -31,6 +31,7 @@ type BrowserProfileActions = {
   ensureBrowserAvailable: () => Promise<void>;
   ensureTabAvailable: (targetId?: string) => Promise<BrowserTab>;
   isHttpReachable: (timeoutMs?: number) => Promise<boolean>;
+  isTransportAvailable: (timeoutMs?: number) => Promise<boolean>;
   isReachable: (timeoutMs?: number) => Promise<boolean>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;

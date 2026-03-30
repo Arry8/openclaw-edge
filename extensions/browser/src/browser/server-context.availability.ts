@@ -42,6 +42,7 @@ type AvailabilityDeps = {
 
 type AvailabilityOps = {
   isHttpReachable: (timeoutMs?: number) => Promise<boolean>;
+  isTransportAvailable: (timeoutMs?: number) => Promise<boolean>;
   isReachable: (timeoutMs?: number) => Promise<boolean>;
   ensureBrowserAvailable: () => Promise<void>;
   stopRunningBrowser: () => Promise<{ stopped: boolean }>;
@@ -78,9 +79,20 @@ export function createProfileAvailability({
     );
   };
 
+  const isTransportAvailable = async (timeoutMs?: number) => {
+    if (capabilities.usesChromeMcp) {
+      await ensureChromeMcpAvailable(profile.name, profile.userDataDir, {
+        ephemeral: true,
+        timeoutMs,
+      });
+      return true;
+    }
+    return await isReachable(timeoutMs);
+  };
+
   const isHttpReachable = async (timeoutMs?: number) => {
     if (capabilities.usesChromeMcp) {
-      return await isReachable(timeoutMs);
+      return await isTransportAvailable(timeoutMs);
     }
     const { httpTimeoutMs } = resolveTimeouts(timeoutMs);
     return await isChromeReachable(profile.cdpUrl, httpTimeoutMs, state().resolved.ssrfPolicy);
@@ -286,6 +298,7 @@ export function createProfileAvailability({
 
   return {
     isHttpReachable,
+    isTransportAvailable,
     isReachable,
     ensureBrowserAvailable,
     stopRunningBrowser,

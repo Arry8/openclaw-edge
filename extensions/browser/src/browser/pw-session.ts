@@ -123,6 +123,27 @@ function normalizeCdpUrl(raw: string) {
   return raw.replace(/\/$/, "");
 }
 
+function hasCachedPlaywrightBrowserConnection(cdpUrl: string): boolean {
+  return cachedByCdpUrl.has(normalizeCdpUrl(cdpUrl));
+}
+
+function isRecoverableStalePageSelectionError(err: unknown, reusedCachedBrowser: boolean): boolean {
+  if (!reusedCachedBrowser) {
+    return false;
+  }
+  if (
+    err instanceof Error &&
+    err.message.includes("No pages available in the connected browser.")
+  ) {
+    return true;
+  }
+  if (err instanceof BrowserTabNotFoundError) {
+    return true;
+  }
+  const message = err instanceof Error ? err.message : formatErrorMessage(err);
+  return message.toLowerCase().includes("tab not found");
+}
+
 function findNetworkRequestById(state: PageState, id: string): BrowserNetworkRequest | undefined {
   for (let i = state.requests.length - 1; i >= 0; i -= 1) {
     const candidate = state.requests[i];
@@ -492,10 +513,7 @@ async function resolvePageByTargetIdOrThrow(opts: {
   return page;
 }
 
-export async function getPageForTargetId(opts: {
-  cdpUrl: string;
-  targetId?: string;
-}): Promise<Page> {
+async function getPageForTargetIdOnce(opts: { cdpUrl: string; targetId?: string }): Promise<Page> {
   const { browser } = await connectBrowser(opts.cdpUrl);
   const pages = await getAllPages(browser);
   if (!pages.length) {
@@ -514,6 +532,22 @@ export async function getPageForTargetId(opts: {
     throw new BrowserTabNotFoundError();
   }
   return found;
+}
+
+export async function getPageForTargetId(opts: {
+  cdpUrl: string;
+  targetId?: string;
+}): Promise<Page> {
+  const reusedCachedBrowser = hasCachedPlaywrightBrowserConnection(opts.cdpUrl);
+  try {
+    return await getPageForTargetIdOnce(opts);
+  } catch (err) {
+    if (!isRecoverableStalePageSelectionError(err, reusedCachedBrowser)) {
+      throw err;
+    }
+    await closePlaywrightBrowserConnection({ cdpUrl: opts.cdpUrl });
+    return await getPageForTargetIdOnce(opts);
+  }
 }
 
 export function refLocator(page: Page, ref: string) {
