@@ -761,8 +761,10 @@ describe("buildStatusMessage", () => {
       sessionEntry: {
         sessionId: "runtime-drift-only",
         updatedAt: 0,
-        modelProvider: "anthropic",
-        model: "claude-haiku-4-5",
+        // No modelProvider/model: not a channel-routed session.
+        // entry.model is stale runtime data from a previous message and should NOT
+        // be used as the selected model for a non-fallback session.
+        // fallbackNotice* are from a DIFFERENT prior fallback and are stale.
         fallbackNoticeSelectedModel: "fireworks/minimax-m2p5",
         fallbackNoticeActiveModel: "deepinfra/moonshotai/Kimi-K2.5",
         fallbackNoticeReason: "rate limit",
@@ -1076,6 +1078,40 @@ describe("buildStatusMessage", () => {
       },
       { prefix: "openclaw-status-" },
     );
+  });
+
+  it("reports modelProvider+model from channels.modelByChannel instead of agent defaults", () => {
+    // When channels.modelByChannel routes a session to a non-default model,
+    // sessionEntry.modelProvider and sessionEntry.model are set but
+    // providerOverride and modelOverride are not. buildStatusMessage must
+    // prefer the routed fields so /status reports the effective model.
+    const text = buildStatusMessage({
+      agent: {
+        model: "anthropic/claude-sonnet-4-6", // agent default
+        provider: "anthropic",
+      },
+      sessionEntry: {
+        sessionId: "irc-dev",
+        updatedAt: 0,
+        // Routed session fields — set by channels.modelByChannel
+        channel: "irc",
+        groupId: "#dev",
+        modelProvider: "openai-codex",
+        model: "gpt-5.4",
+        // These should NOT be set for the channel override case
+        providerOverride: undefined,
+        modelOverride: undefined,
+      },
+      sessionKey: "agent:main:irc:group:#dev",
+      queue: { mode: "none" },
+    });
+    const normalized = normalizeTestText(text);
+
+    // Should show the channel-routed model, NOT the agent default
+    expect(normalized).toContain("openai-codex");
+    expect(normalized).toContain("gpt-5.4");
+    // Should NOT show the agent default
+    expect(normalized).not.toContain("claude-sonnet-4-6");
   });
 
   it("keeps transcript-derived slash model ids on model-only context lookup", async () => {
