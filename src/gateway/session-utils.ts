@@ -1144,6 +1144,12 @@ export function buildGatewaySessionRow(params: {
   const id = parsed?.id;
   const origin = entry?.origin;
   const originLabel = origin?.label;
+  // System event providers (e.g. "heartbeat") may have previously been stored as
+  // origin.label before fix #54661. Filter them out so they never surface as the
+  // session display name.
+  const SYSTEM_EVENT_LABELS = new Set(["heartbeat", "cron-event", "exec-event"]);
+  const safeOriginLabel =
+    originLabel && !SYSTEM_EVENT_LABELS.has(originLabel.toLowerCase()) ? originLabel : undefined;
   const displayName =
     entry?.displayName ??
     (channel
@@ -1157,7 +1163,7 @@ export function buildGatewaySessionRow(params: {
         })
       : undefined) ??
     entry?.label ??
-    originLabel;
+    safeOriginLabel;
   const deliveryFields = normalizeSessionDeliveryFields(entry);
   const parsedAgent = parseAgentSessionKey(key);
   const sessionAgentId = normalizeAgentId(parsedAgent?.agentId ?? resolveDefaultAgentId(cfg));
