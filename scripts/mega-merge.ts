@@ -443,39 +443,48 @@ function createGhRelease(params: {
   runDate: string;
   baseCommit: string;
   mergedEntries: ReportEntry[];
+  changelogPath?: string;
 }): void {
-  const { tag, runDate, baseCommit, mergedEntries } = params;
+  const { tag, runDate, baseCommit, mergedEntries, changelogPath } = params;
 
-  // Build release notes
-  const lines: string[] = [];
-  lines.push(`Mega-merge batch — ${runDate}`);
-  lines.push(``);
-  lines.push(`**Base commit:** \`${baseCommit.slice(0, 12)}\``);
-  lines.push(`**PRs merged:** ${mergedEntries.length}`);
-  lines.push(``);
-
-  const tierLabels: Record<number, string> = {
-    1: "Security / Crash",
-    2: "Fixes",
-    3: "Features",
-    4: "Other",
-  };
-  for (const tier of [1, 2, 3, 4] as const) {
-    const group = mergedEntries.filter((e) => e.tier === tier);
-    if (group.length === 0) {
-      continue;
+  // Use the last changelog section if available, otherwise build notes inline
+  let notes: string;
+  if (changelogPath) {
+    try {
+      const full = readFileSync(changelogPath, "utf8");
+      const lastSection = full.lastIndexOf("\n## ");
+      notes = lastSection >= 0 ? full.slice(lastSection + 1) : full;
+    } catch {
+      notes = "";
     }
-    lines.push(`### ${tierLabels[tier]}`);
-    lines.push(``);
-    for (const e of group) {
-      lines.push(
-        `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title}`,
-      );
-    }
-    lines.push(``);
   }
-
-  const notes = lines.join("\n");
+  if (!notes) {
+    const lines: string[] = [];
+    lines.push(`Mega-merge batch — ${runDate}`);
+    lines.push(``);
+    lines.push(`**Base commit:** \`${baseCommit.slice(0, 12)}\``);
+    lines.push(`**PRs merged:** ${mergedEntries.length}`);
+    lines.push(``);
+    const tierLabels: Record<number, string> = {
+      1: "Security / Crash",
+      2: "Fixes",
+      3: "Features",
+      4: "Other",
+    };
+    for (const tier of [1, 2, 3, 4] as const) {
+      const group = mergedEntries.filter((e) => e.tier === tier);
+      if (group.length === 0) continue;
+      lines.push(`### ${tierLabels[tier]}`);
+      lines.push(``);
+      for (const e of group) {
+        lines.push(
+          `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title}`,
+        );
+      }
+      lines.push(``);
+    }
+    notes = lines.join("\n");
+  }
 
   // Tag the current HEAD, then create the release
   const tagResult = run("git", ["tag", tag]);
@@ -1371,6 +1380,7 @@ async function main() {
         runDate: snapDate,
         baseCommit: snapSha,
         mergedEntries: snapEntries,
+        changelogPath: CHANGELOG_PATH,
       });
     }
   }
@@ -1547,7 +1557,7 @@ async function main() {
   if (CREATE_RELEASE && !DRY_RUN && mergedCount > 0 && (buildPassed || SKIP_BUILD)) {
     const tagTs = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
     const tag = `mega/${tagTs}`;
-    createGhRelease({ tag, runDate, baseCommit, mergedEntries });
+    createGhRelease({ tag, runDate, baseCommit, mergedEntries, changelogPath: CHANGELOG_PATH });
   }
 
   // ── Promote to main ───────────────────────────────────────────────────────
