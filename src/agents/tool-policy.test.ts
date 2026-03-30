@@ -6,6 +6,7 @@ import type { SandboxToolPolicy } from "./sandbox/types.js";
 import { TOOL_POLICY_CONFORMANCE } from "./tool-policy.conformance.js";
 import {
   applyOwnerOnlyToolPolicy,
+  collectExplicitAllowlist,
   expandToolGroups,
   isOwnerOnlyToolName,
   normalizeToolName,
@@ -250,5 +251,40 @@ describe("resolveSandboxToolPolicyForAgent", () => {
     expect(isToolAllowed(policy, "browser")).toBe(false);
     // gateway exposes admin actions — should remain denied
     expect(isToolAllowed(policy, "gateway")).toBe(false);
+  });
+});
+
+describe("collectExplicitAllowlist", () => {
+  it("collects entries from allow", () => {
+    expect(collectExplicitAllowlist([{ allow: ["read", "write"] }])).toEqual(["read", "write"]);
+  });
+
+  it("collects entries from alsoAllow when allow is absent", () => {
+    expect(collectExplicitAllowlist([{ alsoAllow: ["openrag_search"] }])).toEqual([
+      "openrag_search",
+    ]);
+  });
+
+  it("collects entries from both allow and alsoAllow", () => {
+    expect(
+      collectExplicitAllowlist([{ allow: ["read"], alsoAllow: ["openrag_search"] }]),
+    ).toEqual(["read", "openrag_search"]);
+  });
+
+  it("returns empty array when policy has neither allow nor alsoAllow", () => {
+    expect(collectExplicitAllowlist([{ deny: ["exec"] }])).toEqual([]);
+  });
+
+  it("returns empty array for undefined policies", () => {
+    expect(collectExplicitAllowlist([undefined, undefined])).toEqual([]);
+  });
+
+  it("collects alsoAllow across multiple policies", () => {
+    expect(
+      collectExplicitAllowlist([
+        { alsoAllow: ["openrag_search"] },
+        { alsoAllow: ["custom_tool"] },
+      ]),
+    ).toEqual(["openrag_search", "custom_tool"]);
   });
 });
