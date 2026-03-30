@@ -1,7 +1,6 @@
 # Authored by: cc (Claude Code) | 2026-03-30
-# mega-merge.yml — Scheduled integration of upstream openclaw PRs onto mega/latest.
-# Runs mega-merge.ts on mega/latest with continuous background builds.
-# Creates a GH release every 500 merged PRs and one final release at end.
+# mega-merge.yml — Nightly integration of upstream openclaw PRs onto mega/latest.
+# Each nightly run processes ~50-100 new PRs; a single final build validates the result.
 # Manual trigger available via workflow_dispatch with optional overrides.
 
 name: mega-merge
@@ -15,18 +14,24 @@ on:
         description: "Max PRs to attempt (0 = unlimited)"
         required: false
         default: "0"
-      release_interval:
-        description: "Create a GH release every N merged PRs (0 = only at end)"
+      skip_build:
+        description: "Skip final build validation (true/false)"
         required: false
-        default: "500"
+        default: "false"
+
+# Prevent concurrent runs from fighting over mega/latest.
+# New run waits for the current one to finish rather than cancelling it.
+concurrency:
+  group: mega-merge
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   merge:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 hours — full run can take a while
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - name: Checkout mega/latest
@@ -38,6 +43,13 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb', 'package.json') }}
+          restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -55,19 +67,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LIMIT="${{ github.event.inputs.limit || '0' }}"
-          RELEASE_INTERVAL="${{ github.event.inputs.release_interval || '500' }}"
-          LIMIT_ARGS=""
+          SKIP_BUILD="${{ github.event.inputs.skip_build || 'false' }}"
+
+          ARGS=(--resume --create-release)
+
           if [ "$LIMIT" != "0" ]; then
-            LIMIT_ARGS="--limit $LIMIT"
+            ARGS+=(--limit "$LIMIT")
           fi
-          bun scripts/mega-merge.ts \
-            --continuous-build \
-            --resume \
-            --create-release \
-            --release-interval "$RELEASE_INTERVAL" \
-            $LIMIT_ARGS
+          if [ "$SKIP_BUILD" = "true" ]; then
+            ARGS+=(--skip-build)
+          fi
+
+          bun scripts/mega-merge.ts "${ARGS[@]}"
 
       - name: Push mega/latest
+        if: success()
         run: git push origin mega/latest
 
       - name: Upload report
