@@ -102,6 +102,27 @@ describe("createAcpDispatchDeliveryCoordinator", () => {
     expect(coordinator.getRoutedCounts().block).toBe(0);
   });
 
+  it("preserves visible direct tool text behavior for telegram delivery", async () => {
+    const coordinator = createAcpDispatchDeliveryCoordinator({
+      cfg: createAcpTestConfig(),
+      ctx: buildTestCtx({
+        Provider: "telegram",
+        Surface: "telegram",
+        SessionKey: "agent:codex-acp:session-1",
+      }),
+      dispatcher: createDispatcher(),
+      inboundAudio: false,
+      shouldRouteToOriginating: false,
+    });
+
+    await coordinator.deliver("tool", { text: "tool summary" }, { skipTts: true });
+    await coordinator.settleVisibleText();
+
+    expect(coordinator.hasDeliveredVisibleText()).toBe(true);
+    expect(coordinator.hasFailedVisibleTextDelivery()).toBe(false);
+    expect(coordinator.getRoutedCounts().tool).toBe(0);
+  });
+
   it("prefers provider over surface when detecting direct telegram visibility", async () => {
     const coordinator = createAcpDispatchDeliveryCoordinator({
       cfg: createAcpTestConfig(),

@@ -37,9 +37,6 @@ function shouldTreatDeliveredTextAsVisible(params: {
   if (!params.text?.trim()) {
     return false;
   }
-  if (params.kind === "tool") {
-    return false;
-  }
   if (params.kind === "final") {
     return true;
   }
