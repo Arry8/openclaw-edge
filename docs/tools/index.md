@@ -178,4 +178,4 @@ to pair will automatically become the owner.
 If `commands.ownerAllowFrom` is not configured, owner-only tools are
 silently removed from the agent's tool list. The agent won't see any error
 — it will simply use slower CLI workarounds instead.
-
+</Note>
