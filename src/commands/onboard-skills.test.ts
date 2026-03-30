@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
@@ -129,6 +129,10 @@ const runtime: RuntimeEnv = {
   }) as RuntimeEnv["exit"],
 };
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("setupSkills", () => {
   it("does not recommend Homebrew when user skips installing brew-backed deps", async () => {
     if (process.platform === "win32") {
@@ -154,6 +158,27 @@ describe("setupSkills", () => {
     const { prompter, notes } = createPrompter({ multiselect: ["__skip__"] });
     await setupSkills({} as OpenClawConfig, "/tmp/ws", runtime, prompter);
 
+    expect(prompter.multiselect).toHaveBeenCalledWith({
+      message: "Install missing skill dependencies",
+      options: [
+        {
+          value: "__skip__",
+          label: "Skip for now",
+          hint: "Continue without installing dependencies",
+        },
+        {
+          value: "__all__",
+          label: "Select all",
+          hint: "Install every skill dependency shown here",
+        },
+        {
+          value: "skill:0",
+          label: "🧩 video-frames",
+          hint: "ffmpeg — Install ffmpeg (brew)",
+        },
+      ],
+    });
+
     // OS-mismatched skill should be counted as unsupported, not installable/missing.
     const status = notes.find((n) => n.title === "Skills status")?.message ?? "";
     expect(status).toContain("Unsupported on this OS: 1");
@@ -176,10 +201,59 @@ describe("setupSkills", () => {
       }),
     ]);
 
-    const { prompter, notes } = createPrompter({ multiselect: ["video-frames"] });
+    const { prompter, notes } = createPrompter({ multiselect: ["skill:0"] });
     await setupSkills({} as OpenClawConfig, "/tmp/ws", runtime, prompter);
 
     const brewNote = notes.find((n) => n.title === "Homebrew recommended");
     expect(brewNote).toBeDefined();
+  });
+
+  it("installs every visible skill when select all is chosen", async () => {
+    mockMissingBrewStatus([
+      createBundledSkill({
+        name: "video-frames",
+        description: "ffmpeg",
+        bins: ["ffmpeg"],
+        installLabel: "Install ffmpeg (brew)",
+      }),
+      createBundledSkill({
+        name: "voice-call",
+        description: "SIP helper",
+        bins: ["sipctl"],
+        installLabel: "Install sipctl (brew)",
+      }),
+    ]);
+
+    const { prompter } = createPrompter({ multiselect: ["__all__"] });
+    await setupSkills({} as OpenClawConfig, "/tmp/ws", runtime, prompter);
+
+    expect(installSkill).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(installSkill).mock.calls.map((call) => call[0].skillName)).toEqual([
+      "video-frames",
+      "voice-call",
+    ]);
+  });
+
+  it("installs only a real skill named __all__ when that option alone is selected", async () => {
+    mockMissingBrewStatus([
+      createBundledSkill({
+        name: "__all__",
+        description: "A real skill named __all__",
+        bins: ["allctl"],
+        installLabel: "Install allctl (brew)",
+      }),
+      createBundledSkill({
+        name: "voice-call",
+        description: "SIP helper",
+        bins: ["sipctl"],
+        installLabel: "Install sipctl (brew)",
+      }),
+    ]);
+
+    const { prompter } = createPrompter({ multiselect: ["skill:0"] });
+    await setupSkills({} as OpenClawConfig, "/tmp/ws", runtime, prompter);
+
+    expect(installSkill).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(installSkill).mock.calls[0]?.[0]?.skillName).toBe("__all__");
   });
 });

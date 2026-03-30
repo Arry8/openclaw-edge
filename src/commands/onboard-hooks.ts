@@ -5,6 +5,10 @@ import { buildWorkspaceHookStatus } from "../hooks/hooks-status.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 
+const SKIP_SELECTION = "__skip__";
+const SELECT_ALL_SELECTION = "__all__";
+const HOOK_OPTION_PREFIX = "hook:";
+
 export async function setupInternalHooks(
   cfg: OpenClawConfig,
   runtime: RuntimeEnv,
@@ -35,19 +39,34 @@ export async function setupInternalHooks(
     return cfg;
   }
 
+  const hookOptionValues = eligibleHooks.map((_, index) => `${HOOK_OPTION_PREFIX}${index}`);
+  const hookNameByOptionValue = new Map(
+    hookOptionValues.map((value, index) => [value, eligibleHooks[index]?.name ?? ""]),
+  );
+
   const toEnable = await prompter.multiselect({
     message: "Enable hooks?",
     options: [
-      { value: "__skip__", label: "Skip for now" },
-      ...eligibleHooks.map((hook) => ({
-        value: hook.name,
+      { value: SKIP_SELECTION, label: "Skip for now" },
+      {
+        value: SELECT_ALL_SELECTION,
+        label: "Select all",
+        hint: "Enable every hook shown here",
+      },
+      ...eligibleHooks.map((hook, index) => ({
+        value: hookOptionValues[index] ?? `${HOOK_OPTION_PREFIX}${index}`,
         label: `${hook.emoji ?? "🔗"} ${hook.name}`,
         hint: hook.description,
       })),
     ],
   });
 
-  const selected = toEnable.filter((name) => name !== "__skip__");
+  const selected = toEnable.includes(SELECT_ALL_SELECTION)
+    ? eligibleHooks.map((hook) => hook.name)
+    : toEnable
+        .filter((value) => value !== SKIP_SELECTION)
+        .map((value) => hookNameByOptionValue.get(value))
+        .filter((name): name is string => Boolean(name));
   if (selected.length === 0) {
     return cfg;
   }
