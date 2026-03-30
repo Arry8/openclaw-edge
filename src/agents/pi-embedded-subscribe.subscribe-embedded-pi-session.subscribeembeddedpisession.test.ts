@@ -132,6 +132,7 @@ describe("subscribeEmbeddedPiSession", () => {
       } as AssistantMessage;
 
       emit({ type: "message_end", message: assistantMessage });
+      await Promise.resolve();
 
       await vi.waitFor(() => {
         expect(onBlockReply).toHaveBeenCalledTimes(1);
@@ -176,6 +177,7 @@ describe("subscribeEmbeddedPiSession", () => {
         message: { role: "assistant" },
         assistantMessageEvent: { type: "text_end" },
       });
+      await Promise.resolve();
 
       await vi.waitFor(() => {
         expect(onBlockReply.mock.calls.length).toBeGreaterThan(0);
@@ -259,6 +261,60 @@ describe("subscribeEmbeddedPiSession", () => {
     emitAssistantTextDelta(emit, " files</think>\nFinal answer");
 
     expect(onReasoningEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a visible fallback for thinking-only stop responses", () => {
+    const { emit, onAgentEvent } = createAgentEventHarness();
+
+    emit({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "stop",
+        content: [{ type: "thinking", thinking: "I checked the context." }],
+      } as AssistantMessage,
+    });
+
+    expectSingleAgentEventText(
+      onAgentEvent.mock.calls,
+      "I considered this, but I don't have anything to add.",
+    );
+  });
+
+  it("does not emit the thinking-only fallback for assistant tool-call turns", () => {
+    const { emit, onAgentEvent } = createAgentEventHarness();
+
+    emit({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "thinking", thinking: "I should read the file first." },
+          { type: "toolUse", id: "call_1", name: "read", input: { path: "/tmp/a" } },
+        ],
+      } as AssistantMessage,
+    });
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not emit the thinking-only fallback when stopReason is stop but toolCall is present", () => {
+    const { emit, onAgentEvent } = createAgentEventHarness();
+
+    emit({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "stop",
+        content: [
+          { type: "thinking", thinking: "Checking the result." },
+          { type: "toolCall", id: "call_2", name: "exec", arguments: { command: "ls" } },
+        ],
+      } as AssistantMessage,
+    });
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
   });
 
   it("emits delta chunks in agent events for streaming assistant text", () => {
