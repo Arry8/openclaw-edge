@@ -260,7 +260,9 @@ class ContinuousBuildManager {
     const proc = spawnAsync("pnpm", ["build"], {
       cwd: this.worktreePath,
       stdio: ["ignore", logFd, logFd],
+      detached: true, // own process group so cleanup kills tsgo grandchildren too
     });
+    proc.unref(); // don't keep the event loop alive
     this.proc = proc;
 
     proc.on("exit", (code) => {
@@ -291,7 +293,13 @@ class ContinuousBuildManager {
 
   cleanup(): void {
     if (this.proc) {
-      this.proc.kill("SIGTERM");
+      // Kill the whole process group (negative PID) so tsgo grandchildren are
+      // also terminated rather than orphaned when the merge loop exits.
+      try {
+        process.kill(-this.proc.pid!, "SIGTERM");
+      } catch {
+        this.proc.kill("SIGTERM"); // fallback if pgid already gone
+      }
       this.proc = null;
     }
     run("git", ["worktree", "remove", "--force", this.worktreePath]);
@@ -677,6 +685,28 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
 
 async function main() {
   const startMs = Date.now();
+
+  // ── Kill orphaned tsgo/tsgolint processes ────────────────────────────────
+  // Prior interrupted builds leave tsgo grandchildren running with no parent.
+  // They consume significant CPU/RAM; kill them before starting a new run.
+  {
+    const orphanResult = run("pgrep", ["-f", "tsgo|tsgolint"]);
+    if (orphanResult.ok && orphanResult.stdout) {
+      const pids = orphanResult.stdout
+        .split("\n")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      // Exclude our own process
+      const self = process.pid;
+      const toKill = pids.filter((p) => parseInt(p, 10) !== self);
+      if (toKill.length > 0) {
+        warn(
+          `Found ${toKill.length} orphaned tsgo/tsgolint process(es) — killing: ${toKill.join(", ")}`,
+        );
+        run("kill", toKill);
+      }
+    }
+  }
 
   // Verify we're in a git repo and the upstream remote exists
   const remoteCheck = run("git", ["remote", "get-url", UPSTREAM]);
