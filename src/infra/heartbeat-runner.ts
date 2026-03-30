@@ -57,7 +57,7 @@ import {
   isExecCompletionEvent,
 } from "./heartbeat-events-filter.js";
 import { emitHeartbeatEvent, resolveIndicatorType } from "./heartbeat-events.js";
-import { resolveHeartbeatReasonKind } from "./heartbeat-reason.js";
+import { isHeartbeatEventDrivenReason, resolveHeartbeatReasonKind } from "./heartbeat-reason.js";
 import {
   isHeartbeatEnabledForAgent,
   resolveHeartbeatIntervalMs,
@@ -545,7 +545,10 @@ export async function runHeartbeatOnce(opts: {
   if (!isHeartbeatEnabledForAgent(cfg, agentId)) {
     return { status: "skipped", reason: "disabled" };
   }
-  if (!resolveHeartbeatIntervalMs(cfg, undefined, heartbeat)) {
+  if (
+    !resolveHeartbeatIntervalMs(cfg, undefined, heartbeat) &&
+    !isHeartbeatEventDrivenReason(opts.reason)
+  ) {
     return { status: "skipped", reason: "disabled" };
   }
 
