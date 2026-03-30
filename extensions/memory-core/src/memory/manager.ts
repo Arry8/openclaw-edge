@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { type FSWatcher } from "chokidar";
 import { formatUncaughtError } from "openclaw/plugin-sdk/error-runtime";
@@ -28,6 +29,12 @@ import {
   type EmbeddingProviderResult,
   type EmbeddingProviderRuntime,
 } from "./embeddings.js";
+import {
+  createEpisodeEncoder,
+  EpisodicSearch,
+  EpisodicStore,
+} from "openclaw/plugin-sdk/memory-core-host-engine-episodic";
+import type { EpisodeSearchResult } from "openclaw/plugin-sdk/memory-core-host-engine-episodic";
 import { bm25RankToScore, buildFtsQuery, mergeHybridResults } from "./hybrid.js";
 import { MemoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 import { searchKeyword, searchVector } from "./manager-search.js";
@@ -321,6 +328,27 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       sessionKey?: string;
     },
   ): Promise<MemorySearchResult[]> {
+    const maxResults = opts?.maxResults ?? this.settings.query.maxResults;
+    if (!query.trim()) {
+      return [];
+    }
+    const base = await this.searchCore(query, opts);
+    const episodic = await this.searchEpisodic(query, opts).catch((err) => {
+      log.warn(`episodic search skipped: ${String(err)}`);
+      return [] as MemorySearchResult[];
+    });
+    // Merge both result sets, globally re-rank by score, and cap at maxResults
+    return [...base, ...episodic].toSorted((a, b) => b.score - a.score).slice(0, maxResults);
+  }
+
+  private async searchCore(
+    query: string,
+    opts?: {
+      maxResults?: number;
+      minScore?: number;
+      sessionKey?: string;
+    },
+  ): Promise<MemorySearchResult[]> {
     const cleaned = query.trim();
     if (!cleaned) {
       return [];
@@ -449,6 +477,61 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       return strict.slice(0, maxResults);
     }
     return results.filter((entry) => entry.score >= relaxedMinScore).slice(0, maxResults);
+  }
+
+  /** Search episodic memory if enabled. Returns empty array when disabled or unavailable. */
+  private async searchEpisodic(
+    query: string,
+    opts?: { maxResults?: number; minScore?: number },
+  ): Promise<MemorySearchResult[]> {
+    const memSearch = resolveMemorySearchConfig(this.cfg, this.agentId);
+    const episodicCfg = memSearch?.episodic;
+    if (!episodicCfg?.enabled) {
+      return [];
+    }
+
+    const agentBaseDir = resolveAgentDir(this.cfg, this.agentId);
+    const dbPath = path.join(agentBaseDir, "episodic", "episodes.db");
+    const store = new EpisodicStore(dbPath);
+    try {
+      const encoder = await createEpisodeEncoder(this.cfg, this.agentId);
+      const minScore = opts?.minScore ?? this.settings.query.minScore;
+      const maxResults = opts?.maxResults ?? this.settings.query.maxResults;
+
+      const searcher = new EpisodicSearch(store, encoder);
+      const episodicResults = await searcher.search({
+        query,
+        // Scope retrieval to this agent so agents sharing a database file
+        // (via a shared agentDir) do not leak memories across personas.
+        agentId: this.agentId,
+        limit: maxResults,
+      });
+
+      return episodicResults
+        .filter((r: EpisodeSearchResult) => r.score >= minScore)
+        .map((r: EpisodeSearchResult) => {
+          const snippet = r.episode.details
+            ? `${r.episode.summary}\n${r.episode.details}`
+            : r.episode.summary;
+          return {
+            // Use "episodes/<id>" so downstream citation rendering produces a
+            // human-readable label rather than a bare UUID, and avoids the
+            // "episodic:<id>" prefix being mistaken for a file path by memory_get.
+            path: `episodes/${r.episode.id}`,
+            // Episodes are atomic records, not line-addressable files.
+            // Use startLine: 1 / endLine: 1 so citation formatters produce
+            // "#L1" rather than the invalid "#L0".
+            startLine: 1,
+            endLine: 1,
+            score: r.score,
+            snippet,
+            source: "episodes" as const,
+            citation: r.episode.created_at,
+          };
+        });
+    } finally {
+      store.close();
+    }
   }
 
   private hasIndexedContent(): boolean {
@@ -702,6 +785,34 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     from?: number;
     lines?: number;
   }): Promise<{ text: string; path: string }> {
+    // Episodic hits are emitted with path "episodes/<uuid>".  Route them
+    // directly to EpisodicStore.getById() instead of readMemoryFile(), which
+    // only accepts .md files inside the agent workspace directory.
+    const episodicMatch = /^episodes\/([^/]+)$/.exec(params.relPath.trim());
+    if (episodicMatch) {
+      const episodeId = episodicMatch[1];
+      const agentBaseDir = resolveAgentDir(this.cfg, this.agentId);
+      const dbPath = path.join(agentBaseDir, "episodic", "episodes.db");
+      const store = new EpisodicStore(dbPath);
+      try {
+        const episode = store.getById(episodeId);
+        if (!episode || episode.agent_id !== this.agentId) {
+          return { text: "", path: params.relPath };
+        }
+        const lines: string[] = [
+          `# Episode: ${episode.summary}`,
+          `Date: ${episode.created_at}`,
+          `Importance: ${episode.importance.toFixed(2)}`,
+          ...(episode.topic_tags?.length ? [`Tags: ${episode.topic_tags.join(", ")}`] : []),
+          "",
+          ...(episode.details ? [episode.details] : []),
+        ];
+        return { text: lines.join("\n"), path: params.relPath };
+      } finally {
+        store.close();
+      }
+    }
+
     return await readMemoryFile({
       workspaceDir: this.workspaceDir,
       extraPaths: this.settings.extraPaths,

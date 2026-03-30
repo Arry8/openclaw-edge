@@ -1,3 +1,4 @@
+import { buildAgentMainSessionKey, normalizeAgentId } from "../../../src/routing/session-key.js";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
 import { setLastActiveSessionKey } from "./app-settings.ts";
@@ -74,6 +75,64 @@ function isChatResetCommand(text: string) {
     return true;
   }
   return normalized.startsWith("/new ") || normalized.startsWith("/reset ");
+}
+
+function parseAgentSwitchCommand(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = trimmed.match(/^\/agent(?:\s+(.+))?$/i);
+  if (!match) {
+    return null;
+  }
+  const targetRaw = match[1]?.trim();
+  // `/agent` defaults to main for quick recovery.
+  return normalizeAgentId((targetRaw || "main").split(/\s+/)[0]);
+}
+
+type SessionDefaultsForSwitch = {
+  mainKey?: string;
+};
+
+function resolveMainKeyForSwitch(host: ChatHost): string {
+  const snapshot = host.hello?.snapshot as
+    | { sessionDefaults?: SessionDefaultsForSwitch }
+    | undefined;
+  const key = snapshot?.sessionDefaults?.mainKey?.trim();
+  return key || "main";
+}
+
+async function switchChatAgent(host: ChatHost, targetAgentId: string): Promise<boolean> {
+  const normalizedTarget = normalizeAgentId(targetAgentId);
+  const current = parseAgentSessionKey(host.sessionKey);
+  if (current?.agentId === normalizedTarget) {
+    return false;
+  }
+  // Abort the in-flight run on the previous session before switching so the
+  // old run does not continue executing in the background with no way to cancel
+  // it (once sessionKey changes, /stop targets the new session instead).
+  if (host.chatRunId) {
+    await abortChatRun(host as unknown as OpenClawApp).catch(() => {
+      // Best-effort: if the abort fails (e.g. disconnected) we still switch.
+    });
+  }
+  host.sessionKey = buildAgentMainSessionKey({
+    agentId: normalizedTarget,
+    mainKey: resolveMainKeyForSwitch(host),
+  });
+  setLastActiveSessionKey(
+    host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+    host.sessionKey,
+  );
+  // Clear any residual run state and queued messages after the abort so the
+  // new session starts clean. Without clearing the queue, messages queued
+  // for the previous session could flush under the new sessionKey and be
+  // sent to the wrong agent.
+  host.chatRunId = null;
+  host.chatSending = false;
+  host.chatQueue = [];
+  return true;
 }
 
 export async function handleAbortChat(host: ChatHost) {
@@ -238,6 +297,19 @@ export async function handleSendChat(
     return;
   }
 
+  const switchAgentId = parseAgentSwitchCommand(message);
+  if (switchAgentId) {
+    const switched = await switchChatAgent(host, switchAgentId);
+    if (messageOverride == null) {
+      host.chatMessage = "";
+      host.chatAttachments = [];
+    }
+    if (switched) {
+      await refreshChat(host);
+    }
+    return;
+  }
+
   // Intercept local slash commands (/status, /model, /compact, etc.)
   const parsed = parseSlashCommand(message);
   if (parsed?.command.executeLocal) {
@@ -257,7 +329,7 @@ export async function handleSendChat(
       host.chatMessage = "";
       host.chatAttachments = [];
     }
-    await dispatchSlashCommand(host, parsed.command.key, parsed.args, {
+    await dispatchSlashCommand(host, parsed.command.name, parsed.args, {
       previousDraft: prevDraft,
       restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
     });
