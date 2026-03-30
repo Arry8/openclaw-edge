@@ -402,7 +402,7 @@ is_shell_function() {
 is_gum_raw_mode_failure() {
     local err_log="$1"
     [[ -s "$err_log" ]] || return 1
-    grep -Eiq 'setrawmode' "$err_log"
+    grep -Eiq 'setrawmode|inappropriate ioctl' "$err_log"
 }
 
 run_with_spinner() {
@@ -410,13 +410,20 @@ run_with_spinner() {
     shift
 
     if [[ -n "$GUM" ]] && gum_is_tty && ! is_shell_function "${1:-}"; then
-        local gum_err
+        local gum_err gum_out
         gum_err="$(mktempfile)"
-        if "$GUM" spin --spinner dot --title "$title" -- "$@" 2>"$gum_err"; then
-            return 0
+        gum_out="$(mktempfile)"
+        if "$GUM" spin --spinner dot --title "$title" -- "$@" >"$gum_out" 2>"$gum_err"; then
+            # Gum succeeded but may have leaked terminal errors to stdout
+            if is_gum_raw_mode_failure "$gum_out" || is_gum_raw_mode_failure "$gum_err"; then
+                GUM=""
+                GUM_STATUS="skipped"
+                GUM_REASON="gum raw mode unavailable"
+                ui_warn "Spinner unavailable in this terminal; continuing without spinner"
+            fi
         fi
         local gum_status=$?
-        if is_gum_raw_mode_failure "$gum_err"; then
+        if is_gum_raw_mode_failure "$gum_err" || is_gum_raw_mode_failure "$gum_out"; then
             GUM=""
             GUM_STATUS="skipped"
             GUM_REASON="gum raw mode unavailable"
@@ -2016,15 +2023,23 @@ install_openclaw() {
         install_openclaw_npm "${install_spec}"
     fi
 
+    # Ensure bin link exists before checking resolve — npm may install the
+    # package without creating the bin symlink on some configurations.
+    ensure_openclaw_bin_link || true
+
     if [[ "${OPENCLAW_VERSION}" == "latest" && "${package_name}" == "openclaw" ]]; then
         if ! resolve_openclaw_bin &> /dev/null; then
             ui_warn "npm install openclaw@latest failed; retrying openclaw@next"
+            # Remove any bin symlink left by the earlier ensure_openclaw_bin_link
+            # so cleanup_npm_openclaw_paths + the @next install don't hit EEXIST.
+            local npm_bin_dir
+            npm_bin_dir="$(npm bin -g 2>/dev/null || true)"
+            [[ -n "$npm_bin_dir" && -L "${npm_bin_dir}/openclaw" ]] && rm -f "${npm_bin_dir}/openclaw"
             cleanup_npm_openclaw_paths
             install_openclaw_npm "openclaw@next"
+            ensure_openclaw_bin_link || true
         fi
     fi
-
-    ensure_openclaw_bin_link || true
 
     ui_success "OpenClaw installed"
 }
