@@ -1,4 +1,13 @@
+import { listAgentEntries, resolveSessionAgentId } from "../agents/agent-scope.js";
+import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
+import { buildStatusReply } from "../auto-reply/reply/commands-status.js";
+import type { CommandContext } from "../auto-reply/reply/commands-types.js";
+import { resolveDefaultModel } from "../auto-reply/reply/directive-handling.defaults.js";
+import { resolveCurrentDirectiveLevels } from "../auto-reply/reply/directive-handling.levels.js";
+import { createModelSelectionState } from "../auto-reply/reply/model-selection.js";
+import type { ReplyPayload } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { loadSessionEntry } from "../gateway/session-utils.js";
 import { resolveDmGroupAccessWithLists } from "../security/dm-policy-shared.js";
 export {
   createPreCryptoDirectDmAuthorizer,
@@ -71,6 +80,7 @@ export {
   resolveSkillCommandInvocation,
 } from "../auto-reply/skill-commands.js";
 export type { SkillCommandSpec } from "../agents/skills.js";
+export type { CommandContext } from "../auto-reply/reply/commands-types.js";
 export { buildCommandsPaginationKeyboard } from "../auto-reply/reply/commands-info.js";
 export {
   buildModelsProviderData,
@@ -85,6 +95,101 @@ export {
   buildCommandsMessagePaginated,
   buildHelpMessage,
 } from "../auto-reply/status.js";
+
+export async function resolveDirectStatusReplyForSession(params: {
+  cfg: OpenClawConfig;
+  command: CommandContext;
+  sessionKey: string;
+  isGroup: boolean;
+  defaultGroupActivation: () => "always" | "mention";
+}): Promise<ReplyPayload | undefined> {
+  const statusTargetSessionKey = params.sessionKey.trim();
+  if (!statusTargetSessionKey) {
+    return undefined;
+  }
+  const statusLoaded = loadSessionEntry(statusTargetSessionKey);
+  const statusCfg = statusLoaded.cfg ?? params.cfg;
+  const statusEntry = statusLoaded.entry;
+  const statusAgentId = resolveSessionAgentId({
+    sessionKey: statusTargetSessionKey,
+    config: statusCfg,
+  });
+  const agentCfg = statusCfg.agents?.defaults;
+  const agentEntry = listAgentEntries(statusCfg).find(
+    (entry) => entry.id?.trim().toLowerCase() === statusAgentId,
+  );
+  const statusModel = resolveDefaultModelForAgent({
+    cfg: statusCfg,
+    agentId: statusAgentId,
+  });
+  const { defaultProvider, defaultModel } = resolveDefaultModel({
+    cfg: statusCfg,
+    agentId: statusAgentId,
+  });
+  const selectedProvider =
+    statusEntry?.providerOverride?.trim() ||
+    statusEntry?.modelProvider?.trim() ||
+    statusModel.provider;
+  const selectedModel =
+    statusEntry?.modelOverride?.trim() || statusEntry?.model?.trim() || statusModel.model;
+  const modelState = await createModelSelectionState({
+    cfg: statusCfg,
+    agentId: statusAgentId,
+    agentCfg,
+    sessionEntry: statusEntry,
+    sessionStore: statusLoaded.store,
+    sessionKey: statusTargetSessionKey,
+    parentSessionKey: statusEntry?.parentSessionKey,
+    storePath: statusLoaded.storePath,
+    defaultProvider,
+    defaultModel,
+    provider: selectedProvider,
+    model: selectedModel,
+    hasModelDirective: false,
+  });
+  const {
+    currentThinkLevel,
+    currentFastMode,
+    currentVerboseLevel,
+    currentReasoningLevel,
+    currentElevatedLevel,
+  } = await resolveCurrentDirectiveLevels({
+    sessionEntry: statusEntry,
+    agentEntry,
+    agentCfg,
+    resolveDefaultThinkingLevel: () => modelState.resolveDefaultThinkingLevel(),
+  });
+  let resolvedReasoningLevel = currentReasoningLevel;
+  const hasAgentReasoningDefault =
+    agentEntry?.reasoningDefault !== undefined && agentEntry?.reasoningDefault !== null;
+  const reasoningExplicitlySet =
+    (statusEntry?.reasoningLevel !== undefined && statusEntry?.reasoningLevel !== null) ||
+    hasAgentReasoningDefault;
+  const thinkingActive = currentThinkLevel !== "off";
+  if (!reasoningExplicitlySet && resolvedReasoningLevel === "off" && !thinkingActive) {
+    resolvedReasoningLevel = await modelState.resolveDefaultReasoningLevel();
+  }
+  return await buildStatusReply({
+    cfg: statusCfg,
+    command: params.command,
+    sessionEntry: statusEntry,
+    sessionKey: statusTargetSessionKey,
+    parentSessionKey: statusEntry?.parentSessionKey,
+    sessionScope: undefined,
+    storePath: statusLoaded.storePath,
+    provider: selectedProvider,
+    model: selectedModel,
+    contextTokens: statusEntry?.contextTokens ?? 0,
+    resolvedThinkLevel: currentThinkLevel,
+    resolvedFastMode: currentFastMode,
+    resolvedVerboseLevel: currentVerboseLevel ?? "off",
+    resolvedReasoningLevel: resolvedReasoningLevel,
+    resolvedElevatedLevel: currentElevatedLevel,
+    resolveDefaultThinkingLevel: () => modelState.resolveDefaultThinkingLevel(),
+    isGroup: params.isGroup,
+    defaultGroupActivation: params.defaultGroupActivation,
+  });
+}
 
 export type ResolveSenderCommandAuthorizationParams = {
   cfg: OpenClawConfig;

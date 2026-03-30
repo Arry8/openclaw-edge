@@ -15,7 +15,9 @@ import { resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import {
   resolveCommandAuthorizedFromAuthorizers,
+  resolveDirectStatusReplyForSession,
   resolveNativeCommandSessionTargets,
+  type CommandContext,
 } from "openclaw/plugin-sdk/command-auth";
 import {
   buildCommandTextFromArgs,
@@ -35,6 +37,7 @@ import type { OpenClawConfig, loadConfig } from "openclaw/plugin-sdk/config-runt
 import { isDangerousNameMatchingEnabled } from "openclaw/plugin-sdk/config-runtime";
 import { resolveOpenProviderRuntimeGroupPolicy } from "openclaw/plugin-sdk/config-runtime";
 import { buildPairingReply } from "openclaw/plugin-sdk/conversation-runtime";
+import { resolveDiscordGroupRequireMention } from "openclaw/plugin-sdk/discord";
 import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-runtime";
 import * as pluginRuntime from "openclaw/plugin-sdk/plugin-runtime";
 import {
@@ -1015,6 +1018,70 @@ async function dispatchDiscordCommandInteraction(params: {
     targetSessionKey: effectiveRoute.sessionKey,
     boundSessionKey,
   });
+  const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, effectiveRoute.agentId);
+  if (!suppressReplies && (command.nativeName ?? command.key) === "status") {
+    const statusTargetSessionKey = commandTargetSessionKey?.trim() || sessionKey;
+    const statusCommand: CommandContext = {
+      surface: "discord",
+      channel: "discord",
+      channelId,
+      ownerList: Array.isArray(discordConfig?.allowFrom)
+        ? [...discordConfig.allowFrom]
+        : Array.isArray(discordConfig?.dm?.allowFrom)
+          ? [...discordConfig.dm.allowFrom]
+          : [],
+      senderIsOwner: ownerOk,
+      isAuthorizedSender: commandAuthorized,
+      senderId: sender.id,
+      abortKey: statusTargetSessionKey,
+      rawBodyNormalized: prompt,
+      commandBodyNormalized: prompt,
+      from: isDirectMessage
+        ? `discord:${user.id}`
+        : isGroupDm
+          ? `discord:group:${channelId}`
+          : `discord:channel:${channelId}`,
+      to: `slash:${user.id}`,
+    };
+    const statusReply = await resolveDirectStatusReplyForSession({
+      cfg,
+      command: statusCommand,
+      sessionKey: statusTargetSessionKey,
+      isGroup: isGuild || isGroupDm,
+      defaultGroupActivation: () =>
+        isGuild
+          ? resolveDiscordGroupRequireMention({
+              cfg,
+              groupId: threadParentId ?? channelId,
+              groupChannel: threadParentName ?? channelName,
+              groupSpace: interaction.guild?.id,
+              accountId,
+            })
+            ? "mention"
+            : "always"
+          : "always",
+    });
+    if (statusReply && hasRenderableReplyPayload(statusReply)) {
+      await deliverDiscordInteractionReply({
+        interaction,
+        payload: statusReply,
+        mediaLocalRoots,
+        textLimit: resolveTextChunkLimit(cfg, "discord", accountId, {
+          fallbackLimit: 2000,
+        }),
+        maxLinesPerMessage: resolveDiscordMaxLinesPerMessage({
+          cfg,
+          discordConfig,
+          accountId,
+        }),
+        preferFollowUp,
+        chunkMode: resolveChunkMode(cfg, "discord", accountId),
+      });
+      return;
+    }
+    await respond("Status unavailable.");
+    return;
+  }
   const ctxPayload = buildDiscordNativeCommandContext({
     prompt,
     commandArgs: commandArgs ?? {},
@@ -1048,7 +1115,6 @@ async function dispatchDiscordCommandInteraction(params: {
     channel: "discord",
     accountId: effectiveRoute.accountId,
   });
-  const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, effectiveRoute.agentId);
 
   let didReply = false;
   const dispatchResult = await dispatchReplyWithDispatcherImpl({
