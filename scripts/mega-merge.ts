@@ -143,6 +143,11 @@ const SKIP_LIST = new Set<number>([
   12296, // session-tool-result-guard.ts: removed getRawSessionAppendMessage + sessionKey — breaks transcript-rewrite.ts consumers
   40490, // bot-message-context.session.ts: imports ../media/store.js which doesn't exist — UNRESOLVED_IMPORT
   40597, // cron/service/timer.ts: Logger.trace() doesn't exist — TS2339
+  39338, // types.models.ts: adds "audio"/"video" to input schema but ModelInputType in model-catalog.ts lacks them — TS2322
+  46936, // model-selection.ts: TS2322 type mismatch — auto-skipped, keeping in SKIP_LIST
+  48303, // model-selection.ts: TS2322 — cascades from #39338 type gap
+  48821, // model-selection.ts: TS2322 — cascades from #39338 type gap
+  51580, // model-selection.ts: TS2322 — cascades from #39338 type gap
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.

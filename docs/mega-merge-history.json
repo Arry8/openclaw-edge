@@ -41461,6 +41461,2102 @@
         "status": "merged",
         "commitSha": "8df940119c5ab40d0d92f07335b6480ba31cfe28"
       }
+    },
+    {
+      "author": "LiudengZhang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9fa7bb169ce4dca393a081857b3b2c9847793486",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40217,
+      "title": "fix(agents): clear stale tool call history to prevent loop detection false positives",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "508cb1c6572b605e0ad84eebcf42eecf4901ddaa"
+      }
+    },
+    {
+      "author": "LiudengZhang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "17aaff391964e1885c415aeefcfa25bb98eba297",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40216,
+      "title": "fix(pruner): account for CJK and non-Latin characters in token estimation",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-extensions/context-pruning/pruner.test.ts",
+          "src/agents/pi-hooks/context-pruning/pruner.ts"
+        ]
+      }
+    },
+    {
+      "author": "haynzz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9703890638d817cb8070776877ad802f5be5aac5",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40209,
+      "title": "fix(heartbeat): normalize system event session keys to lowercase",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "5658317c131d9d10f767973211461fa1a183832d"
+      }
+    },
+    {
+      "author": "LiudengZhang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "044fe5723a9636989e4463bcc6aaf30fc50bfdbc",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40205,
+      "title": "fix(ollama): migrate embedding provider from deprecated /api/embeddings to /api/embed",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/memory/embeddings-ollama.ts"
+        ]
+      }
+    },
+    {
+      "author": "NewdlDewdl",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b831c7bce7411ce65f8a8bdbd0be712d56c69ecd",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40200,
+      "title": "fix(exec): prevent shell startup files from overriding daemon env",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "a3d4076a878c6679cff5442394425537fbd69d74"
+      }
+    },
+    {
+      "author": "sudhanshug16",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "40eb5cf95b0cec0f64ffec002b406107c2493e80",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: slack",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40180,
+      "title": "fix(slack): add opt-out for implicit thread mentions [AI-assisted]",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/slack/src/monitor/context.ts",
+          "extensions/slack/src/monitor/message-handler/prepare.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "hhy5562877",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0f1fcc5b472a5bc45827df9bdcafb3ca59e3cb1d",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: googlechat",
+        "channel: matrix",
+        "channel: msteams",
+        "channel: nostr",
+        "channel: tlon",
+        "channel: zalouser",
+        "app: web-ui",
+        "gateway",
+        "cli",
+        "scripts",
+        "commands",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 40150,
+      "title": "fix(agent): surface fake tool runs and legacy ws auth failures",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".secrets.baseline",
+          "CHANGELOG.md",
+          "docs/brave-search.md",
+          "docs/perplexity.md",
+          "docs/reference/api-usage-costs.md",
+          "docs/tools/web.md",
+          "extensions/googlechat/package.json",
+          "extensions/matrix/package.json",
+          "extensions/msteams/package.json",
+          "extensions/nostr/package.json",
+          "extensions/tlon/package.json",
+          "extensions/zalouser/package.json",
+          "scripts/lib/bundled-extension-manifest.ts",
+          "scripts/release-check.ts",
+          "scripts/test-parallel.mjs",
+          "src/agents/acp-spawn.test.ts",
+          "src/agents/acp-spawn.ts",
+          "src/agents/models-config.applies-config-env-vars.test.ts",
+          "src/agents/models-config.e2e-harness.ts",
+          "src/agents/models-config.providers.auth-provenance.test.ts",
+          "src/agents/models-config.providers.discovery-auth.test.ts",
+          "src/agents/models-config.providers.kilocode.test.ts",
+          "src/agents/models-config.providers.kimi-coding.test.ts",
+          "src/agents/models-config.providers.matrix.test.ts",
+          "src/agents/models-config.providers.nvidia.test.ts",
+          "src/agents/models-config.providers.ollama.test.ts",
+          "src/agents/models-config.providers.static.ts",
+          "src/agents/models-config.providers.ts",
+          "src/agents/models-config.providers.vercel-ai-gateway.test.ts",
+          "src/agents/models-config.providers.volcengine-byteplus.test.ts",
+          "src/agents/models-config.ts",
+          "src/agents/pi-embedded-runner-extraparams.test.ts",
+          "src/agents/pi-embedded-runner/anthropic-stream-wrappers.ts",
+          "src/agents/pi-embedded-runner/extra-params.ts",
+          "src/agents/pi-embedded-runner/moonshot-stream-wrappers.ts",
+          "src/agents/pi-embedded-runner/openai-stream-wrappers.ts",
+          "src/agents/pi-embedded-runner/proxy-stream-wrappers.ts",
+          "src/agents/provider-capabilities.test.ts",
+          "src/agents/provider-capabilities.ts",
+          "src/agents/tools/web-search.test.ts",
+          "src/agents/tools/web-search.ts",
+          "src/agents/transcript-policy.ts",
+          "src/auto-reply/status.test.ts",
+          "src/cli/plugin-install-plan.test.ts",
+          "src/cli/plugin-install-plan.ts",
+          "src/commands/agent.acp.test.ts",
+          "src/commands/agent.ts",
+          "src/commands/channel-setup/plugin-install.ts",
+          "src/commands/models.list.e2e.test.ts",
+          "src/commands/models/list.list-command.ts",
+          "src/commands/models/list.registry.ts",
+          "src/commands/onboarding/plugin-install.test.ts",
+          "src/commands/setup.test.ts",
+          "src/config/config.env-vars.test.ts",
+          "src/config/env-vars.ts",
+          "src/config/sessions/transcript.ts",
+          "src/config/types.models.ts",
+          "src/gateway/server.auth.default-token.suite.ts",
+          "src/gateway/server/ws-connection.ts",
+          "src/infra/git-commit.test.ts",
+          "src/plugins/bundled-sources.test.ts",
+          "src/plugins/bundled-sources.ts",
+          "src/plugins/update.test.ts",
+          "src/plugins/update.ts",
+          "src/process/supervisor/adapters/child.test.ts",
+          "test-fixtures/talk-config-contract.json",
+          "test/release-check.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "futuremind2026",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9d270b2d3423eb7c64a69fb9105dc191056ec9a4",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40147,
+      "title": "fix(feishu): prioritize root_id before replyInThread when replying",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/bot.test.ts",
+          "extensions/feishu/src/bot.ts",
+          "extensions/feishu/src/reply-dispatcher.test.ts",
+          "extensions/feishu/src/reply-dispatcher.ts"
+        ]
+      }
+    },
+    {
+      "author": "bde1",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "db2737b4d05607af5c8519b02dcfdba4d3e7d408",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40143,
+      "title": "fix(doctor): warn when stale Codex overrides shadow OAuth",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/gateway/doctor.md",
+          "src/commands/doctor-auth.ts",
+          "src/commands/doctor.ts",
+          "src/commands/doctor.warns-state-directory-is-missing.e2e.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "thirumaleshp",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3dcaec34f48cbf72776f98784514eb386d97c310",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40112,
+      "title": "fix(agents): suppress intermediate tool failure messages when agent self-corrects",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "606903ba9bef9c3b94cc11310ecc2abf7c46d7b7"
+      }
+    },
+    {
+      "author": "dixiefixie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "68abac8fca5d738895dd5083aea5464a86b2bd1f",
+      "isDraft": null,
+      "labels": [
+        "channel: irc",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 40080,
+      "title": "fix(irc): prevent 433 nick-collision by reusing the monitor's live connection",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/irc/src/channel.ts",
+          "extensions/irc/src/monitor.ts"
+        ]
+      }
+    },
+    {
+      "author": "sd1114820",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6750a60ffce38284e72617295a1424b4dd1a11c1",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40052,
+      "title": "fix(ui): save default agent model changes to defaults config",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/app-render.ts",
+          "ui/src/ui/views/agents-utils.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "zhuxiaoxuhit",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "986fe584f39d894f7637042e4749afdd53fc1300",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40042,
+      "title": "fix(memory): migrate Ollama embedding provider to /api/embed",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/memory/embeddings-ollama.ts"
+        ]
+      }
+    },
+    {
+      "author": "VarunChopra11",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bddd6d823997b0e0d159d4e86ae1462c883c2484",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40038,
+      "title": "fix(memory): update Ollama embeddings to /api/embed endpoint",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/memory/embeddings-ollama.ts"
+        ]
+      }
+    },
+    {
+      "author": "sotaalax",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bbd1066431eecd4f73a346cef3b28f0c79ffafe1",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40000,
+      "title": "fix(workspace): tolerate missing packaged templates with built-in fallback",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "d2c07e06e41e25543a03ee66b63f4c13d1f152ba"
+      }
+    },
+    {
+      "author": "sotaalax",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a72d753f807eaaac0cbb262286673ef978846b23",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39999,
+      "title": "fix(update): rollback global install if doctor fails",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/update-cli/update-command.ts"
+        ]
+      }
+    },
+    {
+      "author": "lyfuci",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2384fcfbd2eb870b1c0c3272f33e36dd756ff484",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39997,
+      "title": "fix(feishu): avoid voice-bubble auto routing and local-path fallback leaks",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/outbound.ts",
+          "src/tts/tts.test.ts",
+          "src/tts/tts.ts"
+        ]
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6dcecff469474347b60163d363f30e104e7ceb81",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39988,
+      "title": "fix(embeddings): update Ollama API from /api/embeddings to /api/embed",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.ts",
+          "src/memory/embeddings-ollama.ts"
+        ]
+      }
+    },
+    {
+      "author": "skidder",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7394840174aab498fb41ed15a819e30abade3d26",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39976,
+      "title": "fix(discord): honor threadId in extension outbound send paths",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/channel.ts"
+        ]
+      }
+    },
+    {
+      "author": "skidder",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "18eec81c078a55694eae40c5a4cf68b7c28038cf",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39975,
+      "title": "fix(discord): remove invalid message_reference from webhook payloads",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/send.outbound.ts"
+        ]
+      }
+    },
+    {
+      "author": "HeMuling",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c3d8e413736264275ca3f884741a4b9c549c27d9",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39957,
+      "title": "fix(telegram): suppress toolUse intermediate message_end block replies",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-subscribe.handlers.messages.ts",
+          "src/agents/pi-embedded-subscribe.subscribe-embedded-pi-session.suppresses-message-end-block-replies-message-tool.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "CurryMessi",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8dc0ec3d62a36e1d0b4fbd9f0eaca165276a6361",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39941,
+      "title": "fix(ui): prefer matching object variant in config coercion",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "f7ecfcd6e7652c016ea441ba52e8d1a28ec1e7cc"
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bff63111919e5286826eb763f605d4534cdb6609",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39940,
+      "title": "fix(compaction): drop thinking/redacted_thinking blocks for Anthropic models",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/thinking.ts",
+          "src/agents/transcript-policy.test.ts",
+          "src/agents/transcript-policy.ts",
+          "src/infra/unhandled-rejections.ts",
+          "ui/src/ui/views/config-form.node.ts"
+        ]
+      }
+    },
+    {
+      "author": "FAL1989",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "764048453633ff6e1f6bc699884d19d201370aaf",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "gateway",
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39921,
+      "title": "fix(gateway): preserve runtime-backed health state",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/health.ts",
+          "src/discord/monitor/provider.test.ts",
+          "src/discord/monitor/provider.ts",
+          "src/gateway/server/health-state.ts"
+        ]
+      }
+    },
+    {
+      "author": "MumuTW",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "812786a4ec861aba15e7e419a50aa44f760cb327",
+      "isDraft": null,
+      "labels": [
+        "channel: googlechat",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39891,
+      "title": "fix(googlechat): clean up typing message on NO_REPLY",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "6807ee05ab559f155d1418c14abaabf0d2409467"
+      }
+    },
+    {
+      "author": "MumuTW",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bbfe9275edc28da8e956f89c9c71eb54c156859b",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39886,
+      "title": "fix(session): prevent webchat route leak on channel-agnostic session keys",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/session-delivery.ts"
+        ]
+      }
+    },
+    {
+      "author": "GeekCheyun",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "63b4dd90b7cacf3abd5bab2e3c3ada2ab0940f95",
+      "isDraft": null,
+      "labels": [
+        "app: macos",
+        "app: web-ui",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39874,
+      "title": "fix(gateway): prevent chat.send cross-channel leakage on configured main",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "apps/macos/Sources/OpenClaw/HostEnvSecurityPolicy.generated.swift",
+          "src/gateway/server-methods/chat.directive-tags.test.ts",
+          "src/gateway/server-methods/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "okuyam2y",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4edf445a05830d5adfc1b12de8aee58df581dc63",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39840,
+      "title": "fix(gateway): silently auto-approve local role-upgrade pairing requests",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server/ws-connection/message-handler.ts"
+        ]
+      }
+    },
+    {
+      "author": "alexey-pelykh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5252a8864b216f1516c5ea1eadab538297fcecfb",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39817,
+      "title": "fix(gateway): propagate agent error payloads to webchat UI",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "Shennng",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2d25c2b48cf23d8826b50cf1e5fbc5c1f9699a3f",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39806,
+      "title": "fix(ui): add loading indicator to Debug Snapshots card (#39777)",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/debug.ts"
+        ]
+      }
+    },
+    {
+      "author": "ptchon02-beep",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4eb815d207aa4a432272d0e599cd04783ad81de6",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 39802,
+      "title": "fix(evals/ui): harden eval correlation + budget asset parsing",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/get-reply-inline-actions.ts"
+        ]
+      }
+    },
+    {
+      "author": "GodsBoy",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f70bb5d26e51956e2da40c957e5e0d980ba65d57",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39797,
+      "title": "fix(models): default openai-codex/gpt-5.4 to 272k context, make native 1M opt-in",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-catalog.test.ts",
+          "src/agents/model-catalog.ts",
+          "src/agents/model-compat.test.ts",
+          "src/agents/model-forward-compat.ts",
+          "src/agents/pi-embedded-runner/model.forward-compat.test.ts",
+          "src/agents/pi-embedded-runner/model.test-harness.ts"
+        ]
+      }
+    },
+    {
+      "author": "CZH-THU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "20023e08f44736030b3f78c58a54f86aa4cd3841",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39790,
+      "title": "fix(gateway): strip inbound metadata from TUI session titles and prefer external displayName",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/session-utils.ts"
+        ]
+      }
+    },
+    {
+      "author": "Mriris",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "977c4a77ef40d7efa886c3ed2d3c7d44e6ea5bb3",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39785,
+      "title": "fix(config): respect explicit input modalities override in provider model merge",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "24837e5dfbc5b8a4f79052a918bd2ff9e847d78c"
+      }
+    },
+    {
+      "author": "madsmash",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c7c83afa9d3b7c930a9695c13cedec53a54ff8ad",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39778,
+      "title": "fix(discord): infer media placeholder from file extension as fallback",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "c6766ba709b3ff3c3cb3ecba276d8d25bcc0ee80"
+      }
+    },
+    {
+      "author": "GeekCheyun",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "21db24a9736df926811f0fa1719ed555cadbf065",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39774,
+      "title": "fix(synology-chat): preserve 0 rate limit and fallback invalid env to default",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/synology-chat/src/accounts.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "ql-wade",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e97c39f9300e1c21f01eafaa7f22db79c87a05c8",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39773,
+      "title": "fix(session): correct totalTokensFresh flag for fallback path",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "6bea676350b00cc098376533725f69f725e68783"
+      }
+    },
+    {
+      "author": "widingmarcus-cyber",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0344ba254b521776138d0e6ee501409b90913bb6",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39772,
+      "title": "fix(telegram): apply reply_to only to first stream preview to avoid 'Deleted message'",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/draft-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "byungsker",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e7b52031374f7b5836c41b523024fadeb0bf75ce",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39766,
+      "title": "fix(config): make models.providers.<id>.models optional to allow credential-only entries",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/zod-schema.core.ts"
+        ]
+      }
+    },
+    {
+      "author": "Bortlesboat",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "660ed751f284f23da68b5ceb3f7af4863d487754",
+      "isDraft": null,
+      "labels": [
+        "channel: nostr",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39748,
+      "title": "fix(nostr): validate relay URLs require WebSocket protocol (wss/ws)",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/nostr/src/types.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "Bortlesboat",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cf4d2659d882549df89a63769303d1883f152ee4",
+      "isDraft": null,
+      "labels": [
+        "channel: zalouser",
+        "channel: twitch",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39745,
+      "title": "fix(synology-chat,twitch,zalouser): clear timeout timers in Promise.race patterns",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/synology-chat/src/webhook-handler.ts"
+        ]
+      }
+    },
+    {
+      "author": "haynzz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6b264155b0b51f7f53eec3f0fa41d0f2dbc3bec2",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39738,
+      "title": "fix(pi-embedded-runner): add recovery context to mutating tool warning on recovered turns",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/run/payloads.test.ts",
+          "src/agents/pi-embedded-runner/run/payloads.ts"
+        ]
+      }
+    },
+    {
+      "author": "upupc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2317f169f26c804d518531247cbfae3273469fe1",
+      "isDraft": null,
+      "labels": [
+        "extensions: memory-core",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39732,
+      "title": "fix(memory): preserve session indexing during full reindex",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0a9c952f7bc069b75fe821e4f1015cb12f855095",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39706,
+      "title": "fix(cron): implement true LRU cache eviction",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "CJianYu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e999ac8d00adae36521fe649ef5dd7858197d68b",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39683,
+      "title": "fix(cron): reject Feishu announce jobs without delivery target",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/cli/cron.md"
+        ]
+      }
+    },
+    {
+      "author": "VarunChopra11",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "848fabf08b9e21f1876a3876441e60260b6b017b",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39654,
+      "title": "fix(config): accept flat array for commands.allowFrom, coerce to record",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "fbd7c8277394afabd6b0ed41ce59d17e84c83e4d"
+      }
+    },
+    {
+      "author": "gambletan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b052e246d4b20b20d99692cc3ba063f572cb7168",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "scripts",
+        "commands",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39646,
+      "title": "fix(status): use resolved model when raw default references removed provider",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/memory-core/src/memory/manager-embedding-ops.ts",
+          "scripts/run-openclaw-podman.sh",
+          "src/agents/pi-embedded-helpers/errors.ts",
+          "src/agents/pi-embedded-helpers/failover-matches.ts",
+          "src/cron/service/timer.ts",
+          "src/infra/outbound/channel-target.ts",
+          "ui/src/ui/views/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "lijinlar",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "77ce6361f2dda2b71eca4ad40aaf331f61e4d250",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39644,
+      "title": "fix(windows): PowerShell completion install and time-format detection",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "63f2b45aa2efde902c3b60fa48aa490c40fe4e1e"
+      }
+    },
+    {
+      "author": "KathenZK",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "159f12547aa8143272768b101f89be4f8b82460c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39615,
+      "title": "fix(ui): persist Control UI gateway token in sessionStorage",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "3ce2e5600f0122dbc9ea4b4abef8d3af172e6374"
+      }
+    },
+    {
+      "author": "PANGKAIFENG",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "199a1a86710c9cbcdbac479093fb79c245c57748",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39602,
+      "title": "fix(cron): reject Feishu announce jobs without target",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/cron-cli/register.cron-add.ts",
+          "src/cron/service.jobs.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "Lizhiqi0910",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "da274fe0e6b88576a37d651005005c5e4ad247c0",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39569,
+      "title": "fix(feishu): detect bot mention in reply messages and prevent unwanted thread routing",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/bot.checkBotMentioned.test.ts",
+          "extensions/feishu/src/bot.ts"
+        ]
+      }
+    },
+    {
+      "author": "akramcodez",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "767ae4d421a35247c7628c75288e6f127083b0f4",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39565,
+      "title": "fix(tui): preserve dotted entity IDs and punctuation-wrapped copy-sensitive tokens",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/daemon-cli/lifecycle.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "liuweifly",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8b260b47ab2789d2bd4cc10e072edc7f3342d7f1",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39558,
+      "title": "fix(feishu): strip reaction suffix from message_id before API calls",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/reactions.ts",
+          "extensions/feishu/src/send.ts",
+          "extensions/feishu/src/typing.ts"
+        ]
+      }
+    },
+    {
+      "author": "yangzi33",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "79fceef6c4ac8adcb3d8d340a6b678b593c27b31",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39555,
+      "title": "fix(memory): use per-keyword FTS search in hybrid mode #39484",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "packages/memory-host-sdk/src/host/manager.hybrid-keyword-multi.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "yfge",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5361f3714cd0ce18b059091289a9b6510129aef2",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39547,
+      "title": "fix(gateway): circuit-break outbound duplicate sends",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "appcast.xml",
+          "src/infra/outbound/outbound-send-service.test.ts",
+          "src/infra/outbound/outbound-send-service.ts"
+        ]
+      }
+    },
+    {
+      "author": "Larry-Labs",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a563809f3e71d1e2264be88ed8f8479fe7290bb4",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39507,
+      "title": "fix(feishu): make replyInThread \"disabled\" fully suppress thread replies",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/bot.ts"
+        ]
+      }
+    },
+    {
+      "author": "teodorangel",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0328eb7faaef6681a4d20da48778600e10ce09e2",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39502,
+      "title": "fix(plugins): graceful degradation for broken plugin manifests",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/config.plugin-validation.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "CurryMessi",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fe3b5eccd7ce7f1fc294ef9161f47f4e4ce61c5a",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39501,
+      "title": "fix(ui): reduce browser password-save prompts in config form",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/config-form.node.ts"
+        ]
+      }
+    },
+    {
+      "author": "aworki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "550f2bb767ca746ba49526b2b5cf1b8400232019",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39498,
+      "title": "fix(secrets): prevent ByteString crashes from pasted unicode chars",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/types.secrets.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "aworki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2da6ea694ff1589c32ddb3e050a664cb04df516c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39495,
+      "title": "fix(ui): reset agent overview model form on agent switch",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/agents.ts"
+        ]
+      }
+    },
+    {
+      "author": "SergioChan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3048d5dd07252e860a53b5a6b4d7a70d60b2888e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39493,
+      "title": "fix(cron): normalize moonshot kimi anthropic tool schema",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "src/agents/pi-embedded-runner/anthropic-stream-wrappers.ts"
+        ]
+      }
+    },
+    {
+      "author": "CyberWenShiFu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c34a9ea2fe3b70ca9f5ba64604efc8c6c8bcbc35",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39489,
+      "title": "fix(feishu): report connection/event activity for health monitor",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/channel.ts",
+          "extensions/feishu/src/monitor.account.ts",
+          "extensions/feishu/src/monitor.transport.ts"
+        ]
+      }
+    },
+    {
+      "author": "CyberWenShiFu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "921b9b8e8dbfc3cb60dce8e8bc1c8db3fde92036",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39487,
+      "title": "fix(feishu): report liveness status to prevent false health-monitor restarts",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/channel.ts",
+          "extensions/feishu/src/monitor.account.ts",
+          "extensions/feishu/src/monitor.transport.ts"
+        ]
+      }
+    },
+    {
+      "author": "aworki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "571ff01f4dfa67ea0c38fdf52a50c2315d74ee22",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39485,
+      "title": "fix(routing): map discord account IDs to matching agents",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/routing/resolve-route.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "mcaxtr",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "63f5f1465b8c0dfbe27bb2c46efdd8b9fba60887",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39483,
+      "title": "fix(media): trim structured MEDIA tails",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/media/parse.test.ts",
+          "src/media/parse.ts"
+        ]
+      }
+    },
+    {
+      "author": "aworki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "359efa269391615d9aee38b51d4b0ddfbc01ef84",
+      "isDraft": null,
+      "labels": [
+        "channel: slack",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39481,
+      "title": "fix(slack): support unsigned url_verification in http mode",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/slack/src/monitor/provider.ts",
+          "extensions/slack/src/monitor/provider.url-verification.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "shenxiaoxu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c7e82923fcb99beef71e372a2cfac393709a3192",
+      "isDraft": null,
+      "labels": [
+        "channel: zalouser",
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39480,
+      "title": "fix(gateway): recover deliveries only after sidecars initialize",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".secrets.baseline",
+          "appcast.xml",
+          "src/gateway/server.impl.ts"
+        ]
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "800c0dcbb22e245c4622c47aff3ec041fdb3dad7",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39471,
+      "title": "fix(database): add WAL journal mode and transient SQLite error handling",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "aworki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3b90187f55c74b72ec6fd8b16948634b88877cc6",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39465,
+      "title": "fix(discord): fallback DM target when To is missing",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/channels/dock.test.ts",
+          "src/channels/dock.ts"
+        ]
+      }
+    },
+    {
+      "author": "techfitmaster",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e84266e520bf67266684d9b596b297f556287b32",
+      "isDraft": null,
+      "labels": [
+        "channel: slack",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39464,
+      "title": "fix(slack): handle url_verification challenge before signature verification",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/slack/src/monitor/provider.ts",
+          "src/infra/json-files.ts"
+        ]
+      }
+    },
+    {
+      "author": "subrih",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "967e0d66d45699005fd1f58bf6ca9f842d4cb21f",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39410,
+      "title": "fix(gateway): auto-create transcript file in chat.inject when missing",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "SergioChan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c193a1a1ce7c302bea57886adb185a7eb9054dcf",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39401,
+      "title": "fix(ui): reset overview model controls when switching agents",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/agents.ts"
+        ]
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6bfd05f81d141ef04a73ecb68b480c1957e9ae80",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39386,
+      "title": "fix(gateway): forward child session node events to spawnedBy subscribers",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "e1d73213004fadaa59a8e453cdb70fe7bc4fe083"
+      }
+    },
+    {
+      "author": "alvinttang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "660a2ce5475739c667092268c27a725b77ecdf99",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39372,
+      "title": "fix(spawn): allow mode=\"session\" without thread=true for headless persistent sessions",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/subagent-spawn.ts"
+        ]
+      }
+    },
+    {
+      "author": "zhuowater",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1752f015bdb419738259f3fd6b82cf71198971b0",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39370,
+      "title": "fix(openresponses): normalize tool definitions to accept Anthropic and flat formats",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "0edf93c7b89fabc00d63bfa9f68dff88f97f8def"
+      }
+    },
+    {
+      "author": "MumuTW",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d1e518c31d0e339079d0c6b3fd733db2b70b6eb5",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39354,
+      "title": "fix(telegram): skip reasoning stream callbacks when reasoning is off",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/bot-message-dispatch.ts"
+        ]
+      }
+    },
+    {
+      "author": "hddevteam",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "581271972d9e2197c0ac812ee3c783c3a0c8e517",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39352,
+      "title": "fix(msteams): pass teamId into inbound route resolution",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/msteams/src/monitor-handler/message-handler.authz.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "alvinttang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2f18e884f1737ee80aec43392357a78605d61830",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39351,
+      "title": "fix(telegram): validate replyToMessageId before sending",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/send.ts"
+        ]
+      }
+    },
+    {
+      "author": "MumuTW",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "17221303816bc9b521257b28b3a3d70a6cee336a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39350,
+      "title": "fix(gateway): suppress NO_REPLY lead fragment in chat final message",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "b3a68e3c223bfd1a8751393cfd9a3cce0119247d"
+      }
+    },
+    {
+      "author": "alvinttang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "77db5716d200eb73b9d1342840d38ccbaf4aa6cf",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39349,
+      "title": "fix(exec): warn when pty:true is silently disabled in sandbox",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "f941454793301bd775d339d0102f5c124eace8aa"
+      }
+    },
+    {
+      "author": "Sirius1942",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ce3b96157c75213bec72a2ac79715adde6328218",
+      "isDraft": null,
+      "labels": [
+        "channel: voice-call",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39340,
+      "title": "fix(voice-call): use ?? instead of || for TTS speed config",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/voice-call/src/providers/tts-openai.ts"
+        ]
+      }
+    },
+    {
+      "author": "alvinttang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3d2e325c177998d0b80b5f31785d86c54546c4af",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39338,
+      "title": "fix(config): accept video and audio in models.input schema",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "401c484eb1191dfb8b62061602c2a5608f00a892"
+      }
+    },
+    {
+      "author": "alvinttang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a1ca58e627b4f3b3b98d8a68565a95cd3260b852",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39333,
+      "title": "fix(gateway): create transcript file on chat.inject when missing",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "cloudnewbie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "788a8f6afd6165de255472e555db6e867f93cfc2",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39330,
+      "title": "fix(auto-reply): strip unscheduled reminder note before delivery",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/agent-runner.ts"
+        ]
+      }
+    },
+    {
+      "author": "SergioChan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "99afc7602a710b228babb5678cc10cc13fb2ab8b",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39306,
+      "title": "fix(ui): enable Save when editing agents without existing config entries",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/app-render.ts"
+        ]
+      }
+    },
+    {
+      "author": "subrih",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "23fa9c1d2fd5522075657d66443e7bbfab92de85",
+      "isDraft": null,
+      "labels": [
+        "channel: voice-call",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39290,
+      "title": "fix(voice-call): use ?? instead of || for TTS speed config default",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/voice-call/src/providers/tts-openai.ts"
+        ]
+      }
+    },
+    {
+      "author": "deepujain",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9b488bcaafb9da0920e621058d5e9b1cca1e6321",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39245,
+      "title": "fix(agents): normalize mangled tool names and IDs from OpenAI-compati…",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/session-transcript-repair.ts",
+          "src/agents/tool-call-id.ts"
+        ]
+      }
+    },
+    {
+      "author": "spirittechie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a85b57f2235a9008cfbeefcde8d12fc4f0730b02",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39242,
+      "title": "fix(gateway): honor service marker and explicit port for stale pid cleanup",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".github/workflows/ci.yml",
+          "src/cli/gateway-cli/run.ts",
+          "src/daemon/systemd-unit.ts",
+          "src/process/supervisor/adapters/child.ts"
+        ]
+      }
+    },
+    {
+      "author": "Nipurn123",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2844eed9efcc0766e2e55439630f0400d603faff",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39220,
+      "title": "fix(synology-chat): respect SYNOLOGY_RATE_LIMIT=0 by using ?? instead of ||",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/synology-chat/src/accounts.ts"
+        ]
+      }
+    },
+    {
+      "author": "chalawbot",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "df56d605ad1e7600a8d92c4a161128d887b72658",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39213,
+      "title": "fix(telegram): coalesce streaming preview across tool-call rounds in partial mode",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/bot-message-dispatch.ts",
+          "extensions/telegram/src/draft-stream.test-helpers.ts",
+          "extensions/telegram/src/draft-stream.test.ts",
+          "extensions/telegram/src/draft-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "SergioChan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6cec4405245f4fd5b08fd8d4725d79ff1d5b69b6",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39163,
+      "title": "fix(logging): share external log transports across bundled module instances",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/chat.abort.test-helpers.ts",
+          "src/logging/logger.ts"
+        ]
+      }
+    },
+    {
+      "author": "deepujain",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "219f3fcb1218b345f8b54b1dc3470e495588bfa5",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39137,
+      "title": "fix(pre-commit): use single pytest dependency specifier",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "2d185926795f5ddb73e4cfb7fdf348d255e2eeb6"
+      }
+    },
+    {
+      "author": "ngyygm",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f4324adbd416fef63fd775a4f4bf04c4711ed3e8",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "cli",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39122,
+      "title": "fix(daemon): Windows gateway restart - avoid double restart and EADDRINUSE",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/daemon-cli/lifecycle-core.ts",
+          "src/cli/daemon-cli/lifecycle.ts",
+          "src/daemon/schtasks-exec.ts",
+          "src/daemon/schtasks.ts"
+        ]
+      }
+    },
+    {
+      "author": "therk",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0067a44d77a231bd565efd50810423174684cb8c",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "commands",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39118,
+      "title": "fix(doctor): protect running gateway from ExecStart rewrites; skip inactive companion services",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/doctor-gateway-services.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "babycoder-dev",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b6d93365dc6dc27f3d51eaf32fe3b49f21e8901e",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39085,
+      "title": "fix(feishu): treat block payloads as snapshots to avoid duplication with tool calls",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "39ed912974837df9ac2274654302f155ba6f02a8"
+      }
     }
   ]
 }

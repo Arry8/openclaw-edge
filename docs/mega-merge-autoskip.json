@@ -93,5 +93,10 @@
     "number": 44215,
     "reason": "src/config/schema.labels.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T17:38:09.026Z"
+  },
+  {
+    "number": 46936,
+    "reason": "src/agents/model-selection.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:25:55.987Z"
   }
 ]
