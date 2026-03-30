@@ -1334,6 +1334,11 @@ async function main() {
         }
       }
       log(`Interval build passed.`);
+      if (!DRY_RUN) {
+        const pushResult = run("git", ["push", "origin", `${baseBranch}`, "--force"]);
+        if (pushResult.ok) log(`  Pushed ${baseBranch} to origin.`);
+        else warn(`Interval push failed: ${pushResult.stderr}`);
+      }
     }
 
     // Interval release: snapshot progress as a GitHub pre-release every N merges.
