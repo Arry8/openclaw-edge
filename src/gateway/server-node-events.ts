@@ -306,7 +306,6 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
         {
           runId,
           message: text,
-          sessionId,
           sessionKey: canonicalKey,
           thinking: "low",
           deliver: false,
@@ -460,7 +459,6 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
           runId: sessionId,
           message,
           images,
-          sessionId,
           sessionKey: canonicalKey,
           thinking: link?.thinking ?? undefined,
           deliver,
