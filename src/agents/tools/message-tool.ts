@@ -305,9 +305,6 @@ function buildPollSchema() {
 
 function buildChannelTargetSchema() {
   return {
-    chatId: Type.Optional(
-      Type.String({ description: "Chat id for Telegram edit/delete/topic-create actions." }),
-    ),
     channelId: Type.Optional(
       Type.String({ description: "Channel id filter (search/thread list/event create)." }),
     ),
@@ -350,12 +347,6 @@ function buildThreadSchema() {
     threadName: Type.Optional(Type.String()),
     autoArchiveMin: Type.Optional(Type.Number()),
     appliedTags: Type.Optional(Type.Array(Type.String())),
-    iconColor: Type.Optional(
-      Type.Number({ description: "Telegram forum topic icon color (integer)." }),
-    ),
-    iconCustomEmojiId: Type.Optional(
-      Type.String({ description: "Telegram forum topic custom emoji id." }),
-    ),
   };
 }
 
