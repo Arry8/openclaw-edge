@@ -138,6 +138,8 @@ const SKIP_LIST = new Set<number>([
   56737, // navigation-guard.ts: .catch() on void|Promise<void> — TS error
   56840, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error (same pattern as #56617)
   51722, // sandbox/browser.ts:94 duplicate object property — TS1117
+  45782, // fs-safe.ts + pairing-store.ts TS errors in error handling
+  47225, // stream-payload-utils.ts TS error in toolsOverride field
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.
@@ -844,7 +846,7 @@ function extractFailingFiles(buildOutput: string): string[] {
 // Given a file path, find the most recent merge commit that touched it.
 // Returns { prNumber, sha } or null if not a tracked merge commit.
 function findCulpritPr(filePath: string): { prNumber: number; sha: string } | null {
-  const result = run("git", ["log", "--oneline", "-1", "--", filePath]);
+  const result = run("git", ["log", "--oneline", "--first-parent", "-1", "--", filePath]);
   if (!result.ok || !result.stdout) return null;
   // Expected format: "<sha> merge(pr#NNNNN): ..."
   const m = result.stdout.match(/^([0-9a-f]+)\s+merge\(pr#(\d+)\)/i);
