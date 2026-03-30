@@ -21,6 +21,53 @@ const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
 const isWindows = process.platform === "win32";
 const localWorkers = resolveLocalVitestMaxWorkers();
 const ciWorkers = isWindows ? 2 : 3;
+const pluginSdkSubpaths = [
+  "account-id",
+  "core",
+  "compat",
+  "telegram",
+  "discord",
+  "slack",
+  "signal",
+  "imessage",
+  "whatsapp",
+  "line",
+  "msteams",
+  "acpx",
+  "bluebubbles",
+  "copilot-proxy",
+  "device-pair",
+  "diagnostics-otel",
+  "diffs",
+  "feishu",
+  "google-gemini-cli-auth",
+  "googlechat",
+  "irc",
+  "llm-task",
+  "lobster",
+  "matrix",
+  "mattermost",
+  "memory-core",
+  "memory-lancedb",
+  "metabolism",
+  "minimax-portal-auth",
+  "nextcloud-talk",
+  "nostr",
+  "open-prose",
+  "phone-control",
+  "qwen-portal-auth",
+  "synology-chat",
+  "talk-voice",
+  "test-utils",
+  "thread-ownership",
+  "tlon",
+  "twitch",
+  "voice-call",
+  "zalo",
+  "zalouser",
+  "keyed-async-queue",
+] as const;
+
 export default defineConfig({
   resolve: {
     // Keep this ordered: the base `openclaw/plugin-sdk` alias is a prefix match.
