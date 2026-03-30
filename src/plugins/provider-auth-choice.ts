@@ -219,7 +219,14 @@ export async function applyAuthChoiceLoadedPluginProvider(
     // When setDefaultModel is false (e.g., adding a new agent), do not override
     // the agent's model. Let it inherit from agents.defaults.model instead of
     // baking in the provider's defaultModel. See issue #24170.
+    // However, if there is no global default model, we must still return the
+    // provider's default to avoid creating an agent with no model at all.
     nextConfig = restoreConfiguredPrimaryModel(nextConfig, params.config);
+    const hasGlobalDefault = params.config.agents?.defaults?.model;
+    if (!hasGlobalDefault) {
+      return { config: nextConfig, agentModelOverride: applied.defaultModel };
+    }
+    return { config: nextConfig };
   }
 
   return { config: nextConfig };
@@ -309,7 +316,13 @@ export async function applyAuthChoicePluginProvider(
     // When setDefaultModel is false (e.g., adding a new agent), do not override
     // the agent's model. Let it inherit from agents.defaults.model instead of
     // baking in the provider's defaultModel. See issue #24170.
+    // However, if there is no global default model, we must still return the
+    // provider's default to avoid creating an agent with no model at all.
     nextConfig = restoreConfiguredPrimaryModel(nextConfig, params.config);
+    const hasGlobalDefault = params.config.agents?.defaults?.model;
+    if (!hasGlobalDefault) {
+      return { config: nextConfig, agentModelOverride: applied.defaultModel };
+    }
     return { config: nextConfig };
   }
 

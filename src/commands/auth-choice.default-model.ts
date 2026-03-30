@@ -23,10 +23,16 @@ export async function applyDefaultModelChoice(params: {
   // When setDefaultModel is false (e.g., adding a new agent), do not override
   // the agent's model. Let it inherit from agents.defaults.model instead of
   // baking in the provider's defaultModel. See issue #24170.
+  // However, if there is no global default model, we must still return the
+  // provider's default to avoid creating an agent with no model at all.
   const next = params.applyProviderConfig(params.config);
   const nextWithModel = ensureModelAllowlistEntry({
     cfg: next,
     modelRef: params.defaultModel,
   });
+  const hasGlobalDefault = params.config.agents?.defaults?.model;
+  if (!hasGlobalDefault) {
+    return { config: nextWithModel, agentModelOverride: params.defaultModel };
+  }
   return { config: nextWithModel };
 }
