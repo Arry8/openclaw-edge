@@ -39,9 +39,27 @@
 //                         throughout the merge loop (non-blocking). Stops the loop if
 //                         any background build fails. When set, --build-interval is
 //                         ignored; a final build still runs at the end.
+//   --auto-skip-on-build-failure
+//                         When a build fails (interval or final), parse the error
+//                         output to identify the failing file(s), trace each file
+//                         to its merge(pr#N) commit via git log, revert that commit,
+//                         record the PR in docs/mega-merge-autoskip.json, and retry
+//                         the build (up to 3 times). If the build passes, the run
+//                         continues. If it cannot be auto-fixed (pre-existing base
+//                         issue, revert conflict, or retries exhausted), a ntfy.sh
+//                         notification is sent to Arry8 and the script stops.
+//                         Auto-skipped PRs are loaded at startup on future runs.
 //   --create-release      After a successful build, create a GitHub release on the
 //                         edge repo (Arry8/openclaw-edge) tagged mega/YYYY-MM-DD-HHmm
 //                         with the merged PR list as release notes. Requires gh CLI.
+//   --auto-skip-on-build-failure
+//                         When a build fails (interval or final), automatically parse
+//                         the build output for failing file paths, trace each file to
+//                         the most recent merge commit, revert those commits, and retry
+//                         the build (up to 3 times). Reverted PR numbers are appended
+//                         to docs/mega-merge-autoskip.json and loaded automatically on
+//                         future runs. When not set, existing behavior is preserved
+//                         (stop + print manual instructions).
 //
 // Requires:
 //   - gh CLI authenticated (for GitHub API pagination)
@@ -122,6 +140,10 @@ const SKIP_LIST = new Set<number>([
   51722, // sandbox/browser.ts:94 duplicate object property — TS1117
 ]);
 
+// Runtime set populated at startup from docs/mega-merge-autoskip.json.
+// Do NOT modify SKIP_LIST — auto-skips go here only.
+const AUTO_SKIP_SET = new Set<number>();
+
 // Files that, if a PR touches only these, we skip (noise-only changes).
 const _SKIP_ONLY_PATHS = [
   "appcast.xml",
@@ -162,6 +184,7 @@ const DRY_RUN = boolFlag("--dry-run");
 const RESUME = boolFlag("--resume");
 const REPORT_PATH = resolve(REPO_DIR, flag("--report", "docs/mega-merge-report.json"));
 const HISTORY_PATH = resolve(REPO_DIR, "docs/mega-merge-history.json");
+const AUTOSKIP_PATH = resolve(REPO_DIR, "docs/mega-merge-autoskip.json");
 const FETCH_BATCH = parseInt(flag("--fetch-batch", "50"), 10);
 const FETCH_DELAY_MS = parseInt(flag("--fetch-delay-ms", "200"), 10);
 const NO_COMMIT = boolFlag("--no-commit");
@@ -174,6 +197,7 @@ const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-ch
 const CREATE_RELEASE = boolFlag("--create-release");
 const RELEASE_INTERVAL = parseInt(flag("--release-interval", "0"), 10); // 0 = disabled
 const CONTINUOUS_BUILD = boolFlag("--continuous-build");
+const AUTO_SKIP_ON_BUILD_FAILURE = boolFlag("--auto-skip-on-build-failure");
 const CACHE_PRS = boolFlag("--cache-prs");
 const CACHE_TTL_MS = parseInt(flag("--cache-ttl", "60"), 10) * 60_000;
 const PR_CACHE_PATH = resolve(REPO_DIR, "docs/mega-merge-pr-cache.json");
@@ -575,6 +599,9 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
   if (SKIP_LIST.has(pr.number)) {
     return { skip: true, reason: "in SKIP_LIST" };
   }
+  if (AUTO_SKIP_SET.has(pr.number)) {
+    return { skip: true, reason: "in auto-skip list" };
+  }
 
   // For closed PRs: always skip ones that were actually merged (commits already in base)
   if (pr.mergedAt !== null) {
@@ -770,6 +797,167 @@ function appendToHistory(entry: ReportEntry): void {
   writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
 
+// ── Auto-skip on build failure ────────────────────────────────────────────────
+
+type AutoSkipEntry = {
+  number: number;
+  reason: string;
+  revertedAt: string;
+};
+
+// Load previously auto-skipped PR numbers from disk (returns empty array if missing/invalid).
+function loadAutoSkips(): AutoSkipEntry[] {
+  if (!existsSync(AUTOSKIP_PATH)) return [];
+  try {
+    return JSON.parse(readFileSync(AUTOSKIP_PATH, "utf8")) as AutoSkipEntry[];
+  } catch {
+    warn("Could not parse autoskip file; treating as empty.");
+    return [];
+  }
+}
+
+// Append a new entry to the autoskip JSON file.
+function appendAutoSkip(entry: AutoSkipEntry): void {
+  const existing = loadAutoSkips();
+  existing.push(entry);
+  writeFileSync(AUTOSKIP_PATH, JSON.stringify(existing, null, 2));
+}
+
+// Extract file paths from combined tsc / tsdown / rolldown build output.
+// tsc:      path/to/file.ts(line,col): error TSxxx
+// rolldown: [PARSE_ERROR] ... [path/to/file.ts:line:col]
+function extractFailingFiles(buildOutput: string): string[] {
+  const seen = new Set<string>();
+  // tsc style: word chars, dots, slashes, hyphens followed by .ts or .js then ( digit
+  const tscRe = /([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?)\(\d/g;
+  // rolldown style: [.../file.ts:line:col]
+  const rolldownRe = /\[([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?):\d/g;
+  for (const re of [tscRe, rolldownRe]) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(buildOutput)) !== null) {
+      seen.add(m[1]);
+    }
+  }
+  return [...seen];
+}
+
+// Given a file path, find the most recent merge commit that touched it.
+// Returns { prNumber, sha } or null if not a tracked merge commit.
+function findCulpritPr(filePath: string): { prNumber: number; sha: string } | null {
+  const result = run("git", ["log", "--oneline", "-1", "--", filePath]);
+  if (!result.ok || !result.stdout) return null;
+  // Expected format: "<sha> merge(pr#NNNNN): ..."
+  const m = result.stdout.match(/^([0-9a-f]+)\s+merge\(pr#(\d+)\)/i);
+  if (!m) return null;
+  return { sha: m[1], prNumber: parseInt(m[2], 10) };
+}
+
+// Run a build, capturing combined stdout+stderr.
+function runBuildCapture(): { ok: boolean; output: string } {
+  const result = run("pnpm", ["build"]);
+  const output = `${result.stdout}\n${result.stderr}`.trim();
+  return { ok: result.ok, output };
+}
+
+/**
+ * On build failure, parse failing files → find culprit PR commits → revert them →
+ * retry the build up to `maxRetries` times.
+ *
+ * Returns true if the build eventually passes, false if we gave up or couldn't
+ * identify a culprit.
+ */
+// ── ntfy.sh notification ─────────────────────────────────────────────────────
+
+async function notifyNtfy(title: string, message: string): Promise<void> {
+  try {
+    await fetch("https://ntfy.sh/Arry8", {
+      method: "POST",
+      headers: { "Title": title, "Priority": "high", "Tags": "warning,mega-merge" },
+      body: message,
+    });
+  } catch {
+    // Non-fatal — notification failure never blocks the script
+  }
+}
+
+async function autoSkipAndRetry(
+  buildOutput: string,
+  maxRetries = 3,
+): Promise<boolean> {
+  log("Auto-skip: analyzing build failure...");
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const files = extractFailingFiles(buildOutput);
+    if (files.length === 0) {
+      const msg = "Auto-skip: could not extract any failing file paths from build output. Add the offending PR to SKIP_LIST manually and rerun with --resume.";
+      process.stderr.write(`[mega-merge] ${msg}\n`);
+      await notifyNtfy("mega-merge: manual intervention required", msg);
+      return false;
+    }
+    log(`Auto-skip: failing files detected: ${files.join(", ")}`);
+
+    // Find all culprit PRs (deduplicated by PR number)
+    const culprits = new Map<number, { sha: string; files: string[] }>();
+    const unattributed: string[] = [];
+
+    for (const f of files) {
+      const hit = findCulpritPr(f);
+      if (!hit) {
+        unattributed.push(f);
+        continue;
+      }
+      const existing = culprits.get(hit.prNumber);
+      if (existing) {
+        existing.files.push(f);
+      } else {
+        culprits.set(hit.prNumber, { sha: hit.sha, files: [f] });
+      }
+    }
+
+    if (culprits.size === 0) {
+      const msg = `Auto-skip: no merge(pr#N) commits found for failing files: ${unattributed.join(", ")} — pre-existing base issue, cannot auto-fix.`;
+      process.stderr.write(`[mega-merge] ${msg}\n`);
+      await notifyNtfy("mega-merge: manual intervention required", msg);
+      return false;
+    }
+
+    if (unattributed.length > 0) {
+      warn(`Auto-skip: ${unattributed.length} file(s) not attributable to a merge commit (ignored): ${unattributed.join(", ")}`);
+    }
+
+    // Revert each culprit commit
+    for (const [prNumber, { sha, files: culpritFiles }] of culprits) {
+      log(`Auto-skip: reverting PR #${prNumber} (${sha}) — failing in: ${culpritFiles.join(", ")}`);
+      const revertResult = run("git", ["revert", "-m", "1", "--no-edit", sha]);
+      if (!revertResult.ok) {
+        const msg = `Auto-skip: git revert of ${sha} (PR #${prNumber}) failed: ${revertResult.stderr.slice(0, 200)}. Resolve manually and rerun with --resume.`;
+        process.stderr.write(`[mega-merge] ${msg}\n`);
+        await notifyNtfy("mega-merge: manual intervention required", msg);
+        return false;
+      }
+      const reason = `${culpritFiles[0]} (auto-skip attempt ${attempt})`;
+      appendAutoSkip({ number: prNumber, reason, revertedAt: new Date().toISOString() });
+      log(`Auto-skip: PR #${prNumber} reverted and recorded in ${AUTOSKIP_PATH}`);
+    }
+
+    // Retry the build
+    log(`Auto-skip: retrying build (attempt ${attempt}/${maxRetries})...`);
+    const retry = runBuildCapture();
+    if (retry.ok) {
+      log(`Auto-skip: build passed after reverting ${culprits.size} PR(s).`);
+      return true;
+    }
+    // Build still failing — loop with the new output
+    buildOutput = retry.output;
+    log(`Auto-skip: build still failing after attempt ${attempt}.`);
+  }
+
+  const msg = `Auto-skip exhausted ${maxRetries} retries — build still failing. Check ${AUTOSKIP_PATH} for what was reverted, then resolve manually.`;
+  process.stderr.write(`[mega-merge] ${msg}\n`);
+  await notifyNtfy("mega-merge: manual intervention required", msg);
+  return false;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -846,6 +1034,18 @@ async function main() {
 
   // Load already-processed set for resume
   const previouslyProcessed = loadPreviouslyProcessed();
+
+  // Populate AUTO_SKIP_SET from docs/mega-merge-autoskip.json so previously
+  // auto-reverted PRs are not re-merged on subsequent runs.
+  {
+    const autoSkips = loadAutoSkips();
+    for (const e of autoSkips) {
+      AUTO_SKIP_SET.add(e.number);
+    }
+    if (autoSkips.length > 0) {
+      log(`Auto-skip: loaded ${autoSkips.length} previously auto-skipped PR(s) from ${AUTOSKIP_PATH}`);
+    }
+  }
 
   // Decide which to attempt
   const candidates = sorted.filter((pr) => {
@@ -1005,36 +1205,70 @@ async function main() {
     ) {
       process.stdout.write("\n");
       log(`Interval build at merge #${mergedCount} (PR #${pr.number})...`);
-      const buildOk = run("pnpm", ["build"]);
-      if (!buildOk.ok) {
-        process.stderr.write(
-          `[mega-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
-            `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n`,
-        );
-        // Write partial report before exiting so --resume can continue from here
-        writeFileSync(
-          REPORT_PATH,
-          JSON.stringify(
-            {
-              generatedAt: new Date().toISOString(),
-              baseCommit,
-              baseBranch,
-              upstreamRemote: remoteCheck.stdout,
-              totalPrs: rawPrs.length,
-              attempted: i + 1,
-              merged: mergedCount,
-              conflicted: conflictCount,
-              skipped: skippedCount + alreadyAppliedCount,
-              fetchFailed: fetchFailCount,
-              durationMs: Date.now() - startMs,
-              buildFailedAtPr: pr.number,
-              entries,
-            },
-            null,
-            2,
-          ),
-        );
-        process.exit(1);
+      const intervalBuild = runBuildCapture();
+      if (!intervalBuild.ok) {
+        if (AUTO_SKIP_ON_BUILD_FAILURE) {
+          const fixed = await autoSkipAndRetry(intervalBuild.output);
+          if (!fixed) {
+            // Write partial report before exiting
+            writeFileSync(
+              REPORT_PATH,
+              JSON.stringify(
+                {
+                  generatedAt: new Date().toISOString(),
+                  baseCommit,
+                  baseBranch,
+                  upstreamRemote: remoteCheck.stdout,
+                  totalPrs: rawPrs.length,
+                  attempted: i + 1,
+                  merged: mergedCount,
+                  conflicted: conflictCount,
+                  skipped: skippedCount + alreadyAppliedCount,
+                  fetchFailed: fetchFailCount,
+                  durationMs: Date.now() - startMs,
+                  buildFailedAtPr: pr.number,
+                  entries,
+                },
+                null,
+                2,
+              ),
+            );
+            process.exit(1);
+          }
+          // Build fixed — continue merge loop
+        } else {
+          const intervalFailMsg = `Interval build FAILED after PR #${pr.number} (merge #${mergedCount}). Add #${pr.number} to SKIP_LIST and rerun with --resume.`;
+          await notifyNtfy("mega-merge: manual intervention required", intervalFailMsg);
+          process.stderr.write(
+            `[mega-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
+              `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n` +
+              `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
+          );
+          // Write partial report before exiting so --resume can continue from here
+          writeFileSync(
+            REPORT_PATH,
+            JSON.stringify(
+              {
+                generatedAt: new Date().toISOString(),
+                baseCommit,
+                baseBranch,
+                upstreamRemote: remoteCheck.stdout,
+                totalPrs: rawPrs.length,
+                attempted: i + 1,
+                merged: mergedCount,
+                conflicted: conflictCount,
+                skipped: skippedCount + alreadyAppliedCount,
+                fetchFailed: fetchFailCount,
+                durationMs: Date.now() - startMs,
+                buildFailedAtPr: pr.number,
+                entries,
+              },
+              null,
+              2,
+            ),
+          );
+          process.exit(1);
+        }
       }
       log(`Interval build passed.`);
     }
@@ -1137,27 +1371,57 @@ async function main() {
 
   if (!SKIP_BUILD && !DRY_RUN && mergedCount > 0) {
     log(`\nRunning pnpm build...`);
-    try {
-      execFileSync("pnpm", ["build"], { cwd: REPO_DIR, stdio: "inherit" });
-      log("Build passed.");
-      buildPassed = true;
-    } catch {
-      process.stderr.write(
-        `[mega-merge] Final build FAILED.\n` +
-          `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
-          `  add its number to SKIP_LIST, then rerun with --resume.\n`,
-      );
-      // Write changelog and exit — don't create a release on a failed build
-      appendChangelog({
-        runDate,
-        baseCommit,
-        headCommit,
-        baseBranch,
-        mergedEntries,
-        durationMs,
-        buildPassed: false,
-      });
-      process.exit(1);
+    if (AUTO_SKIP_ON_BUILD_FAILURE) {
+      // Capture output so autoSkipAndRetry can parse it.
+      const finalBuild = runBuildCapture();
+      if (finalBuild.ok) {
+        log("Build passed.");
+        buildPassed = true;
+      } else {
+        const fixed = await autoSkipAndRetry(finalBuild.output);
+        if (fixed) {
+          log("Build passed after auto-skip.");
+          buildPassed = true;
+        } else {
+          // Write changelog and exit — don't create a release on a failed build
+          appendChangelog({
+            runDate,
+            baseCommit,
+            headCommit,
+            baseBranch,
+            mergedEntries,
+            durationMs,
+            buildPassed: false,
+          });
+          process.exit(1);
+        }
+      }
+    } else {
+      try {
+        execFileSync("pnpm", ["build"], { cwd: REPO_DIR, stdio: "inherit" });
+        log("Build passed.");
+        buildPassed = true;
+      } catch {
+        const finalFailMsg = `Final build FAILED on branch ${baseBranch}. Use --auto-skip-on-build-failure or add offending PR to SKIP_LIST and rerun with --resume.`;
+        await notifyNtfy("mega-merge: manual intervention required", finalFailMsg);
+        process.stderr.write(
+          `[mega-merge] Final build FAILED.\n` +
+            `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
+            `  add its number to SKIP_LIST, then rerun with --resume.\n` +
+            `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
+        );
+        // Write changelog and exit — don't create a release on a failed build
+        appendChangelog({
+          runDate,
+          baseCommit,
+          headCommit,
+          baseBranch,
+          mergedEntries,
+          durationMs,
+          buildPassed: false,
+        });
+        process.exit(1);
+      }
     }
 
     if (RUN_TEST) {
