@@ -113,6 +113,17 @@ and files.
 openclaw plugins install @tencent-connect/openclaw-qqbot
 ```
 
+### Statocyst
+
+OpenClaw plugin for realtime Statocyst skill request/result messaging.
+
+- **npm:** `@moltenbot/openclaw-plugin-statocyst`
+- **repo:** [github.com/Molten-Bot/statocyst](https://github.com/Molten-Bot/statocyst)
+
+```bash
+openclaw plugins install @moltenbot/openclaw-plugin-statocyst
+```
+
 ### wecom
 
 WeCom channel plugin for OpenClaw by the Tencent WeCom team. Powered by
