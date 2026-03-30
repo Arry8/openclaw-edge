@@ -14,6 +14,9 @@ describe("pw-tools-core.snapshot navigate guard", () => {
   it("blocks unsupported non-network URLs before page lookup", async () => {
     const goto = vi.fn(async () => {});
     setPwToolsCoreCurrentPage({
+      close: vi.fn(async () => {}),
+      route: vi.fn(async () => {}),
+      unroute: vi.fn(async () => {}),
       goto,
       url: vi.fn(() => "about:blank"),
     });
@@ -32,6 +35,9 @@ describe("pw-tools-core.snapshot navigate guard", () => {
   it("navigates valid network URLs with clamped timeout", async () => {
     const goto = vi.fn(async () => {});
     setPwToolsCoreCurrentPage({
+      close: vi.fn(async () => {}),
+      route: vi.fn(async () => {}),
+      unroute: vi.fn(async () => {}),
       goto,
       url: vi.fn(() => "https://example.com"),
     });
@@ -53,6 +59,9 @@ describe("pw-tools-core.snapshot navigate guard", () => {
       .mockRejectedValueOnce(new Error("page.goto: Frame has been detached"))
       .mockResolvedValueOnce(undefined);
     setPwToolsCoreCurrentPage({
+      close: vi.fn(async () => {}),
+      route: vi.fn(async () => {}),
+      unroute: vi.fn(async () => {}),
       goto,
       url: vi.fn(() => "https://example.com/recovered"),
     });
@@ -90,7 +99,11 @@ describe("pw-tools-core.snapshot navigate guard", () => {
         }),
       }),
     }));
+    const close = vi.fn(async () => {});
     setPwToolsCoreCurrentPage({
+      close,
+      route: vi.fn(async () => {}),
+      unroute: vi.fn(async () => {}),
       goto,
       url: vi.fn(() => "https://93.184.216.34/final"),
     });
@@ -103,5 +116,30 @@ describe("pw-tools-core.snapshot navigate guard", () => {
     ).rejects.toBeInstanceOf(SsrFBlockedError);
 
     expect(goto).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close the tab on ordinary non-retryable navigate failures", async () => {
+    const goto = vi.fn(async () => {
+      throw new Error("page.goto: net::ERR_NAME_NOT_RESOLVED");
+    });
+    const close = vi.fn(async () => {});
+    setPwToolsCoreCurrentPage({
+      close,
+      route: vi.fn(async () => {}),
+      unroute: vi.fn(async () => {}),
+      goto,
+      url: vi.fn(() => "about:blank"),
+    });
+
+    await expect(
+      mod.navigateViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        url: "https://missing.example.test",
+        ssrfPolicy: { allowPrivateNetwork: true },
+      }),
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(close).not.toHaveBeenCalled();
   });
 });
