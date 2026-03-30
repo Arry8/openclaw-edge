@@ -63,6 +63,7 @@ export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
 export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
+export const DEFAULT_TASTE_FILENAME = "TASTE.md";
 const WORKSPACE_STATE_DIRNAME = ".openclaw";
 const WORKSPACE_STATE_FILENAME = "workspace-state.json";
 const WORKSPACE_STATE_VERSION = 1;
@@ -290,7 +291,8 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_HEARTBEAT_FILENAME
   | typeof DEFAULT_BOOTSTRAP_FILENAME
   | typeof DEFAULT_MEMORY_FILENAME
-  | typeof DEFAULT_MEMORY_ALT_FILENAME;
+  | typeof DEFAULT_MEMORY_ALT_FILENAME
+  | typeof DEFAULT_TASTE_FILENAME;
 
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
@@ -329,6 +331,7 @@ export const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_TASTE_FILENAME,
 ]);
 
 async function writeFileIfMissing(filePath: string, content: string): Promise<boolean> {
@@ -498,6 +501,7 @@ export async function ensureAgentWorkspace(params?: {
   userPath?: string;
   heartbeatPath?: string;
   bootstrapPath?: string;
+  tastePath?: string;
 }> {
   const rawDir = params?.dir?.trim() ? params.dir.trim() : DEFAULT_AGENT_WORKSPACE_DIR;
   const dir = resolveUserPath(rawDir);
@@ -524,10 +528,19 @@ export async function ensureAgentWorkspace(params?: {
   const userPath = path.join(dir, DEFAULT_USER_FILENAME);
   const heartbeatPath = path.join(dir, DEFAULT_HEARTBEAT_FILENAME);
   const bootstrapPath = path.join(dir, DEFAULT_BOOTSTRAP_FILENAME);
+  const tastePath = path.join(dir, DEFAULT_TASTE_FILENAME);
   const statePath = resolveWorkspaceStatePath(dir);
 
   const isBrandNewWorkspace = await (async () => {
-    const templatePaths = [agentsPath, soulPath, toolsPath, identityPath, userPath, heartbeatPath];
+    const templatePaths = [
+      agentsPath,
+      soulPath,
+      toolsPath,
+      identityPath,
+      userPath,
+      heartbeatPath,
+      tastePath,
+    ];
     const userContentPaths = [
       path.join(dir, "memory"),
       path.join(dir, DEFAULT_MEMORY_FILENAME),
@@ -553,12 +566,14 @@ export async function ensureAgentWorkspace(params?: {
   const identityTemplate = await loadTemplate(DEFAULT_IDENTITY_FILENAME);
   const userTemplate = await loadTemplate(DEFAULT_USER_FILENAME);
   const heartbeatTemplate = await loadTemplate(DEFAULT_HEARTBEAT_FILENAME);
+  const tasteTemplate = await loadTemplate(DEFAULT_TASTE_FILENAME);
   await writeFileIfMissing(agentsPath, agentsTemplate);
   await writeFileIfMissing(soulPath, soulTemplate);
   await writeFileIfMissing(toolsPath, toolsTemplate);
   await writeFileIfMissing(identityPath, identityTemplate);
   await writeFileIfMissing(userPath, userTemplate);
   await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
+  await writeFileIfMissing(tastePath, tasteTemplate);
 
   let state = await readWorkspaceSetupState(statePath);
   if (!state.setupCompletedAt && !state.bootstrapSeededAt) {
@@ -641,6 +656,7 @@ export async function ensureAgentWorkspace(params?: {
     userPath,
     heartbeatPath,
     bootstrapPath,
+    tastePath,
   };
 }
 
@@ -711,6 +727,10 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     {
       name: DEFAULT_BOOTSTRAP_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
+    },
+    {
+      name: DEFAULT_TASTE_FILENAME,
+      filePath: path.join(resolvedDir, DEFAULT_TASTE_FILENAME),
     },
   ];
 
