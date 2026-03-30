@@ -42,12 +42,12 @@ describe("method scope resolution", () => {
   it("reads plugin-registered gateway method scopes from the active plugin registry", () => {
     const registry = createEmptyPluginRegistry();
     registry.gatewayMethodScopes = {
-      "browser.request": "operator.write",
+      "browser.request": "operator.admin",
     };
     setActivePluginRegistry(registry);
 
     expect(resolveLeastPrivilegeOperatorScopesForMethod("browser.request")).toEqual([
-      "operator.write",
+      "operator.admin",
     ]);
   });
 });
@@ -70,6 +70,16 @@ describe("operator scope authorization", () => {
     expect(authorizeOperatorScopesForMethod("node.pair.approve", ["operator.pairing"])).toEqual({
       allowed: false,
       missingScope: "operator.write",
+    });
+  });
+
+  it("requires admin for browser.request", () => {
+    expect(authorizeOperatorScopesForMethod("browser.request", ["operator.write"])).toEqual({
+      allowed: false,
+      missingScope: "operator.admin",
+    });
+    expect(authorizeOperatorScopesForMethod("browser.request", ["operator.admin"])).toEqual({
+      allowed: true,
     });
   });
 
