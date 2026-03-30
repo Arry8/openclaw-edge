@@ -197,6 +197,180 @@ describe("startAcpSpawnParentStreamRelay", () => {
     relay.dispose();
   });
 
+  it("relays terminal lifecycle errors matched by child session key before the final runId is known", () => {
+    const relay = startAcpSpawnParentStreamRelay({
+      runId: "idempotency-key",
+      parentSessionKey: "agent:main:main",
+      childSessionKey: "agent:codex:acp:child-early-error",
+      agentId: "codex",
+      streamFlushMs: 1,
+      noOutputNoticeMs: 120_000,
+      emitStartNotice: false,
+    });
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-early-error",
+      stream: "lifecycle",
+      data: {
+        phase: "error",
+        error: "ACP_TURN_FAILED",
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run failed: ACP_TURN_FAILED"))).toBe(
+      true,
+    );
+    expect(relay.isTerminalStateReached()).toBe(true);
+    expect(requestHeartbeatNowMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "acp:spawn:stream",
+        sessionKey: "agent:main:main",
+      }),
+    );
+    relay.dispose();
+  });
+
+  it("ignores session-key lifecycle end events until the child run id is observed", () => {
+    const relay = startAcpSpawnParentStreamRelay({
+      runId: "idempotency-key",
+      parentSessionKey: "agent:main:main",
+      childSessionKey: "agent:codex:acp:child-end-guard",
+      agentId: "codex",
+      streamFlushMs: 1,
+      noOutputNoticeMs: 120_000,
+      emitStartNotice: false,
+    });
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-end-guard",
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt: 1_000,
+        endedAt: 2_000,
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run completed"))).toBe(false);
+    expect(relay.isTerminalStateReached()).toBe(false);
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-end-guard",
+      stream: "lifecycle",
+      data: {
+        phase: "start",
+        startedAt: 1_000,
+      },
+    });
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-end-guard",
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt: 1_000,
+        endedAt: 2_000,
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run completed in 1s"))).toBe(true);
+    expect(relay.isTerminalStateReached()).toBe(true);
+    relay.dispose();
+  });
+
+  it("scopes session-key fallback errors to the observed child turn", () => {
+    const relay = startAcpSpawnParentStreamRelay({
+      runId: "idempotency-key",
+      parentSessionKey: "agent:main:main",
+      childSessionKey: "agent:codex:acp:child-turn-scope",
+      agentId: "codex",
+      streamFlushMs: 1,
+      noOutputNoticeMs: 120_000,
+      emitStartNotice: false,
+    });
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-turn-scope",
+      stream: "lifecycle",
+      data: {
+        phase: "start",
+        startedAt: 1_000,
+      },
+    });
+    emitAgentEvent({
+      runId: "later-run-456",
+      sessionKey: "agent:codex:acp:child-turn-scope",
+      stream: "lifecycle",
+      data: {
+        phase: "error",
+        error: "should be ignored",
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("should be ignored"))).toBe(false);
+    expect(relay.isTerminalStateReached()).toBe(false);
+
+    emitAgentEvent({
+      runId: "gateway-run-123",
+      sessionKey: "agent:codex:acp:child-turn-scope",
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt: 1_000,
+        endedAt: 2_000,
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run completed in 1s"))).toBe(true);
+    expect(relay.isTerminalStateReached()).toBe(true);
+    relay.dispose();
+  });
+
+  it("disables session-key fallback errors once the run id is resolved", () => {
+    const relay = startAcpSpawnParentStreamRelay({
+      runId: "run-6",
+      parentSessionKey: "agent:main:main",
+      childSessionKey: "agent:codex:acp:child-run-resolved",
+      agentId: "codex",
+      streamFlushMs: 1,
+      noOutputNoticeMs: 120_000,
+      emitStartNotice: false,
+    });
+
+    relay.markRunIdResolved();
+
+    emitAgentEvent({
+      runId: "later-run-789",
+      sessionKey: "agent:codex:acp:child-run-resolved",
+      stream: "lifecycle",
+      data: {
+        phase: "error",
+        error: "late error",
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("late error"))).toBe(false);
+    expect(relay.isTerminalStateReached()).toBe(false);
+
+    emitAgentEvent({
+      runId: "run-6",
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        startedAt: 3_000,
+        endedAt: 4_000,
+      },
+    });
+
+    expect(collectedTexts().some((text) => text.includes("run completed in 1s"))).toBe(true);
+    expect(relay.isTerminalStateReached()).toBe(true);
+    relay.dispose();
+  });
+
   it("auto-disposes stale relays after max lifetime timeout", () => {
     const relay = startAcpSpawnParentStreamRelay({
       runId: "run-3",

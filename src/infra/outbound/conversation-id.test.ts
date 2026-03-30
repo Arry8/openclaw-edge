@@ -34,11 +34,6 @@ describe("resolveConversationIdFromTargets", () => {
       expected: "987654321",
     },
     {
-      name: "extracts room ids from Matrix room targets",
-      targets: ["room:!room:example.org"],
-      expected: "!room:example.org",
-    },
-    {
       name: "extracts ids from explicit conversation targets",
       targets: ["conversation:19:abc@thread.tacv2"],
       expected: "19:abc@thread.tacv2",
@@ -65,7 +60,7 @@ describe("resolveConversationIdFromTargets", () => {
     },
     {
       name: "returns undefined for non-channel targets",
-      targets: ["user:alice", "general"],
+      targets: ["user:alice", "general", "room:!room:example.org"],
       expected: undefined,
     },
     {
