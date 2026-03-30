@@ -443,6 +443,7 @@ const ToolExecBaseShape = {
   safeBinProfiles: z.record(z.string(), ToolExecSafeBinProfileSchema).optional(),
   backgroundMs: z.number().int().positive().optional(),
   timeoutSec: z.number().int().positive().optional(),
+  approvalRunningNoticeMs: z.number().int().nonnegative().optional(),
   cleanupMs: z.number().int().positive().optional(),
   notifyOnExit: z.boolean().optional(),
   notifyOnExitEmptySuccess: z.boolean().optional(),
@@ -452,7 +453,6 @@ const ToolExecBaseShape = {
 const AgentToolExecSchema = z
   .object({
     ...ToolExecBaseShape,
-    approvalRunningNoticeMs: z.number().int().nonnegative().optional(),
   })
   .strict()
   .optional();
