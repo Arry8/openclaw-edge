@@ -116,6 +116,11 @@ export function parseAt(input: string, tz?: string): string | null {
   if (absolute !== null) {
     return new Date(absolute).toISOString();
   }
+  // Do not fall through to duration parsing for digit-only ≤12 chars: they are
+  // ambiguous (Unix seconds vs YYYYMMDDHH) and would overflow if treated as days.
+  if (/^\d+$/.test(raw) && raw.length <= 12) {
+    return null;
+  }
   const dur = parseDurationMs(raw);
   if (dur !== null) {
     return new Date(Date.now() + dur).toISOString();

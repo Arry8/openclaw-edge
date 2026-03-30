@@ -13,7 +13,8 @@ type CronStoreIssueKey =
   | "legacyPayloadProvider"
   | "legacyTopLevelPayloadFields"
   | "legacyTopLevelDeliveryFields"
-  | "legacyDeliveryMode";
+  | "legacyDeliveryMode"
+  | "sessionTargetConflict";
 
 type CronStoreIssues = Partial<Record<CronStoreIssueKey, number>>;
 
@@ -21,6 +22,10 @@ type NormalizeCronStoreJobsResult = {
   issues: CronStoreIssues;
   jobs: Array<Record<string, unknown>>;
   mutated: boolean;
+};
+
+type StoreMigrationLogger = {
+  warn: (obj: unknown, msg?: string) => void;
 };
 
 function incrementIssue(issues: CronStoreIssues, key: CronStoreIssueKey) {
@@ -181,6 +186,7 @@ function stripLegacyTopLevelFields(raw: Record<string, unknown>) {
 
 export function normalizeStoredCronJobs(
   jobs: Array<Record<string, unknown>>,
+  opts?: { log?: StoreMigrationLogger },
 ): NormalizeCronStoreJobsResult {
   const issues: CronStoreIssues = {};
   let mutated = false;
@@ -475,6 +481,27 @@ export function normalizeStoredCronJobs(
     } else {
       const inferredSessionTarget = payloadKind === "agentTurn" ? "isolated" : "main";
       if (raw.sessionTarget !== inferredSessionTarget) {
+        // Emit a warn when an existing (but unrecognized) value is being
+        // overwritten so that manual config edits that conflict with the
+        // payload kind are observable rather than silently discarded.
+        // Exclude undefined, null, and "" — those are semantically "not set"
+        // and should not produce a false-positive conflict warning.
+        if (
+          raw.sessionTarget !== undefined &&
+          raw.sessionTarget !== null &&
+          raw.sessionTarget !== ""
+        ) {
+          opts?.log?.warn(
+            {
+              jobId: typeof raw.id === "string" ? raw.id : "unknown",
+              previousSessionTarget: raw.sessionTarget,
+              inferredSessionTarget,
+              payloadKind: payloadKind || "unknown",
+            },
+            "cron: store migration: sessionTarget reset to inferred value (config edit conflict)",
+          );
+          trackIssue("sessionTargetConflict");
+        }
         raw.sessionTarget = inferredSessionTarget;
         mutated = true;
       }
