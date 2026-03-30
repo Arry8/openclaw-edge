@@ -39,6 +39,18 @@ Then open:
 - Hosted OpenClaw Gateway + Control UI
 - Persistent storage via Railway Volume (`/data`) so config/credentials/workspace survive redeploys
 
+## Memory requirements
+
+The gateway needs at least **1 GB of RAM** to start reliably. Railway's default
+memory allocation may be lower. If you see `JavaScript heap out of memory`
+errors in the deploy logs, increase the service memory in
+**Railway → your service → Settings → Resources**.
+
+The Docker image sets a default heap limit of 768 MB. You can override this by
+adding a `NODE_OPTIONS` variable on your service:
+
+- `NODE_OPTIONS=--max-old-space-size=768` (default, fits 1 GB containers)
+
 ## Required Railway settings
 
 ### Public Networking

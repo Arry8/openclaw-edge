@@ -1,0 +1,60 @@
+name: Railway Dockerfile compatibility
+
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile]
+
+jobs:
+  railway-compat:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strip BuildKit cache mounts
+        run: |
+          if grep -q '\-\-mount=type=cache' Dockerfile; then
+            sed -i 's/ *--mount=type=cache[^ ]* *\\\?//g' Dockerfile
+            sed -i '/^RUN \\$/d' Dockerfile
+            sed -i '/^[[:space:]]*\\$/d' Dockerfile
+            echo "Stripped BuildKit cache mounts"
+          fi
+
+      - name: Ensure PaaS gateway config exists
+        run: |
+          if ! grep -q 'dangerouslyAllowHostHeaderOriginFallback' Dockerfile; then
+            # Insert the config block before USER node
+            sed -i '/^USER node$/i \
+# PaaS gateway config: allow host-header origin fallback for the Control UI\
+# since Railway\/Render\/Fly proxy traffic through their own domains.\
+RUN mkdir -p \/app\/.openclaw \&\& \\\
+    printf '"'"'{"gateway":{"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":true,"dangerouslyDisableDeviceAuth":true}}}\\n'"'"' \\\
+      > \/app\/.openclaw\/openclaw.json \&\& \\\
+    chown -R node:node \/app\/.openclaw\
+ENV OPENCLAW_CONFIG_PATH=\/app\/.openclaw\/openclaw.json\
+' Dockerfile
+            echo "Restored PaaS gateway config"
+          fi
+
+      - name: Ensure Railway-compatible CMD and HEALTHCHECK
+        run: |
+          # Replace HEALTHCHECK to use PORT env var
+          sed -i '/^HEALTHCHECK/,/CMD node/{
+            s|CMD node -e "fetch(.http://127.0.0.1:18789/healthz.).*|CMD node -e "const p=process.env.PORT\|\|18789;fetch('"'"'http://127.0.0.1:'"'"'+p+'"'"'/healthz'"'"').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"|
+          }' Dockerfile
+
+          # Replace CMD to use --bind lan and PORT
+          sed -i 's|^CMD \["node", "openclaw.mjs", "gateway", "--allow-unconfigured"\]|CMD ["sh", "-c", "exec node --max-old-space-size=4096 openclaw.mjs gateway --bind lan --port ${PORT:-18789} --allow-unconfigured"]|' Dockerfile
+
+          echo "Ensured Railway-compatible CMD and HEALTHCHECK"
+
+      - name: Commit and push if changed
+        run: |
+          git diff --quiet && { echo "No changes needed"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile
+          git commit -m "auto: patch Dockerfile for Railway compatibility"
+          git push
