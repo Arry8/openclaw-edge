@@ -941,6 +941,7 @@
                   "install/gcp",
                   "install/hetzner",
                   "install/kubernetes",
+                  "install/linode",
                   "vps",
                   "install/macos-vm",
                   "install/northflank",
