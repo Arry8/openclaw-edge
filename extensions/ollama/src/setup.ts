@@ -102,6 +102,7 @@ async function pullOllamaModelCore(params: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: modelName }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
       return { ok: false, message: `Failed to download ${modelName} (HTTP ${response.status})` };
