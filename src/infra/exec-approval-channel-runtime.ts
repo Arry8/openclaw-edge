@@ -8,19 +8,15 @@ import type { PluginApprovalRequest, PluginApprovalResolved } from "./plugin-app
 
 type ApprovalRequestEvent = ExecApprovalRequest | PluginApprovalRequest;
 type ApprovalResolvedEvent = ExecApprovalResolved | PluginApprovalResolved;
+const MAX_PENDING_APPROVALS = 1000;
+const MAX_PENDING_APPROVAL_TTL_MS = 30 * 60_000;
 
 export type ExecApprovalChannelRuntimeEventKind = "exec" | "plugin";
 
-type PendingApprovalEntry<
-  TPending,
-  TRequest extends ApprovalRequestEvent,
-  TResolved extends ApprovalResolvedEvent,
-> = {
+type PendingApprovalEntry<TPending, TRequest extends ApprovalRequestEvent> = {
   request: TRequest;
   entries: TPending[];
   timeoutId: NodeJS.Timeout | null;
-  delivering: boolean;
-  pendingResolution: TResolved | null;
 };
 
 export type ExecApprovalChannelRuntimeAdapter<
@@ -70,22 +66,11 @@ export function createExecApprovalChannelRuntime<
   const log = createSubsystemLogger(adapter.label);
   const nowMs = adapter.nowMs ?? Date.now;
   const eventKinds = new Set<ExecApprovalChannelRuntimeEventKind>(adapter.eventKinds ?? ["exec"]);
-  const pending = new Map<string, PendingApprovalEntry<TPending, TRequest, TResolved>>();
+  const pending = new Map<string, PendingApprovalEntry<TPending, TRequest>>();
   let gatewayClient: GatewayClient | null = null;
   let started = false;
-  let shouldRun = false;
-  let startPromise: Promise<void> | null = null;
 
-  const spawn = (label: string, promise: Promise<void>): void => {
-    void promise.catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      log.error(`${label}: ${message}`);
-    });
-  };
-
-  const clearPendingEntry = (
-    approvalId: string,
-  ): PendingApprovalEntry<TPending, TRequest, TResolved> | null => {
+  const clearPendingEntry = (approvalId: string): PendingApprovalEntry<TPending, TRequest> | null => {
     const entry = pending.get(approvalId);
     if (!entry) {
       return null;
@@ -96,6 +81,30 @@ export function createExecApprovalChannelRuntime<
     }
     return entry;
   };
+
+  const spawn = (label: string, promise: Promise<void>): void => {
+    promise.catch((err) => {
+      log.error(`${label}: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
+
+  const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value);
+  const isApprovalDecision = (value: unknown): value is ExecApprovalResolved["decision"] =>
+    value === "allow-once" || value === "allow-always" || value === "deny";
+  const isApprovalRequestPayload = (value: unknown): value is TRequest =>
+    isObjectRecord(value) &&
+    typeof value.id === "string" &&
+    isObjectRecord(value.request) &&
+    isFiniteNumber(value.createdAtMs) &&
+    isFiniteNumber(value.expiresAtMs);
+  const isApprovalResolvedPayload = (value: unknown): value is TResolved =>
+    isObjectRecord(value) &&
+    typeof value.id === "string" &&
+    isApprovalDecision(value.decision) &&
+    isFiniteNumber(value.ts);
 
   const handleExpired = async (approvalId: string): Promise<void> => {
     const entry = clearPendingEntry(approvalId);
@@ -113,86 +122,81 @@ export function createExecApprovalChannelRuntime<
     if (!adapter.shouldHandle(request)) {
       return;
     }
+    if (!pending.has(request.id) && pending.size >= MAX_PENDING_APPROVALS) {
+      log.error(`dropping request ${request.id}: pending approval cap reached`);
+      return;
+    }
 
     log.debug(`received request ${request.id}`);
+    const entries = await adapter.deliverRequested(request);
+    if (!entries.length) {
+      return;
+    }
+
+    const timeoutMs = Math.min(
+      MAX_PENDING_APPROVAL_TTL_MS,
+      Math.max(0, request.expiresAtMs - nowMs()),
+    );
+    const timeoutId = setTimeout(() => {
+      spawn(`expire ${request.id}`, handleExpired(request.id));
+    }, timeoutMs);
+    timeoutId.unref?.();
+
     const existing = pending.get(request.id);
     if (existing?.timeoutId) {
       clearTimeout(existing.timeoutId);
     }
-    const entry: PendingApprovalEntry<TPending, TRequest, TResolved> = {
+    pending.set(request.id, {
       request,
-      entries: [],
-      timeoutId: null,
-      delivering: true,
-      pendingResolution: null,
-    };
-    pending.set(request.id, entry);
-    const entries = await adapter.deliverRequested(request);
-    const current = pending.get(request.id);
-    if (current !== entry) {
-      return;
-    }
-    if (!entries.length) {
-      pending.delete(request.id);
-      return;
-    }
-    entry.entries = entries;
-    entry.delivering = false;
-    if (entry.pendingResolution) {
-      pending.delete(request.id);
-      log.debug(`resolved ${entry.pendingResolution.id} with ${entry.pendingResolution.decision}`);
-      await adapter.finalizeResolved({
-        request: entry.request,
-        resolved: entry.pendingResolution,
-        entries: entry.entries,
-      });
-      return;
-    }
-
-    const timeoutMs = Math.max(0, request.expiresAtMs - nowMs());
-    const timeoutId = setTimeout(() => {
-      spawn("error handling approval expiration", handleExpired(request.id));
-    }, timeoutMs);
-    timeoutId.unref?.();
-    entry.timeoutId = timeoutId;
+      entries,
+      timeoutId,
+    });
   };
 
   const handleResolved = async (resolved: TResolved): Promise<void> => {
-    const entry = pending.get(resolved.id);
+    const entry = clearPendingEntry(resolved.id);
     if (!entry) {
-      return;
-    }
-    if (entry.delivering) {
-      entry.pendingResolution = resolved;
-      return;
-    }
-    const finalizedEntry = clearPendingEntry(resolved.id);
-    if (!finalizedEntry) {
       return;
     }
     log.debug(`resolved ${resolved.id} with ${resolved.decision}`);
     await adapter.finalizeResolved({
-      request: finalizedEntry.request,
+      request: entry.request,
       resolved,
-      entries: finalizedEntry.entries,
+      entries: entry.entries,
     });
   };
 
   const handleGatewayEvent = (evt: EventFrame): void => {
     if (evt.event === "exec.approval.requested" && eventKinds.has("exec")) {
-      spawn("error handling approval request", handleRequested(evt.payload as TRequest));
+      if (!isApprovalRequestPayload(evt.payload)) {
+        log.error("received invalid exec.approval.requested payload");
+        return;
+      }
+      spawn("event exec.approval.requested", handleRequested(evt.payload));
       return;
     }
     if (evt.event === "plugin.approval.requested" && eventKinds.has("plugin")) {
-      spawn("error handling approval request", handleRequested(evt.payload as TRequest));
+      if (!isApprovalRequestPayload(evt.payload)) {
+        log.error("received invalid plugin.approval.requested payload");
+        return;
+      }
+      spawn("event plugin.approval.requested", handleRequested(evt.payload));
       return;
     }
     if (evt.event === "exec.approval.resolved" && eventKinds.has("exec")) {
-      spawn("error handling approval resolved", handleResolved(evt.payload as TResolved));
+      if (!isApprovalResolvedPayload(evt.payload)) {
+        log.error("received invalid exec.approval.resolved payload");
+        return;
+      }
+      spawn("event exec.approval.resolved", handleResolved(evt.payload));
       return;
     }
     if (evt.event === "plugin.approval.resolved" && eventKinds.has("plugin")) {
-      spawn("error handling approval resolved", handleResolved(evt.payload as TResolved));
+      if (!isApprovalResolvedPayload(evt.payload)) {
+        log.error("received invalid plugin.approval.resolved payload");
+        return;
+      }
+      spawn("event plugin.approval.resolved", handleResolved(evt.payload));
     }
   };
 
@@ -201,54 +205,34 @@ export function createExecApprovalChannelRuntime<
       if (started) {
         return;
       }
-      if (startPromise) {
-        await startPromise;
+      started = true;
+
+      if (!adapter.isConfigured()) {
+        log.debug("disabled");
         return;
       }
 
-      shouldRun = true;
-      startPromise = (async () => {
-        if (!adapter.isConfigured()) {
-          log.debug("disabled");
-          return;
-        }
-
-        const client = await createOperatorApprovalsGatewayClient({
-          config: adapter.cfg,
-          gatewayUrl: adapter.gatewayUrl,
-          clientDisplayName: adapter.clientDisplayName,
-          onEvent: handleGatewayEvent,
-          onHelloOk: () => {
-            log.debug("connected to gateway");
-          },
-          onConnectError: (err) => {
-            log.error(`connect error: ${err.message}`);
-          },
-          onClose: (code, reason) => {
-            log.debug(`gateway closed: ${code} ${reason}`);
-          },
-        });
-
-        if (!shouldRun) {
-          client.stop();
-          return;
-        }
-        client.start();
-        gatewayClient = client;
-        started = true;
-      })().finally(() => {
-        startPromise = null;
+      gatewayClient = await createOperatorApprovalsGatewayClient({
+        config: adapter.cfg,
+        gatewayUrl: adapter.gatewayUrl,
+        clientDisplayName: adapter.clientDisplayName,
+        onEvent: handleGatewayEvent,
+        onHelloOk: () => {
+          log.debug("connected to gateway");
+        },
+        onConnectError: (err) => {
+          log.error(`connect error: ${err.message}`);
+        },
+        onClose: (code, reason) => {
+          log.debug(`gateway closed: ${code} ${reason}`);
+        },
       });
 
-      await startPromise;
+      gatewayClient.start();
     },
 
     async stop(): Promise<void> {
-      shouldRun = false;
-      if (startPromise) {
-        await startPromise.catch(() => {});
-      }
-      if (!started && !gatewayClient) {
+      if (!started) {
         return;
       }
       started = false;

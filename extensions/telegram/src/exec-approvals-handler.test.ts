@@ -1,11 +1,28 @@
-import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../../../src/config/config.js";
 import { TelegramExecApprovalHandler } from "./exec-approvals-handler.js";
 
 const baseRequest = {
   id: "9f1c7d5d-b1fb-46ef-ac45-662723b65bb7",
   request: {
     command: "npm view diver name version description",
+    agentId: "main",
+    sessionKey: "agent:main:telegram:group:-1003841603622:topic:928",
+    turnSourceChannel: "telegram",
+    turnSourceTo: "-1003841603622",
+    turnSourceThreadId: "928",
+    turnSourceAccountId: "default",
+  },
+  createdAtMs: 1000,
+  expiresAtMs: 61_000,
+};
+
+const pluginRequest = {
+  id: "plugin:9f1c7d5d-b1fb-46ef-ac45-662723b65bb7",
+  request: {
+    title: "Plugin Approval Required",
+    description: "Allow plugin access",
+    pluginId: "git-tools",
     agentId: "main",
     sessionKey: "agent:main:telegram:group:-1003841603622:topic:928",
     turnSourceChannel: "telegram",
@@ -75,16 +92,17 @@ describe("TelegramExecApprovalHandler", () => {
             {
               text: "Allow Once",
               callback_data: "/approve 9f1c7d5d-b1fb-46ef-ac45-662723b65bb7 allow-once",
+              style: "success",
             },
             {
               text: "Allow Always",
               callback_data: "/approve 9f1c7d5d-b1fb-46ef-ac45-662723b65bb7 always",
+              style: "primary",
             },
-          ],
-          [
             {
               text: "Deny",
               callback_data: "/approve 9f1c7d5d-b1fb-46ef-ac45-662723b65bb7 deny",
+              style: "danger",
             },
           ],
         ],
@@ -152,5 +170,72 @@ describe("TelegramExecApprovalHandler", () => {
         accountId: "default",
       }),
     );
+  });
+
+  it("delivers plugin approvals through the shared native delivery planner", async () => {
+    const cfg = {
+      channels: {
+        telegram: {
+          execApprovals: {
+            enabled: true,
+            approvers: ["8460800771"],
+            target: "dm",
+          },
+        },
+      },
+    } as OpenClawConfig;
+    const { handler, sendMessage } = createHandler(cfg);
+
+    await handler.handleRequested(pluginRequest);
+
+    const [chatId, text, options] = sendMessage.mock.calls[0] ?? [];
+    expect(chatId).toBe("8460800771");
+    expect(text).toContain("Plugin approval required");
+    expect(options).toEqual(
+      expect.objectContaining({
+        accountId: "default",
+        buttons: expect.arrayContaining([
+          expect.arrayContaining([
+            expect.objectContaining({
+              callback_data: "/approve plugin:9f1c7d5d-b1fb-46ef-ac45-662723b65bb7 allow-once",
+            }),
+          ]),
+        ]),
+      }),
+    );
+  });
+
+  it("does not deliver plugin approvals for a different Telegram account", async () => {
+    const cfg = {
+      channels: {
+        telegram: {
+          execApprovals: {
+            enabled: true,
+            approvers: ["8460800771"],
+            target: "dm",
+          },
+          accounts: {
+            secondary: {
+              execApprovals: {
+                enabled: true,
+                approvers: ["999"],
+                target: "dm",
+              },
+            },
+          },
+        },
+      },
+    } as OpenClawConfig;
+    const { handler, sendMessage } = createHandler(cfg);
+
+    await handler.handleRequested({
+      ...pluginRequest,
+      request: {
+        ...pluginRequest.request,
+        turnSourceAccountId: "secondary",
+      },
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });
