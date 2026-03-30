@@ -147,7 +147,6 @@ export function createBlockReplyPipeline(params: {
             didLogTimeout = true;
             logVerbose(
               `block reply delivery timed out after ${timeoutMs}ms; skipping remaining block replies to preserve ordering`,
-              { skippedPayload: createBlockReplyPayloadKey(payload) },
             );
           }
           return;
