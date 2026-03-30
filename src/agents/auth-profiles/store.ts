@@ -28,6 +28,8 @@ type LoadAuthProfileStoreOptions = {
 const AUTH_PROFILE_TYPES = new Set<AuthProfileCredential["type"]>(["api_key", "oauth", "token"]);
 
 const runtimeAuthStoreSnapshots = new Map<string, AuthProfileStore>();
+/** Timestamp when runtimeAuthStoreSnapshots was last populated (for stale-detection). */
+let runtimeSnapshotsLoadedAtMs = 0;
 const loadedAuthStoreCache = new Map<
   string,
   { mtimeMs: number | null; syncedAtMs: number; store: AuthProfileStore }
@@ -48,6 +50,23 @@ function resolveRuntimeAuthProfileStore(agentDir?: string): AuthProfileStore | n
 
   const mainKey = resolveRuntimeStoreKey(undefined);
   const requestedKey = resolveRuntimeStoreKey(agentDir);
+
+  // Invalidate stale snapshots: if the on-disk file was modified after the
+  // snapshot was loaded (e.g., by `openclaw models auth login` while the
+  // gateway was stopped), discard the cached snapshot so the caller falls
+  // through to the mtime-aware loadedAuthStoreCache or a fresh disk read.
+  if (runtimeSnapshotsLoadedAtMs > 0) {
+    const mainMtime = readAuthStoreMtimeMs(mainKey);
+    const isMainStale = mainMtime !== null && mainMtime > runtimeSnapshotsLoadedAtMs;
+    const requestedMtime = requestedKey !== mainKey ? readAuthStoreMtimeMs(requestedKey) : null;
+    const isRequestedStale = requestedMtime !== null && requestedMtime > runtimeSnapshotsLoadedAtMs;
+    if (isMainStale || isRequestedStale) {
+      runtimeAuthStoreSnapshots.clear();
+      runtimeSnapshotsLoadedAtMs = 0;
+      return null;
+    }
+  }
+
   const mainStore = runtimeAuthStoreSnapshots.get(mainKey);
   const requestedStore = runtimeAuthStoreSnapshots.get(requestedKey);
 
@@ -76,8 +95,13 @@ function resolveRuntimeAuthProfileStore(agentDir?: string): AuthProfileStore | n
 
 export function replaceRuntimeAuthProfileStoreSnapshots(
   entries: Array<{ agentDir?: string; store: AuthProfileStore }>,
+  /** Timestamp when the disk reads that produced `entries` started.
+   *  Defaults to `Date.now()` for backward compatibility, but callers
+   *  should pass the actual read time to close the preparation window. */
+  readAtMs?: number,
 ): void {
   runtimeAuthStoreSnapshots.clear();
+  runtimeSnapshotsLoadedAtMs = readAtMs ?? Date.now();
   for (const entry of entries) {
     runtimeAuthStoreSnapshots.set(
       resolveRuntimeStoreKey(entry.agentDir),
@@ -88,6 +112,7 @@ export function replaceRuntimeAuthProfileStoreSnapshots(
 
 export function clearRuntimeAuthProfileStoreSnapshots(): void {
   runtimeAuthStoreSnapshots.clear();
+  runtimeSnapshotsLoadedAtMs = 0;
   loadedAuthStoreCache.clear();
 }
 
