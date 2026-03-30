@@ -1410,7 +1410,7 @@ export async function startGatewayServer(
       broadcast,
       context: gatewayRequestContext,
     });
-    logGatewayStartup({
+    await logGatewayStartup({
       cfg: cfgAtStart,
       bindHost,
       bindHosts: httpBindHosts,
