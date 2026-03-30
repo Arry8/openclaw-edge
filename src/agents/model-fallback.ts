@@ -136,6 +136,22 @@ type ModelFallbackErrorHandler = (attempt: {
   total: number;
 }) => void | Promise<void>;
 
+type ModelFallbackBeforeAttemptResult = void | {
+  type: "stop";
+  reason?: FailoverReason | null;
+  error?: string;
+};
+
+type ModelFallbackBeforeAttemptHandler = (params: {
+  candidate: ModelCandidate;
+  attempt: number;
+  total: number;
+  previousAttempts: ReadonlyArray<FallbackAttempt>;
+  isPrimary: boolean;
+  requestedModelMatched: boolean;
+  fallbackConfigured: boolean;
+}) => ModelFallbackBeforeAttemptResult | Promise<ModelFallbackBeforeAttemptResult>;
+
 type ModelFallbackRunResult<T> = {
   result: T;
   provider: string;
@@ -594,6 +610,7 @@ export async function runWithModelFallback<T>(params: {
   fallbacksOverride?: string[];
   run: ModelFallbackRunFn<T>;
   onError?: ModelFallbackErrorHandler;
+  beforeAttempt?: ModelFallbackBeforeAttemptHandler;
 }): Promise<ModelFallbackRunResult<T>> {
   const candidates = resolveFallbackCandidates({
     cfg: params.cfg,
@@ -726,6 +743,40 @@ export async function runWithModelFallback<T>(params: {
           profileCount: profileIds.length,
         });
       }
+    }
+
+    const beforeAttemptResult = await params.beforeAttempt?.({
+      candidate,
+      attempt: i + 1,
+      total: candidates.length,
+      previousAttempts: attempts,
+      isPrimary,
+      requestedModelMatched: requestedModel,
+      fallbackConfigured: hasFallbackCandidates,
+    });
+    if (beforeAttemptResult?.type === "stop") {
+      logModelFallbackDecision({
+        decision: "stop_before_candidate",
+        runId: params.runId,
+        requestedProvider: params.provider,
+        requestedModel: params.model,
+        candidate,
+        attempt: i + 1,
+        total: candidates.length,
+        reason: beforeAttemptResult.reason ?? "timeout",
+        error:
+          beforeAttemptResult.error ??
+          `Stopped fallback before ${candidate.provider}/${candidate.model}.`,
+        nextCandidate: candidates[i + 1],
+        isPrimary,
+        requestedModelMatched: requestedModel,
+        fallbackConfigured: hasFallbackCandidates,
+        previousAttempts: attempts,
+      });
+      if (lastError !== undefined) {
+        throw lastError;
+      }
+      break;
     }
 
     const attemptRun = await runFallbackAttempt({

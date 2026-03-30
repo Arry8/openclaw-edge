@@ -49,6 +49,7 @@ import {
 } from "../../security/external-content.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../../utils/usage-format.js";
 import { resolveCronDeliveryPlan } from "../delivery.js";
+import { resolveCronJobTimeoutMs } from "../service/timeout-policy.js";
 import type { CronJob, CronRunOutcome, CronRunTelemetry } from "../types.js";
 import {
   dispatchCronDelivery,
@@ -70,6 +71,17 @@ import { isLikelyInterimCronMessage } from "./subagent-followup.js";
 
 function resolveNonNegativeNumber(value: number | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+const MIN_CRON_FALLBACK_REMAINING_MS = 1_000;
+const MAX_CRON_FALLBACK_REMAINING_MS = 30_000;
+
+function resolveCronFallbackMinRemainingMs(timeoutMs: number): number {
+  const quarterTimeoutMs = Math.floor(timeoutMs / 4);
+  return Math.max(
+    MIN_CRON_FALLBACK_REMAINING_MS,
+    Math.min(MAX_CRON_FALLBACK_REMAINING_MS, quarterTimeoutMs),
+  );
 }
 
 export type RunCronAgentTurnResult = {
@@ -174,6 +186,7 @@ export async function runCronIsolatedAgentTurn(params: {
   job: CronJob;
   message: string;
   abortSignal?: AbortSignal;
+  deadlineAtMs?: number;
   signal?: AbortSignal;
   sessionKey: string;
   agentId?: string;
@@ -333,6 +346,7 @@ export async function runCronIsolatedAgentTurn(params: {
     overrideSeconds:
       params.job.payload.kind === "agentTurn" ? params.job.payload.timeoutSeconds : undefined,
   });
+  const cronTimeoutMs = resolveCronJobTimeoutMs(params.job);
 
   const agentPayload = params.job.payload.kind === "agentTurn" ? params.job.payload : null;
   const { deliveryRequested, resolvedDelivery, toolPolicy } = await resolveCronDeliveryContext({
@@ -463,6 +477,32 @@ export async function runCronIsolatedAgentTurn(params: {
         agentDir,
         fallbacksOverride:
           payloadFallbacks ?? resolveAgentModelFallbacksOverride(params.cfg, agentId),
+        beforeAttempt: ({ attempt }) => {
+          // Cron timeout wraps the whole fallback chain. Do not start a new
+          // model attempt unless there is still enough wall-clock budget for
+          // that fallback to make progress before the outer cron abort fires.
+          if (attempt <= 1) {
+            return;
+          }
+          if (
+            typeof params.deadlineAtMs !== "number" ||
+            !Number.isFinite(params.deadlineAtMs) ||
+            typeof cronTimeoutMs !== "number" ||
+            cronTimeoutMs <= 0
+          ) {
+            return;
+          }
+          const remainingMs = params.deadlineAtMs - Date.now();
+          const minRemainingMs = resolveCronFallbackMinRemainingMs(cronTimeoutMs);
+          if (remainingMs >= minRemainingMs) {
+            return;
+          }
+          return {
+            type: "stop" as const,
+            reason: "timeout" as const,
+            error: `Skipping fallback: only ${Math.max(0, remainingMs)}ms remain before cron timeout (need at least ${minRemainingMs}ms).`,
+          };
+        },
         run: async (providerOverride, modelOverride, runOptions) => {
           if (abortSignal?.aborted) {
             throw new Error(abortReason());

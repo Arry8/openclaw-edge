@@ -78,10 +78,11 @@ export async function executeJobCoreWithTimeout(
   }
 
   const runAbortController = new AbortController();
+  const deadlineAtMs = Date.now() + jobTimeoutMs;
   let timeoutId: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
-      executeJobCore(state, job, runAbortController.signal),
+      executeJobCore(state, job, runAbortController.signal, deadlineAtMs),
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           runAbortController.abort(timeoutErrorMessage());
@@ -1121,6 +1122,7 @@ export async function executeJobCore(
   state: CronServiceState,
   job: CronJob,
   abortSignal?: AbortSignal,
+  deadlineAtMs?: number,
 ): Promise<
   CronRunOutcome & CronRunTelemetry & { delivered?: boolean; deliveryAttempted?: boolean }
 > {
@@ -1261,6 +1263,7 @@ async function executeDetachedCronJob(
     job,
     message: job.payload.message,
     abortSignal,
+    deadlineAtMs,
   });
 
   if (abortSignal?.aborted) {
