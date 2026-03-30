@@ -65,8 +65,11 @@ function normalizeEmoji(raw: string) {
 }
 
 async function getClient(opts: SlackActionClientOpts = {}) {
+  if (opts.client) {
+    return opts.client;
+  }
   const token = resolveToken(opts.token, opts.accountId);
-  return opts.client ?? createSlackWebClient(token);
+  return createSlackWebClient(token);
 }
 
 async function resolveBotUserId(client: WebClient) {
@@ -84,11 +87,17 @@ export async function reactSlackMessage(
   opts: SlackActionClientOpts = {},
 ) {
   const client = await getClient(opts);
-  await client.reactions.add({
-    channel: channelId,
-    timestamp: messageId,
-    name: normalizeEmoji(emoji),
-  });
+  try {
+    await client.reactions.add({
+      channel: channelId,
+      timestamp: messageId,
+      name: normalizeEmoji(emoji),
+    });
+  } catch (err) {
+    if (!isSlackReactionErrorCode(err, "already_reacted")) {
+      throw err;
+    }
+  }
 }
 
 export async function removeSlackReaction(
@@ -98,11 +107,25 @@ export async function removeSlackReaction(
   opts: SlackActionClientOpts = {},
 ) {
   const client = await getClient(opts);
-  await client.reactions.remove({
-    channel: channelId,
-    timestamp: messageId,
-    name: normalizeEmoji(emoji),
-  });
+  try {
+    await client.reactions.remove({
+      channel: channelId,
+      timestamp: messageId,
+      name: normalizeEmoji(emoji),
+    });
+  } catch (err) {
+    if (!isSlackReactionErrorCode(err, "no_reaction")) {
+      throw err;
+    }
+  }
+}
+
+function isSlackReactionErrorCode(err: unknown, code: string): boolean {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  const data = (err as Error & { data?: { error?: string } }).data;
+  return data?.error === code;
 }
 
 export async function removeOwnSlackReactions(
