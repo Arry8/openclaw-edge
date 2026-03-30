@@ -469,13 +469,15 @@ export function buildAssistantMessageFromResponse(
   const content: AssistantMessage["content"] = [];
   let assistantPhase: OpenAIResponsesAssistantPhase | undefined;
 
-  for (const item of response.output ?? []) {
+  const output = Array.isArray(response.output) ? response.output : [];
+  for (const item of output) {
     if (item.type === "message") {
       const itemPhase = normalizeAssistantPhase(item.phase);
       if (itemPhase) {
         assistantPhase = itemPhase;
       }
-      for (const part of item.content ?? []) {
+      const parts = Array.isArray(item.content) ? item.content : [];
+      for (const part of parts) {
         if (part.type === "output_text" && part.text) {
           content.push({
             type: "text",
