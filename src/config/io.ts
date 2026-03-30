@@ -2202,33 +2202,8 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
     }
     // Do NOT apply runtime defaults when writing — user config should only contain
     // explicitly set values. Runtime defaults are applied when loading (issue #6070).
-
     const stampedOutputConfig = stampConfigVersion(outputConfig);
     const json = JSON.stringify(stampedOutputConfig, null, 2).trimEnd().concat("\n");
-
-    // Skip write when the final serialized output (with env refs restored) is
-    // structurally identical to the current file on disk, ignoring only
-    // meta.lastTouchedAt which stampConfigVersion() always updates.
-    // Both sides use the same representation (pre-substitution ${VAR} refs),
-    // so env-var references compare correctly.  isDeepStrictEqual handles
-    // key-ordering differences between code paths (see #55472, #55219, #40410).
-    if (snapshot.exists && typeof snapshot.raw === "string") {
-      try {
-        const onDisk = deps.json5.parse(snapshot.raw) as Record<string, unknown>;
-        const toWrite = JSON.parse(json) as Record<string, unknown>;
-        if (onDisk?.meta && typeof onDisk.meta === "object") {
-          delete (onDisk.meta as Record<string, unknown>).lastTouchedAt;
-        }
-        if (toWrite?.meta && typeof toWrite.meta === "object") {
-          delete (toWrite.meta as Record<string, unknown>).lastTouchedAt;
-        }
-        if (isDeepStrictEqual(onDisk, toWrite)) {
-          return;
-        }
-      } catch {
-        // If parsing fails, proceed with the write.
-      }
-    }
     const nextHash = hashConfigRaw(json);
     const previousHash = resolveConfigSnapshotHash(snapshot);
     const changedPathCount = changedPaths?.size;
