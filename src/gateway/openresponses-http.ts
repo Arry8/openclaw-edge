@@ -426,6 +426,7 @@ async function runResponsesAgentCommand(params: {
   runId: string;
   messageChannel: string;
   deps: ReturnType<typeof createDefaultDeps>;
+  abortSignal?: AbortSignal;
 }) {
   return agentCommandFromIngress(
     {
@@ -443,6 +444,7 @@ async function runResponsesAgentCommand(params: {
       // HTTP API callers are authenticated operator clients for this gateway context.
       senderIsOwner: true,
       allowModelOverride: true,
+      abortSignal: params.abortSignal,
     },
     defaultRuntime,
     params.deps,
@@ -702,12 +704,22 @@ export async function handleOpenResponsesHttpRequest(
     storeResponseSession(responseId, sessionKey, responseSessionScope);
   const outputItemId = `msg_${randomUUID()}`;
   const deps = createDefaultDeps();
+  const abortController = new AbortController();
   const streamParams =
     typeof payload.max_output_tokens === "number"
       ? { maxTokens: payload.max_output_tokens }
       : undefined;
 
   if (!stream) {
+    // Listen on `res` instead of `req` because handleGatewayPostJsonEndpoint has already
+    // consumed the request body, causing IncomingMessage to auto-destroy and emit `close`
+    // before we reach this point. ServerResponse stays alive until the response is written,
+    // so its `close` event reliably fires on premature client disconnect.
+    res.on("close", () => {
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+    });
     try {
       const result = await runResponsesAgentCommand({
         message: prompt.message,
@@ -720,7 +732,12 @@ export async function handleOpenResponsesHttpRequest(
         runId: responseId,
         messageChannel,
         deps,
+        abortSignal: abortController.signal,
       });
+
+      if (abortController.signal.aborted) {
+        return true;
+      }
 
       const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
       const usage = extractUsageFromResult(result);
@@ -792,6 +809,9 @@ export async function handleOpenResponsesHttpRequest(
       rememberResponseSession();
       sendJson(res, 200, response);
     } catch (err) {
+      if (abortController.signal.aborted) {
+        return true;
+      }
       logWarn(`openresponses: non-stream response failed: ${String(err)}`);
       const response = createResponseResource({
         id: responseId,
@@ -954,7 +974,16 @@ export async function handleOpenResponsesHttpRequest(
     }
   });
 
-  req.on("close", () => {
+  // Listen on `res` instead of `req` because handleGatewayPostJsonEndpoint has already
+  // consumed the request body, causing IncomingMessage to auto-destroy and emit `close`
+  // before we reach this point. ServerResponse stays alive until the response is written,
+  // so its `close` event reliably fires on premature client disconnect.
+  res.on("close", () => {
+    // Only abort on genuine client disconnect; when we called res.end()
+    // ourselves, closed is already true so we skip the abort.
+    if (!closed) {
+      abortController.abort();
+    }
     closed = true;
     unsubscribe();
   });
@@ -972,6 +1001,7 @@ export async function handleOpenResponsesHttpRequest(
         runId: responseId,
         messageChannel,
         deps,
+        abortSignal: abortController.signal,
       });
 
       finalUsage = extractUsageFromResult(result);
@@ -1095,10 +1125,10 @@ export async function handleOpenResponsesHttpRequest(
         });
       }
     } catch (err) {
-      logWarn(`openresponses: streaming response failed: ${String(err)}`);
-      if (closed) {
+      if (closed || abortController.signal.aborted) {
         return;
       }
+      logWarn(`openresponses: streaming response failed: ${String(err)}`);
 
       finalUsage = finalUsage ?? createEmptyUsage();
       const errorResponse = createResponseResource({
