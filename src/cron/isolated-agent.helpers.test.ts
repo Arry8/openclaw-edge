@@ -39,6 +39,22 @@ describe("resolveCronPayloadOutcome", () => {
     expect(result.summary).toBe("Write completed successfully.");
   });
 
+  it("treats an error as fatal when no non-error payload follows it", () => {
+    // Without a recovery payload after the error, hasFatalErrorPayload must remain true
+    // regardless of what appears before. The pre-error recovery branch was removed because
+    // pickLastDeliverablePayload considers any non-empty text deliverable — including short
+    // status lines like "Starting digest…" — making it unsound as a recovery signal.
+    const result = resolveCronPayloadOutcome({
+      payloads: [
+        { text: "Done. Intake complete.", isError: false },
+        { text: "⚠️ ✉️ Message failed", isError: true },
+      ],
+    });
+
+    expect(result.hasFatalErrorPayload).toBe(true);
+    expect(result.embeddedRunError).toContain("Message failed");
+  });
+
   it("keeps error payloads fatal when the run also reported a run-level error", () => {
     const result = resolveCronPayloadOutcome({
       payloads: [

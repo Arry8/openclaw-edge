@@ -169,4 +169,45 @@ describe("normalizeMessageActionInput", () => {
       }),
     ).toThrow(/requires a target/);
   });
+
+  it("promotes channel to target when channel contains a colon-separated identifier", () => {
+    const normalized = normalizeMessageActionInput({
+      action: "send",
+      args: {
+        channel: "channel:1478210578362269758",
+        message: "hello",
+      },
+    });
+
+    expect(normalized.target).toBe("channel:1478210578362269758");
+    expect(normalized.to).toBe("channel:1478210578362269758");
+    expect(normalized.channel).toBeUndefined();
+  });
+
+  it("does not promote channel to target when channel is a plain provider name", () => {
+    expect(() =>
+      normalizeMessageActionInput({
+        action: "send",
+        args: {
+          channel: "discord",
+        },
+      }),
+    ).toThrow(/requires a target/);
+  });
+
+  it("does not overwrite an already-resolved target when channel also contains a colon identifier", () => {
+    // If target was already set (e.g. via legacy `to` field mapping), the promotion block
+    // must not overwrite it with the channel value.
+    const normalized = normalizeMessageActionInput({
+      action: "send",
+      args: {
+        to: "channel:correct-target",
+        channel: "channel:should-not-overwrite",
+        message: "hello",
+      },
+    });
+
+    expect(normalized.target).toBe("channel:correct-target");
+    expect(normalized.channel).toBeUndefined();
+  });
 });

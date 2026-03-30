@@ -64,6 +64,26 @@ export function normalizeMessageActionInput(params: {
     }
   }
 
+  // LLMs (especially in cron/isolated contexts without toolContext) sometimes place the
+  // target identifier in "channel" instead of "target" — e.g. "channel:123456" when the
+  // intended field is "target". When the channel value looks like a target identifier
+  // (contains ":"), two cases apply:
+  //   (a) No target is resolved yet → promote channel to target.
+  //   (b) Target is already resolved (e.g. via legacy to/channelId mapping above) → skip
+  //       promotion, but still clear the channel field so downstream routing doesn't receive
+  //       "channel:123456" as a provider name.
+  // Check `normalizedArgs.target` directly since actionHasTarget does not inspect `target`.
+  const resolvedTarget =
+    typeof normalizedArgs.target === "string" ? normalizedArgs.target.trim() : "";
+  if (explicitChannel && explicitChannel.includes(":") && actionRequiresTarget(action)) {
+    if (!resolvedTarget && !actionHasTarget(action, normalizedArgs)) {
+      // Case (a): promote channel to target.
+      normalizedArgs.target = explicitChannel;
+    }
+    // In both cases, clear the malformed channel field.
+    delete normalizedArgs.channel;
+  }
+
   applyTargetToParams({ action, args: normalizedArgs });
   if (
     actionRequiresTarget(action) &&
