@@ -1,6 +1,6 @@
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { isParentOwnedBackgroundAcpSession } from "../../acp/session-interaction-mode.js";
-import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
 import {
   resolveConversationBindingRecord,
   touchConversationBindingRecord,
@@ -55,6 +55,31 @@ let getReplyFromConfigRuntimePromise: Promise<
 let abortRuntimePromise: Promise<typeof import("./abort.runtime.js")> | null = null;
 let dispatchAcpRuntimePromise: Promise<typeof import("./dispatch-acp.runtime.js")> | null = null;
 let ttsRuntimePromise: Promise<typeof import("../../tts/tts.runtime.js")> | null = null;
+
+const PRE_ROUTE_HOOK_TIMEOUT_MS = 8_000;
+
+async function runPreRouteWithTimeout<T>(params: {
+  run: () => Promise<T>;
+  timeoutMs: number;
+  onTimeout: () => void;
+}): Promise<T | undefined> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      params.run(),
+      new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(() => {
+          params.onTimeout();
+          resolve(undefined);
+        }, params.timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 function loadRouteReplyRuntime() {
   routeReplyRuntimePromise ??= import("./route-reply.runtime.js");
@@ -118,6 +143,9 @@ const isInboundAudioContext = (ctx: FinalizedMsgContext): boolean => {
 const resolveSessionStoreLookup = (
   ctx: FinalizedMsgContext,
   cfg: OpenClawConfig,
+  opts?: {
+    agentId?: string;
+  },
 ): {
   sessionKey?: string;
   entry?: SessionEntry;
@@ -128,7 +156,11 @@ const resolveSessionStoreLookup = (
   if (!sessionKey) {
     return {};
   }
-  const agentId = resolveSessionAgentId({ sessionKey, config: cfg });
+  const agentId = resolveSessionAgentIds({
+    sessionKey,
+    config: cfg,
+    agentId: opts?.agentId,
+  }).sessionAgentId;
   const storePath = resolveStorePath(cfg.session?.store, { agentId });
   try {
     const store = loadSessionStore(storePath);
@@ -159,11 +191,144 @@ export async function dispatchReplyFromConfig(params: {
   configOverride?: OpenClawConfig;
 }): Promise<DispatchFromConfigResult> {
   const { ctx, cfg, dispatcher } = params;
+  let resolvedSessionKey = ctx.SessionKey;
+  let resolvedAccountId = ctx.AccountId;
+  let resolvedRouteAgentId: string | undefined;
+  let didApplyPreRouteSessionOverride = false;
   const diagnosticsEnabled = isDiagnosticsEnabled(cfg);
   const channel = String(ctx.Surface ?? ctx.Provider ?? "unknown").toLowerCase();
   const chatId = ctx.To ?? ctx.From;
   const messageId = ctx.MessageSid ?? ctx.MessageSidFirst ?? ctx.MessageSidLast;
-  const sessionKey = ctx.SessionKey;
+  const hookRunner = getGlobalHookRunner();
+
+  // Extract message context for hooks (plugin and internal)
+  const timestamp =
+    typeof ctx.Timestamp === "number" && Number.isFinite(ctx.Timestamp) ? ctx.Timestamp : undefined;
+  const messageIdForHook =
+    ctx.MessageSidFull ?? ctx.MessageSid ?? ctx.MessageSidFirst ?? ctx.MessageSidLast;
+  const hookContext = deriveInboundMessageHookContext(ctx, { messageId: messageIdForHook });
+  const { isGroup, groupId } = hookContext;
+  const inboundClaimContext = toPluginInboundClaimContext(hookContext);
+  const inboundClaimEvent = toPluginInboundClaimEvent(hookContext, {
+    commandAuthorized:
+      typeof ctx.CommandAuthorized === "boolean" ? ctx.CommandAuthorized : undefined,
+    wasMentioned: typeof ctx.WasMentioned === "boolean" ? ctx.WasMentioned : undefined,
+  });
+
+  // Deduplicate before plugin hooks so repeated inbound messages cannot
+  // trigger pre_route side effects.
+  if (shouldSkipDuplicateInbound(ctx)) {
+    if (diagnosticsEnabled) {
+      logMessageProcessed({
+        channel,
+        chatId,
+        messageId,
+        sessionKey: ctx.SessionKey,
+        durationMs: 0,
+        outcome: "skipped",
+        reason: "duplicate",
+      });
+    }
+    return { queuedFinal: false, counts: dispatcher.getQueuedCounts() };
+  }
+
+  if (hookRunner?.hasHooks("pre_route")) {
+    const preRouteHookSessionKey =
+      (ctx.CommandSource === "native" ? ctx.CommandTargetSessionKey?.trim() : undefined) ??
+      resolvedSessionKey;
+    const preRouteResult = await runPreRouteWithTimeout({
+      timeoutMs: PRE_ROUTE_HOOK_TIMEOUT_MS,
+      onTimeout: () => {
+        logVerbose(
+          `dispatch-from-config: pre_route exceeded ${PRE_ROUTE_HOOK_TIMEOUT_MS}ms; continuing with current route`,
+        );
+      },
+      run: () =>
+        hookRunner.runPreRoute(
+          {
+            from: hookContext.from,
+            content: hookContext.content,
+            body: hookContext.body,
+            bodyForAgent: hookContext.bodyForAgent,
+            transcript: hookContext.transcript,
+            timestamp,
+            channel: hookContext.channelId,
+            accountId: hookContext.accountId,
+            conversationId: inboundClaimContext.conversationId,
+            parentConversationId: inboundClaimContext.parentConversationId,
+            senderId: hookContext.senderId,
+            senderName: hookContext.senderName,
+            senderUsername: hookContext.senderUsername,
+            threadId: hookContext.threadId,
+            messageId: hookContext.messageId,
+            isGroup: hookContext.isGroup,
+            commandAuthorized:
+              typeof ctx.CommandAuthorized === "boolean" ? ctx.CommandAuthorized : undefined,
+            wasMentioned: typeof ctx.WasMentioned === "boolean" ? ctx.WasMentioned : undefined,
+            metadata: {
+              ...inboundClaimEvent.metadata,
+              channelId: hookContext.channelId,
+            },
+          },
+          {
+            ...inboundClaimContext,
+            sessionKey: preRouteHookSessionKey,
+          },
+        ),
+    });
+
+    if (preRouteResult?.handled && preRouteResult.routeOverride?.sessionKey) {
+      didApplyPreRouteSessionOverride = true;
+      resolvedSessionKey = preRouteResult.routeOverride.sessionKey;
+      resolvedRouteAgentId = preRouteResult.routeOverride.agentId?.trim() || undefined;
+      if (preRouteResult.routeOverride.accountId) {
+        resolvedAccountId = preRouteResult.routeOverride.accountId;
+      } else {
+        const overrideLookupCtx: FinalizedMsgContext =
+          ctx.CommandSource === "native"
+            ? {
+                ...ctx,
+                SessionKey: resolvedSessionKey,
+                CommandTargetSessionKey: resolvedSessionKey,
+              }
+            : {
+                ...ctx,
+                SessionKey: resolvedSessionKey,
+              };
+        const overrideEntry = resolveSessionStoreLookup(overrideLookupCtx, cfg, {
+          agentId: resolvedRouteAgentId,
+        }).entry;
+        const storedAccountId =
+          typeof overrideEntry?.lastAccountId === "string"
+            ? overrideEntry.lastAccountId
+            : undefined;
+        if (storedAccountId) {
+          resolvedAccountId = storedAccountId;
+        }
+      }
+    }
+  }
+
+  const shouldSyncNativeCommandTargetSession =
+    didApplyPreRouteSessionOverride &&
+    ctx.CommandSource === "native" &&
+    resolvedSessionKey !== (ctx.CommandTargetSessionKey?.trim() || undefined);
+  const effectiveCtx: FinalizedMsgContext =
+    resolvedSessionKey === ctx.SessionKey &&
+    resolvedAccountId === ctx.AccountId &&
+    !shouldSyncNativeCommandTargetSession
+      ? ctx
+      : {
+          ...ctx,
+          SessionKey: resolvedSessionKey,
+          AccountId: resolvedAccountId,
+          ...(shouldSyncNativeCommandTargetSession
+            ? {
+                CommandTargetSessionKey: resolvedSessionKey,
+              }
+            : {}),
+        };
+  const sessionKey = effectiveCtx.SessionKey;
   const startTime = diagnosticsEnabled ? Date.now() : 0;
   const canTrackSession = diagnosticsEnabled && Boolean(sessionKey);
 
@@ -212,36 +377,18 @@ export async function dispatchReplyFromConfig(params: {
     });
   };
 
-  if (shouldSkipDuplicateInbound(ctx)) {
-    recordProcessed("skipped", { reason: "duplicate" });
-    return { queuedFinal: false, counts: dispatcher.getQueuedCounts() };
-  }
-
-  const sessionStoreEntry = resolveSessionStoreLookup(ctx, cfg);
+  const sessionStoreEntry = resolveSessionStoreLookup(effectiveCtx, cfg, {
+    agentId: resolvedRouteAgentId,
+  });
   const acpDispatchSessionKey = sessionStoreEntry.sessionKey ?? sessionKey;
   // Restore route thread context only from the active turn or the thread-scoped session key.
   // Do not read thread ids from the normalised session store here: `origin.threadId` can be
   // folded back into lastThreadId/deliveryContext during store normalisation and resurrect a
   // stale route after thread delivery was intentionally cleared.
   const routeThreadId =
-    ctx.MessageThreadId ?? parseSessionThreadInfo(acpDispatchSessionKey).threadId;
-  const inboundAudio = isInboundAudioContext(ctx);
+    effectiveCtx.MessageThreadId ?? parseSessionThreadInfo(acpDispatchSessionKey).threadId;
+  const inboundAudio = isInboundAudioContext(effectiveCtx);
   const sessionTtsAuto = normalizeTtsAutoMode(sessionStoreEntry.entry?.ttsAuto);
-  const hookRunner = getGlobalHookRunner();
-
-  // Extract message context for hooks (plugin and internal)
-  const timestamp =
-    typeof ctx.Timestamp === "number" && Number.isFinite(ctx.Timestamp) ? ctx.Timestamp : undefined;
-  const messageIdForHook =
-    ctx.MessageSidFull ?? ctx.MessageSid ?? ctx.MessageSidFirst ?? ctx.MessageSidLast;
-  const hookContext = deriveInboundMessageHookContext(ctx, { messageId: messageIdForHook });
-  const { isGroup, groupId } = hookContext;
-  const inboundClaimContext = toPluginInboundClaimContext(hookContext);
-  const inboundClaimEvent = toPluginInboundClaimEvent(hookContext, {
-    commandAuthorized:
-      typeof ctx.CommandAuthorized === "boolean" ? ctx.CommandAuthorized : undefined,
-    wasMentioned: typeof ctx.WasMentioned === "boolean" ? ctx.WasMentioned : undefined,
-  });
 
   // Check if we should route replies to originating channel instead of dispatcher.
   // Only route when the originating channel is DIFFERENT from the current surface.
@@ -288,8 +435,8 @@ export async function dispatchReplyFromConfig(params: {
       payload,
       channel: originatingChannel,
       to: originatingTo,
-      sessionKey: ctx.SessionKey,
-      accountId: ctx.AccountId,
+      sessionKey,
+      accountId: resolvedAccountId,
       threadId: routeThreadId,
       cfg,
       abortSignal,
@@ -311,8 +458,8 @@ export async function dispatchReplyFromConfig(params: {
         payload,
         channel: originatingChannel,
         to: originatingTo,
-        sessionKey: ctx.SessionKey,
-        accountId: ctx.AccountId,
+        sessionKey,
+        accountId: resolvedAccountId,
         threadId: routeThreadId,
         cfg,
         isGroup,
@@ -444,7 +591,7 @@ export async function dispatchReplyFromConfig(params: {
 
   try {
     const abortRuntime = await loadAbortRuntime();
-    const fastAbort = await abortRuntime.tryFastAbortFromMessage({ ctx, cfg });
+    const fastAbort = await abortRuntime.tryFastAbortFromMessage({ ctx: effectiveCtx, cfg });
     if (fastAbort.handled) {
       const payload = {
         text: abortRuntime.formatAbortReplyText(fastAbort.stoppedSubagents),
@@ -456,8 +603,8 @@ export async function dispatchReplyFromConfig(params: {
           payload,
           channel: originatingChannel,
           to: originatingTo,
-          sessionKey: ctx.SessionKey,
-          accountId: ctx.AccountId,
+          sessionKey,
+          accountId: resolvedAccountId,
           threadId: routeThreadId,
           cfg,
           isGroup,
@@ -483,7 +630,10 @@ export async function dispatchReplyFromConfig(params: {
     }
 
     const dispatchAcpRuntime = await loadDispatchAcpRuntime();
-    const bypassAcpForCommand = dispatchAcpRuntime.shouldBypassAcpDispatchForCommand(ctx, cfg);
+    const bypassAcpForCommand = dispatchAcpRuntime.shouldBypassAcpDispatchForCommand(
+      effectiveCtx,
+      cfg,
+    );
 
     const sendPolicy = resolveSendPolicy({
       cfg,
@@ -524,8 +674,8 @@ export async function dispatchReplyFromConfig(params: {
           payload: ttsPayload,
           channel: originatingChannel,
           to: originatingTo,
-          sessionKey: ctx.SessionKey,
-          accountId: ctx.AccountId,
+          sessionKey,
+          accountId: resolvedAccountId,
           threadId: routeThreadId,
           cfg,
           isGroup,
@@ -589,7 +739,7 @@ export async function dispatchReplyFromConfig(params: {
     const shouldSendToolSummaries =
       (ctx.ChatType !== "group" || ctx.IsForum === true) && ctx.CommandSource !== "native";
     const acpDispatch = await dispatchAcpRuntime.tryDispatchAcpReply({
-      ctx,
+      ctx: effectiveCtx,
       cfg,
       dispatcher,
       runId: params.replyOptions?.runId,
@@ -621,9 +771,9 @@ export async function dispatchReplyFromConfig(params: {
     const resolveToolDeliveryPayload = (payload: ReplyPayload): ReplyPayload | null => {
       if (
         shouldSuppressLocalExecApprovalPrompt({
-          channel: normalizeMessageChannel(ctx.Surface ?? ctx.Provider),
+          channel: normalizeMessageChannel(effectiveCtx.Surface ?? effectiveCtx.Provider),
           cfg,
-          accountId: ctx.AccountId,
+          accountId: resolvedAccountId,
           payload,
         })
       ) {
@@ -659,7 +809,7 @@ export async function dispatchReplyFromConfig(params: {
     const replyResolver =
       params.replyResolver ?? (await loadGetReplyFromConfigRuntime()).getReplyFromConfig;
     const replyResult = await replyResolver(
-      ctx,
+      effectiveCtx,
       {
         ...params.replyOptions,
         typingPolicy: typing.typingPolicy,
@@ -724,12 +874,12 @@ export async function dispatchReplyFromConfig(params: {
       params.configOverride,
     );
 
-    if (ctx.AcpDispatchTailAfterReset === true) {
+    if (effectiveCtx.AcpDispatchTailAfterReset === true) {
       // Command handling prepared a trailing prompt after ACP in-place reset.
       // Route that tail through ACP now (same turn) instead of embedded dispatch.
-      ctx.AcpDispatchTailAfterReset = false;
+      effectiveCtx.AcpDispatchTailAfterReset = false;
       const acpTailDispatch = await dispatchAcpRuntime.tryDispatchAcpReply({
-        ctx,
+        ctx: effectiveCtx,
         cfg,
         dispatcher,
         runId: params.replyOptions?.runId,
@@ -798,8 +948,8 @@ export async function dispatchReplyFromConfig(params: {
               payload: ttsOnlyPayload,
               channel: originatingChannel,
               to: originatingTo,
-              sessionKey: ctx.SessionKey,
-              accountId: ctx.AccountId,
+              sessionKey,
+              accountId: resolvedAccountId,
               threadId: routeThreadId,
               cfg,
               isGroup,
