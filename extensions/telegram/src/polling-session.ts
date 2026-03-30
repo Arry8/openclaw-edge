@@ -18,7 +18,7 @@ const TELEGRAM_POLL_RESTART_POLICY = {
   jitter: 0.25,
 };
 
-const POLL_STALL_THRESHOLD_MS = 90_000;
+const DEFAULT_POLL_STALL_THRESHOLD_MS = 300_000;
 const POLL_WATCHDOG_INTERVAL_MS = 30_000;
 const POLL_STOP_GRACE_MS = 15_000;
 
@@ -56,6 +56,8 @@ type TelegramPollingSessionOpts = {
   telegramTransport?: TelegramTransport;
   /** Rebuild Telegram transport after stall/network recovery when marked dirty. */
   createTelegramTransport?: () => TelegramTransport;
+  /** Stall detection threshold in ms. Defaults to 300_000 (5 min). */
+  stallThresholdMs?: number;
 };
 
 export class TelegramPollingSession {
@@ -65,6 +67,7 @@ export class TelegramPollingSession {
   #activeRunner: ReturnType<typeof run> | undefined;
   #activeFetchAbort: AbortController | undefined;
   #transportState: TelegramPollingTransportState;
+  #stallThresholdMs: number;
 
   constructor(private readonly opts: TelegramPollingSessionOpts) {
     this.#transportState = new TelegramPollingTransportState({
@@ -72,6 +75,7 @@ export class TelegramPollingSession {
       initialTransport: opts.telegramTransport,
       createTelegramTransport: opts.createTelegramTransport,
     });
+    this.#stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_POLL_STALL_THRESHOLD_MS;
   }
 
   get activeRunner() {
@@ -338,12 +342,13 @@ export class TelegramPollingSession {
       // Treat recent non-getUpdates success and recent non-getUpdates start as
       // the same liveness signal. Slow delivery should suppress the watchdog,
       // but only for the same bounded window as recent successful API traffic.
+      const stallThreshold = this.#stallThresholdMs;
       if (
-        elapsed > POLL_STALL_THRESHOLD_MS &&
-        apiElapsed > POLL_STALL_THRESHOLD_MS &&
+        elapsed > stallThreshold &&
+        apiElapsed > stallThreshold &&
         runner.isRunning()
       ) {
-        if (stallDiagLoggedAt && now - stallDiagLoggedAt < POLL_STALL_THRESHOLD_MS / 2) {
+        if (stallDiagLoggedAt && now - stallDiagLoggedAt < stallThreshold / 2) {
           return;
         }
         stallDiagLoggedAt = now;

@@ -60,7 +60,7 @@ function installPollingStallWatchdogHarness() {
     .spyOn(Date, "now")
     .mockImplementationOnce(() => 0) // lastGetUpdatesAt init
     .mockImplementationOnce(() => 0) // lastApiActivityAt init
-    .mockImplementation(() => 120_001);
+    .mockImplementation(() => 310_001);
 
   return {
     async waitForWatchdog() {
@@ -406,8 +406,8 @@ describe("TelegramPollingSession", () => {
     }));
 
     // t=0: lastGetUpdatesAt and lastApiActivityAt initialized
-    // t=120_001: watchdog fires (getUpdates stale for 120s)
-    // But right before watchdog, a sendMessage succeeded at t=120_000
+    // t=310_001: watchdog fires (getUpdates stale for 310s)
+    // But right before watchdog, a sendMessage succeeded at t=310_000
     const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation((fn) => {
       watchdog = fn as () => void;
       return 1 as unknown as ReturnType<typeof setInterval>;
@@ -424,7 +424,7 @@ describe("TelegramPollingSession", () => {
       .mockImplementationOnce(() => 0) // lastApiActivityAt init
       // All subsequent calls (sendMessage completion + watchdog check) return
       // the same value, giving apiIdle = 0 — well below the stall threshold.
-      .mockImplementation(() => 120_001);
+      .mockImplementation(() => 310_001);
 
     let watchdog: (() => void) | undefined;
     const log = vi.fn();
@@ -458,7 +458,7 @@ describe("TelegramPollingSession", () => {
         await apiMiddleware(fakePrev, "sendMessage", { chat_id: 123, text: "hello" });
       }
 
-      // Now fire the watchdog — getUpdates is stale (120s) but API was just active
+      // Now fire the watchdog — getUpdates is stale (310s) but API was just active
       watchdog?.();
 
       // The watchdog should NOT have triggered a restart
@@ -533,7 +533,7 @@ describe("TelegramPollingSession", () => {
       .mockImplementationOnce(() => 0) // lastGetUpdatesAt init
       .mockImplementationOnce(() => 0) // lastApiActivityAt init
       .mockImplementationOnce(() => 60_000) // sendMessage start
-      .mockImplementation(() => 120_001);
+      .mockImplementation(() => 310_001);
 
     let watchdog: (() => void) | undefined;
     const log = vi.fn();
@@ -651,7 +651,7 @@ describe("TelegramPollingSession", () => {
       .mockImplementationOnce(() => 0) // lastGetUpdatesAt init
       .mockImplementationOnce(() => 0) // lastApiActivityAt init
       .mockImplementationOnce(() => 1) // sendMessage start
-      .mockImplementation(() => 120_001);
+      .mockImplementation(() => 310_001);
 
     let watchdog: (() => void) | undefined;
     const log = vi.fn();
@@ -687,7 +687,7 @@ describe("TelegramPollingSession", () => {
         );
         const sendPromise = apiMiddleware(slowPrev, "sendMessage", { chat_id: 123, text: "hello" });
 
-        // The in-flight send started at t=1 and is still stuck at t=120_001.
+        // The in-flight send started at t=1 and is still stuck at t=310_001.
         // That is older than the watchdog threshold, so restart should proceed.
         watchdog?.();
 
@@ -764,8 +764,8 @@ describe("TelegramPollingSession", () => {
       .mockImplementationOnce(() => 0) // lastGetUpdatesAt init
       .mockImplementationOnce(() => 0) // lastApiActivityAt init
       .mockImplementationOnce(() => 1) // first sendMessage start
-      .mockImplementationOnce(() => 120_000) // second sendMessage start
-      .mockImplementation(() => 120_001);
+      .mockImplementationOnce(() => 310_000) // second sendMessage start
+      .mockImplementation(() => 310_001);
 
     let watchdog: (() => void) | undefined;
     const log = vi.fn();
