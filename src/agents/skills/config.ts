@@ -67,9 +67,7 @@ export function isBundledSkillAllowed(entry: SkillEntry, allowlist?: string[]): 
     return true;
   }
   const key = resolveSkillKey(entry.skill, entry);
-  // Ensure skill name is a string (YAML may parse bare numbers as integers)
-  const skillName = String(entry.skill.name);
-  return allowlist.includes(key) || allowlist.includes(skillName);
+  return allowlist.includes(key) || allowlist.includes(entry.skill.name);
 }
 
 export function shouldIncludeSkill(params: {

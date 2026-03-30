@@ -80,8 +80,7 @@ function filterSkillEntries(
     skillsLogger.debug(`Applying skill filter: ${label}`);
     filtered =
       normalized.length > 0
-        ? // Ensure skill name is a string (YAML may parse bare numbers as integers)
-          filtered.filter((entry) => normalized.includes(String(entry.skill.name)))
+        ? filtered.filter((entry) => normalized.includes(entry.skill.name))
         : [];
     skillsLogger.debug(
       `After skill filter: ${filtered.map((entry) => entry.skill.name).join(", ") || "(none)"}`,

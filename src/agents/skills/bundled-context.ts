@@ -31,10 +31,8 @@ export function resolveBundledSkillsContext(
   }
   const result = loadSkillsFromDirSafe({ dir, source: "openclaw-bundled" });
   for (const skill of result.skills) {
-    // Ensure skill name is a string (YAML may parse bare numbers as integers)
-    const skillName = String(skill.name);
-    if (skillName.trim()) {
-      names.add(skillName);
+    if (skill.name.trim()) {
+      names.add(skill.name);
     }
   }
   cachedBundledContext = { dir, names: new Set(names) };
