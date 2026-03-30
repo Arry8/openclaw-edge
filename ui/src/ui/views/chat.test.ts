@@ -1327,4 +1327,37 @@ describe("chat view", () => {
     expect(labels).toContain("Deep Chat (alpha) / main · named-main");
     expect(labels).toContain("Coding (beta) / main");
   });
+
+  it("shows a page-title with the session label when one is set", () => {
+    const { state } = createChatHeaderState();
+    (state.sessionsResult!.sessions[0] as Record<string, unknown>).label =
+      "Setup Home Assistant Pi5";
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const title = container.querySelector<HTMLElement>(".page-title");
+    expect(title).not.toBeNull();
+    expect(title?.textContent?.trim()).toBe("Setup Home Assistant Pi5");
+    expect(title?.getAttribute("title")).toBe("main");
+  });
+
+  it("does not render a page-title when no label is set", () => {
+    const { state } = createChatHeaderState();
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const title = container.querySelector<HTMLElement>(".page-title");
+    expect(title).toBeNull();
+  });
+
+  it("does not render a page-title for a synthesized displayName without label", () => {
+    const { state } = createChatHeaderState();
+    (state.sessionsResult!.sessions[0] as Record<string, unknown>).displayName =
+      "Debug Stream Deck";
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const title = container.querySelector<HTMLElement>(".page-title");
+    expect(title).toBeNull();
+  });
 });
