@@ -759,14 +759,12 @@ export function resolveSessionOptionGroups(
     seenKeys.add(normalizedKey);
     const row = byKey.get(key);
     const parsed = parseAgentSessionKey(key);
+    const agentGroupLabel = parsed ? resolveAgentGroupLabel(state, parsed.agentId) : undefined;
     const group = parsed
-      ? ensureGroup(
-          `agent:${parsed.agentId.toLowerCase()}`,
-          resolveAgentGroupLabel(state, parsed.agentId),
-        )
+      ? ensureGroup(`agent:${parsed.agentId.toLowerCase()}`, agentGroupLabel ?? parsed.agentId)
       : ensureGroup("other", "Other Sessions");
     const scopeLabel = parsed?.rest?.trim() || key;
-    const label = resolveSessionScopedOptionLabel(key, row, parsed?.rest);
+    const label = resolveSessionScopedOptionLabel(key, row, parsed?.rest, agentGroupLabel);
     group.options.push({
       key,
       label,
@@ -803,8 +801,10 @@ export function resolveSessionOptionGroups(
       counts.set(option.label, (counts.get(option.label) ?? 0) + 1);
     }
     for (const option of group.options) {
-      if ((counts.get(option.label) ?? 0) > 1 && option.scopeLabel !== option.label) {
-        option.label = `${option.label} · ${option.scopeLabel}`;
+      if ((counts.get(option.label) ?? 0) > 1) {
+        // Use scopeLabel when not already in label (e.g. "agent / main" has scopeLabel "main"); else use full key
+        const suffix = option.label.includes(option.scopeLabel) ? option.title : option.scopeLabel;
+        option.label = `${option.label} · ${suffix}`;
       }
     }
   }
@@ -898,19 +898,21 @@ function resolveSessionScopedOptionLabel(
   key: string,
   row?: SessionsListResult["sessions"][number],
   rest?: string,
+  agentGroupLabel?: string,
 ) {
   const base = rest?.trim() || key;
   if (!row) {
-    return base;
+    return agentGroupLabel ? `${agentGroupLabel} / ${base}` : base;
   }
 
   const label = row.label?.trim() || "";
   const displayName = row.displayName?.trim() || "";
   if ((label && label !== key) || (displayName && displayName !== key)) {
-    return resolveSessionDisplayName(key, row);
+    const customLabel = resolveSessionDisplayName(key, row);
+    return agentGroupLabel ? `${agentGroupLabel} / ${customLabel}` : customLabel;
   }
 
-  return base;
+  return agentGroupLabel ? `${agentGroupLabel} / ${base}` : base;
 }
 
 type ThemeOption = { id: ThemeName; label: string; icon: string };
