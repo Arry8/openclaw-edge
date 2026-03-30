@@ -750,10 +750,13 @@ export function resolveSessionOptionGroups(
   };
 
   const addOption = (key: string) => {
-    if (!key || seenKeys.has(key)) {
+    // Normalize to lowercase for dedup — parseAgentSessionKey lowercases internally,
+    // so mixed-case variants of the same key must be treated as duplicates.
+    const normalizedKey = key.toLowerCase();
+    if (!key || seenKeys.has(normalizedKey)) {
       return;
     }
-    seenKeys.add(key);
+    seenKeys.add(normalizedKey);
     const row = byKey.get(key);
     const parsed = parseAgentSessionKey(key);
     const group = parsed
@@ -782,6 +785,17 @@ export function resolveSessionOptionGroups(
     addOption(row.key);
   }
   addOption(sessionKey);
+
+  // Ensure every known agent appears in the dropdown even when it has no persisted
+  // sessions yet.  Without this, agents disappear after a session switch because
+  // the refreshed sessionsResult only contains rows for the active agent.
+  const mainKey = resolveSidebarChatSessionKey(state);
+  for (const agent of state.agentsList?.agents ?? []) {
+    const agentId = agent.id.trim();
+    if (agentId) {
+      addOption(`agent:${agentId.toLowerCase()}:${mainKey}`);
+    }
+  }
 
   for (const group of groups.values()) {
     const counts = new Map<string, number>();
