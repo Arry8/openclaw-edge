@@ -656,8 +656,7 @@ export function armTimer(state: CronServiceState) {
           typeof j.state.nextRunAtMs === "number" &&
           Number.isFinite(j.state.nextRunAtMs),
       ).length ?? 0;
-    // Use trace level for detailed timer diagnostics; debug is too verbose for normal operation
-    state.deps.log.trace(
+    state.deps.log.debug(
       { jobCount, enabledCount, withNextRun },
       "cron: armTimer skipped - no jobs with nextRunAtMs",
     );
@@ -685,8 +684,7 @@ export function armTimer(state: CronServiceState) {
       state.deps.log.error({ err: String(err) }, "cron: timer tick failed");
     });
   }, clampedDelay);
-  // Use trace level for detailed timer diagnostics; debug is too verbose for normal operation
-  state.deps.log.trace(
+  state.deps.log.debug(
     { nextAt, delayMs: clampedDelay, clamped: delay > MAX_TIMER_DELAY_MS },
     "cron: timer armed",
   );
