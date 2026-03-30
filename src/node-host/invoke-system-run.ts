@@ -18,6 +18,7 @@ import {
   describeInterpreterInlineEval,
   detectInterpreterInlineEvalArgv,
 } from "../infra/exec-inline-eval.js";
+import { detectCommandObfuscation } from "../infra/exec-obfuscation-detect.js";
 import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
 import {
   inspectHostExecEnvOverrides,
@@ -61,7 +62,8 @@ type SystemRunDeniedReason =
   | "allowlist-miss"
   | "execution-plan-miss"
   | "companion-unavailable"
-  | "permission:screenRecording";
+  | "permission:screenRecording"
+  | "obfuscation-detected";
 
 type SystemRunExecutionContext = {
   sessionKey: string;
@@ -585,6 +587,21 @@ async function executeSystemRunPhase(
     await sendSystemRunDenied(opts, phase.execution, {
       reason: "permission:screenRecording",
       message: "PERMISSION_MISSING: screenRecording",
+    });
+    return;
+  }
+
+  // Obfuscation check: detect encoded/obfuscated commands that could bypass allowlist filters.
+  // Runs after all security/allowlist gates so we have the resolved security mode.
+  // When security=full the length heuristic is skipped; pattern-based checks always run.
+  const commandToCheck = phase.shellPayload ?? phase.argv.join(" ");
+  const obfuscationResult = detectCommandObfuscation(commandToCheck, {
+    securityMode: phase.security,
+  });
+  if (obfuscationResult.detected) {
+    await sendSystemRunDenied(opts, phase.execution, {
+      reason: "obfuscation-detected",
+      message: `OBFUSCATED_COMMAND: ${obfuscationResult.reasons.join("; ")}`,
     });
     return;
   }
