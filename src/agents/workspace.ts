@@ -263,7 +263,7 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_MEMORY_ALT_FILENAME;
 
 export type WorkspaceBootstrapFile = {
-  name: WorkspaceBootstrapFileName;
+  name: WorkspaceBootstrapFileName | (string & {});
   path: string;
   content?: string;
   missing: boolean;
