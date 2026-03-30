@@ -31,6 +31,115 @@
         "status": "merged",
         "commitSha": "e23578bd64"
       }
+    },
+    {
+      "author": "zuoanCo",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bd6acb89391829c97405e4e81426fe3a42676486",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57614,
+      "title": "fix(sandbox): pass global browser SSRF policy to sandbox browser",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "0bdeaf880d2d413d08567f976d1210eb12f41dcd"
+      }
+    },
+    {
+      "author": "YangManBOBO",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0f77dea904dc1825f9128abce25811c65ada00f5",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57444,
+      "title": "fix(telegram): add api.telegram.org to SSRF allowedHostnames to fix media download regression",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/bot/delivery.resolve-media-retry.test.ts",
+          "extensions/telegram/src/bot/delivery.resolve-media.ts"
+        ]
+      }
+    },
+    {
+      "author": "EronFan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "486c0ce2e4c09815fcd688631bcfe5cb4a6168e8",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57352,
+      "title": "fix(discord): suppress reconnect-exhausted crash when maxAttempts=0",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/provider.lifecycle.test.ts",
+          "extensions/discord/src/monitor/provider.lifecycle.ts"
+        ]
+      }
+    },
+    {
+      "author": "karanuppal",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "dd2098344015a72f133882beee04c067ee0ad561",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57088,
+      "title": "fix(cron): add defensive prune before reading run log to prevent OOM",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "a57f9514d2e37bb3bf9e4237f874677237ca99cc"
+      }
+    },
+    {
+      "author": "bboyyan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3720fe7d6a53c27efc7df822648ce8b4111deeb1",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "channel: voice-call",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57071,
+      "title": "fix: serialize Paperclip runtime auth env injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/microsoft/speech-provider.test.ts",
+          "extensions/msteams/src/graph.test.ts",
+          "extensions/voice-call/src/providers/twilio/api.test.ts",
+          "src/agents/pi-embedded-runner.run-embedded-pi-agent.auth-profile-rotation.e2e.test.ts",
+          "src/agents/pi-embedded-runner/run.ts"
+        ]
+      }
     }
   ]
 }

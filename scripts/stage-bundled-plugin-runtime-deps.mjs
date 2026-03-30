@@ -256,7 +256,17 @@ function installPluginRuntimeDeps(params) {
     }
 
     removePathIfExists(nodeModulesDir);
-    fs.renameSync(stagedNodeModulesDir, nodeModulesDir);
+    try {
+      fs.renameSync(stagedNodeModulesDir, nodeModulesDir);
+    } catch (err) {
+      if (err.code === "EPERM" || err.code === "EXDEV") {
+        // Windows: rename can fail across volumes or when AV holds a lock; fall back to copy+delete
+        fs.cpSync(stagedNodeModulesDir, nodeModulesDir, { recursive: true });
+        removePathIfExists(stagedNodeModulesDir);
+      } else {
+        throw err;
+      }
+    }
     writeJson(stampPath, {
       fingerprint,
       generatedAt: new Date().toISOString(),
