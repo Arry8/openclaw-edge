@@ -68,13 +68,35 @@ function isOpenAiCompletionsModel(model: Model<Api>): model is Model<"openai-com
   return model.api === "openai-completions";
 }
 
-function isOpenAINativeEndpoint(baseUrl: string): boolean {
+/**
+ * Extracts and lowercases the hostname from a URL string.
+ * Returns null for malformed URLs.
+ */
+function getHostname(baseUrl: string): string | null {
   try {
-    const host = new URL(baseUrl).hostname.toLowerCase();
-    return host === "api.openai.com";
+    return new URL(baseUrl).hostname.toLowerCase();
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * Returns true only for endpoints that are confirmed to be native OpenAI
+ * infrastructure and therefore accept the `developer` message role.
+ * Custom proxies that happen to speak the OpenAI protocol typically
+ * only support the standard `system` role.
+ */
+function isOpenAINativeEndpoint(baseUrl: string): boolean {
+  return getHostname(baseUrl) === "api.openai.com";
+}
+
+/**
+ * Returns true for Mistral AI endpoints (official or compatible).
+ * Mistral's OpenAI-compatible /chat/completions endpoint is stricter than
+ * OpenAI-native backends and rejects several request flags.
+ */
+function isMistralEndpoint(model: Model<Api>): boolean {
+  return model.provider === "mistral" || getHostname(model.baseUrl ?? "") === "api.mistral.ai";
 }
 
 function isAnthropicMessagesModel(model: Model<Api>): model is Model<"anthropic-messages"> {
@@ -107,27 +129,38 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
   const forcedDeveloperRole = compat?.supportsDeveloperRole === true;
   const hasStreamingUsageOverride = compat?.supportsUsageInStreaming !== undefined;
   const targetStrictMode = compat?.supportsStrictMode ?? false;
+  const forcedUsageStreaming = compat?.supportsUsageInStreaming === true;
+
+  // Don't early-return for Mistral endpoints — they need additional flags
+  // forced off even when developer role and usage streaming are already set.
   if (
     compat?.supportsDeveloperRole !== undefined &&
     hasStreamingUsageOverride &&
-    compat?.supportsStrictMode !== undefined
+    compat?.supportsStrictMode !== undefined &&
+    !isMistralEndpoint(model)
   ) {
     return model;
   }
 
+  const baseCompat: ModelCompatConfig = compat
+    ? {
+        ...compat,
+        supportsDeveloperRole: forcedDeveloperRole || false,
+        supportsUsageInStreaming: forcedUsageStreaming || false,
+        supportsStrictMode: targetStrictMode,
+      }
+    : { supportsDeveloperRole: false, supportsUsageInStreaming: false, supportsStrictMode: false };
+
+  // Mistral's OpenAI-compatible /chat/completions endpoint is stricter than
+  // OpenAI-native backends: it rejects `store`, uses `max_tokens` instead of
+  // `max_completion_tokens`, and does not support OpenAI-style
+  // `reasoning_effort`.
+  const mistralOverrides: Partial<ModelCompatConfig> = isMistralEndpoint(model)
+    ? { supportsStore: false, supportsReasoningEffort: false, maxTokensField: "max_tokens" }
+    : {};
+
   return {
     ...model,
-    compat: compat
-      ? {
-          ...compat,
-          supportsDeveloperRole: forcedDeveloperRole || false,
-          ...(hasStreamingUsageOverride ? {} : { supportsUsageInStreaming: false }),
-          supportsStrictMode: targetStrictMode,
-        }
-      : {
-          supportsDeveloperRole: false,
-          supportsUsageInStreaming: false,
-          supportsStrictMode: false,
-        },
+    compat: { ...baseCompat, ...mistralOverrides },
   } as typeof model;
 }
