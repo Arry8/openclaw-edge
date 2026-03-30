@@ -63,6 +63,7 @@ type SelectedConnectAuth = {
   signatureToken?: string;
   resolvedDeviceToken?: string;
   storedToken?: string;
+  storedScopes?: string[];
 };
 
 class GatewayClientRequestError extends Error {
@@ -443,6 +444,7 @@ export class GatewayClient {
       signatureToken,
       resolvedDeviceToken,
       storedToken,
+      storedScopes,
     } = this.selectConnectAuth(role);
     if (this.pendingDeviceTokenRetry && authDeviceToken) {
       this.pendingDeviceTokenRetry = false;
@@ -457,7 +459,17 @@ export class GatewayClient {
           }
         : undefined;
     const signedAtMs = Date.now();
-    const scopes = this.opts.scopes ?? ["operator.admin"];
+    // When reconnecting with a stored device token, honour the scopes that
+    // were persisted alongside it so restricted tokens (e.g. operator.read)
+    // are not silently upgraded to the operator.admin default.
+    // Note: an explicitly stored empty array (`[]`) is a valid default-deny
+    // session and must be preserved — only fall back to `["operator.admin"]`
+    // when no stored scopes exist at all (`undefined`).
+    const usesStoredDeviceToken =
+      resolvedDeviceToken != null && resolvedDeviceToken === storedToken;
+    const scopes =
+      this.opts.scopes ??
+      (usesStoredDeviceToken && storedScopes != null ? storedScopes : ["operator.admin"]);
     const platform = this.opts.platform ?? process.platform;
     const device = (() => {
       if (!this.opts.deviceIdentity) {
@@ -651,9 +663,10 @@ export class GatewayClient {
     const explicitBootstrapToken = this.opts.bootstrapToken?.trim() || undefined;
     const explicitDeviceToken = this.opts.deviceToken?.trim() || undefined;
     const authPassword = this.opts.password?.trim() || undefined;
-    const storedToken = this.opts.deviceIdentity
-      ? loadDeviceAuthToken({ deviceId: this.opts.deviceIdentity.deviceId, role })?.token
+    const storedEntry = this.opts.deviceIdentity
+      ? loadDeviceAuthToken({ deviceId: this.opts.deviceIdentity.deviceId, role })
       : null;
+    const storedToken = storedEntry?.token ?? null;
     const shouldUseDeviceRetryToken =
       this.pendingDeviceTokenRetry &&
       !explicitDeviceToken &&
@@ -679,6 +692,7 @@ export class GatewayClient {
       signatureToken: authToken ?? authBootstrapToken ?? undefined,
       resolvedDeviceToken,
       storedToken: storedToken ?? undefined,
+      storedScopes: storedEntry?.scopes,
     };
   }
 
