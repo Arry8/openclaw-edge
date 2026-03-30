@@ -429,7 +429,7 @@ describe("exec approvals shell analysis", () => {
       }
     });
 
-    it("handles single command inside shell wrapper", () => {
+    it("handles single command inside shell wrapper (no chain operators — not recursed)", () => {
       const dir = makeTempDir();
       const gogPath = path.join(dir, "gog-wrapper");
       const shPath = path.join(dir, "sh");
@@ -437,6 +437,8 @@ describe("exec approvals shell analysis", () => {
       fs.writeFileSync(shPath, "#!/bin/sh\n", { mode: 0o755 });
       const env = makePathEnv(dir);
       try {
+        // Single-command shell wrappers are NOT recursively evaluated to preserve
+        // allow-always persisted-pattern security constraints.
         const result = evaluateShellAllowlist({
           command: `${shPath} -c "gog-wrapper calendar events"`,
           allowlist: [{ pattern: gogPath }],
@@ -445,7 +447,7 @@ describe("exec approvals shell analysis", () => {
           env,
         });
         expect(result.analysisOk).toBe(true);
-        expect(result.allowlistSatisfied).toBe(true);
+        expect(result.allowlistSatisfied).toBe(false);
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }

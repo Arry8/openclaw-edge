@@ -351,13 +351,17 @@ function evaluateSegments(
           ? "skills"
           : null;
 
-    // When no direct match and the segment is a shell wrapper with an inline compound
+    // When no direct match and the segment is a shell wrapper with an inline *compound*
     // command (e.g. `/bin/sh -c "cat SKILL.md && gog-wrapper calendar events"`),
     // recursively parse and evaluate each sub-command inside the inline payload.
     // This prevents shell-wrapped skill exec commands from being silently rejected
     // because the allowlist check was comparing `/bin/sh` instead of the actual target
     // binaries inside the compound command.
-    if (by === null && inlineCommand) {
+    //
+    // Only recurse when the inline command contains chain operators (&&, ||, ;) —
+    // single-command shell wrappers (e.g. `bash -lc 'script.sh'`) keep the original
+    // behavior to preserve allow-always persisted-pattern security constraints.
+    if (by === null && inlineCommand && splitCommandChain(inlineCommand) !== null) {
       const inlineResult = evaluateShellWrapperInlineCommand(
         inlineCommand,
         params,
