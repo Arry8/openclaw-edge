@@ -141,6 +141,8 @@ const SKIP_LIST = new Set<number>([
   45782, // fs-safe.ts + pairing-store.ts TS errors in error handling
   47225, // stream-payload-utils.ts TS error in toolsOverride field
   12296, // session-tool-result-guard.ts: removed getRawSessionAppendMessage + sessionKey — breaks transcript-rewrite.ts consumers
+  40490, // bot-message-context.session.ts: imports ../media/store.js which doesn't exist — UNRESOLVED_IMPORT
+  40597, // cron/service/timer.ts: Logger.trace() doesn't exist — TS2339
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.

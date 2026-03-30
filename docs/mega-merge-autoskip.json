@@ -8,5 +8,90 @@
     "number": 29426,
     "reason": "src/security/skill-scanner.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T15:12:14.411Z"
+  },
+  {
+    "number": 57602,
+    "reason": "src/auto-reply/reply/block-reply-pipeline.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:28:26.593Z"
+  },
+  {
+    "number": 56646,
+    "reason": "extensions/slack/src/monitor/provider.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:39:13.243Z"
+  },
+  {
+    "number": 55706,
+    "reason": "src/config/io.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:48:30.363Z"
+  },
+  {
+    "number": 55582,
+    "reason": "extensions/discord/src/client.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:50:41.374Z"
+  },
+  {
+    "number": 55619,
+    "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:50:41.461Z"
+  },
+  {
+    "number": 54343,
+    "reason": "src/auto-reply/reply/commands-session-abort.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T15:59:04.993Z"
+  },
+  {
+    "number": 53642,
+    "reason": "src/plugins/runtime.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T16:04:17.605Z"
+  },
+  {
+    "number": 52764,
+    "reason": "src/plugins/runtime.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T16:09:41.146Z"
+  },
+  {
+    "number": 52365,
+    "reason": "src/cron/service/timer.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T16:12:06.104Z"
+  },
+  {
+    "number": 51445,
+    "reason": "extensions/feishu/src/bot-sender-name.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T16:20:39.912Z"
+  },
+  {
+    "number": 51547,
+    "reason": "src/process/exec.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T16:20:39.998Z"
+  },
+  {
+    "number": 50164,
+    "reason": "extensions/feishu/src/media.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:11:46.715Z"
+  },
+  {
+    "number": 49082,
+    "reason": "extensions/feishu/src/bot.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:17:17.136Z"
+  },
+  {
+    "number": 47663,
+    "reason": "src/auto-reply/reply/agent-runner.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:24:17.537Z"
+  },
+  {
+    "number": 46940,
+    "reason": "src/channels/plugins/types.adapters.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:28:14.281Z"
+  },
+  {
+    "number": 46472,
+    "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:30:37.407Z"
+  },
+  {
+    "number": 44215,
+    "reason": "src/config/schema.labels.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T17:38:09.026Z"
   }
 ]
