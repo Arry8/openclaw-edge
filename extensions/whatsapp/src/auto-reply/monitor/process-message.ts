@@ -56,6 +56,10 @@ export type GroupHistoryEntry = {
   timestamp?: number;
   id?: string;
   senderJid?: string;
+  /** Local file path for a downloaded media attachment. */
+  mediaPath?: string;
+  /** MIME type of the media attachment, if present. */
+  mediaType?: string;
 };
 
 async function resolveWhatsAppCommandAuthorized(params: {
@@ -272,9 +276,18 @@ export async function processMessage(params: {
     channel: "whatsapp",
     accountId: params.route.accountId,
   });
+  const whatsappAccount = resolveWhatsAppAccount({
+    cfg: params.cfg,
+    accountId: params.msg.accountId,
+  });
+  const accountBlockStreamingEnabled =
+    typeof whatsappAccount.blockStreaming === "boolean"
+      ? whatsappAccount.blockStreaming
+      : params.cfg.agents?.defaults?.blockStreamingDefault === "on";
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(params.cfg, params.route.agentId);
   let didLogHeartbeatStrip = false;
   let didSendReply = false;
+  let lastSentBlockText: string | null = null;
   const commandAuthorized = shouldComputeCommandAuthorized(params.msg.body, params.cfg)
     ? await resolveWhatsAppCommandAuthorized({ cfg: params.cfg, msg: params.msg })
     : undefined;
@@ -302,6 +315,8 @@ export async function processMessage(params: {
             sender: entry.sender,
             body: entry.body,
             timestamp: entry.timestamp,
+            mediaPath: entry.mediaPath,
+            mediaType: entry.mediaType,
           }),
         )
       : undefined;
@@ -320,6 +335,8 @@ export async function processMessage(params: {
     ReplyToId: replyTo?.id,
     ReplyToBody: replyTo?.body,
     ReplyToSender: replyTo?.sender?.label,
+    ReplyToMediaPath: params.msg.replyToMediaPath,
+    ReplyToMediaType: params.msg.replyToMediaType,
     MediaPath: params.msg.mediaPath,
     MediaUrl: params.msg.mediaUrl,
     MediaType: params.msg.mediaType,
@@ -412,10 +429,21 @@ export async function processMessage(params: {
         }
       },
       deliver: async (payload: ReplyPayload, info) => {
-        if (info.kind !== "final") {
-          // Only deliver final replies to external messaging channels (WhatsApp).
-          // Block (reasoning/thinking) and tool updates are meant for the internal
-          // web UI only; sending them here leaks chain-of-thought to end users.
+        if (info.kind === "tool") {
+          // Tool updates are internal-only; never expose to WhatsApp users.
+          return;
+        }
+        if (info.kind === "block" && !accountBlockStreamingEnabled) {
+          // When block streaming is off, only deliver final replies.
+          return;
+        }
+        if (
+          info.kind === "final" &&
+          accountBlockStreamingEnabled &&
+          payload.text != null &&
+          payload.text === lastSentBlockText
+        ) {
+          // Block streaming already delivered identical content as the last block; skip duplicate final.
           return;
         }
         await deliverWebReply({
@@ -431,6 +459,9 @@ export async function processMessage(params: {
           tableMode,
         });
         didSendReply = true;
+        if (info.kind === "block" && payload.text != null) {
+          lastSentBlockText = payload.text;
+        }
         const shouldLog = payload.text ? true : undefined;
         params.rememberSentText(payload.text, {
           combinedBody,
@@ -461,9 +492,7 @@ export async function processMessage(params: {
       onReplyStart: params.msg.sendComposing,
     },
     replyOptions: {
-      // WhatsApp delivery intentionally suppresses non-final payloads.
-      // Keep block streaming disabled so final replies are still produced.
-      disableBlockStreaming: true,
+      disableBlockStreaming: !accountBlockStreamingEnabled,
       onModelSelected,
     },
   });
