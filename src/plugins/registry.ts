@@ -463,7 +463,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       if (!existing) {
         return;
       }
-      if (!params.replaceExisting) {
+      if (!params.replaceExisting && existing.pluginId !== record.id) {
         pushDiagnostic({
           level: "error",
           pluginId: record.id,
@@ -524,6 +524,18 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     }
     const existingRuntime = registry.channels.find((entry) => entry.plugin.id === id);
     if (mode !== "setup-only" && existingRuntime) {
+      if (existingRuntime.pluginId === record.id) {
+        // Same plugin re-registering the same channel (e.g. hot-reload) — update in place.
+        existingRuntime.plugin = plugin;
+        existingRuntime.source = record.source;
+        const existingSetup = registry.channelSetups.find((entry) => entry.plugin.id === id);
+        if (existingSetup) {
+          existingSetup.plugin = plugin;
+          existingSetup.source = record.source;
+          existingSetup.enabled = record.enabled;
+        }
+        return;
+      }
       pushDiagnostic({
         level: "error",
         pluginId: record.id,
@@ -534,6 +546,13 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     }
     const existingSetup = registry.channelSetups.find((entry) => entry.plugin.id === id);
     if (existingSetup) {
+      if (existingSetup.pluginId === record.id) {
+        // Same plugin re-registering — update in place.
+        existingSetup.plugin = plugin;
+        existingSetup.source = record.source;
+        existingSetup.enabled = record.enabled;
+        return;
+      }
       pushDiagnostic({
         level: "error",
         pluginId: record.id,
