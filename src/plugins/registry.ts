@@ -28,7 +28,7 @@ import { normalizeRegisteredProvider } from "./provider-validation.js";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import { withPluginRuntimePluginIdScope } from "./runtime/gateway-request-scope.js";
 import type { PluginRuntime } from "./runtime/types.js";
-import { defaultSlotIdForKey } from "./slots.js";
+import { defaultSlotIdForKey, hasKind } from "./slots.js";
 import {
   isPluginHookName,
   isPromptInjectionHookName,
@@ -188,7 +188,7 @@ export type PluginRecord = {
   format?: PluginFormat;
   bundleFormat?: PluginBundleFormat;
   bundleCapabilities?: string[];
-  kind?: PluginKind;
+  kind?: PluginKind | PluginKind[];
   source: string;
   rootDir?: string;
   origin: PluginOrigin;
@@ -1030,7 +1030,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 }
               },
               registerMemoryPromptSection: (builder) => {
-                if (record.kind !== "memory") {
+                if (!hasKind(record.kind, "memory")) {
                   pushDiagnostic({
                     level: "error",
                     pluginId: record.id,
@@ -1042,7 +1042,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 registerMemoryPromptSection(builder);
               },
               registerMemoryFlushPlan: (resolver) => {
-                if (record.kind !== "memory") {
+                if (!hasKind(record.kind, "memory")) {
                   pushDiagnostic({
                     level: "error",
                     pluginId: record.id,
@@ -1054,7 +1054,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 registerMemoryFlushPlanResolver(resolver);
               },
               registerMemoryRuntime: (runtime) => {
-                if (record.kind !== "memory") {
+                if (!hasKind(record.kind, "memory")) {
                   pushDiagnostic({
                     level: "error",
                     pluginId: record.id,
@@ -1066,7 +1066,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 registerMemoryRuntime(runtime);
               },
               registerMemoryEmbeddingProvider: (adapter) => {
-                if (record.kind !== "memory") {
+                if (!hasKind(record.kind, "memory")) {
                   pushDiagnostic({
                     level: "error",
                     pluginId: record.id,
