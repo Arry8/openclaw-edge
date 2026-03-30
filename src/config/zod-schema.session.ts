@@ -60,6 +60,7 @@ export const SessionSchema = z
       })
       .strict()
       .optional(),
+    injectOutboundToTargetSession: z.boolean().optional(),
     threadBindings: z
       .object({
         enabled: z.boolean().optional(),
