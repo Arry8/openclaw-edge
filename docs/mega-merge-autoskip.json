@@ -133,5 +133,105 @@
     "number": 29768,
     "reason": "src/infra/outbound/channel-selection.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T21:07:50.447Z"
+  },
+  {
+    "number": 28971,
+    "reason": "src/agents/pi-embedded-runner/run/attempt.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:10:20.023Z"
+  },
+  {
+    "number": 57309,
+    "reason": "extensions/slack/src/monitor/message-handler/prepare.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:25:40.954Z"
+  },
+  {
+    "number": 55037,
+    "reason": "src/auto-reply/reply/get-reply.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:36:25.500Z"
+  },
+  {
+    "number": 57090,
+    "reason": "extensions/kafka-producer/index.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:36:25.588Z"
+  },
+  {
+    "number": 48156,
+    "reason": "src/agents/context-books.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:46:07.750Z"
+  },
+  {
+    "number": 52742,
+    "reason": "extensions/ofoxai/index.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:46:07.842Z"
+  },
+  {
+    "number": 46178,
+    "reason": "src/agents/pi-settings.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:48:48.042Z"
+  },
+  {
+    "number": 46660,
+    "reason": "src/agents/tools/sessions-send-tool.a2a.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:48:48.122Z"
+  },
+  {
+    "number": 47252,
+    "reason": "extensions/kakao/index.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:48:48.201Z"
+  },
+  {
+    "number": 47302,
+    "reason": "src/commands/doctor-check-config.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:48:48.284Z"
+  },
+  {
+    "number": 45613,
+    "reason": "src/agents/pi-embedded-runner/anthropic-stream-wrappers.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:51:30.649Z"
+  },
+  {
+    "number": 43317,
+    "reason": "src/agents/sandbox/types.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:54:19.038Z"
+  },
+  {
+    "number": 42967,
+    "reason": "src/agents/tools/tts-tool.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:57:11.745Z"
+  },
+  {
+    "number": 41421,
+    "reason": "src/commands/agents.commands.view-system-prompt.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T21:59:30.997Z"
+  },
+  {
+    "number": 39961,
+    "reason": "src/agents/pi-tools.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:04:04.164Z"
+  },
+  {
+    "number": 30845,
+    "reason": "extensions/feishu/src/send.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:17:50.712Z"
+  },
+  {
+    "number": 36784,
+    "reason": "extensions/email/src/channel.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:17:50.804Z"
+  },
+  {
+    "number": 25445,
+    "reason": "extensions/telegram/src/bot-handlers.runtime.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:22:47.135Z"
+  },
+  {
+    "number": 57518,
+    "reason": "extensions/browser/src/browser/local-browser-bridge-relay-attach-ux.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:27:29.389Z"
+  },
+  {
+    "number": 57579,
+    "reason": "src/agents/tools/sessions-send-tool.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:27:29.525Z"
   }
 ]
