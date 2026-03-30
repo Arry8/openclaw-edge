@@ -26,6 +26,12 @@ import {
 } from "./subagent-followup.js";
 
 function normalizeDeliveryTarget(channel: string, to: string): string {
+  // Defensive: ensure channel and to are strings (TypeScript type narrowing)
+  if (typeof channel !== "string" || typeof to !== "string") {
+    throw new Error(
+      `normalizeDeliveryTarget: channel and to must be strings, got channel=${typeof channel}, to=${typeof to}`,
+    );
+  }
   const channelLower = channel.trim().toLowerCase();
   const toTrimmed = to.trim();
   if (channelLower === "feishu" || channelLower === "lark") {
@@ -372,11 +378,12 @@ export async function dispatchCronDelivery(
     options?: { retryTransient?: boolean },
   ): Promise<RunCronAgentTurnResult | null> => {
     const identity = resolveAgentOutboundIdentity(params.cfgWithAgentDefaults, params.agentId);
-    const deliveryIdempotencyKey = buildDirectCronDeliveryIdempotencyKey({
-      runSessionId: params.runSessionId,
-      delivery,
-    });
     try {
+      // Validate delivery target early and include in try/catch to avoid uncaught exceptions
+      const deliveryIdempotencyKey = buildDirectCronDeliveryIdempotencyKey({
+        runSessionId: params.runSessionId,
+        delivery,
+      });
       const payloadsForDelivery =
         deliveryPayloads.length > 0
           ? deliveryPayloads
