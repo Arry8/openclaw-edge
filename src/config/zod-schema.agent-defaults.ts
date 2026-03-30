@@ -177,6 +177,7 @@ export const AgentDefaultsSchema = z
       .optional(),
     enforceFinalTag: z.boolean().optional(),
     blockStreamingDefault: z.union([z.literal("off"), z.literal("on")]).optional(),
+    usageDefault: z.union([z.literal("off"), z.literal("tokens"), z.literal("full")]).optional(),
     blockStreamingBreak: z.union([z.literal("text_end"), z.literal("message_end")]).optional(),
     blockStreamingChunk: BlockStreamingChunkSchema.optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
