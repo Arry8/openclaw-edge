@@ -118,6 +118,10 @@ function applyControlUiSecurityHeaders(res: ServerResponse) {
   // contexts where 'self' resolves to an opaque origin.
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
+  // Allow same-origin microphone access for the Control UI voice input (STT).
+  // The baseline Permissions-Policy in http-common.ts blocks microphone for all
+  // responses; override here so the chat UI can use the Web Speech API.
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
