@@ -1064,16 +1064,22 @@ export function classifyFailoverReason(raw: string): FailoverReason | null {
   if (isImageSizeError(raw)) {
     return null;
   }
+  const trimmed = raw.trim();
+  const leadingStatus = extractLeadingHttpStatus(trimmed);
+  if (leadingStatus) {
+    const statusReason = classifyFailoverReasonFromHttpStatus(
+      leadingStatus.code,
+      leadingStatus.rest,
+    );
+    if (statusReason) {
+      return statusReason;
+    }
+  }
   if (isCliSessionExpiredErrorMessage(raw)) {
     return "session_expired";
   }
   if (isModelNotFoundErrorMessage(raw)) {
     return "model_not_found";
-  }
-  const trimmed = raw.trim();
-  const leadingStatus = extractLeadingHttpStatus(trimmed);
-  if (leadingStatus?.code === 410) {
-    return classifyFailoverReasonFromHttpStatus(leadingStatus.code, leadingStatus.rest);
   }
   const reasonFrom402Text = classifyFailoverReasonFrom402Text(raw);
   if (reasonFrom402Text) {
