@@ -345,8 +345,15 @@ export async function getReplyFromConfig(
     perMessageQueueMode,
     perMessageQueueOptions,
   } = directiveResult.result;
-  provider = resolvedProvider;
-  model = resolvedModel;
+  // When a heartbeat model override is active, preserve it after directive resolution.
+  // Heartbeat messages are system-generated and never contain inline model directives,
+  // so resolvedProvider/resolvedModel should match the input values. This outer guard
+  // provides defense-in-depth alongside the skipStoredOverride guard in
+  // createModelSelectionState (model-selection.ts:418).
+  if (!hasResolvedHeartbeatModelOverride) {
+    provider = resolvedProvider;
+    model = resolvedModel;
+  }
 
   const maybeEmitMissingResetHooks = async () => {
     if (!resetTriggered || !command.isAuthorizedSender || command.resetHookTriggered) {
