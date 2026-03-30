@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sanitizeInboundSystemTags } from "../auto-reply/reply/inbound-text.js";
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import { createOutboundSendDeps } from "../cli/outbound-send-deps.js";
 import { agentCommandFromIngress } from "../commands/agent.js";
@@ -16,8 +17,9 @@ import { defaultRuntime } from "../runtime.js";
 import { parseMessageWithAttachments } from "./chat-attachments.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./server-methods/attachment-normalize.js";
 import type { NodeEvent, NodeEventContext } from "./server-node-events-types.js";
-import { loadSessionEntry, migrateAndPruneGatewaySessionStoreKey } from "./session-utils.js";
+import { loadSessionEntry, migrateAndPruneGatewaySessionStoreKey} from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
+import { deleteMediaBuffer } from "../media/store.ts";
 
 const MAX_EXEC_EVENT_OUTPUT_CHARS = 180;
 const MAX_NOTIFICATION_EVENT_TEXT_CHARS = 120;
@@ -346,17 +348,30 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
         timeoutSeconds?: number | null;
         key?: string | null;
       };
+
       let link: AgentDeepLink | null = null;
       try {
         link = JSON.parse(evt.payloadJSON) as AgentDeepLink;
       } catch {
         return;
       }
+
+      const sessionKeyRaw = (link?.sessionKey ?? "").trim();
+      const sessionKey = sessionKeyRaw.length > 0 ? sessionKeyRaw : `node-${nodeId}`;
+      const cfg = loadConfig();
+      const { storePath, entry, canonicalKey } = loadSessionEntry(sessionKey);
+
       let message = (link?.message ?? "").trim();
       const normalizedAttachments = normalizeRpcAttachmentsToChatAttachments(
         link?.attachments ?? undefined,
       );
       let images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+      if (!message && normalizedAttachments.length === 0) {
+        return;
+      }
+      if (message.length > 20_000) {
+        return;
+      }
       if (normalizedAttachments.length > 0) {
         try {
           const parsed = await parseMessageWithAttachments(message, normalizedAttachments, {
@@ -365,14 +380,26 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
           });
           message = parsed.message.trim();
           images = parsed.images;
-        } catch {
+          if (message.length > 20_000) {
+          ctx.logGateway.warn(`agent.request message exceeds limit after attachment parsing (length=${message.length})`);
+          if (parsed.offloadedRefs && parsed.offloadedRefs.length > 0) {
+            for (const ref of parsed.offloadedRefs) {
+              try {
+                await deleteMediaBuffer(ref.id); 
+              } catch (cleanupErr) {
+                ctx.logGateway.warn(`Failed to cleanup orphaned media ${ref.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+              }
+            }
+          }
+          return;
+        }
+        } catch (err) {
+          ctx.logGateway.warn(`agent.request attachment parse failed: ${err instanceof Error ? err.message : String(err)}`);
           return;
         }
       }
-      if (!message) {
-        return;
-      }
-      if (message.length > 20_000) {
+
+      if (!message && images.length === 0) {
         return;
       }
 
@@ -385,10 +412,6 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       const receiptText =
         receiptTextRaw || "Just received your iOS share + request, working on it.";
 
-      const sessionKeyRaw = (link?.sessionKey ?? "").trim();
-      const sessionKey = sessionKeyRaw.length > 0 ? sessionKeyRaw : `node-${nodeId}`;
-      const cfg = loadConfig();
-      const { storePath, entry, canonicalKey } = loadSessionEntry(sessionKey);
       const now = Date.now();
       const sessionId = entry?.sessionId ?? randomUUID();
       await touchSessionStore({ cfg, sessionKey, storePath, canonicalKey, entry, sessionId, now });
@@ -465,15 +488,21 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       if (change !== "posted" && change !== "removed") {
         return;
       }
-      const key = normalizeNonEmptyString(obj.key);
-      if (!key) {
+      const keyRaw = normalizeNonEmptyString(obj.key);
+      if (!keyRaw) {
         return;
       }
+      const key = sanitizeInboundSystemTags(keyRaw);
       const sessionKeyRaw = normalizeNonEmptyString(obj.sessionKey) ?? `node-${nodeId}`;
       const { canonicalKey: sessionKey } = loadSessionEntry(sessionKeyRaw);
-      const packageName = normalizeNonEmptyString(obj.packageName);
-      const title = compactNotificationEventText(normalizeNonEmptyString(obj.title) ?? "");
-      const text = compactNotificationEventText(normalizeNonEmptyString(obj.text) ?? "");
+      const packageNameRaw = normalizeNonEmptyString(obj.packageName);
+      const packageName = packageNameRaw ? sanitizeInboundSystemTags(packageNameRaw) : null;
+      const title = compactNotificationEventText(
+        sanitizeInboundSystemTags(normalizeNonEmptyString(obj.title) ?? ""),
+      );
+      const text = compactNotificationEventText(
+        sanitizeInboundSystemTags(normalizeNonEmptyString(obj.text) ?? ""),
+      );
 
       let summary = `Notification ${change} (node=${nodeId} key=${key}`;
       if (packageName) {
@@ -489,7 +518,8 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
 
       const queued = enqueueSystemEvent(summary, {
         sessionKey,
-        contextKey: `notification:${key}`,
+        contextKey: `notification:${keyRaw}`,
+        trusted: false,
       });
       if (queued) {
         requestHeartbeatNow({ reason: "notifications-event", sessionKey });

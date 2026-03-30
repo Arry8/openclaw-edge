@@ -1912,6 +1912,51 @@ describe("drainFormattedSystemEvents", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps channel summary lines prefixed as trusted system output on new main sessions", async () => {
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "whatsapp",
+          source: "test",
+          plugin: {
+            ...createChannelTestPluginBase({ id: "whatsapp", label: "WhatsApp" }),
+            config: {
+              listAccountIds: () => ["default"],
+              defaultAccountId: () => "default",
+              inspectAccount: () => ({
+                accountId: "default",
+                enabled: true,
+                configured: true,
+                name: "line one\nline two",
+              }),
+              resolveAccount: () => ({
+                accountId: "default",
+                enabled: true,
+                configured: true,
+                name: "line one\nline two",
+              }),
+            },
+            status: {
+              buildChannelSummary: async () => ({ linked: true }),
+            },
+          },
+        },
+      ]),
+    );
+
+    const result = await drainFormattedSystemEvents({
+      cfg: { channels: {} } as OpenClawConfig,
+      sessionKey: "agent:main:main",
+      isMainSession: true,
+      isNewSession: true,
+    });
+
+    expect(result).toContain("System: WhatsApp: linked");
+    for (const line of result!.split("\n")) {
+      expect(line).toMatch(/^System:/);
+    }
+  });
 });
 
 describe("persistSessionUsageUpdate", () => {

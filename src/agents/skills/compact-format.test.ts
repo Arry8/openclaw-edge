@@ -19,7 +19,6 @@ function makeSkill(name: string, desc = "A skill", filePath = `/skills/${name}/S
     source: "workspace",
   });
 }
-
 function makeEntry(skill: Skill): SkillEntry {
   return { skill, frontmatter: {} };
 }
