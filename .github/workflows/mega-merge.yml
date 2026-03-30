@@ -1,6 +1,7 @@
 # Authored by: cc (Claude Code) | 2026-03-30
 # mega-merge.yml — Daily integration of upstream openclaw PRs onto mega/latest.
-# Runs at 08:00 UTC — ~1h after openclaw's typical 04:00-07:30 UTC release window.
+# Runs at 08:00 UTC. Timing is arbitrary — this branch is not rebased on upstream
+# releases; it works through a fixed queue of ~6,500 open PRs independently.
 # Builds every 10 merges (bundler + tsc); auto-reverts PRs that fail the build.
 # Manual trigger available via workflow_dispatch with optional overrides.
 
