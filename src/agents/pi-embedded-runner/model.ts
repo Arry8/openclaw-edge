@@ -350,17 +350,20 @@ function applyConfiguredProviderOverrides(params: {
 
   const resolvedTransport = resolveProviderTransport({
     provider: params.provider,
-    api: configuredModel?.api ?? providerConfig.api ?? discoveredModel.api,
+    api: (configuredModel?.api ??
+      providerConfig.api ??
+      discoveredModel.api) as ModelDefinitionConfig["api"],
     baseUrl: providerConfig.baseUrl ?? discoveredModel.baseUrl,
     cfg: params.cfg,
     runtimeHooks: params.runtimeHooks,
   });
+  const resolvedApi =
+    resolvedTransport.api ??
+    (discoveredModel.api as ModelDefinitionConfig["api"]) ??
+    "openai-responses";
   return {
     ...discoveredModel,
-    api:
-      resolvedTransport.api ??
-      normalizeResolvedTransportApi(discoveredModel.api) ??
-      "openai-responses",
+    api: resolvedApi,
     baseUrl: resolvedTransport.baseUrl ?? discoveredModel.baseUrl,
     reasoning: configuredModel?.reasoning ?? discoveredModel.reasoning,
     input: normalizedInput,
