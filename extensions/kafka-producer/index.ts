@@ -123,7 +123,10 @@ export default definePluginEntry({
         await startupPromise.catch(() => {});
         startupPromise = null;
       }
-      if (!producer) return;
+      if (!producer) {
+        shuttingDown = false;
+        return;
+      }
       try {
         // Drain until no more in-flight — hooks may still fire
         // concurrently during shutdown, but shuttingDown gate
