@@ -3,6 +3,7 @@ import {
   resolveTextChunksWithFallback,
   sendMediaWithLeadingCaption,
 } from "openclaw/plugin-sdk/reply-payload";
+import { stripReasoningTagsFromText } from "openclaw/plugin-sdk/text-runtime";
 import {
   createChannelReplyPipeline,
   createReplyPrefixContext,
@@ -485,7 +486,14 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
             if (!payload.text) {
               return;
             }
-            queueStreamingUpdate(payload.text, {
+            const cleaned = stripReasoningTagsFromText(payload.text, {
+              mode: "strict",
+              trim: "both",
+            });
+            if (!cleaned) {
+              return;
+            }
+            queueStreamingUpdate(cleaned, {
               dedupeWithLastPartial: true,
               mode: "snapshot",
             });

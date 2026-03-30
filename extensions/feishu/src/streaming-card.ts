@@ -16,6 +16,73 @@ type CardState = {
   hasNote: boolean;
 };
 
+/**
+ * Sanitize markdown text for Feishu Card Kit streaming mode.
+ *
+ * Card Kit's streaming renderer parses markdown incrementally. Unmatched
+ * backticks (`` ` `` or ` ``` `) cause the renderer to treat everything
+ * after the opener as code, effectively truncating visible output.
+ * Similarly, bare angle brackets (`<` / `>`) can be misinterpreted as
+ * unclosed HTML tags, also causing truncation.
+ *
+ * This function:
+ *  1. Balances triple-backtick fences so an unclosed fence is closed.
+ *  2. Balances inline backtick spans so an unmatched `` ` `` is closed.
+ *  3. Escapes angle brackets that are NOT inside a balanced code span/fence
+ *     and do NOT look like a well-formed HTML tag or Feishu mention tag.
+ */
+export function sanitizeCardKitMarkdown(text: string): string {
+  if (!text) {
+    return text;
+  }
+
+  let result = text;
+
+  // --- 1. Balance triple-backtick fences ---
+  const fencePattern = /^```/gm;
+  const fenceMatches = result.match(fencePattern);
+  if (fenceMatches && fenceMatches.length % 2 !== 0) {
+    // Odd number of fences means the last one is unclosed -- close it.
+    result += "\n```";
+  }
+
+  // --- 2. Balance inline backticks (outside of fenced blocks) ---
+  // Split by fenced code blocks, only process non-fence segments.
+  const fencedParts = result.split(/(^```[\s\S]*?^```)/m);
+  for (let i = 0; i < fencedParts.length; i++) {
+    // Even indices are outside fences, odd indices are fenced blocks.
+    if (i % 2 === 0) {
+      const segment = fencedParts[i];
+      // Count backticks that are not part of triple-fences.
+      const inlineTicks = segment.match(/`/g);
+      if (inlineTicks && inlineTicks.length % 2 !== 0) {
+        // Append a closing backtick to balance the last unmatched one.
+        fencedParts[i] = segment + "`";
+      }
+    }
+  }
+  result = fencedParts.join("");
+
+  // --- 3. Escape problematic angle brackets outside code spans ---
+  // We replace bare `<` that don't look like valid HTML/Feishu tags.
+  // Valid patterns we preserve: <br>, <b>, <i>, <a href=...>, <at ...>, etc.
+  // Everything else (e.g. `< foo`, `<3`, `x < y`) gets escaped.
+  const codeSpans: string[] = [];
+  result = result.replace(/`[^`]*`/g, (match) => {
+    codeSpans.push(match);
+    return `\x00CODESPAN${codeSpans.length - 1}\x00`;
+  });
+  result = result.replace(
+    /<(?!\/?(?:a|b|i|em|strong|br|p|div|span|img|at|code|pre)\b)[^>\n]*$/gm,
+    (m) => {
+      return m.replace(/</g, "\\<");
+    },
+  );
+  result = result.replace(/\x00CODESPAN(\d+)\x00/g, (_, idx) => codeSpans[Number(idx)]);
+
+  return result;
+}
+
 /** Options for customising the initial streaming card appearance. */
 export type StreamingCardOptions = {
   /** Optional header with title and color template. */
@@ -103,11 +170,13 @@ async function getToken(creds: Credentials): Promise<string> {
   return data.tenant_access_token;
 }
 
-function truncateSummary(text: string, max = 50): string {
+function truncateSummary(text: string | undefined, max = 50): string {
   if (!text) {
     return "";
   }
-  const clean = text.replace(/\n/g, " ").trim();
+  // Strip backticks and angle brackets from summary to prevent Card Kit
+  // from interpreting them as markdown / HTML in the summary line.
+  const clean = text.replace(/\n/g, " ").replace(/[`<>]/g, "").trim();
   return clean.length <= max ? clean : clean.slice(0, max - 3) + "...";
 }
 
@@ -296,6 +365,8 @@ export class FeishuStreamingSession {
     if (!this.state) {
       return;
     }
+    // Sanitize markdown to prevent Card Kit streaming truncation (#26708)
+    text = sanitizeCardKitMarkdown(text);
     const apiBase = resolveApiBase(this.creds.domain);
     this.state.sequence += 1;
     await fetchWithSsrFGuard({
