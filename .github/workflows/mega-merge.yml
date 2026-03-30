@@ -1,0 +1,65 @@
+# Authored by: cc (Claude Code) | 2026-03-29
+# mega-merge.yml — Nightly automated integration of upstream openclaw PRs onto main.
+# Runs mega-merge.ts directly on main; no PR or approval required.
+# Manual trigger available via workflow_dispatch with optional limit override.
+
+name: mega-merge
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max PRs to attempt (0 = unlimited)"
+        required: false
+        default: "50"
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/openclaw/openclaw.git
+
+      - name: Configure git identity
+        run: |
+          git config user.name "mega-merge[bot]"
+          git config user.email "mega-merge[bot]@users.noreply.github.com"
+
+      - name: Run mega-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '50' }}"
+          LIMIT_ARGS=""
+          if [ "$LIMIT" != "0" ]; then
+            LIMIT_ARGS="--limit $LIMIT"
+          fi
+          bun scripts/mega-merge.ts --resume --skip-build $LIMIT_ARGS
+
+      - name: Push to main
+        run: git push origin main
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mega-merge-report-${{ github.run_id }}
+          path: docs/mega-merge-report.json
+          if-no-files-found: ignore
