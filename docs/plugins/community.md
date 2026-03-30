@@ -160,6 +160,19 @@ client protocol. Compatible with TeamSpeak 3, 5 & 6.
 openclaw plugins install @honeybbq/openclaw-teamspeak
 ```
 
+### Team Ops
+
+Turns chat transcripts into decisions, action items, blockers, and ready-to-send
+status updates for teams and executives. Great for standups, planning notes,
+incident rooms, and cross-functional launch threads.
+
+- **npm:** `team-ops`
+- **repo:** [github.com/JimmyWangJimmy/openclaw-team-ops-plugin](https://github.com/JimmyWangJimmy/openclaw-team-ops-plugin)
+
+```bash
+openclaw plugins install team-ops
+```
+
 ### wecom
 
 WeCom channel plugin for OpenClaw by the Tencent WeCom team. Powered by
