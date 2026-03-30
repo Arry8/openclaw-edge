@@ -16,11 +16,11 @@ import type { EmbeddedRunAttemptParams } from "./types.js";
 export type PromptBuildHookRunner = {
   hasHooks: (hookName: "before_prompt_build" | "before_agent_start") => boolean;
   runBeforePromptBuild: (
-    event: { prompt: string; messages: unknown[] },
+    event: { prompt: string; messages: unknown[]; rawBody?: string },
     ctx: PluginHookAgentContext,
   ) => Promise<PluginHookBeforePromptBuildResult | undefined>;
   runBeforeAgentStart: (
-    event: { prompt: string; messages: unknown[] },
+    event: { prompt: string; messages?: unknown[]; rawBody?: string },
     ctx: PluginHookAgentContext,
   ) => Promise<PluginHookBeforeAgentStartResult | undefined>;
 };
@@ -28,6 +28,7 @@ export type PromptBuildHookRunner = {
 export async function resolvePromptBuildHookResult(params: {
   prompt: string;
   messages: unknown[];
+  rawBody?: string;
   hookCtx: PluginHookAgentContext;
   hookRunner?: PromptBuildHookRunner | null;
   legacyBeforeAgentStartResult?: PluginHookBeforeAgentStartResult;
@@ -38,6 +39,7 @@ export async function resolvePromptBuildHookResult(params: {
           {
             prompt: params.prompt,
             messages: params.messages,
+            rawBody: params.rawBody,
           },
           params.hookCtx,
         )
@@ -54,6 +56,7 @@ export async function resolvePromptBuildHookResult(params: {
             {
               prompt: params.prompt,
               messages: params.messages,
+              rawBody: params.rawBody,
             },
             params.hookCtx,
           )

@@ -1499,6 +1499,7 @@ export async function runEmbeddedAttempt(
         const hookResult = await resolvePromptBuildHookResult({
           prompt: params.prompt,
           messages: activeSession.messages,
+          rawBody: params.rawBody,
           hookCtx,
           hookRunner,
           legacyBeforeAgentStartResult: params.legacyBeforeAgentStartResult,
@@ -1935,6 +1936,7 @@ export async function runEmbeddedAttempt(
                 success: !aborted && !promptError,
                 error: promptError ? describeUnknownError(promptError) : undefined,
                 durationMs: Date.now() - promptStartedAt,
+                rawBody: params.rawBody,
               },
               {
                 runId: params.runId,

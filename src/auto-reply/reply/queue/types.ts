@@ -21,6 +21,8 @@ export type QueueDedupeMode = "message-id" | "prompt" | "none";
 
 export type FollowupRun = {
   prompt: string;
+  /** The user's original input text before channel context and metadata. Threaded to plugin hooks. */
+  rawBody?: string;
   /** Provider message ID, when available (for deduplication). */
   messageId?: string;
   summaryLine?: string;

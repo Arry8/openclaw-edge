@@ -160,6 +160,7 @@ export async function runEmbeddedPiAgent(
 
       const hookSelection = await resolveHookModelSelection({
         prompt: params.prompt,
+        rawBody: params.rawBody,
         provider,
         modelId,
         hookRunner,
@@ -516,6 +517,7 @@ export async function runEmbeddedPiAgent(
             contextTokenBudget: ctxInfo.tokens,
             skillsSnapshot: params.skillsSnapshot,
             prompt,
+            rawBody: params.rawBody,
             images: params.images,
             clientTools: params.clientTools,
             disableTools: params.disableTools,

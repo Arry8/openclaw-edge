@@ -295,7 +295,8 @@ export async function runPreparedReply(
   ].filter(Boolean);
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
   // Use CommandBody/RawBody for bare reset detection (clean message without structural context).
-  const rawBodyTrimmed = (ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "").trim();
+  const rawBodyForHooks = ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "";
+  const rawBodyTrimmed = rawBodyForHooks.trim();
   const baseBodyTrimmedRaw = baseBody.trim();
   const isWholeMessageCommand = command.commandBodyNormalized.trim() === rawBodyTrimmed;
   const isResetOrNewCommand = /^\/(new|reset)(?:\s|$)/.test(rawBodyTrimmed);
@@ -500,6 +501,7 @@ export async function runPreparedReply(
   const authProfileIdSource = sessionEntry?.authProfileOverrideSource;
   const followupRun = {
     prompt: queuedBody,
+    rawBody: rawBodyForHooks,
     messageId: sessionCtx.MessageSidFull ?? sessionCtx.MessageSid,
     summaryLine: baseBodyTrimmedRaw,
     enqueuedAt: Date.now(),
@@ -569,6 +571,7 @@ export async function runPreparedReply(
   const { runReplyAgent } = await loadAgentRunnerRuntime();
   return runReplyAgent({
     commandBody: prefixedCommandBody,
+    rawBody: rawBodyForHooks,
     followupRun,
     queueKey,
     resolvedQueue,

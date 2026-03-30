@@ -137,6 +137,13 @@ export function scheduleFollowupDrain(
 
           const routing = resolveOriginRoutingMetadata(items);
 
+          // Join individual rawBody values so plugins can still access the
+          // original user texts even when collect mode batches them.
+          const collectedRawBody = items
+            .map((i) => i.rawBody)
+            .filter(Boolean)
+            .join("\n\n");
+
           const prompt = buildCollectPrompt({
             title: "[Queued messages while agent was busy]",
             items,
@@ -152,6 +159,7 @@ export function scheduleFollowupDrain(
           });
           await effectiveRunFollowup({
             prompt,
+            rawBody: collectedRawBody || undefined,
             run,
             enqueuedAt: Date.now(),
             ...routing,
