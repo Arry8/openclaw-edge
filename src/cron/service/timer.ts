@@ -85,6 +85,30 @@ export async function executeJobCoreWithTimeout(
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           runAbortController.abort(timeoutErrorMessage());
+          // Best-effort: clear the running marker immediately when the timeout
+          // fires so subsequent manual runs are not blocked by a stale marker.
+          // This is a safety net for cases where the underlying run ignores the
+          // abort signal and would otherwise keep the cron lane wedged.
+          void locked(state, async () => {
+            await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+            const storeJob = state.store?.jobs.find((entry) => entry.id === job.id);
+            if (!storeJob || typeof storeJob.state.runningAtMs !== "number") {
+              return;
+            }
+            // Keep timeout cleanup minimal: clear stale running marker without
+            // applying full result accounting. The normal completion path will
+            // record the final outcome exactly once when/if it returns.
+            storeJob.state.runningAtMs = undefined;
+            storeJob.state.lastStatus = "error";
+            storeJob.state.lastError = timeoutErrorMessage();
+            storeJob.updatedAtMs = state.deps.nowMs();
+            await persist(state);
+          }).catch((err) => {
+            state.deps.log.warn(
+              { jobId: job.id, err: String(err) },
+              "cron: failed to persist timeout cleanup",
+            );
+          });
           reject(new Error(timeoutErrorMessage()));
         }, jobTimeoutMs);
       }),
