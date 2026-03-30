@@ -246,7 +246,21 @@ For the generic Docker flow, see [Docker](/install/docker).
   </Step>
 
   <Step title="Hetzner-specific access">
-    After the shared build and launch steps, tunnel from your laptop:
+    After the shared build and launch steps, complete the following setup to open the tunnel:
+
+    **Prerequisite:** Ensure your VPS sshd config allows TCP forwarding. If you
+    have hardened your SSH config, check `/etc/ssh/sshd_config` and set:
+
+    ```
+    AllowTcpForwarding local
+    ```
+
+    `local` allows inbound port forwarding from your machine while blocking
+    outbound. Setting it to `no` will silently fail the tunnel with:
+    `channel 3: open failed: administratively prohibited: open failed`
+
+    After confirming TCP forwarding is enabled, restart sshd (`systemctl restart sshd`)
+    and run the tunnel from your laptop:
 
     > **Note:** SSH tunnels require `AllowTcpForwarding yes` in the server's `/etc/ssh/sshd_config`. Hetzner's default images may have this disabled. If the tunnel connects but the forwarded port is not reachable, check this setting and restart sshd (`systemctl restart sshd`) after changing it.
 
