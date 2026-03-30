@@ -1338,6 +1338,18 @@ async function main() {
         const pushResult = run("git", ["push", "origin", `${baseBranch}`, "--force"]);
         if (pushResult.ok) log(`  Pushed ${baseBranch} to origin.`);
         else warn(`Interval push failed: ${pushResult.stderr}`);
+        const intervalHeadCommit = run("git", ["rev-parse", "HEAD"]).stdout;
+        const intervalMergedEntries = entries.filter((e) => e.result.status === "merged");
+        appendChangelog({
+          runDate: new Date().toISOString().slice(0, 16).replace("T", " "),
+          baseCommit,
+          headCommit: intervalHeadCommit,
+          baseBranch,
+          mergedEntries: intervalMergedEntries,
+          durationMs: Date.now() - startMs,
+          buildPassed: true,
+        });
+        log(`  Changelog appended (${intervalMergedEntries.length} merged so far).`);
       }
     }
 
