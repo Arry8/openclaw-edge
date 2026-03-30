@@ -114,6 +114,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     mediaTypes?: string[];
     commandAuthorized: boolean;
     wasMentioned?: boolean;
+    signalQuote?: {
+      id?: string;
+      author?: string;
+      text?: string;
+    };
   };
 
   async function handleSignalInboundMessage(entry: SignalInboundEntry) {
@@ -205,6 +210,10 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       Provider: "signal" as const,
       Surface: "signal" as const,
       MessageSid: entry.messageId,
+      ReplyToId: entry.signalQuote?.id,
+      ReplyToBody: entry.signalQuote?.text,
+      ReplyToSender: entry.signalQuote?.author,
+      ReplyToIsQuote: entry.signalQuote ? true : undefined,
       Timestamp: entry.timestamp ?? undefined,
       MediaPath: entry.mediaPath,
       MediaType: entry.mediaType,
@@ -778,6 +787,17 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const senderName = envelope.sourceName ?? senderDisplay;
     const messageId =
       typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined;
+
+    // Extract quote metadata for reply context (mirrors Telegram's describeReplyTarget)
+    const signalQuote = dataMessage.quote
+      ? {
+          id: dataMessage.quote.id != null ? String(dataMessage.quote.id) : undefined,
+          author:
+            dataMessage.quote.author ?? dataMessage.quote.authorNumber ?? undefined,
+          text: dataMessage.quote.text?.trim() || undefined,
+        }
+      : undefined;
+
     await inboundDebouncer.enqueue({
       senderName,
       senderDisplay,
@@ -796,6 +816,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
       commandAuthorized,
       wasMentioned: effectiveWasMentioned,
+      signalQuote,
     });
   };
 }
