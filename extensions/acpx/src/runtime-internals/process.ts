@@ -206,6 +206,7 @@ export function spawnWithResolvedCommand(
     args: string[];
     cwd: string;
     stripProviderAuthEnvVars?: boolean;
+    detached?: boolean;
   },
   options?: SpawnCommandOptions,
 ): ChildProcessWithoutNullStreams {
@@ -229,6 +230,7 @@ export function spawnWithResolvedCommand(
     stdio: ["pipe", "pipe", "pipe"],
     shell: resolved.shell,
     windowsHide: resolved.windowsHide,
+    detached: params.detached ?? false,
   });
 }
 
@@ -258,6 +260,54 @@ export async function waitForExit(child: ChildProcessWithoutNullStreams): Promis
 
     child.once("close", (code, signal) => {
       finish({ code, signal, error: null });
+    });
+  });
+}
+
+/**
+ * Kill a child process and its descendants.
+ * Unix: kills the entire process group (requires spawning with detached: true).
+ * Windows: kills only the direct child — orphaned grandchildren are a known limitation.
+ * Uses SIGTERM → 250ms → SIGKILL escalation.
+ */
+export async function killProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  const useProcessGroup = process.platform !== "win32" && child.pid != null;
+  const childAlreadyExited = child.exitCode !== null || child.signalCode !== null;
+
+  // On Windows (no process groups), if child is already gone there's nothing to kill.
+  if (!useProcessGroup && childAlreadyExited) {
+    return;
+  }
+
+  const sendSignal = (signal: NodeJS.Signals) => {
+    try {
+      if (useProcessGroup) {
+        process.kill(-child.pid!, signal);
+      } else {
+        child.kill(signal);
+      }
+    } catch {
+      // Already dead — ignore
+    }
+  };
+
+  sendSignal("SIGTERM");
+
+  // Child already closed — close event won't replay, no need to wait.
+  // SIGTERM was still dispatched to the process group for any surviving grandchildren.
+  if (childAlreadyExited) {
+    return;
+  }
+
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      sendSignal("SIGKILL");
+      resolve();
+    }, 250);
+    timer.unref?.();
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
     });
   });
 }
