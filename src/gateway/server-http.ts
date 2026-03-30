@@ -16,6 +16,7 @@ import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { handleSlackHttpRequest } from "../plugin-sdk/slack.js";
 import { resolveHookExternalContentSource as resolveHookExternalContentSourceFromSession } from "../security/external-content.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
+import { handleAgentEventsSSE } from "./agent-events-sse.js";
 import {
   AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH,
   createAuthRateLimiter,
@@ -873,6 +874,16 @@ export function createGatewayHttpServer(opts: {
         {
           name: "slack",
           run: () => handleSlackHttpRequest(req, res),
+        },
+        {
+          name: "agent-events-sse",
+          run: () =>
+            handleAgentEventsSSE(req, res, {
+              auth: resolvedAuth,
+              trustedProxies,
+              allowRealIpFallback,
+              rateLimiter,
+            }),
         },
       ];
       if (openResponsesEnabled) {
