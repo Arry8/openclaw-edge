@@ -1,5 +1,5 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { normalizeProviderId } from "openclaw/plugin-sdk/provider-models";
+import { normalizeProviderId } from "openclaw/plugin-sdk/provider-model-shared";
 import {
   createBedrockNoCacheWrapper,
   isAnthropicBedrockModel,
@@ -12,14 +12,45 @@ import {
 
 const PROVIDER_ID = "amazon-bedrock";
 const CLAUDE_46_MODEL_RE = /claude-(?:opus|sonnet)-4(?:\.|-)6(?:$|[-.])/i;
+const BEDROCK_RUNTIME_REGION_RE = /bedrock-runtime\.([a-z0-9-]+)\.amazonaws\.com/;
+
+/**
+ * Resolve the AWS region for Bedrock API calls.
+ * Provider-specific baseUrl wins over global bedrockDiscovery to avoid signing
+ * with the wrong region when discovery and provider target different regions.
+ */
+function resolveBedrockRegion(
+  config:
+    | { models?: { bedrockDiscovery?: { region?: string }; providers?: Record<string, unknown> } }
+    | undefined,
+): string | undefined {
+  const providerBaseUrl = findProviderBaseUrl(config?.models?.providers);
+  return extractRegionFromBaseUrl(providerBaseUrl) ?? config?.models?.bedrockDiscovery?.region;
+}
+
+/** Find the baseUrl from the matched provider config entry, using normalized key matching. */
+function findProviderBaseUrl(providers: Record<string, unknown> | undefined): string | undefined {
+  if (!providers) {
+    return undefined;
+  }
+  for (const [key, value] of Object.entries(providers)) {
+    if (normalizeProviderId(key) !== PROVIDER_ID) {
+      continue;
+    }
+    const baseUrl = (value as { baseUrl?: string }).baseUrl;
+    if (baseUrl) {
+      return baseUrl;
+    }
+  }
+  return undefined;
+}
 
 /** Extract the AWS region from a bedrock-runtime baseUrl, e.g. "https://bedrock-runtime.eu-west-1.amazonaws.com". */
 function extractRegionFromBaseUrl(baseUrl: string | undefined): string | undefined {
   if (!baseUrl) {
     return undefined;
   }
-  const match = /bedrock-runtime\.([a-z0-9-]+)\.amazonaws\.com/.exec(baseUrl);
-  return match?.[1];
+  return BEDROCK_RUNTIME_REGION_RE.exec(baseUrl)?.[1];
 }
 
 export default definePluginEntry({
@@ -56,29 +87,7 @@ export default definePluginEntry({
         dropThinkingBlockModelHints: ["claude"],
       },
       wrapStreamFn: ({ modelId, config, streamFn }) => {
-        // Look up provider baseUrl for region extraction.
-        // Use normalized key matching so aliases like "bedrock" / "aws-bedrock" are found.
-        let providerBaseUrl: string | undefined;
-        const providers = config?.models?.providers;
-        if (providers) {
-          for (const [key, value] of Object.entries(providers)) {
-            if (normalizeProviderId(key) !== PROVIDER_ID) {
-              continue;
-            }
-            const typedValue = value as { baseUrl?: string };
-            if (typedValue.baseUrl) {
-              providerBaseUrl = typedValue.baseUrl;
-              break;
-            }
-          }
-        }
-
-        // Extract region so the pi-ai BedrockRuntimeClient uses the correct endpoint.
-        // Provider-specific baseUrl wins over global bedrockDiscovery to avoid signing
-        // with the wrong region when discovery and provider target different regions.
-        const region =
-          extractRegionFromBaseUrl(providerBaseUrl) ?? config?.models?.bedrockDiscovery?.region;
-
+        const region = resolveBedrockRegion(config);
         const baseFn = isAnthropicBedrockModel(modelId)
           ? streamFn
           : createBedrockNoCacheWrapper(streamFn);
@@ -87,7 +96,6 @@ export default definePluginEntry({
           return baseFn;
         }
 
-        // Wrap to inject the region into every stream call.
         const underlying = baseFn ?? streamFn;
         if (!underlying) {
           return baseFn;
