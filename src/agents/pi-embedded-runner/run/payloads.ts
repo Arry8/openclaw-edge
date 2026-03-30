@@ -61,6 +61,12 @@ function resolveToolErrorWarningPolicy(params: {
   verboseLevel?: VerboseLevel;
 }): ToolErrorWarningPolicy {
   const includeDetails = isVerboseToolDetailEnabled(params.verboseLevel);
+  // Check suppressToolErrors first so it takes precedence over all other rules.
+  // When true, no tool-error warnings are shown to the user — the agent handles
+  // failures internally and decides what to communicate.
+  if (params.suppressToolErrors) {
+    return { showWarning: false, includeDetails };
+  }
   if (params.suppressToolErrorWarnings) {
     return { showWarning: false, includeDetails };
   }
@@ -78,9 +84,6 @@ function resolveToolErrorWarningPolicy(params: {
     params.lastToolError.mutatingAction ?? isLikelyMutatingToolName(params.lastToolError.toolName);
   if (isMutatingToolError) {
     return { showWarning: true, includeDetails };
-  }
-  if (params.suppressToolErrors) {
-    return { showWarning: false, includeDetails };
   }
   return {
     showWarning: !params.hasUserFacingReply && !isRecoverableToolError(params.lastToolError.error),
