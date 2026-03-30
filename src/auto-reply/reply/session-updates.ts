@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildWorkspaceSkillSnapshot } from "../../agents/skills.js";
+import { normalizeSkillFilterForComparison } from "../../agents/skills/filter.js";
 import { ensureSkillsWatcher, getSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
@@ -13,6 +14,35 @@ import {
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 export { drainFormattedSystemEvents } from "./session-system-events.js";
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).toSorted(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+    .join(",")}}`;
+}
+
+function resolveEligibilitySignature(params: {
+  cfg: OpenClawConfig;
+  skillFilter?: string[];
+  remoteEligibility: ReturnType<typeof getRemoteSkillEligibility>;
+}): string {
+  const payload = {
+    skills: params.cfg.skills ?? {},
+    skillFilter: normalizeSkillFilterForComparison(params.skillFilter),
+    path: process.env.PATH ?? "",
+    remote: params.remoteEligibility,
+  };
+  return crypto.createHash("sha256").update(stableStringify(payload)).digest("hex");
+}
 
 async function persistSessionEntryUpdate(params: {
   sessionStore?: Record<string, SessionEntry>;
@@ -76,10 +106,13 @@ export async function ensureSkillSnapshot(params: {
   let nextEntry = sessionEntry;
   let systemSent = sessionEntry?.systemSent ?? false;
   const remoteEligibility = getRemoteSkillEligibility();
+  const eligibilitySignature = resolveEligibilitySignature({ cfg, skillFilter, remoteEligibility });
   const snapshotVersion = getSkillsSnapshotVersion(workspaceDir);
   ensureSkillsWatcher({ workspaceDir, config: cfg });
   const shouldRefreshSnapshot =
-    snapshotVersion > 0 && (nextEntry?.skillsSnapshot?.version ?? 0) < snapshotVersion;
+    (snapshotVersion > 0 && (nextEntry?.skillsSnapshot?.version ?? 0) < snapshotVersion) ||
+    (nextEntry?.skillsSnapshot !== undefined &&
+      nextEntry.skillsSnapshot.eligibilitySignature !== eligibilitySignature);
 
   if (isFirstTurnInSession && sessionStore && sessionKey) {
     const current = nextEntry ??
@@ -89,12 +122,15 @@ export async function ensureSkillSnapshot(params: {
       };
     const skillSnapshot =
       isFirstTurnInSession || !current.skillsSnapshot || shouldRefreshSnapshot
-        ? buildWorkspaceSkillSnapshot(workspaceDir, {
-            config: cfg,
-            skillFilter,
-            eligibility: { remote: remoteEligibility },
-            snapshotVersion,
-          })
+        ? {
+            ...buildWorkspaceSkillSnapshot(workspaceDir, {
+              config: cfg,
+              skillFilter,
+              eligibility: { remote: remoteEligibility },
+              snapshotVersion,
+            }),
+            eligibilitySignature,
+          }
         : current.skillsSnapshot;
     nextEntry = {
       ...current,
@@ -108,21 +144,29 @@ export async function ensureSkillSnapshot(params: {
   }
 
   const skillsSnapshot = shouldRefreshSnapshot
-    ? buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: cfg,
-        skillFilter,
-        eligibility: { remote: remoteEligibility },
-        snapshotVersion,
-      })
-    : (nextEntry?.skillsSnapshot ??
-      (isFirstTurnInSession
-        ? undefined
-        : buildWorkspaceSkillSnapshot(workspaceDir, {
+    ? isFirstTurnInSession && sessionStore && sessionKey && nextEntry?.skillsSnapshot
+      ? nextEntry.skillsSnapshot
+      : {
+          ...buildWorkspaceSkillSnapshot(workspaceDir, {
             config: cfg,
             skillFilter,
             eligibility: { remote: remoteEligibility },
             snapshotVersion,
-          })));
+          }),
+          eligibilitySignature,
+        }
+    : (nextEntry?.skillsSnapshot ??
+      (isFirstTurnInSession
+        ? undefined
+        : {
+            ...buildWorkspaceSkillSnapshot(workspaceDir, {
+              config: cfg,
+              skillFilter,
+              eligibility: { remote: remoteEligibility },
+              snapshotVersion,
+            }),
+            eligibilitySignature,
+          }));
   if (
     skillsSnapshot &&
     sessionStore &&
