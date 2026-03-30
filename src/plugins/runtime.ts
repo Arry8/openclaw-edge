@@ -20,7 +20,7 @@ type RegistryState = {
 
 const state: RegistryState = (() => {
   const globalState = globalThis as typeof globalThis & {
-    [REGISTRY_STATE]?: RegistryState;
+    [REGISTRY_STATE]?: Partial<RegistryState>;
   };
   if (!globalState[REGISTRY_STATE]) {
     globalState[REGISTRY_STATE] = {
@@ -40,7 +40,18 @@ const state: RegistryState = (() => {
       runtimeSubagentMode: "default",
     };
   }
-  return globalState[REGISTRY_STATE];
+  // Defensive: ensure httpRouteRegistry fields exist even if state was
+  // initialized by an older or differently-bundled chunk that omitted them.
+  // This fixes #49803 where a bundle split causes the gateway HTTP handler
+  // and the LINE/Google Chat plugin to reference different registry objects.
+  const existing = globalState[REGISTRY_STATE];
+  if (existing && !("httpRouteRegistry" in existing)) {
+    existing.httpRouteRegistry = null;
+  }
+  if (existing && !("httpRouteRegistryPinned" in existing)) {
+    existing.httpRouteRegistryPinned = false;
+  }
+  return existing as RegistryState;
 })();
 
 function installSurfaceRegistry(
