@@ -327,7 +327,7 @@ function resolveFailureAlert(
   cooldownMs: number;
   channel: CronMessageChannel;
   to?: string;
-  mode?: "announce" | "webhook";
+  mode?: "announce" | "webhook" | "agent-turn";
   accountId?: string;
 } | null {
   const globalConfig = state.deps.cronConfig?.failureAlert;
@@ -367,7 +367,7 @@ function emitFailureAlert(
     consecutiveErrors: number;
     channel: CronMessageChannel;
     to?: string;
-    mode?: "announce" | "webhook";
+    mode?: "announce" | "webhook" | "agent-turn";
     accountId?: string;
   },
 ) {
@@ -377,6 +377,12 @@ function emitFailureAlert(
     `Cron job "${safeJobName}" failed ${params.consecutiveErrors} times`,
     `Last error: ${truncatedError}`,
   ].join("\n");
+
+  if (params.mode === "agent-turn") {
+    state.deps.enqueueSystemEvent(text, { agentId: params.job.agentId });
+    state.deps.requestHeartbeatNow({ reason: `cron:${params.job.id}:failure-alert` });
+    return;
+  }
 
   if (state.deps.sendCronFailureAlert) {
     void state.deps
