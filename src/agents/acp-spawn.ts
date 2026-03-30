@@ -87,6 +87,8 @@ export type SpawnAcpContext = {
   agentAccountId?: string;
   agentTo?: string;
   agentThreadId?: string | number;
+  /** Group chat ID for channels that distinguish group vs. topic (e.g. Telegram). */
+  agentGroupId?: string;
   sandboxed?: boolean;
 };
 
@@ -416,6 +418,7 @@ function prepareAcpThreadBinding(params: {
   accountId?: string;
   to?: string;
   threadId?: string | number;
+  groupId?: string;
 }): { ok: true; binding: PreparedAcpThreadBinding } | { ok: false; error: string } {
   const channel = params.channel?.trim().toLowerCase();
   if (!channel) {
@@ -470,11 +473,18 @@ function prepareAcpThreadBinding(params: {
       error: `Thread bindings do not support ${placement} placement for ${policy.channel}.`,
     };
   }
-  const conversationId = resolveConversationIdForThreadBinding({
+  const conversationIdRaw = resolveConversationIdForThreadBinding({
     channel: policy.channel,
     to: params.to,
     threadId: params.threadId,
   });
+  // For Telegram, bare topic numbers (no leading "-") need substituting with
+  // the group chat ID. Other channels use their own ID formats so skip this.
+  const groupId = params.groupId?.trim();
+  const conversationId =
+    channel === "telegram" && conversationIdRaw && !conversationIdRaw.startsWith("-") && groupId
+      ? groupId
+      : conversationIdRaw;
   if (!conversationId) {
     return {
       ok: false,
@@ -778,7 +788,7 @@ export async function spawnAcpDirect(
     };
   }
 
-  const requestThreadBinding = params.thread === true;
+  let requestThreadBinding = params.thread === true;
   const runtimePolicyError = resolveAcpSpawnRuntimePolicyError({
     cfg,
     requesterSessionKey: ctx.agentSessionKey,
@@ -837,6 +847,14 @@ export async function spawnAcpDirect(
   const sessionKey = `agent:${targetAgentId}:acp:${crypto.randomUUID()}`;
   const runtimeMode = resolveAcpSessionMode(spawnMode);
 
+  const isTelegramForumTopic =
+    ctx.agentChannel?.toLowerCase() === "telegram" &&
+    ctx.agentGroupId?.trim() &&
+    ctx.agentThreadId != null;
+  if (isTelegramForumTopic) {
+    requestThreadBinding = false;
+  }
+
   let preparedBinding: PreparedAcpThreadBinding | null = null;
   if (requestThreadBinding) {
     const prepared = prepareAcpThreadBinding({
@@ -845,6 +863,7 @@ export async function spawnAcpDirect(
       accountId: ctx.agentAccountId,
       to: ctx.agentTo,
       threadId: ctx.agentThreadId,
+      groupId: ctx.agentGroupId,
     });
     if (!prepared.ok) {
       return {
