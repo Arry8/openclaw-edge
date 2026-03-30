@@ -58274,6 +58274,20 @@
       "hasChildren": false
     },
     {
+      "path": "plugins.hookTimeoutMs",
+      "kind": "core",
+      "type": "integer",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "performance"
+      ],
+      "label": "Plugin Hook Timeout (ms)",
+      "help": "Maximum execution time in milliseconds for each async plugin hook handler (default: 10000). If a handler exceeds this limit it is skipped with a warning and the run proceeds. Set to 0 to disable the timeout.",
+      "hasChildren": false
+    },
+    {
       "path": "plugins.installs",
       "kind": "core",
       "type": "object",

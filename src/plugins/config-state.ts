@@ -180,6 +180,9 @@ export const hasExplicitPluginConfig = (plugins?: OpenClawConfig["plugins"]) => 
   if (plugins.entries && Object.keys(plugins.entries).length > 0) {
     return true;
   }
+  if (typeof (plugins as Record<string, unknown>).hookTimeoutMs === "number") {
+    return true;
+  }
   return false;
 };
 

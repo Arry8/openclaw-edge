@@ -11358,6 +11358,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
           enabled: {
             type: "boolean",
           },
+          hookTimeoutMs: {
+            type: "integer",
+            minimum: 0,
+            maximum: 2147483647,
+          },
           allow: {
             type: "array",
             items: {
@@ -15347,6 +15352,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
       label: "Enable Plugins",
       help: "Enable or disable plugin/extension loading globally during startup and config reload (default: true). Keep enabled only when extension capabilities are required by your deployment.",
       tags: ["advanced"],
+    },
+    "plugins.hookTimeoutMs": {
+      label: "Plugin Hook Timeout (ms)",
+      help: "Maximum execution time in milliseconds for each async plugin hook handler (default: 10000). If a handler exceeds this limit it is skipped with a warning and the run proceeds. Set to 0 to disable the timeout.",
+      tags: ["performance"],
     },
     "plugins.allow": {
       label: "Plugin Allowlist",
