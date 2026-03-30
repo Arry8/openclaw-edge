@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { normalizeToolParameters } from "./pi-tools.schema.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 
+// Helper function to create enum types for test cases
+const stringEnum = (values: string[]) => Type.Union(values.map((v) => Type.Literal(v)));
+
 describe("normalizeToolParameters", () => {
   it("strips patternProperties for non-Anthropic providers by default (#57443)", () => {
     const tool: AnyAgentTool = {
@@ -74,5 +77,52 @@ describe("normalizeToolParameters", () => {
     expect(parameters.properties?.count.type).toBe("integer");
     expect(parameters.properties?.query.minLength).toBeUndefined();
     expect(parameters.properties?.query.type).toBe("string");
+  });
+
+  it("excludes TypeBox-Optional properties from merged required when flattening anyOf variants", () => {
+    const buttonSchema = Type.Optional(Type.Array(Type.String()));
+    const variantA = Type.Object({ action: stringEnum(["send"]), buttons: buttonSchema });
+    const variantB = Type.Object({ action: stringEnum(["delete"]), buttons: buttonSchema });
+    const tool: AnyAgentTool = {
+      name: "demo",
+      label: "demo",
+      description: "demo",
+      parameters: Type.Union([variantA, variantB]),
+      execute: vi.fn(),
+    };
+
+    const normalized = normalizeToolParameters(tool);
+    const parameters = normalized.parameters as { required?: string[] };
+
+    expect(parameters.required).not.toContain("buttons");
+    expect(parameters.required).toContain("action"); // required in both variants, not Optional
+  });
+
+  it("handles enum-plus-Optional edge case when merging properties", () => {
+    // Create an Optional enum property that will be merged
+    const optionalEnumProp = Type.Optional(Type.Union([Type.Literal("a"), Type.Literal("b")]));
+    const variantA = Type.Object({
+      action: stringEnum(["send"]),
+      mode: optionalEnumProp,
+    });
+    const variantB = Type.Object({
+      action: stringEnum(["delete"]),
+      mode: optionalEnumProp,
+    });
+    const tool: AnyAgentTool = {
+      name: "demo",
+      label: "demo",
+      description: "demo",
+      parameters: Type.Union([variantA, variantB]),
+      execute: vi.fn(),
+    };
+
+    const normalized = normalizeToolParameters(tool);
+    const parameters = normalized.parameters as { required?: string[] };
+
+    // Even though enum merging might lose the Optional symbol,
+    // the property should still be excluded from required
+    expect(parameters.required).not.toContain("mode");
+    expect(parameters.required).toContain("action");
   });
 });

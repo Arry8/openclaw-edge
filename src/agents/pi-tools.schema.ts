@@ -184,13 +184,30 @@ export function normalizeToolParameters(
   const baseRequired = Array.isArray(schema.required)
     ? schema.required.filter((key) => typeof key === "string")
     : undefined;
+  // When computing merged required, exclude properties that carry a TypeBox
+  // Optional annotation (Symbol.for("TypeBox.Optional")) in their merged
+  // schema. normalizeToolParameters flattens anyOf variants into a single
+  // object, and during that merge the Optional marker on properties like
+  // `buttons` can be preserved in the schema value but lost from the
+  // per-variant `required` arrays — causing them to resurface as required
+  // in the merged output.
+  const typeboxOptionalSymbol = Symbol.for("TypeBox.Optional");
+  const isPropertyOptional = (key: string): boolean => {
+    const prop = mergedProperties[key];
+    if (!prop || typeof prop !== "object") {
+      return false;
+    }
+    const record = prop as Record<string | symbol, unknown>;
+    return record[typeboxOptionalSymbol] === "Optional";
+  };
   const mergedRequired =
     baseRequired && baseRequired.length > 0
-      ? baseRequired
+      ? baseRequired.filter((key) => !isPropertyOptional(key))
       : objectVariants > 0
         ? Array.from(requiredCounts.entries())
             .filter(([, count]) => count === objectVariants)
             .map(([key]) => key)
+            .filter((key) => !isPropertyOptional(key))
         : undefined;
 
   const nextSchema: Record<string, unknown> = { ...schema };
