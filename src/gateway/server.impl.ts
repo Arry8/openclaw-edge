@@ -57,6 +57,7 @@ import {
 } from "../infra/skills-remote.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { scheduleGatewayUpdateCheck } from "../infra/update-startup.js";
+import type { VoiceWakeRoutingConfig } from "../infra/voicewake-routing.js";
 import { startDiagnosticHeartbeat, stopDiagnosticHeartbeat } from "../logging/diagnostic.js";
 import { createSubsystemLogger, runtimeForLogger } from "../logging/subsystem.js";
 import { resolveBundledPluginInstallCommandHint } from "../plugins/bundled-sources.js";
@@ -904,6 +905,9 @@ export async function startGatewayServer(
   const broadcastVoiceWakeChanged = (triggers: string[]) => {
     broadcast("voicewake.changed", { triggers }, { dropIfSlow: true });
   };
+  const broadcastVoiceWakeRoutingChanged = (config: VoiceWakeRoutingConfig) => {
+    broadcast("voicewake.routing.changed", { config }, { dropIfSlow: true });
+  };
   const hasMobileNodeConnected = () => hasConnectedMobileNode(nodeRegistry);
   applyGatewayLaneConcurrency(cfgAtStart);
 
@@ -1373,6 +1377,7 @@ export async function startGatewayServer(
       markChannelLoggedOut,
       wizardRunner,
       broadcastVoiceWakeChanged,
+      broadcastVoiceWakeRoutingChanged,
     };
 
     // Register a lazy fallback for plugin subagent dispatch in non-WS paths

@@ -539,6 +539,7 @@ public struct AgentParams: Codable, Sendable {
     public let extrasystemprompt: String?
     public let internalevents: [[String: AnyCodable]]?
     public let inputprovenance: [String: AnyCodable]?
+    public let voicewaketrigger: String?
     public let idempotencykey: String
     public let label: String?
 
@@ -568,6 +569,7 @@ public struct AgentParams: Codable, Sendable {
         extrasystemprompt: String?,
         internalevents: [[String: AnyCodable]]?,
         inputprovenance: [String: AnyCodable]?,
+        voicewaketrigger: String?,
         idempotencykey: String,
         label: String?)
     {
@@ -596,6 +598,7 @@ public struct AgentParams: Codable, Sendable {
         self.extrasystemprompt = extrasystemprompt
         self.internalevents = internalevents
         self.inputprovenance = inputprovenance
+        self.voicewaketrigger = voicewaketrigger
         self.idempotencykey = idempotencykey
         self.label = label
     }
@@ -626,6 +629,7 @@ public struct AgentParams: Codable, Sendable {
         case extrasystemprompt = "extraSystemPrompt"
         case internalevents = "internalEvents"
         case inputprovenance = "inputProvenance"
+        case voicewaketrigger = "voiceWakeTrigger"
         case idempotencykey = "idempotencyKey"
         case label
     }
