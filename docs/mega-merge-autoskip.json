@@ -123,5 +123,10 @@
     "number": 36629,
     "reason": "src/config/sessions/store.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T20:47:38.219Z"
+  },
+  {
+    "number": 34234,
+    "reason": "extensions/whatsapp/src/auto-reply/monitor/on-message.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:58:35.749Z"
   }
 ]

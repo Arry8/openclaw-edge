@@ -848,13 +848,17 @@ function appendAutoSkip(entry: AutoSkipEntry): void {
 // rolldown: [PARSE_ERROR] ... [path/to/file.ts:line:col]
 function extractFailingFiles(buildOutput: string): string[] {
   const seen = new Set<string>();
+  // Strip ANSI escape codes before matching — rolldown wraps paths in colored box-drawing
+  // characters and ANSI codes can appear between '[' and the file path.
+  // eslint-disable-next-line no-control-regex
+  const clean = buildOutput.replace(/\x1b\[[0-9;]*m/g, "");
   // tsc style: word chars, dots, slashes, hyphens followed by .ts or .js then ( digit
   const tscRe = /([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?)\(\d/g;
   // rolldown style: [ src/file.ts:line:col ] (╭─[ ... ] box format has a space after [)
   const rolldownRe = /\[\s*([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?):\d/g;
   for (const re of [tscRe, rolldownRe]) {
     let m: RegExpExecArray | null;
-    while ((m = re.exec(buildOutput)) !== null) {
+    while ((m = re.exec(clean)) !== null) {
       seen.add(m[1]);
     }
   }
