@@ -1,10 +1,8 @@
 import type { SandboxBackendHandle, SandboxBackendId } from "./backend.js";
 import type { SandboxFsBridge } from "./fs-bridge.js";
-import type { SandboxBackend } from "./provider.js";
 import type { SandboxDockerConfig } from "./types.docker.js";
 
 export type { SandboxDockerConfig } from "./types.docker.js";
-export type { SandboxBackend } from "./provider.js";
 
 export type SandboxToolPolicy = {
   allow?: string[];
@@ -70,15 +68,6 @@ export type SandboxSshConfig = {
 
 export type SandboxScope = "session" | "agent" | "shared";
 
-export type ResourceLimits = {
-  cpus?: number;
-  memoryMB?: number;
-  pidsLimit?: number;
-  diskMB?: number;
-};
-
-export type NetworkMode = "bridge" | "none" | "host";
-
 export type SandboxConfig = {
   mode: "off" | "non-main" | "all";
   backend: SandboxBackendId;
@@ -90,14 +79,6 @@ export type SandboxConfig = {
   browser: SandboxBrowserConfig;
   tools: SandboxToolPolicy;
   prune: SandboxPruneConfig;
-  /** Sandbox backend. Defaults to "auto" (resolved at runtime). */
-  backend?: SandboxBackend;
-  /** Resource limits for the sandbox container. */
-  resourceLimits?: ResourceLimits;
-  /** Network mode for the sandbox container. */
-  networkMode?: NetworkMode;
-  /** Environment variables injected into sandbox (secrets auto-filtered). */
-  env?: Record<string, string>;
 };
 
 export type SandboxBrowserContext = {
