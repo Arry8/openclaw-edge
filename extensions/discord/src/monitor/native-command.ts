@@ -367,14 +367,13 @@ async function resolveDiscordNativeAutocompleteAuthorized(params: {
     ? await resolveDiscordClaimOwnership({
         cfg,
         accountId,
-        botId: interaction.applicationId ?? interaction.client?.application?.id,
         guildId: interaction.guild?.id,
         channelId: rawChannelId,
         parentId: threadParentId,
       })
     : { status: "owned" as const, instanceKey: "" };
   if (claimOwnership.status === "not-owned" || claimOwnership.status === "claimed-by-other") {
-    return;
+    return false;
   }
   const channelConfig = interaction.guild
     ? resolveDiscordChannelConfigWithFallback({
@@ -763,7 +762,6 @@ async function dispatchDiscordCommandInteraction(params: {
     ? await resolveDiscordClaimOwnership({
         cfg,
         accountId,
-        botId: interaction.applicationId ?? interaction.client?.application?.id,
         guildId: interaction.guild?.id,
         channelId: rawChannelId,
         parentId: threadParentId,
