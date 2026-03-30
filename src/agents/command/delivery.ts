@@ -291,24 +291,73 @@ export async function deliverAgentCommandResult(params: {
       logPayload(payload);
     }
   }
-  if (deliver && deliveryChannel && !isInternalMessageChannel(deliveryChannel)) {
+  let deliveryAttempted = false;
+  let deliverySucceeded: boolean | "partial" = false;
+  let deliveryThrewError = false;
+  let hadPartialFailure = false;
+  if (deliver && deliveryChannel && !isInternalMessageChannel(deliveryChannel) && deliveryPayloads.length > 0) {
     if (deliveryTarget) {
-      await deliverOutboundPayloads({
-        cfg,
-        channel: deliveryChannel,
-        to: deliveryTarget,
-        accountId: resolvedAccountId,
-        payloads: deliveryPayloads,
-        session: outboundSession,
-        replyToId: resolvedReplyToId ?? null,
-        threadId: resolvedThreadTarget ?? null,
-        bestEffort: bestEffortDeliver,
-        onError: (err) => logDeliveryError(err),
-        onPayload: logPayload,
-        deps: createOutboundSendDeps(deps),
-      });
+      deliveryAttempted = true;
+      try {
+        const results = await deliverOutboundPayloads({
+          cfg,
+          channel: deliveryChannel,
+          to: deliveryTarget,
+          accountId: resolvedAccountId,
+          payloads: deliveryPayloads,
+          session: outboundSession,
+          replyToId: resolvedReplyToId ?? null,
+          threadId: resolvedThreadTarget ?? null,
+          bestEffort: bestEffortDeliver,
+          onError: (err) => {
+            hadPartialFailure = true;
+            logDeliveryError(err);
+          },
+          onPayload: logPayload,
+          deps: createOutboundSendDeps(deps),
+        });
+        deliverySucceeded = results.length > 0 ? (hadPartialFailure ? "partial" : true) : false;
+      } catch (err) {
+        if (!bestEffortDeliver) {
+          throw err;
+        }
+        deliveryThrewError = true;
+        logDeliveryError(err);
+      }
     }
   }
 
-  return { payloads: normalizedPayloads, meta: result.meta };
+  // Log when delivery was requested but didn't succeed. This catches silent
+  // failures caused by stale delivery context (e.g., after model fallback or
+  // error recovery) where the response is written to the session transcript
+  // but never actually sent to the external channel.
+  if (deliver && deliveryPayloads.length > 0 && !deliverySucceeded && !opts.json) {
+    const reason = !deliveryChannel
+      ? "no delivery channel resolved"
+      : isInternalMessageChannel(deliveryChannel)
+        ? "channel resolved to internal"
+        : !deliveryTarget
+          ? "no delivery target resolved"
+          : deliveryThrewError
+            ? "delivery threw an error"
+            : "delivery returned zero results";
+    runtime.log(
+      `[delivery] delivery requested but not completed: ${reason} ` +
+        `(session=${effectiveSessionKey ?? "unknown"} channel=${deliveryChannel ?? "none"} ` +
+        `target=${deliveryTarget ?? "none"} payloads=${payloads.length})`,
+    );
+  }
+
+  return {
+    payloads: normalizedPayloads,
+    meta: result.meta,
+    deliveryStatus: deliver
+      ? {
+          requested: true,
+          attempted: deliveryAttempted,
+          succeeded: deliverySucceeded,
+          ...(deliveryThrewError ? { error: true } : {}),
+        }
+      : undefined,
+  };
 }
