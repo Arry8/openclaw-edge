@@ -522,6 +522,8 @@ export async function runCronIsolatedAgentTurn(params: {
             // inherit owner-only tooling like local `openclaw agent` runs.
             senderIsOwner: true,
             messageChannel,
+            messageTo: resolvedDelivery.ok ? resolvedDelivery.to : undefined,
+            messageThreadId: resolvedDelivery.ok ? resolvedDelivery.threadId : undefined,
             agentAccountId: resolvedDelivery.accountId,
             sessionFile,
             agentDir,
