@@ -1239,6 +1239,8 @@ module.exports = { id: "skipped-scoped-only", register() { throw new Error("skip
 
     expect(scoped.plugins.find((entry) => entry.id === "command-plugin")?.status).toBe("loaded");
     expect(scoped.commands.map((entry) => entry.command.name)).toEqual(["pair"]);
+    // Non-activating loads still run register() with full mode, but they are
+    // NOT published to the global command registry because activate is false.
     expect(getPluginCommandSpecs("telegram")).toEqual([]);
 
     const active = loadOpenClawPlugins({
@@ -1431,6 +1433,204 @@ module.exports = { id: "skipped-scoped-only", register() { throw new Error("skip
     expect(() => loadOpenClawPlugins({ activate: false, cache: true })).toThrow(
       "activate:false requires cache:false",
     );
+  });
+
+  it("skips register() side-effects but collects providers when activate:false (snapshot load)", () => {
+    useNoBundledPlugins();
+    const registerCalls: string[] = [];
+    // Using a global to track calls since the plugin runs in a separate module scope via jiti,
+    // but CommonJS module.exports closures can capture the array reference.
+    (globalThis as Record<string, unknown>).__snapshot_register_calls = registerCalls;
+    try {
+      const plugin = writePlugin({
+        id: "snapshot-provider-plugin",
+        filename: "snapshot-provider-plugin.cjs",
+        body: `module.exports = {
+          id: "snapshot-provider-plugin",
+          register(api) {
+            const calls = globalThis.__snapshot_register_calls;
+            if (calls) calls.push("register:" + api.registrationMode);
+            api.registerProvider({
+              id: "snapshot-test-provider",
+              label: "Snapshot Test",
+              auth: [],
+            });
+            api.registerTool({
+              name: "snapshot-tool",
+              description: "tool that should not appear in snapshot loads",
+              parameters: { type: "object", properties: {} },
+              execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
+            });
+          },
+        };`,
+      });
+
+      const snapshot = loadOpenClawPlugins({
+        cache: false,
+        activate: false,
+        providerOnly: true,
+        workspaceDir: plugin.dir,
+        config: {
+          plugins: {
+            load: { paths: [plugin.file] },
+            allow: ["snapshot-provider-plugin"],
+          },
+        },
+        onlyPluginIds: ["snapshot-provider-plugin"],
+      });
+
+      // Plugin was loaded and registered.
+      expect(
+        snapshot.plugins.find((entry) => entry.id === "snapshot-provider-plugin")?.status,
+      ).toBe("loaded");
+      // Provider is collected — this is the whole point of snapshot provider loads.
+      expect(snapshot.providers.map((entry) => entry.provider.id)).toEqual([
+        "snapshot-test-provider",
+      ]);
+      // Tools are NOT registered in provider-only mode.
+      expect(snapshot.tools).toEqual([]);
+      // register() was called with provider-only mode.
+      expect(registerCalls).toEqual(["register:provider-only"]);
+
+      // Verify full activation still works for the same plugin.
+      registerCalls.length = 0;
+      const full = loadOpenClawPlugins({
+        cache: false,
+        workspaceDir: plugin.dir,
+        config: {
+          plugins: {
+            load: { paths: [plugin.file] },
+            allow: ["snapshot-provider-plugin"],
+          },
+        },
+        onlyPluginIds: ["snapshot-provider-plugin"],
+      });
+
+      expect(full.providers.map((entry) => entry.provider.id)).toEqual(["snapshot-test-provider"]);
+      expect(full.tools.some((entry) => entry.names.includes("snapshot-tool"))).toBe(true);
+      expect(registerCalls).toEqual(["register:full"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__snapshot_register_calls;
+    }
+  });
+
+  it("uses provider-only mode instead of setup-runtime when resolving providers", () => {
+    useNoBundledPlugins();
+    const pluginDir = makeTempDir();
+    const fullMarker = path.join(pluginDir, "full-provider-loaded.txt");
+    const setupMarker = path.join(pluginDir, "setup-provider-loaded.txt");
+    fs.writeFileSync(
+      path.join(pluginDir, "package.json"),
+      JSON.stringify(
+        {
+          name: "@openclaw/setup-runtime-provider-only-test",
+          openclaw: {
+            extensions: ["./index.cjs"],
+            setupEntry: "./setup-entry.cjs",
+            startup: {
+              deferConfiguredChannelFullLoadUntilAfterListen: true,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginDir, "openclaw.plugin.json"),
+      JSON.stringify(
+        {
+          id: "setup-runtime-provider-only-test",
+          configSchema: EMPTY_PLUGIN_SCHEMA,
+          channels: ["setup-runtime-provider-only-test"],
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginDir, "index.cjs"),
+      `require("node:fs").writeFileSync(${JSON.stringify(fullMarker)}, "loaded", "utf-8");
+module.exports = {
+  id: "setup-runtime-provider-only-test",
+  register(api) {
+    api.registerProvider({
+      id: "setup-runtime-provider-only",
+      label: "Setup Runtime Provider Only",
+      auth: [],
+    });
+    api.registerChannel({
+      plugin: {
+        id: "setup-runtime-provider-only-test",
+        meta: {
+          id: "setup-runtime-provider-only-test",
+          label: "Setup Runtime Provider Only",
+          selectionLabel: "Setup Runtime Provider Only",
+          docsPath: "/channels/setup-runtime-provider-only-test",
+          blurb: "full entry should only register providers in provider-only mode",
+        },
+        capabilities: { chatTypes: ["direct"] },
+        config: {
+          listAccountIds: () => ["default"],
+          resolveAccount: () => ({ accountId: "default", token: "configured" }),
+        },
+        outbound: { deliveryMode: "direct" },
+      },
+    });
+  },
+};`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginDir, "setup-entry.cjs"),
+      `require("node:fs").writeFileSync(${JSON.stringify(setupMarker)}, "loaded", "utf-8");
+module.exports = {
+  plugin: {
+    id: "setup-runtime-provider-only-test",
+    meta: {
+      id: "setup-runtime-provider-only-test",
+      label: "Setup Runtime Provider Only",
+      selectionLabel: "Setup Runtime Provider Only",
+      docsPath: "/channels/setup-runtime-provider-only-test",
+      blurb: "setup runtime entry should not run in provider-only mode",
+    },
+    capabilities: { chatTypes: ["direct"] },
+    config: {
+      listAccountIds: () => ["default"],
+      resolveAccount: () => ({ accountId: "default", token: "configured" }),
+    },
+    outbound: { deliveryMode: "direct" },
+  },
+};`,
+      "utf-8",
+    );
+
+    const snapshot = loadOpenClawPlugins({
+      cache: false,
+      providerOnly: true,
+      preferSetupRuntimeForChannelPlugins: true,
+      config: {
+        channels: {
+          "setup-runtime-provider-only-test": {
+            enabled: true,
+            token: "configured",
+          },
+        },
+        plugins: {
+          load: { paths: [pluginDir] },
+          allow: ["setup-runtime-provider-only-test"],
+        },
+      },
+    });
+
+    expect(snapshot.providers.map((entry) => entry.provider.id)).toEqual([
+      "setup-runtime-provider-only",
+    ]);
+    expect(snapshot.channels).toEqual([]);
+    expect(fs.existsSync(fullMarker)).toBe(true);
+    expect(fs.existsSync(setupMarker)).toBe(false);
   });
 
   it("re-initializes global hook runner when serving registry from cache", () => {
