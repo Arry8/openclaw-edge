@@ -1,13 +1,14 @@
 # Authored by: cc (Claude Code) | 2026-03-30
-# mega-merge.yml — Nightly integration of upstream openclaw PRs onto mega/latest.
-# Each nightly run processes ~50-100 new PRs; a single final build validates the result.
+# mega-merge.yml — Daily integration of upstream openclaw PRs onto mega/latest.
+# Runs at 08:00 UTC — ~1h after openclaw's typical 04:00-07:30 UTC release window.
+# Builds every 10 merges (bundler + tsc); auto-reverts PRs that fail the build.
 # Manual trigger available via workflow_dispatch with optional overrides.
 
 name: mega-merge
 
 on:
   schedule:
-    - cron: "0 2 * * 2" # 02:00 UTC every Tuesday
+    - cron: "0 8 * * *" # 08:00 UTC daily
   workflow_dispatch:
     inputs:
       limit:
@@ -69,7 +70,13 @@ jobs:
           LIMIT="${{ github.event.inputs.limit || '0' }}"
           SKIP_BUILD="${{ github.event.inputs.skip_build || 'false' }}"
 
-          ARGS=(--resume --create-release --no-continuous-build)
+          ARGS=(
+            --resume
+            --cache-prs --cache-ttl 120
+            --build-interval 10
+            --auto-skip-on-build-failure
+            --create-release
+          )
 
           if [ "$LIMIT" != "0" ]; then
             ARGS+=(--limit "$LIMIT")
@@ -81,8 +88,8 @@ jobs:
           bun scripts/mega-merge.ts "${ARGS[@]}"
 
       - name: Push mega/latest
-        if: success()
-        run: git push origin mega/latest
+        if: always()
+        run: git push origin mega/latest --force
 
       - name: Upload report
         if: always()
