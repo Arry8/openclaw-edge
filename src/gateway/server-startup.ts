@@ -16,6 +16,7 @@ import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import { resolveStateDir } from "../config/paths.js";
+import { unbindThreadBindingsBySessionKey } from "../discord/monitor/thread-bindings.js";
 import { startGmailWatcherWithLogs } from "../hooks/gmail-watcher-lifecycle.js";
 import {
   clearInternalHooks,
@@ -196,9 +197,23 @@ export async function startGatewaySidecars(params: {
         if (result.checked === 0) {
           return;
         }
+        let unboundThreadBindings = 0;
+        for (const sessionKey of result.reapedSessionKeys) {
+          unboundThreadBindings += unbindThreadBindingsBySessionKey({
+            targetSessionKey: sessionKey,
+            targetKind: "acp",
+            reason: "acp-startup-reconcile-failed",
+            sendFarewell: false,
+          }).length;
+        }
         params.log.warn(
-          `acp startup identity reconcile (renderer=${ACP_SESSION_IDENTITY_RENDERER_VERSION}): checked=${result.checked} resolved=${result.resolved} failed=${result.failed}`,
+          `acp startup identity reconcile (renderer=${ACP_SESSION_IDENTITY_RENDERER_VERSION}): checked=${result.checked} resolved=${result.resolved} failed=${result.failed} reaped=${result.reaped}`,
         );
+        if (result.reaped > 0) {
+          params.log.warn(
+            `acp startup identity reconcile reaped sessions (${result.reaped}): ${result.reapedSessionKeys.join(", ")} (threadBindingsUnbound=${unboundThreadBindings})`,
+          );
+        }
       })
       .catch((err) => {
         params.log.warn(`acp startup identity reconcile failed: ${String(err)}`);
