@@ -27,6 +27,11 @@
 //   --skip-build          Skip all pnpm build validation (final and interval)
 //   --test                Run pnpm test after the final build passes
 //   --aggressive-filter   For closed PRs: also skip stale, wip, duplicate-labelled
+//   --changelog <path>    Append a human-readable batch summary to this markdown file
+//                         (default: docs/mega-merge-changelog.md)
+//   --create-release      After a successful build, create a GitHub release on the
+//                         edge repo (Arry8/openclaw-edge) tagged mega/YYYY-MM-DD-HHmm
+//                         with the merged PR list as release notes. Requires gh CLI.
 //
 // Requires:
 //   - gh CLI authenticated (for GitHub API pagination)
@@ -34,7 +39,7 @@
 //   - Current branch is the integration target (e.g. mega/v2026.3.28)
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -137,6 +142,8 @@ const BUILD_INTERVAL = parseInt(flag("--build-interval", "0"), 10); // 0 = disab
 const SKIP_BUILD = boolFlag("--skip-build");
 const RUN_TEST = boolFlag("--test");
 const AGGRESSIVE_FILTER = boolFlag("--aggressive-filter");
+const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-changelog.md"));
+const CREATE_RELEASE = boolFlag("--create-release");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -179,6 +186,133 @@ function deleteBranch(branch: string) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// ── Changelog writer ─────────────────────────────────────────────────────────
+
+function appendChangelog(params: {
+  runDate: string;
+  baseCommit: string;
+  headCommit: string;
+  baseBranch: string;
+  mergedEntries: ReportEntry[];
+  durationMs: number;
+  buildPassed: boolean;
+}): void {
+  const { runDate, baseCommit, headCommit, baseBranch, mergedEntries, durationMs, buildPassed } =
+    params;
+  const mins = Math.round(durationMs / 60_000);
+  const tierLabels: Record<number, string> = {
+    1: "security/crash",
+    2: "fix",
+    3: "feat",
+    4: "other",
+  };
+
+  const lines: string[] = [];
+  lines.push(`## ${runDate} — ${mergedEntries.length} PRs merged`);
+  lines.push(``);
+  lines.push(
+    `**Base:** \`${baseCommit.slice(0, 12)}\` → **Head:** \`${headCommit.slice(0, 12)}\` on \`${baseBranch}\`  `,
+  );
+  lines.push(`**Build:** ${buildPassed ? "passed" : "skipped/failed"}  `);
+  lines.push(`**Duration:** ${mins}m`);
+  lines.push(``);
+
+  // Group by tier
+  for (const tier of [1, 2, 3, 4] as const) {
+    const group = mergedEntries.filter((e) => e.tier === tier);
+    if (group.length === 0) {
+      continue;
+    }
+    lines.push(`### ${tierLabels[tier]} (${group.length})`);
+    lines.push(``);
+    for (const e of group) {
+      lines.push(
+        `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title} (@${e.author})`,
+      );
+    }
+    lines.push(``);
+  }
+
+  lines.push(`---`);
+  lines.push(``);
+
+  appendFileSync(CHANGELOG_PATH, lines.join("\n"));
+  log(`  Changelog appended to             : ${CHANGELOG_PATH}`);
+}
+
+// ── GitHub release creator ────────────────────────────────────────────────────
+
+function createGhRelease(params: {
+  tag: string;
+  runDate: string;
+  baseCommit: string;
+  mergedEntries: ReportEntry[];
+}): void {
+  const { tag, runDate, baseCommit, mergedEntries } = params;
+
+  // Build release notes
+  const lines: string[] = [];
+  lines.push(`Mega-merge batch — ${runDate}`);
+  lines.push(``);
+  lines.push(`**Base commit:** \`${baseCommit.slice(0, 12)}\``);
+  lines.push(`**PRs merged:** ${mergedEntries.length}`);
+  lines.push(``);
+
+  const tierLabels: Record<number, string> = {
+    1: "Security / Crash",
+    2: "Fixes",
+    3: "Features",
+    4: "Other",
+  };
+  for (const tier of [1, 2, 3, 4] as const) {
+    const group = mergedEntries.filter((e) => e.tier === tier);
+    if (group.length === 0) {
+      continue;
+    }
+    lines.push(`### ${tierLabels[tier]}`);
+    lines.push(``);
+    for (const e of group) {
+      lines.push(
+        `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title}`,
+      );
+    }
+    lines.push(``);
+  }
+
+  const notes = lines.join("\n");
+
+  // Tag the current HEAD, then create the release
+  const tagResult = run("git", ["tag", tag]);
+  if (!tagResult.ok) {
+    warn(`Could not create tag ${tag}: ${tagResult.stderr}`);
+    return;
+  }
+
+  const pushTag = run("git", ["push", "origin", tag]);
+  if (!pushTag.ok) {
+    warn(`Could not push tag ${tag}: ${pushTag.stderr}`);
+  }
+
+  const releaseResult = run("gh", [
+    "release",
+    "create",
+    tag,
+    "--repo",
+    "Arry8/openclaw-edge",
+    "--title",
+    `Mega-merge ${runDate}`,
+    "--notes",
+    notes,
+    "--prerelease",
+  ]);
+
+  if (releaseResult.ok) {
+    log(`  GitHub release created            : ${tag}`);
+  } else {
+    warn(`gh release create failed: ${releaseResult.stderr}`);
+  }
 }
 
 // ── GitHub API pagination ─────────────────────────────────────────────────────
@@ -691,17 +825,33 @@ async function main() {
   log(`  Other skipped                   : ${skippedCount}`);
   log(`  Report written to               : ${REPORT_PATH}`);
 
+  const mergedEntries = entries.filter((e) => e.result.status === "merged");
+  const runDate = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const headCommit = run("git", ["rev-parse", "HEAD"]).stdout;
+  let buildPassed = false;
+
   if (!SKIP_BUILD && !DRY_RUN && mergedCount > 0) {
     log(`\nRunning pnpm build...`);
     try {
       execFileSync("pnpm", ["build"], { cwd: REPO_DIR, stdio: "inherit" });
       log("Build passed.");
+      buildPassed = true;
     } catch {
       process.stderr.write(
         `[mega-merge] Final build FAILED.\n` +
           `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
           `  add its number to SKIP_LIST, then rerun with --resume.\n`,
       );
+      // Write changelog and exit — don't create a release on a failed build
+      appendChangelog({
+        runDate,
+        baseCommit,
+        headCommit,
+        baseBranch,
+        mergedEntries,
+        durationMs,
+        buildPassed: false,
+      });
       process.exit(1);
     }
 
@@ -716,9 +866,39 @@ async function main() {
             `  Check test output above. If failures are pre-existing on the base tag, they are not\n` +
             `  caused by this run. Otherwise use 'git bisect' to identify the offending PR.\n`,
         );
+        appendChangelog({
+          runDate,
+          baseCommit,
+          headCommit,
+          baseBranch,
+          mergedEntries,
+          durationMs,
+          buildPassed: false,
+        });
         process.exit(1);
       }
     }
+  }
+
+  // ── Changelog ─────────────────────────────────────────────────────────────
+  if (!DRY_RUN && mergedCount > 0) {
+    appendChangelog({
+      runDate,
+      baseCommit,
+      headCommit,
+      baseBranch,
+      mergedEntries,
+      durationMs,
+      buildPassed,
+    });
+  }
+
+  // ── GitHub release ────────────────────────────────────────────────────────
+  // Only create a release when build passed (or build was skipped) and we actually merged something.
+  if (CREATE_RELEASE && !DRY_RUN && mergedCount > 0 && (buildPassed || SKIP_BUILD)) {
+    const tagTs = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+    const tag = `mega/${tagTs}`;
+    createGhRelease({ tag, runDate, baseCommit, mergedEntries });
   }
 }
 
