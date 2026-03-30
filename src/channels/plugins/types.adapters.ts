@@ -146,6 +146,7 @@ export type ChannelOutboundContext = {
   accountId?: string | null;
   identity?: OutboundIdentity;
   deps?: OutboundSendDeps;
+  toolContext?: ChannelThreadingToolContext;
   silent?: boolean;
   gatewayClientScopes?: readonly string[];
 };
