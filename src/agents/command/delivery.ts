@@ -250,24 +250,43 @@ export async function deliverAgentCommandResult(params: {
     applyChannelTransforms: deliver,
   });
   const normalizedPayloads = normalizeOutboundPayloadsForJson(normalizedReplyPayloads);
-  if (opts.json) {
+
+  // Helper: emit JSON envelope with optional deliveryStatus.
+  const emitJsonEnvelope = (
+    jsonPayloads: typeof normalizedPayloads,
+    deliveryStatus?: { requested: true; attempted: boolean; succeeded: boolean | "partial"; error?: true },
+  ) => {
+    if (!opts.json) {
+      return;
+    }
     runtime.log(
       JSON.stringify(
-        buildOutboundResultEnvelope({
-          payloads: normalizedPayloads,
-          meta: result.meta,
-        }),
+        {
+          ...buildOutboundResultEnvelope({
+            payloads: jsonPayloads,
+            meta: result.meta,
+          }),
+          ...(deliveryStatus ? { deliveryStatus } : {}),
+        },
         null,
         2,
       ),
     );
-    if (!deliver) {
-      return { payloads: normalizedPayloads, meta: result.meta };
-    }
-  }
+  };
 
   if (!payloads || payloads.length === 0) {
-    runtime.log("No reply from agent.");
+    if (deliver) {
+      const status = { requested: true as const, attempted: false, succeeded: false as const };
+      emitJsonEnvelope([], status);
+      if (!opts.json) {
+        runtime.log("No reply from agent.");
+      }
+      return { payloads: [], meta: result.meta, deliveryStatus: status };
+    }
+    emitJsonEnvelope(normalizedPayloads);
+    if (!opts.json) {
+      runtime.log("No reply from agent.");
+    }
     return { payloads: [], meta: result.meta };
   }
 
@@ -286,16 +305,21 @@ export async function deliverAgentCommandResult(params: {
     }
     runtime.log(output);
   };
+
   if (!deliver) {
     for (const payload of deliveryPayloads) {
       logPayload(payload);
     }
+    emitJsonEnvelope(normalizedPayloads);
+    return { payloads: normalizedPayloads, meta: result.meta };
   }
+
   let deliveryAttempted = false;
   let deliverySucceeded: boolean | "partial" = false;
   let deliveryThrewError = false;
   let hadPartialFailure = false;
-  if (deliver && deliveryChannel && !isInternalMessageChannel(deliveryChannel) && deliveryPayloads.length > 0) {
+
+  if (deliveryChannel && !isInternalMessageChannel(deliveryChannel) && deliveryPayloads.length > 0) {
     if (deliveryTarget) {
       deliveryAttempted = true;
       try {
@@ -318,20 +342,30 @@ export async function deliverAgentCommandResult(params: {
         });
         deliverySucceeded = results.length > 0 ? (hadPartialFailure ? "partial" : true) : false;
       } catch (err) {
+        deliveryThrewError = true;
         if (!bestEffortDeliver) {
+          // Emit JSON before re-throwing so --json callers always get structured output.
+          const status = { requested: true as const, attempted: true, succeeded: false as const, error: true as const };
+          emitJsonEnvelope(normalizedPayloads, status);
           throw err;
         }
-        deliveryThrewError = true;
         logDeliveryError(err);
       }
     }
   }
 
+  const deliveryStatus = {
+    requested: true as const,
+    attempted: deliveryAttempted,
+    succeeded: deliverySucceeded,
+    ...(deliveryThrewError ? { error: true as const } : {}),
+  };
+
   // Log when delivery was requested but didn't succeed. This catches silent
   // failures caused by stale delivery context (e.g., after model fallback or
   // error recovery) where the response is written to the session transcript
   // but never actually sent to the external channel.
-  if (deliver && deliveryPayloads.length > 0 && !deliverySucceeded && !opts.json) {
+  if (deliveryPayloads.length > 0 && !deliverySucceeded && !opts.json) {
     const reason = !deliveryChannel
       ? "no delivery channel resolved"
       : isInternalMessageChannel(deliveryChannel)
@@ -348,16 +382,11 @@ export async function deliverAgentCommandResult(params: {
     );
   }
 
+  emitJsonEnvelope(normalizedPayloads, deliveryStatus);
+
   return {
     payloads: normalizedPayloads,
     meta: result.meta,
-    deliveryStatus: deliver
-      ? {
-          requested: true,
-          attempted: deliveryAttempted,
-          succeeded: deliverySucceeded,
-          ...(deliveryThrewError ? { error: true } : {}),
-        }
-      : undefined,
+    deliveryStatus,
   };
 }
