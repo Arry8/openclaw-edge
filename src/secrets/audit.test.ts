@@ -554,6 +554,90 @@ describe("secrets audit", () => {
     expect(report.filesScanned).toContain(externalModelsPath);
   });
 
+  it("does not flag $VAR shorthand env refs in auth profiles as plaintext", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "$OPENAI_API_KEY", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not flag ${VAR} template env refs in auth profiles as plaintext", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "${OPENAI_API_KEY}", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(false);
+  });
+
+  it("still flags $lowercase refs as plaintext (shorthand requires uppercase)", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "$openai_api_key", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(true);
+  });
+
+  it("still flags actual plaintext keys in auth profiles", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-proj-actual-secret-key-12345", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(true);
+  });
+
   it("does not flag non-sensitive routing headers in openclaw config", async () => {
     await writeJsonFile(fixture.configPath, {
       models: {
