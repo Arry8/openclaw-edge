@@ -144,6 +144,30 @@ describe("systemd availability", () => {
     await expect(isSystemdUserServiceAvailable()).resolves.toBe(true);
   });
 
+  it("returns false when transport endpoint is not connected", async () => {
+    execFileMock.mockImplementation((_cmd, _args, _opts, cb) => {
+      cb(createExecFileError("Transport endpoint is not connected"), "", "");
+    });
+    await expect(isSystemdUserServiceAvailable()).resolves.toBe(false);
+  });
+
+  it("falls back to machine user scope when transport endpoint is not connected", async () => {
+    execFileMock
+      .mockImplementationOnce((_cmd, args, _opts, cb) => {
+        expect(args).toEqual(["--user", "status"]);
+        const err = createExecFileError("Transport endpoint is not connected", {
+          stderr: "Transport endpoint is not connected",
+        });
+        cb(err, "", "");
+      })
+      .mockImplementationOnce((_cmd, args, _opts, cb) => {
+        expect(args).toEqual(["--machine", "debian@", "--user", "status"]);
+        cb(null, "", "");
+      });
+
+    await expect(isSystemdUserServiceAvailable({ USER: "debian" })).resolves.toBe(true);
+  });
+
   it("falls back to machine user scope when --user bus is unavailable", async () => {
     execFileMock
       .mockImplementationOnce((_cmd, args, _opts, cb) => {
@@ -359,6 +383,12 @@ describe("isNonFatalSystemdInstallProbeError", () => {
       isNonFatalSystemdInstallProbeError(
         new Error("systemctl is-enabled unavailable: Failed to connect to bus"),
       ),
+    ).toBe(true);
+  });
+
+  it("matches transport endpoint is not connected probe failures", () => {
+    expect(
+      isNonFatalSystemdInstallProbeError(new Error("Transport endpoint is not connected")),
     ).toBe(true);
   });
 
