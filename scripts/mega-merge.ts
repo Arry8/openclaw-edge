@@ -690,7 +690,7 @@ async function attemptMerge(
   }
 
   const commitMsg = `merge(pr#${pr.number}): ${pr.title}`;
-  const commitResult = run("git", ["commit", "--no-edit", "-m", commitMsg]);
+  const commitResult = run("git", ["commit", "--no-verify", "--no-edit", "-m", commitMsg]);
 
   if (!commitResult.ok) {
     abortMerge();
