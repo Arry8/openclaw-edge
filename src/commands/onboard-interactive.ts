@@ -17,6 +17,10 @@ export async function runInteractiveSetup(
   } catch (err) {
     if (err instanceof WizardCancelledError) {
       // Best practice: cancellation is not a successful completion.
+      // Clear the sentinel so the next run does not falsely report
+      // an interrupted session — the user simply chose to cancel.
+      const { clearOnboardingInProgress: clear } = await import("./onboard-helpers.js");
+      await clear();
       exitCode = 1;
       return;
     }

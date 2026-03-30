@@ -18,6 +18,12 @@ import { resolveUserPath } from "../utils.js";
 import { WizardCancelledError, type WizardPrompter } from "./prompts.js";
 import { resolveSetupSecretInputString } from "./setup.secret-input.js";
 import type { QuickstartGatewayDefaults, WizardFlow } from "./setup.types.js";
+import {
+  markOnboardingInProgress,
+  isOnboardingInterrupted,
+  clearOnboardingInProgress,
+  backupInterruptedConfig,
+} from "../commands/onboard-helpers.js";
 
 async function resolveAuthChoiceModelSelectionPolicy(params: {
   authChoice: string;
@@ -126,6 +132,23 @@ export async function runSetupWizard(
   prompter: WizardPrompter,
 ) {
   const onboardHelpers = await import("../commands/onboard-helpers.js");
+
+  // Detect and recover from an interrupted previous run (e.g. WSL2 terminal closed).
+  const wasInterrupted = await isOnboardingInterrupted();
+  if (wasInterrupted) {
+    const backupPath = await backupInterruptedConfig();
+    const backupNote = backupPath
+      ? `\nPartial config backed up to: ${backupPath}`
+      : "";
+    await prompter.note(
+      "Previous setup was interrupted (e.g. terminal was closed).\n" +
+      "Starting fresh — all steps including Model/Auth will run again." +
+      backupNote,
+      "Interrupted setup detected",
+    );
+  }
+  await markOnboardingInProgress();
+
   onboardHelpers.printWizardHeader(runtime);
   await prompter.intro("OpenClaw setup");
   await requireRiskAcknowledgement({ opts, prompter });
@@ -152,6 +175,7 @@ export async function runSetupWizard(
     await prompter.outro(
       `Config invalid. Run \`${formatCliCommand("openclaw doctor")}\` to repair it, then re-run setup.`,
     );
+    await clearOnboardingInProgress();
     runtime.exit(1);
     return;
   }
@@ -187,6 +211,7 @@ export async function runSetupWizard(
     normalizedExplicitFlow !== "advanced"
   ) {
     runtime.error("Invalid --flow (use quickstart, manual, or advanced).");
+    await clearOnboardingInProgress();
     runtime.exit(1);
     return;
   }
@@ -464,6 +489,7 @@ export async function runSetupWizard(
     });
     nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
     await writeConfigFile(nextConfig);
+    await clearOnboardingInProgress();
     logConfigUpdated(runtime);
     await prompter.outro("Remote gateway configured.");
     return;
@@ -629,6 +655,7 @@ export async function runSetupWizard(
 
   nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
   await writeConfigFile(nextConfig);
+  await clearOnboardingInProgress();
 
   const { finalizeSetupWizard } = await import("./setup.finalize.js");
   const { launchedTui } = await finalizeSetupWizard({
