@@ -2050,27 +2050,6 @@ Talk 模式的默认值（macOS/iOS/Android）。
 - 文件权限为目录 `0700`、文件 `0600`。
 - 清理遵循 `cleanup` 策略：`delete` 总会删除附件；`keep` 仅在 `retainOnSessionKeep: true` 时保留。
 
-### `tools.subagents`
-
-```json5
-{
-  agents: {
-    defaults: {
-      subagents: {
-        model: "minimax/MiniMax-M2.5",
-        maxConcurrent: 1,
-        runTimeoutSeconds: 900,
-        archiveAfterMinutes: 60,
-      },
-    },
-  },
-}
-```
-
-- `model`：派生子智能体的默认模型。如果省略，子智能体会继承调用方的模型。
-- `runTimeoutSeconds`：当工具调用省略 `runTimeoutSeconds` 时，`sessions_spawn` 使用的默认超时（秒）。`0` 表示无超时。
-- 每个子智能体的工具策略：`tools.subagents.tools.allow` / `tools.subagents.tools.deny`。
-
 ### `agents.defaults.subagents`
 
 ```json5
@@ -2931,19 +2910,19 @@ Secret refs 是增量能力：明文值仍然可用。
 {
   auth: {
     cooldowns: {
-      billingBackoffHours: 4,
-      billingBackoffHoursByProvider: { anthropic: 8 },
-      billingMaxHours: 72,
-      failureWindowHours: 1,
+      billingBackoffHours: 5,
+      billingBackoffHoursByProvider: { anthropic: 3, openai: 8 },
+      billingMaxHours: 24,
+      failureWindowHours: 24,
     },
   },
 }
 ```
 
-- `billingBackoffHours`：计费/配额错误后的默认退避时间（小时）。
-- `billingBackoffHoursByProvider`：按提供商覆盖的退避时间。
-- `billingMaxHours`：退避上限（小时）。
-- `failureWindowHours`：认证失败滚动窗口（小时）。
+- `billingBackoffHours`：计费/配额错误后的默认退避时间（小时，默认：`5`）。
+- `billingBackoffHoursByProvider`：按提供商覆盖的退避时间（可选）。
+- `billingMaxHours`：退避指数增长的上限（小时，默认：`24`）。
+- `failureWindowHours`：退避计数器的滚动窗口（小时，默认：`24`）。
 
 ---
 
