@@ -1,3 +1,4 @@
+import { listKnownProviderAuthEnvVarNames } from "../secrets/provider-env-vars.js";
 import HOST_ENV_SECURITY_POLICY_JSON from "./host-env-security-policy.json" with { type: "json" };
 import { markOpenClawExecEnv } from "./openclaw-exec-env.js";
 
@@ -185,9 +186,20 @@ export function sanitizeHostExecEnvWithDiagnostics(params?: {
 }): HostExecEnvSanitizationResult {
   const baseEnv = params?.baseEnv ?? process.env;
 
+  // Strip provider API keys so they don't leak to child processes spawned
+  // by the exec tool. Keys like OPENAI_API_KEY, ANTHROPIC_API_KEY, etc. are
+  // injected into process.env for in-process SDK usage but must not be
+  // inherited by untrusted binaries (#56441).
+  const providerKeyBlocklist = new Set(
+    listKnownProviderAuthEnvVarNames().map((k) => k.toUpperCase()),
+  );
+
   const merged: Record<string, string> = {};
   for (const [key, value] of listNormalizedEnvEntries(baseEnv)) {
     if (isDangerousHostEnvVarName(key)) {
+      continue;
+    }
+    if (providerKeyBlocklist.has(key.toUpperCase())) {
       continue;
     }
     merged[key] = value;
