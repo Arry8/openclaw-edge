@@ -143,5 +143,7 @@ describe("loadChannelConfigSurfaceModule", () => {
         },
       },
     });
+
+    expect(fs.existsSync(path.join(repoRoot, ".openclaw-config-doc-cache"))).toBe(false);
   });
 });
