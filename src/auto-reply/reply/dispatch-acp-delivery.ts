@@ -40,7 +40,7 @@ function shouldTreatDeliveredTextAsVisible(params: {
   if (params.kind === "final") {
     return true;
   }
-  if (params.routed) {
+  if (params.routed && params.kind === "block") {
     return true;
   }
   return normalizeDeliveryChannel(params.channel) === "telegram";
