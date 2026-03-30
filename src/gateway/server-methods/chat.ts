@@ -1776,6 +1776,10 @@ if (normalizedAttachments.length > 0) {
           images: parsedImages.length > 0 ? parsedImages : undefined,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
+            context.addChatRun(runId, {
+              sessionKey,
+              clientRunId,
+            });
             void emitUserTranscriptUpdate();
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
