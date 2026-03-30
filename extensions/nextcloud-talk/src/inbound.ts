@@ -64,7 +64,8 @@ export async function handleNextcloudTalkInbound(params: {
   });
 
   const rawBody = message.text?.trim() ?? "";
-  if (!rawBody) {
+  const hasMedia = (message.mediaUrls?.length ?? 0) > 0;
+  if (!rawBody && !hasMedia) {
     return;
   }
 
@@ -273,6 +274,7 @@ export async function handleNextcloudTalkInbound(params: {
     Provider: CHANNEL_ID,
     Surface: CHANNEL_ID,
     WasMentioned: isGroup ? wasMentioned : undefined,
+    MediaUrls: message.mediaUrls,
     MessageSid: message.messageId,
     Timestamp: message.timestamp,
     OriginatingChannel: CHANNEL_ID,
