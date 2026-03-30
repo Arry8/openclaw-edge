@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureSuite } from "../../test-utils/fixture-suite.js";
-import { capEntryCount, pruneStaleEntries, rotateSessionFile } from "./store.js";
+import {
+  capEntryCount,
+  pruneOrphanedEntries,
+  pruneStaleEntries,
+  rotateSessionFile,
+} from "./store.js";
 import type { SessionEntry } from "./types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -67,6 +72,59 @@ describe("capEntryCount", () => {
     expect(store.mid).toBeDefined();
     expect(store.oldest).toBeUndefined();
     expect(store.old).toBeUndefined();
+  });
+});
+
+describe("pruneOrphanedEntries", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await fixtureSuite.createCaseDir("orphan");
+  });
+
+  it("removes entries whose sessionFile does not exist on disk", async () => {
+    const storePath = path.join(testDir, "sessions.json");
+    const existingFile = "existing-session.jsonl";
+    await fs.writeFile(path.join(testDir, existingFile), "[]", "utf-8");
+
+    const store = makeStore([
+      ["has-file", { ...makeEntry(Date.now() - 10 * 60 * 1000), sessionFile: existingFile }],
+      ["missing-file", { ...makeEntry(Date.now() - 10 * 60 * 1000), sessionFile: "gone.jsonl" }],
+      ["no-session-file", makeEntry(Date.now() - 10 * 60 * 1000)],
+    ]);
+
+    const pruned = await pruneOrphanedEntries(store, storePath);
+
+    expect(pruned).toBe(1);
+    expect(store["has-file"]).toBeDefined();
+    expect(store["missing-file"]).toBeUndefined();
+    expect(store["no-session-file"]).toBeDefined();
+  });
+
+  it("keeps all entries when all transcript files exist", async () => {
+    const storePath = path.join(testDir, "sessions.json");
+    await fs.writeFile(path.join(testDir, "a.jsonl"), "[]", "utf-8");
+    await fs.writeFile(path.join(testDir, "b.jsonl"), "[]", "utf-8");
+
+    const store = makeStore([
+      ["a", { ...makeEntry(Date.now() - 10 * 60 * 1000), sessionFile: "a.jsonl" }],
+      ["b", { ...makeEntry(Date.now() - 10 * 60 * 1000), sessionFile: "b.jsonl" }],
+    ]);
+
+    const pruned = await pruneOrphanedEntries(store, storePath);
+
+    expect(pruned).toBe(0);
+    expect(Object.keys(store)).toHaveLength(2);
+  });
+
+  it("does not affect entries without sessionFile", async () => {
+    const storePath = path.join(testDir, "sessions.json");
+    const store = makeStore([["no-file-field", makeEntry(Date.now() - 10 * 60 * 1000)]]);
+
+    const pruned = await pruneOrphanedEntries(store, storePath);
+
+    expect(pruned).toBe(0);
+    expect(store["no-file-field"]).toBeDefined();
   });
 });
 
