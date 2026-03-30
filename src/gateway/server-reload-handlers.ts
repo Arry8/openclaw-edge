@@ -140,6 +140,7 @@ export function createGatewayReloadHandlers(params: {
     setCommandLaneConcurrency(CommandLane.CronNested, cronConcurrency);
     setCommandLaneConcurrency(CommandLane.Main, resolveAgentMaxConcurrent(nextConfig));
     setCommandLaneConcurrency(CommandLane.Subagent, resolveSubagentMaxConcurrent(nextConfig));
+    setCommandLaneConcurrency(CommandLane.Nested, resolveAgentMaxConcurrent(nextConfig));
 
     if (plan.hotReasons.length > 0) {
       params.logReload.info(`config hot reload applied (${plan.hotReasons.join(", ")})`);
