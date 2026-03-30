@@ -29,6 +29,10 @@
 //   --aggressive-filter   For closed PRs: also skip stale, wip, duplicate-labelled
 //   --changelog <path>    Append a human-readable batch summary to this markdown file
 //                         (default: docs/mega-merge-changelog.md)
+//   --continuous-build    Run pnpm build continuously in a background git worktree
+//                         throughout the merge loop (non-blocking). Stops the loop if
+//                         any background build fails. When set, --build-interval is
+//                         ignored; a final build still runs at the end.
 //   --create-release      After a successful build, create a GitHub release on the
 //                         edge repo (Arry8/openclaw-edge) tagged mega/YYYY-MM-DD-HHmm
 //                         with the merged PR list as release notes. Requires gh CLI.
@@ -38,8 +42,20 @@
 //   - git remote named <upstream> pointing at openclaw/openclaw
 //   - Current branch is the integration target (e.g. mega/v2026.3.28)
 
-import { spawnSync, execFileSync } from "node:child_process";
-import { writeFileSync, readFileSync, existsSync, appendFileSync } from "node:fs";
+import {
+  spawnSync,
+  execFileSync,
+  spawn as spawnAsync,
+  type ChildProcess,
+} from "node:child_process";
+import {
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  appendFileSync,
+  symlinkSync,
+  rmSync,
+} from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -144,6 +160,7 @@ const RUN_TEST = boolFlag("--test");
 const AGGRESSIVE_FILTER = boolFlag("--aggressive-filter");
 const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-changelog.md"));
 const CREATE_RELEASE = boolFlag("--create-release");
+const CONTINUOUS_BUILD = boolFlag("--continuous-build");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -186,6 +203,101 @@ function deleteBranch(branch: string) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// ── Continuous build manager ─────────────────────────────────────────────────
+
+// Manages a background pnpm build running in a git worktree that is kept at the
+// latest merged HEAD. The merge loop calls tick() after each successful merge;
+// it starts a new build whenever the previous one finishes and HEAD has advanced.
+// failed is set to true if any background build exits non-zero — the merge loop
+// checks this before each iteration and stops early.
+class ContinuousBuildManager {
+  readonly worktreePath: string;
+  // oxlint-disable-next-line typescript-eslint/no-redundant-type-constituents
+  private proc: ChildProcess | null = null;
+  private buildingSha: string | null = null;
+  private lastBuiltSha: string | null = null;
+  failed = false;
+  failedAtSha: string | null = null;
+  private logPath: string;
+
+  constructor(worktreePath: string) {
+    this.worktreePath = worktreePath;
+    this.logPath = `${worktreePath}.build.log`;
+  }
+
+  setup(headSha: string): void {
+    run("git", ["worktree", "add", "--detach", this.worktreePath, headSha]);
+    // Symlink node_modules from the main repo to avoid a full reinstall.
+    symlinkSync(resolve(REPO_DIR, "node_modules"), resolve(this.worktreePath, "node_modules"));
+    log(`Continuous build: worktree at ${this.worktreePath}`);
+  }
+
+  // Call after each successful merge with the new HEAD sha.
+  tick(currentSha: string): void {
+    if (this.failed) {
+      return;
+    }
+    if (this.proc !== null) {
+      return;
+    } // build already in flight
+    if (currentSha === this.lastBuiltSha) {
+      return;
+    } // nothing new
+    this.startBuild(currentSha);
+  }
+
+  private startBuild(sha: string): void {
+    // Move the worktree to this commit before building.
+    run("git", ["-C", this.worktreePath, "reset", "--hard", sha]);
+    this.buildingSha = sha;
+
+    const logFd = require("node:fs").openSync(this.logPath, "a") as number; // eslint-disable-line @typescript-eslint/no-require-imports
+    const proc = spawnAsync("pnpm", ["build"], {
+      cwd: this.worktreePath,
+      stdio: ["ignore", logFd, logFd],
+    });
+    this.proc = proc;
+
+    proc.on("exit", (code) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("node:fs").closeSync(logFd);
+      this.lastBuiltSha = this.buildingSha;
+      this.proc = null;
+      if (code !== 0 && !this.failed) {
+        this.failed = true;
+        this.failedAtSha = this.buildingSha;
+        process.stderr.write(
+          `\n[mega-merge] Background build FAILED at ${this.failedAtSha?.slice(0, 12)}.\n` +
+            `  Build log: ${this.logPath}\n`,
+        );
+      }
+    });
+  }
+
+  // Wait for the currently in-flight build (if any) to finish.
+  waitForCurrent(): Promise<void> {
+    if (!this.proc) {
+      return Promise.resolve();
+    }
+    return new Promise((res) => {
+      this.proc!.on("exit", () => res());
+    });
+  }
+
+  cleanup(): void {
+    if (this.proc) {
+      this.proc.kill("SIGTERM");
+      this.proc = null;
+    }
+    run("git", ["worktree", "remove", "--force", this.worktreePath]);
+    try {
+      rmSync(this.logPath, { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 // ── Changelog writer ─────────────────────────────────────────────────────────
@@ -590,6 +702,33 @@ async function main() {
   const baseCommit = run("git", ["rev-parse", "HEAD"]).stdout;
   const baseBranch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]).stdout;
 
+  // Set up continuous background build worktree if requested.
+  const cb =
+    CONTINUOUS_BUILD && !DRY_RUN
+      ? new ContinuousBuildManager(`/tmp/mega-build-${Date.now()}`)
+      : null;
+  if (cb) {
+    cb.setup(baseCommit);
+  }
+
+  // Register cleanup so the worktree is always removed on exit.
+  const cleanupCb = () => {
+    try {
+      cb?.cleanup();
+    } catch {
+      /* ignore */
+    }
+  };
+  process.on("exit", cleanupCb);
+  process.on("SIGINT", () => {
+    cleanupCb();
+    process.exit(130);
+  });
+  process.on("SIGTERM", () => {
+    cleanupCb();
+    process.exit(143);
+  });
+
   log(`Base commit: ${baseCommit.slice(0, 12)}`);
   log(`Base branch: ${baseBranch}`);
   log(`Upstream remote: ${UPSTREAM} (${remoteCheck.stdout})`);
@@ -707,10 +846,26 @@ async function main() {
           fetchFailCount++;
           break;
       }
+
+      // Kick off (or continue) the background build after each successful merge.
+      if (result.status === "merged" && cb) {
+        const currentSha = run("git", ["rev-parse", "HEAD"]).stdout;
+        cb.tick(currentSha);
+      }
     }
 
     // Clean up temp branch
     deleteBranch(tmpBranch);
+
+    // Check if the background build reported a failure; stop early if so.
+    if (cb?.failed) {
+      process.stdout.write("\n");
+      process.stderr.write(
+        `[mega-merge] Stopping merge loop: background build failed at ${cb.failedAtSha?.slice(0, 12)}.\n` +
+          `  Add the offending PR to SKIP_LIST and rerun with --resume.\n`,
+      );
+      break;
+    }
 
     entries.push({ ...pr, result });
 
@@ -728,10 +883,11 @@ async function main() {
         `merged:${mergedCount} conflict:${conflictCount} skip:${skippedCount + alreadyAppliedCount}`,
     );
 
-    // Interval build: catch breakage early rather than discovering it at the end
+    // Interval build (skipped when --continuous-build is active — that already covers this).
     if (
       !SKIP_BUILD &&
       !DRY_RUN &&
+      !CONTINUOUS_BUILD &&
       BUILD_INTERVAL > 0 &&
       result.status === "merged" &&
       mergedCount % BUILD_INTERVAL === 0
@@ -773,6 +929,19 @@ async function main() {
     }
   }
   process.stdout.write("\n");
+
+  // Wait for any in-flight background build before proceeding to the final build.
+  if (cb) {
+    if (!cb.failed) {
+      log("Waiting for background build to finish...");
+      await cb.waitForCurrent();
+    }
+    if (cb.failed) {
+      process.stderr.write(
+        `[mega-merge] Background build failed at ${cb.failedAtSha?.slice(0, 12)}; final build may also fail.\n`,
+      );
+    }
+  }
 
   // ── Write report ──────────────────────────────────────────────────────────
   const durationMs = Date.now() - startMs;
