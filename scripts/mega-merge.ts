@@ -148,6 +148,10 @@ const SKIP_LIST = new Set<number>([
   48303, // model-selection.ts: TS2322 — cascades from #39338 type gap
   48821, // model-selection.ts: TS2322 — cascades from #39338 type gap
   51580, // model-selection.ts: TS2322 — cascades from #39338 type gap
+  35507, // message-tool.ts: TS error — auto-skipped
+  54344, // commands-config.ts: TS2322 Path type — auto-skipped, cascades from #36867
+  36629, // sessions/store.ts + session-reaper.ts: TS error — auto-skipped
+  36867, // config-paths.ts: changes Path type to PathSegment[] breaking commands-config.ts consumers — TS2322
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.

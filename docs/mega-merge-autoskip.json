@@ -98,5 +98,30 @@
     "number": 46936,
     "reason": "src/agents/model-selection.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T20:25:55.987Z"
+  },
+  {
+    "number": 37949,
+    "reason": "extensions/browser/src/browser/config.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:45:01.820Z"
+  },
+  {
+    "number": 37129,
+    "reason": "src/media/web-media.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:45:01.894Z"
+  },
+  {
+    "number": 35507,
+    "reason": "src/agents/tools/message-tool.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:47:38.063Z"
+  },
+  {
+    "number": 54344,
+    "reason": "src/auto-reply/reply/commands-config.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:47:38.141Z"
+  },
+  {
+    "number": 36629,
+    "reason": "src/config/sessions/store.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T20:47:38.219Z"
   }
 ]
