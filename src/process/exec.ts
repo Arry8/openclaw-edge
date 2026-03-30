@@ -204,21 +204,16 @@ export function shouldSpawnWithShell(params: {
 export async function runExec(
   command: string,
   args: string[],
-  opts:
-    | number
-    | { timeoutMs?: number; maxBuffer?: number; cwd?: string; encoding?: BufferEncoding } = 10_000,
+  opts: number | { timeoutMs?: number; maxBuffer?: number; cwd?: string } = 10_000,
 ): Promise<{ stdout: string; stderr: string }> {
-  // On Windows, default to gbk encoding for cmd.exe output (CP936),
-  // otherwise use utf8. Allow override via opts.encoding.
-  const defaultEncoding: BufferEncoding = process.platform === "win32" ? "gbk" : "utf8";
   const options =
     typeof opts === "number"
-      ? { timeout: opts, encoding: defaultEncoding }
+      ? { timeout: opts, encoding: "utf8" as const }
       : {
           timeout: opts.timeoutMs,
           maxBuffer: opts.maxBuffer,
           cwd: opts.cwd,
-          encoding: opts.encoding ?? defaultEncoding,
+          encoding: "utf8" as const,
         };
   try {
     const argv = [command, ...args];
