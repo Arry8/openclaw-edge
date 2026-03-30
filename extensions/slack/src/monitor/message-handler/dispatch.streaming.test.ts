@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   isSlackStreamingEnabled,
+  resolveSlackDeliveryThreadTs,
+  resolveSlackDraftPreviewThreadTs,
   resolveSlackStreamingThreadHint,
+  resolveTrackedSlackBlockReplyThreadTs,
   shouldEnableSlackPreviewStreaming,
   shouldInitializeSlackDraftStream,
 } from "./dispatch.js";
@@ -125,5 +128,87 @@ describe("slack draft stream initialization", () => {
         useStreaming: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe("slack block delivery thread reuse", () => {
+  it("does not reuse the established thread unless block delivery opts in", () => {
+    expect(
+      resolveSlackDeliveryThreadTs({
+        plannedThreadTs: undefined,
+        usedReplyThreadTs: "3000.1",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("reuses the established thread when first-mode block planning is exhausted", () => {
+    expect(
+      resolveSlackDeliveryThreadTs({
+        plannedThreadTs: undefined,
+        usedReplyThreadTs: "3000.1",
+        allowUsedReplyThreadTs: true,
+      }),
+    ).toBe("3000.1");
+  });
+
+  it("still prefers an explicit or newly planned thread over the reused thread", () => {
+    expect(
+      resolveSlackDeliveryThreadTs({
+        forcedThreadTs: "3000.2",
+        plannedThreadTs: "3000.3",
+        usedReplyThreadTs: "3000.1",
+        allowUsedReplyThreadTs: true,
+      }),
+    ).toBe("3000.2");
+
+    expect(
+      resolveSlackDeliveryThreadTs({
+        plannedThreadTs: "3000.3",
+        usedReplyThreadTs: "3000.1",
+        allowUsedReplyThreadTs: true,
+      }),
+    ).toBe("3000.3");
+  });
+
+  it("refreshes the cached block thread when a delivered block uses an explicit thread", () => {
+    expect(
+      resolveTrackedSlackBlockReplyThreadTs({
+        deliveredThreadTs: "reply-tag.1",
+        usedBlockReplyThreadTs: "3000.1",
+        trackBlockReplyThreadTs: true,
+      }),
+    ).toBe("reply-tag.1");
+  });
+
+  it("keeps the cached block thread when the delivery should not retarget block reuse", () => {
+    expect(
+      resolveTrackedSlackBlockReplyThreadTs({
+        deliveredThreadTs: "reply-tag.1",
+        usedBlockReplyThreadTs: "3000.1",
+        trackBlockReplyThreadTs: false,
+      }),
+    ).toBe("3000.1");
+  });
+});
+
+describe("slack draft preview thread reuse", () => {
+  it("does not reuse the cached thread in first mode once planning is exhausted", () => {
+    expect(
+      resolveSlackDraftPreviewThreadTs({
+        replyToMode: "first",
+        plannedThreadTs: undefined,
+        usedReplyThreadTs: "3000.1",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("can reuse the cached thread in all mode when planning is exhausted", () => {
+    expect(
+      resolveSlackDraftPreviewThreadTs({
+        replyToMode: "all",
+        plannedThreadTs: undefined,
+        usedReplyThreadTs: "3000.1",
+      }),
+    ).toBe("3000.1");
   });
 });
