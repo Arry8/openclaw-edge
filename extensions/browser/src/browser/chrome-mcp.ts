@@ -4,9 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ChromeMcpSnapshotNode } from "./chrome-mcp.snapshot.js";
 import type { BrowserTab } from "./client.js";
 import { BrowserProfileUnavailableError, BrowserTabNotFoundError } from "./errors.js";
+
+const log = createSubsystemLogger("browser").child("chrome-mcp");
 
 type ChromeMcpStructuredPage = {
   id: number;
@@ -40,6 +43,12 @@ const DEFAULT_CHROME_MCP_ARGS = [
   "--experimentalStructuredContent",
   "--experimental-page-id-routing",
 ];
+
+/**
+ * Maximum time (ms) to wait for the MCP handshake (initialize + listTools)
+ * before treating the subprocess as unresponsive and tearing it down.
+ */
+const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 const sessions = new Map<string, ChromeMcpSession>();
 const pendingSessions = new Map<string, Promise<ChromeMcpSession>>();
@@ -220,6 +229,44 @@ export function buildChromeMcpArgs(userDataDir?: string): string[] {
     : [...DEFAULT_CHROME_MCP_ARGS];
 }
 
+/**
+ * Drain a readable stream into a bounded buffer so that the child process
+ * stderr pipe never blocks due to back-pressure.  Returns a function that
+ * retrieves the captured text (last {@link maxBytes} bytes).
+ */
+function drainStderr(transport: StdioClientTransport): () => string {
+  const maxBytes = 8192;
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  const stream = transport.stderr;
+  if (!stream) {
+    return () => "";
+  }
+
+  stream.on("data", (chunk: Buffer) => {
+    // Hard-cap: if a single chunk exceeds maxBytes, keep only its tail.
+    const capped = chunk.length > maxBytes ? chunk.subarray(chunk.length - maxBytes) : chunk;
+    chunks.push(capped);
+    totalBytes += capped.length;
+    // Keep memory bounded — drop oldest chunks when over budget.
+    while (totalBytes > maxBytes && chunks.length > 1) {
+      const dropped = chunks.shift();
+      if (dropped) {
+        totalBytes -= dropped.length;
+      }
+    }
+  });
+
+  // Prevent unhandled 'error' on the PassThrough stream from crashing the process.
+  stream.on("error", () => {});
+
+  return () => {
+    const text = Buffer.concat(chunks).toString("utf-8").trim();
+    return text.slice(-maxBytes);
+  };
+}
+
 async function createRealSession(
   profileName: string,
   userDataDir?: string,
@@ -237,25 +284,67 @@ async function createRealSession(
     {},
   );
 
+  // Mutable reference so the catch block can access stderr even when
+  // drainStderr is set up after connect() spawns the subprocess.
+  let getStderr: () => string = () => "";
+
   const ready = (async () => {
     try {
-      await client.connect(transport);
-      const tools = await client.listTools();
-      if (!tools.tools.some((tool) => tool.name === "list_pages")) {
-        throw new Error("Chrome MCP server did not expose the expected navigation tools.");
+      // Race the handshake against a timeout so a hung subprocess cannot block
+      // the gateway indefinitely.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          (async () => {
+            await client.connect(transport);
+            // transport.stderr is now guaranteed non-null; start draining.
+            getStderr = drainStderr(transport);
+            const tools = await client.listTools();
+            if (!tools.tools.some((tool) => tool.name === "list_pages")) {
+              throw new Error("Chrome MCP server did not expose the expected navigation tools.");
+            }
+          })(),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Chrome MCP handshake timed out")),
+              MCP_HANDSHAKE_TIMEOUT_MS,
+            ).unref();
+          }),
+        ]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
       }
     } catch (err) {
       await client.close().catch(() => {});
+      const stderr = getStderr();
       const targetLabel = userDataDir
         ? `the configured Chromium user data dir (${userDataDir})`
         : "Google Chrome's default profile";
+
+      // Log raw stderr locally for debugging — never reflect it to the API client
+      // to avoid leaking internal paths, usernames, or debug endpoints (CWE-209).
+      if (stderr) {
+        log.warn(
+          `Chrome MCP attach failed for profile "${profileName}". ` +
+            `Subprocess stderr:\n${stderr}`,
+        );
+      }
+
       throw new BrowserProfileUnavailableError(
         `Chrome MCP existing-session attach failed for profile "${profileName}". ` +
           `Make sure ${targetLabel} is running locally with remote debugging enabled. ` +
-          `Details: ${String(err)}`,
+          `Details: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   })();
+
+  // Attach a no-op rejection handler immediately so that a fast failure in the
+  // IIFE above never surfaces as an unhandled promise rejection before the
+  // caller has a chance to `await session.ready`.  The real error will still
+  // propagate when `getSession()` awaits `session.ready`.
+  ready.catch(() => {});
 
   return {
     client,
