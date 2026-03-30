@@ -1124,6 +1124,7 @@ async function main() {
   const toFetch = toProcess.filter((p) => !existingRefs.has(p.number));
   const alreadyLocal = toProcess.length - toFetch.length;
   if (alreadyLocal > 0) log(`Skipping ${alreadyLocal} refs already local; fetching ${toFetch.length}.`);
+  const fetchSuccess = new Map<number, boolean>();
   for (const p of toProcess) { if (existingRefs.has(p.number)) fetchSuccess.set(p.number, true); }
 
   log(`\nFetching ${toFetch.length} PR refs in batches of ${FETCH_BATCH}...`);
