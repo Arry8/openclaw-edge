@@ -41,6 +41,14 @@ export const handleConfigCommand: CommandHandler = async (params, allowTextComma
   if (unauthorized) {
     return unauthorized;
   }
+  const scope = requireGatewayClientScopeForInternalChannel(params, {
+    label: "/config",
+    allowedScopes: ["operator.admin"],
+    missingText: "❌ /config requires operator.admin for gateway clients.",
+  });
+  if (scope) {
+    return scope;
+  }
   const allowInternalReadOnlyShow =
     configCommand.action === "show" && isInternalMessageChannel(params.command.channel);
   const nonOwner = allowInternalReadOnlyShow ? null : rejectNonOwnerCommand(params, "/config");
