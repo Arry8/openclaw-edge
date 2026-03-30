@@ -51,8 +51,8 @@ import { resolveNodeCommandAllowlist } from "../../node-command-policy.js";
 import { checkBrowserOrigin } from "../../origin-check.js";
 import {
   ConnectErrorDetailCodes,
-  resolveDeviceAuthConnectErrorDetailCode,
   resolveAuthConnectErrorDetailCode,
+  resolveDeviceAuthConnectErrorDetailCode,
 } from "../../protocol/connect-error-details.js";
 import {
   type ConnectParams,
