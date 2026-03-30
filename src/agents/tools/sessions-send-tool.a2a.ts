@@ -11,6 +11,7 @@ import {
   buildAgentToAgentReplyContext,
   isAnnounceSkip,
   isReplySkip,
+  resolveAnnounceTargetFromKey,
 } from "./sessions-send-helpers.js";
 
 const log = createSubsystemLogger("agents/sessions-send");
@@ -67,7 +68,10 @@ export async function runSessionsSendA2AFlow(params: {
           displayKey: params.requesterSessionKey,
         })
       : null;
-    const announceDeliveryChannel = announceTarget?.channel ?? "unknown";
+    const targetDisplayTarget =
+      resolveAnnounceTargetFromKey(params.displayKey) ??
+      resolveAnnounceTargetFromKey(params.targetSessionKey);
+    const targetDisplayChannel = targetDisplayTarget?.channel ?? "unknown";
 
     if (
       params.maxPingPongTurns > 0 &&
@@ -84,7 +88,7 @@ export async function runSessionsSendA2AFlow(params: {
           requesterSessionKey: params.requesterSessionKey,
           requesterChannel: params.requesterChannel,
           targetSessionKey: params.displayKey,
-          targetChannel: announceDeliveryChannel,
+          targetChannel: targetDisplayChannel,
           currentRole,
           turn,
           maxTurns: params.maxPingPongTurns,
@@ -99,7 +103,7 @@ export async function runSessionsSendA2AFlow(params: {
           sourceChannel:
             nextSessionKey === params.requesterSessionKey
               ? params.requesterChannel
-              : announceDeliveryChannel,
+              : targetDisplayChannel,
           sourceTool: "sessions_send",
         });
         if (!replyText || isReplySkip(replyText)) {
@@ -117,7 +121,7 @@ export async function runSessionsSendA2AFlow(params: {
       requesterSessionKey: params.requesterSessionKey,
       requesterChannel: params.requesterChannel,
       targetSessionKey: params.displayKey,
-      targetChannel: announceDeliveryChannel,
+      targetChannel: targetDisplayChannel,
       originalMessage: params.message,
       roundOneReply: primaryReply,
       latestReply,

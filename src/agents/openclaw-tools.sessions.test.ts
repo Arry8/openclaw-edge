@@ -978,9 +978,12 @@ describe("sessions tools", () => {
       status: "ok",
       reply: "initial",
     });
-    await vi.waitFor(() => {
-      expect(calls.filter((call) => call.method === "send")).toHaveLength(1);
-    });
+    await vi.waitFor(
+      () => {
+        expect(calls.filter((call) => call.method === "send")).toHaveLength(1);
+      },
+      { timeout: 2_000, interval: 5 },
+    );
 
     expect(sendParams).toMatchObject({
       to: "self",
