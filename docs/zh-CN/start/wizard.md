@@ -119,14 +119,14 @@ CLI `--reset` 默认会重置配置、凭证和会话；如需包含工作区，
 ## 完整参考
 
 有关详细的分步骤拆解和配置输出，请参见
-[CLI 设置参考](/start/wizard-cli-reference)。
-有关非交互式示例，请参见 [CLI 自动化](/start/wizard-cli-automation)。
+[CLI 设置参考](/zh-CN/start/wizard-cli-reference)。
+有关非交互式示例，请参见 [CLI 自动化](/zh-CN/start/wizard-cli-automation)。
 有关更深入的技术参考（包括 RPC 细节），请参见
-[新手引导参考](/reference/wizard)。
+[新手引导参考](/zh-CN/reference/wizard)。
 
 ## 相关文档
 
-- CLI 命令参考：[`openclaw onboard`](/cli/onboard)
-- 新手引导概览：[Onboarding Overview](/start/onboarding-overview)
-- macOS 应用新手引导：[新手引导](/start/onboarding)
-- 智能体首次运行仪式：[智能体引导](/start/bootstrapping)
+- CLI 命令参考：[`openclaw onboard`](/zh-CN/cli/onboard)
+- 新手引导概览：[Onboarding Overview](/zh-CN/start/onboarding-overview)
+- macOS 应用新手引导：[新手引导](/zh-CN/start/onboarding)
+- 智能体首次运行仪式：[智能体引导](/zh-CN/start/bootstrapping)
