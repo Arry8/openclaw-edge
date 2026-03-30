@@ -257,7 +257,7 @@ export const sendHandlers: GatewayRequestHandlers = {
           agentId: effectiveAgentId,
           sessionKey: providedSessionKey ?? derivedRoute?.sessionKey,
         });
-        const results = await deliverOutboundPayloads({
+        const { results } = await deliverOutboundPayloads({
           cfg,
           channel: outboundChannel,
           to: deliveryTarget,

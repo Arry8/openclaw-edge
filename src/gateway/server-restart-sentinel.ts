@@ -73,7 +73,7 @@ async function deliverRestartSentinelNotice(params: {
   }).catch(() => null);
   for (let attempt = 1; attempt <= OUTBOUND_MAX_ATTEMPTS; attempt += 1) {
     try {
-      const results = await deliverOutboundPayloads({
+      const { results } = await deliverOutboundPayloads({
         cfg: params.cfg,
         channel: params.channel,
         to: params.to,

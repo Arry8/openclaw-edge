@@ -179,7 +179,7 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
       agentId: resolvedAgentId,
       sessionKey: params.sessionKey,
     });
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg,
       channel: channelId,
       to,

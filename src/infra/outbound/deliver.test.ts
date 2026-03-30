@@ -148,7 +148,7 @@ async function runChunkedWhatsAppDelivery(params?: {
   const cfg: OpenClawConfig = {
     channels: { whatsapp: { textChunkLimit: 2 } },
   };
-  const results = await deliverOutboundPayloads({
+  const outcome = await deliverOutboundPayloads({
     cfg,
     channel: "whatsapp",
     to: "+1555",
@@ -156,7 +156,7 @@ async function runChunkedWhatsAppDelivery(params?: {
     deps: { sendWhatsApp },
     ...(params?.mirror ? { mirror: params.mirror } : {}),
   });
-  return { sendWhatsApp, results };
+  return { sendWhatsApp, results: outcome.results };
 }
 
 async function deliverSingleWhatsAppForHookTest(params?: { sessionKey?: string }) {
@@ -178,7 +178,7 @@ async function runBestEffortPartialFailureDelivery() {
     .mockResolvedValueOnce({ messageId: "w2", toJid: "jid" });
   const onError = vi.fn();
   const cfg: OpenClawConfig = {};
-  const results = await deliverOutboundPayloads({
+  const outcome = await deliverOutboundPayloads({
     cfg,
     channel: "whatsapp",
     to: "+1555",
@@ -187,7 +187,7 @@ async function runBestEffortPartialFailureDelivery() {
     bestEffort: true,
     onError,
   });
-  return { sendWhatsApp, onError, results };
+  return { sendWhatsApp, onError, results: outcome.results };
 }
 
 function expectSuccessfulWhatsAppInternalHookPayload(
@@ -240,7 +240,7 @@ describe("deliverOutboundPayloads", () => {
   it("chunks telegram markdown and passes through accountId", async () => {
     const sendTelegram = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "c1" });
     await withEnvAsync({ TELEGRAM_BOT_TOKEN: "" }, async () => {
-      const results = await deliverOutboundPayloads({
+      const { results } = await deliverOutboundPayloads({
         cfg: telegramChunkConfig,
         channel: "telegram",
         to: "123",
@@ -603,7 +603,7 @@ describe("deliverOutboundPayloads", () => {
     const sendSignal = vi.fn().mockResolvedValue({ messageId: "s1", timestamp: 123 });
     const cfg: OpenClawConfig = { channels: { signal: { mediaMaxMb: 2 } } };
 
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg,
       channel: "signal",
       to: "+1555",
@@ -707,7 +707,7 @@ describe("deliverOutboundPayloads", () => {
 
   it("drops whitespace-only WhatsApp text payloads when no media is attached", async () => {
     const sendWhatsApp = vi.fn().mockResolvedValue({ messageId: "w1", toJid: "jid" });
-    const results = await deliverWhatsAppPayload({
+    const { results } = await deliverWhatsAppPayload({
       sendWhatsApp,
       payload: { text: "   \n\t   " },
     });
@@ -718,7 +718,7 @@ describe("deliverOutboundPayloads", () => {
 
   it("drops HTML-only WhatsApp text payloads after sanitization", async () => {
     const sendWhatsApp = vi.fn().mockResolvedValue({ messageId: "w1", toJid: "jid" });
-    const results = await deliverWhatsAppPayload({
+    const { results } = await deliverWhatsAppPayload({
       sendWhatsApp,
       payload: { text: "<br><br>" },
     });
@@ -748,7 +748,7 @@ describe("deliverOutboundPayloads", () => {
 
   it("drops non-WhatsApp HTML-only text payloads after sanitization", async () => {
     const sendSignal = vi.fn().mockResolvedValue({ messageId: "s1", toJid: "jid" });
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg: {},
       channel: "signal",
       to: "+1555",
@@ -1171,7 +1171,7 @@ describe("deliverOutboundPayloads", () => {
       ]),
     );
 
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg: {},
       channel: "line",
       to: "U123",
@@ -1202,7 +1202,7 @@ describe("deliverOutboundPayloads", () => {
       ]),
     );
 
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg: {},
       channel: "matrix",
       to: "!room:1",
@@ -1240,7 +1240,7 @@ describe("deliverOutboundPayloads", () => {
       ]),
     );
 
-    const results = await deliverOutboundPayloads({
+    const { results } = await deliverOutboundPayloads({
       cfg: {},
       channel: "matrix",
       to: "!room:1",

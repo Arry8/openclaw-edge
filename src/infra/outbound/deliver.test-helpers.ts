@@ -9,7 +9,7 @@ import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../../test-utils/channel-plugins.js";
 import { createIMessageTestPlugin } from "../../test-utils/imessage-test-plugin.js";
 import { createInternalHookEventPayload } from "../../test-utils/internal-hook-event-payload.js";
-import type { DeliverOutboundPayloadsParams, OutboundDeliveryResult } from "./deliver.js";
+import type { DeliverOutboundPayloadsParams, DeliveryOutcome } from "./deliver.js";
 
 type DeliverMockState = {
   sessions: {
@@ -216,9 +216,7 @@ export function resetDeliverTestMocks(params?: { includeSessionMocks?: boolean }
 }
 
 export async function runChunkedWhatsAppDelivery(params: {
-  deliverOutboundPayloads: (
-    params: DeliverOutboundPayloadsParams,
-  ) => Promise<OutboundDeliveryResult[]>;
+  deliverOutboundPayloads: (params: DeliverOutboundPayloadsParams) => Promise<DeliveryOutcome>;
   mirror?: DeliverOutboundPayloadsParams["mirror"];
 }) {
   const sendWhatsApp = vi
@@ -230,7 +228,7 @@ export async function runChunkedWhatsAppDelivery(params: {
   const cfg: OpenClawConfig = {
     channels: { whatsapp: { textChunkLimit: 2 } },
   };
-  const results = await params.deliverOutboundPayloads({
+  const outcome = await params.deliverOutboundPayloads({
     cfg,
     channel: "whatsapp",
     to: "+1555",
@@ -238,5 +236,5 @@ export async function runChunkedWhatsAppDelivery(params: {
     deps: { sendWhatsApp },
     ...(params.mirror ? { mirror: params.mirror } : {}),
   });
-  return { sendWhatsApp, results };
+  return { sendWhatsApp, results: outcome.results };
 }

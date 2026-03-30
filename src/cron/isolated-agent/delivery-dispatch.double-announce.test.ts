@@ -23,9 +23,15 @@ vi.mock("../../agents/subagent-registry.js", () => ({
   countActiveDescendantRuns: vi.fn().mockReturnValue(0),
 }));
 
-vi.mock("../../infra/outbound/deliver.js", () => ({
-  deliverOutboundPayloads: vi.fn().mockResolvedValue([{ ok: true }]),
-}));
+vi.mock("../../infra/outbound/deliver.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../infra/outbound/deliver.js")>();
+  return {
+    ...actual,
+    deliverOutboundPayloads: vi
+      .fn()
+      .mockResolvedValue({ results: [{ ok: true }], cancelledCount: 0, allCancelledByHook: false }),
+  };
+});
 
 vi.mock("../../infra/outbound/identity.js", () => ({
   resolveAgentOutboundIdentity: vi.fn().mockReturnValue({}),
@@ -375,7 +381,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     vi.setSystemTime(new Date("2026-03-18T17:00:00.000Z"));
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     const params = makeBaseParams({ synthesizedText: "Long running report finished." });
     params.runStartedAt = Date.now() - (3 * 60 * 60_000 + 1);
@@ -393,7 +403,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   it("text delivery fires exactly once (no double-deliver)", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     const params = makeBaseParams({ synthesizedText: "Briefing ready." });
     const state = await dispatchCronDelivery(params);
@@ -411,7 +425,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
     vi.mocked(deliverOutboundPayloads)
       .mockRejectedValueOnce(new Error("ECONNRESET while sending"))
-      .mockResolvedValueOnce([{ ok: true } as never]);
+      .mockResolvedValueOnce({
+        results: [{ ok: true }],
+        cancelledCount: 0,
+        allCancelledByHook: false,
+      } as never);
 
     const params = makeBaseParams({ synthesizedText: "Retry me once." });
     const state = await dispatchCronDelivery(params);
@@ -425,7 +443,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   it("keeps direct announce delivery idempotent across replay for the same run session", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     const params = makeBaseParams({ synthesizedText: "Replay-safe cron update." });
     const first = await dispatchCronDelivery(params);
@@ -443,7 +465,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     vi.mocked(deliverOutboundPayloads).mockImplementation(async (params) => {
       const failedPayload = Array.isArray(params.payloads) ? params.payloads[0] : undefined;
       params.onError?.(new Error("payload failed"), failedPayload as never);
-      return [{ ok: true } as never];
+      return { results: [{ ok: true }], cancelledCount: 0, allCancelledByHook: false } as never;
     });
 
     const params = makeBaseParams({ synthesizedText: "Partial bestEffort replay." }) as Record<
@@ -463,7 +485,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   it("prunes the completed-delivery cache back to the entry cap", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     for (let i = 0; i < 2003; i += 1) {
       const params = makeBaseParams({
@@ -510,7 +536,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   it("text delivery always bypasses the write-ahead queue", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     const params = makeBaseParams({ synthesizedText: "Daily digest ready." });
     const state = await dispatchCronDelivery(params);
@@ -576,7 +606,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
   it("structured/thread delivery also bypasses the write-ahead queue", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue({
+      results: [{ ok: true }],
+      cancelledCount: 0,
+      allCancelledByHook: false,
+    } as never);
 
     const params = makeBaseParams({ synthesizedText: "Report attached." });
     // Simulate structured content so useDirectDelivery path is taken (no retryTransient)
@@ -596,7 +630,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     // First call throws a transient error, second call succeeds.
     vi.mocked(deliverOutboundPayloads)
       .mockRejectedValueOnce(new Error("gateway timeout"))
-      .mockResolvedValueOnce([{ ok: true } as never]);
+      .mockResolvedValueOnce({
+        results: [{ ok: true }],
+        cancelledCount: 0,
+        allCancelledByHook: false,
+      } as never);
 
     vi.stubEnv("OPENCLAW_TEST_FAST", "1");
     try {
