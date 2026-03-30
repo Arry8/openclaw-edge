@@ -24,7 +24,14 @@ export function normalizeDeliverableOutboundChannel(
   raw?: string | null,
 ): DeliverableMessageChannel | undefined {
   const normalized = normalizeMessageChannel(raw);
-  if (!normalized || !isDeliverableMessageChannel(normalized)) {
+  if (!normalized) {
+    return undefined;
+  }
+  // Discord DMs use "user:<id>" format — allow them through
+  if (normalized.startsWith("user:")) {
+    return normalized as DeliverableMessageChannel;
+  }
+  if (!isDeliverableMessageChannel(normalized)) {
     return undefined;
   }
   return normalized;
@@ -93,6 +100,11 @@ export function resolveOutboundChannelPlugin(params: {
   const normalized = normalizeDeliverableOutboundChannel(params.channel);
   if (!normalized) {
     return undefined;
+  }
+
+  // Discord DMs: route "user:<id>" to the Discord plugin (early return if not loaded)
+  if (normalized.startsWith("user:")) {
+    return getChannelPlugin("discord");
   }
 
   const resolve = () => getChannelPlugin(normalized);
