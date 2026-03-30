@@ -202,9 +202,75 @@ function isSkillAutoAllowedSegment(params: {
   return Boolean(params.skillBinTrust.get(executableName)?.has(resolvedPath));
 }
 
+/**
+ * Maximum recursion depth for evaluating shell wrapper inline commands.
+ * Prevents infinite recursion from nested shell wrappers (e.g. `sh -c "sh -c '...'"`)
+ * while allowing reasonable nesting for skill-constructed compound commands.
+ */
+const MAX_SHELL_WRAPPER_INLINE_EVAL_DEPTH = 3;
+
+/**
+ * Recursively evaluates a shell wrapper's inline command (the `-c` payload) against the
+ * allowlist by parsing it into sub-commands and checking each one.
+ *
+ * Returns the evaluation result when the inline command is parseable and all sub-commands
+ * are satisfied, or `null` when evaluation fails or any sub-command is unsatisfied.
+ */
+function evaluateShellWrapperInlineCommand(
+  inlineCommand: string,
+  params: ExecAllowlistContext,
+  inlineDepth: number,
+): { matches: ExecAllowlistEntry[]; segmentSatisfiedBy: ExecSegmentSatisfiedBy[] } | null {
+  if (inlineDepth >= MAX_SHELL_WRAPPER_INLINE_EVAL_DEPTH) {
+    return null;
+  }
+
+  const chainParts = isWindowsPlatform(params.platform) ? null : splitCommandChain(inlineCommand);
+
+  if (!chainParts) {
+    // Single command or pipeline (no chain operators).
+    const analysis = analyzeShellCommand({
+      command: inlineCommand,
+      cwd: params.cwd,
+      env: params.env,
+      platform: params.platform,
+    });
+    if (!analysis.ok) {
+      return null;
+    }
+    const result = evaluateSegments(analysis.segments, params, inlineDepth);
+    return result.satisfied
+      ? { matches: result.matches, segmentSatisfiedBy: result.segmentSatisfiedBy }
+      : null;
+  }
+
+  // Multiple commands joined by chain operators (&&, ||, ;).
+  const allMatches: ExecAllowlistEntry[] = [];
+  const allSegmentSatisfiedBy: ExecSegmentSatisfiedBy[] = [];
+  for (const part of chainParts) {
+    const analysis = analyzeShellCommand({
+      command: part,
+      cwd: params.cwd,
+      env: params.env,
+      platform: params.platform,
+    });
+    if (!analysis.ok) {
+      return null;
+    }
+    const result = evaluateSegments(analysis.segments, params, inlineDepth);
+    if (!result.satisfied) {
+      return null;
+    }
+    allMatches.push(...result.matches);
+    allSegmentSatisfiedBy.push(...result.segmentSatisfiedBy);
+  }
+  return { matches: allMatches, segmentSatisfiedBy: allSegmentSatisfiedBy };
+}
+
 function evaluateSegments(
   segments: ExecCommandSegment[],
   params: ExecAllowlistContext,
+  inlineDepth: number = 0,
 ): {
   satisfied: boolean;
   matches: ExecAllowlistEntry[];
@@ -284,6 +350,26 @@ function evaluateSegments(
         : skillAllow
           ? "skills"
           : null;
+
+    // When no direct match and the segment is a shell wrapper with an inline compound
+    // command (e.g. `/bin/sh -c "cat SKILL.md && gog-wrapper calendar events"`),
+    // recursively parse and evaluate each sub-command inside the inline payload.
+    // This prevents shell-wrapped skill exec commands from being silently rejected
+    // because the allowlist check was comparing `/bin/sh` instead of the actual target
+    // binaries inside the compound command.
+    if (by === null && inlineCommand) {
+      const inlineResult = evaluateShellWrapperInlineCommand(
+        inlineCommand,
+        params,
+        inlineDepth + 1,
+      );
+      if (inlineResult !== null) {
+        matches.push(...inlineResult.matches);
+        segmentSatisfiedBy.push("allowlist");
+        return true;
+      }
+    }
+
     segmentSatisfiedBy.push(by);
     return Boolean(by);
   });
