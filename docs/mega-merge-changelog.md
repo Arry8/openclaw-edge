@@ -66,3 +66,20 @@
 - [#48149](https://github.com/openclaw/openclaw/pull/48149) security: prevent requester self-approval in exec.approval.resolve (@kn1ghtc)
 
 ---
+## 2026-03-30 14:35 — 7 PRs merged
+
+**Base:** `18bb4d9a3420` → **Head:** `cb87eca955f5` on `mega/latest`  
+**Build:** skipped/failed  
+**Duration:** 0m
+
+### security/crash (7)
+
+- [#48134](https://github.com/openclaw/openclaw/pull/48134) security(openshell): prevent host environment variable leakage to SSH subprocesses (@kn1ghtc)
+- [#48133](https://github.com/openclaw/openclaw/pull/48133) security(firecrawl): validate scraped URL to prevent SSRF + cap cache size (@kn1ghtc)
+- [#48001](https://github.com/openclaw/openclaw/pull/48001) fix(browser): prevent gateway crash from unhandled MCP handshake rejection in existing-session (@openperf)
+- [#47652](https://github.com/openclaw/openclaw/pull/47652) fix(feishu): isolate per-account credential resolution to prevent full plugin crash (@alex-xuweilong)
+- [#47225](https://github.com/openclaw/openclaw/pull/47225) feat(context-engine): add toolsOverride to AssembleResult for selective tool schema injection (@DSMediaDev)
+- [#46813](https://github.com/openclaw/openclaw/pull/46813) perf: add contextInjection option to skip workspace re-injection (#9157) (@anup00900)
+- [#45782](https://github.com/openclaw/openclaw/pull/45782) fix: improve error handling and logging for security-critical operations (@NickyLam)
+
+---

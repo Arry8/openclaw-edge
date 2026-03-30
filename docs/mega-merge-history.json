@@ -1549,6 +1549,568 @@
         "status": "merged",
         "commitSha": "e36cd35ddf1f6b61f2488878570f391dd61e6b78"
       }
+    },
+    {
+      "author": "kn1ghtc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d95baef0f4b93de9e06beaeec448345d36309e55",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 48134,
+      "title": "security(openshell): prevent host environment variable leakage to SSH subprocesses",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "f6bee217343146159cf25f43d8763c9ece411d71"
+      }
+    },
+    {
+      "author": "kn1ghtc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "84a69cde141fd20d93bb8f0deb6854d6ca3f1bff",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48133,
+      "title": "security(firecrawl): validate scraped URL to prevent SSRF + cap cache size",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "517c2295c73efb785040ec48bbbed2e99ba1d5fd"
+      }
+    },
+    {
+      "author": "wdskuki",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b062c1b184b561442aef85f0808df7062ea0fe18",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 48081,
+      "title": "fix(infra): make TMP_DIR_ACCESS_MODE lazy to avoid browser bundle crash",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/tmp-openclaw-dir.ts"
+        ]
+      }
+    },
+    {
+      "author": "openperf",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "02143e9d8a13efd9f03b795ee2985e41718cccae",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48001,
+      "title": "fix(browser): prevent gateway crash from unhandled MCP handshake rejection in existing-session",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "c6d9768465afcb919da9a4bf8ddee5c7f0a19d71"
+      }
+    },
+    {
+      "author": "basnijholt",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "28ffa322a35b1778fc532127fe83399021adfc56",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 47982,
+      "title": "Feature: `message:enrich` hook for per-message metadata injection (e.g., inject location into each prompt)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/hooks/internal-hooks.test.ts",
+          "src/hooks/internal-hooks.ts"
+        ]
+      }
+    },
+    {
+      "author": "TerminalsandCoffee",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5fb26324abbb98f3c5c67363cec60ffdd84a8e8f",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "cli",
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 47743,
+      "title": "feat(plugins): add trust tier classification for plugin security model",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/plugins/bundles.md",
+          "src/cli/plugins-cli.ts",
+          "src/commands/channel-setup/plugin-install.test.ts",
+          "src/plugins/loader.ts"
+        ]
+      }
+    },
+    {
+      "author": "keylimesoda",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "20197b7eef7547cbbbe2f25ed87e5f4643b8a0ea",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 47696,
+      "title": "feat: add /trust and /untrust commands for temporary exec security elevation",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "docs/tools/slash-commands.md",
+          "src/auto-reply/commands-registry.data.ts",
+          "src/auto-reply/reply/commands-core.ts",
+          "src/auto-reply/reply/get-reply-directives.ts"
+        ]
+      }
+    },
+    {
+      "author": "gitwithuli",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "43eada6c81f983389a3d6c9abfb82ee8df1a7af5",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 47654,
+      "title": "config: strip unknown keys with warnings instead of crash-looping",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/io.ts",
+          "src/config/io.write-config.test.ts",
+          "src/config/validation.ts"
+        ]
+      }
+    },
+    {
+      "author": "alex-xuweilong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "39aeda322c86287ca56b7ecde69b3c37b2fbcf59",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 47652,
+      "title": "fix(feishu): isolate per-account credential resolution to prevent full plugin crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "95e5577e0492ccba644a8e9ce8ff63df8994098b"
+      }
+    },
+    {
+      "author": "DSMediaDev",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9c23cb162dbfe692d3d145d51941b8de6c38a064",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 47225,
+      "title": "feat(context-engine): add toolsOverride to AssembleResult for selective tool schema injection",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "dcb08852dd8274a33347dd9add3102f172de1add"
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a8791935749fc565b2be4d5e410b62a8d5d9b0a6",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 47195,
+      "title": "fix(security): guard mention patterns against ReDoS via compileSafeRegex",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/mentions.ts"
+        ]
+      }
+    },
+    {
+      "author": "frankentini",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "28dcc5a3a5b575e5755055f37267c011cfcb6ef5",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 47162,
+      "title": "fix(security): extend skill scanner to cover Python and shell scripts",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/skill-scanner.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "nnemirovsky",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "42dcdd2538c42ba0101a8683f266ea185ad15419",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 46970,
+      "title": "feat(security): add MCP tool call approval system",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.generated/config-baseline.json",
+          "docs/.generated/config-baseline.jsonl",
+          "src/agents/openclaw-tools.ts",
+          "src/config/types.approvals.ts",
+          "src/config/zod-schema.approvals.ts",
+          "src/gateway/method-scopes.ts",
+          "src/gateway/server-broadcast.ts",
+          "src/gateway/server-methods-list.ts",
+          "src/gateway/server-methods/types.ts",
+          "src/gateway/server.impl.ts",
+          "src/infra/exec-approval-forwarder.ts"
+        ]
+      }
+    },
+    {
+      "author": "toroleapinc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "69ae92c4401e362c8b6f5adb1f5083562e237daf",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 46902,
+      "title": "fix(exec): respect security/ask policy on node-backed exec path",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/bash-tools.exec-host-node.ts"
+        ]
+      }
+    },
+    {
+      "author": "nnemirovsky",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fa1991bdfe8e266b4bcbcc5559393bb5f09e28b6",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 46828,
+      "title": "feat(security): add HTTP/fetch tool approval system",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/schema.help.ts",
+          "src/config/schema.labels.ts",
+          "src/config/types.approvals.ts",
+          "src/config/zod-schema.approvals.ts",
+          "src/gateway/method-scopes.ts",
+          "src/gateway/server-broadcast.ts",
+          "src/gateway/server-methods-list.ts",
+          "src/gateway/server-methods/types.ts",
+          "src/gateway/server.impl.ts",
+          "src/infra/exec-approval-forwarder.ts"
+        ]
+      }
+    },
+    {
+      "author": "nnemirovsky",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b077b02e6234252a538232e15647956e72c7516d",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: L",
+        "extensions: acpx"
+      ],
+      "mergedAt": null,
+      "number": 46825,
+      "title": "feat(security): add SecretRef support for MCP server env vars",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/gateway/secrets.md",
+          "docs/reference/secretref-user-supplied-credentials-matrix.json",
+          "extensions/acpx/src/config.test.ts",
+          "extensions/acpx/src/config.ts",
+          "src/gateway/server.impl.ts",
+          "src/secrets/runtime-config-collectors-plugins.test.ts",
+          "src/secrets/runtime-config-collectors-plugins.ts",
+          "src/secrets/runtime-config-collectors.ts",
+          "src/secrets/runtime.ts"
+        ]
+      }
+    },
+    {
+      "author": "anup00900",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e0e0733a7730facf81b701074fa8a0d9f1478ca7",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 46813,
+      "title": "perf: add contextInjection option to skip workspace re-injection (#9157)",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "38c8612ec65501027beb152fc076f1fad36f0e64"
+      }
+    },
+    {
+      "author": "cdxiaodong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d0496e45401c37532ce086d5a4d11ddef5c65824",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 46380,
+      "title": "fix: add SSRF guard to MiniMax VLM image understanding endpoint",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/minimax-vlm.ts"
+        ]
+      }
+    },
+    {
+      "author": "cdxiaodong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "970a85dea93cdd65c006ce9eaac92ee430f5444a",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 46377,
+      "title": "fix: add SSRF guard to Anthropic/Gemini PDF providers and move Gemini API key to header",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/tools/pdf-native-providers.ts"
+        ]
+      }
+    },
+    {
+      "author": "cdxiaodong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4f29dc9804292bea1b9030086a31a2f97520f38d",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 46359,
+      "title": "fix: add SSRF hostname validation to Ollama/vLLM model discovery and stream",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/models-config.providers.discovery.ts"
+        ]
+      }
+    },
+    {
+      "author": "cdxiaodong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6fbc4c209aa06cb9ba3c3e851642148c6ac438fe",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 46333,
+      "title": "fix: use SSRF-guarded fetch for TTS provider requests",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/tts/tts-core.ts"
+        ]
+      }
+    },
+    {
+      "author": "xuwei-xy",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5ba5e76a90ba588e61e41960a225caddfc926924",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "commands",
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 45932,
+      "title": "fix(status): show gateway reachable + feat(security): Prompt Inspector (#45922, #45921)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/gateway-status.ts",
+          "src/commands/status.command.ts",
+          "src/commands/status.scan.ts",
+          "src/gateway/probe.ts",
+          "src/gateway/server-http.ts"
+        ]
+      }
+    },
+    {
+      "author": "aunicall",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "13f9d28fbc91ca044ea2cdc56be36055a27c9f0a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 45921,
+      "title": "feat(security): add Prompt Inspector AI-based prompt injection detection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/isolated-agent/run.ts",
+          "src/gateway/server-http.ts"
+        ]
+      }
+    },
+    {
+      "author": "Tiooo111",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "15fa32cfdcd93760100dd00cac65224dddbc4df1",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "commands",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 45901,
+      "title": "security: create session dirs with private permissions",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/session-write-lock.test.ts",
+          "src/commands/onboard-helpers.test.ts",
+          "src/commands/setup.test.ts",
+          "src/config/sessions/sessions.test.ts",
+          "src/config/sessions/store.ts"
+        ]
+      }
+    },
+    {
+      "author": "NickyLam",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ff921b0ad71cd52ee6a033c9284891b32ce16c54",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 45782,
+      "title": "fix: improve error handling and logging for security-critical operations",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "cb87eca955f5c9c7a768650f94050501c574c88e"
+      }
     }
   ]
 }
