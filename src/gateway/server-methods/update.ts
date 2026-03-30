@@ -10,6 +10,10 @@ import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { normalizeUpdateChannel } from "../../infra/update-channels.js";
 import { runGatewayUpdate } from "../../infra/update-runner.js";
 import { formatControlPlaneActor, resolveControlPlaneActor } from "../control-plane-audit.js";
+import {
+  GATEWAY_EVENT_UPDATE_PROGRESS,
+  type GatewayUpdateProgressEventPayload,
+} from "../events.js";
 import { validateUpdateRunParams } from "../protocol/index.js";
 import { parseRestartRequestParams } from "./restart-request.js";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -28,6 +32,7 @@ export const updateHandlers: GatewayRequestHandlers = {
       typeof timeoutMsRaw === "number" && Number.isFinite(timeoutMsRaw)
         ? Math.max(1000, Math.floor(timeoutMsRaw))
         : undefined;
+    const force = (params as { force?: boolean }).force === true;
 
     let result: Awaited<ReturnType<typeof runGatewayUpdate>>;
     try {
@@ -44,6 +49,30 @@ export const updateHandlers: GatewayRequestHandlers = {
         cwd: root,
         argv1: process.argv[1],
         channel: configChannel ?? undefined,
+        force,
+        progress: {
+          onStepStart: (step) => {
+            context?.broadcast?.(
+              GATEWAY_EVENT_UPDATE_PROGRESS,
+              {
+                kind: "step.start",
+                step: { name: step.name, index: step.index, total: step.total },
+              } satisfies GatewayUpdateProgressEventPayload,
+              { dropIfSlow: true },
+            );
+          },
+          onStepComplete: (step) => {
+            context?.broadcast?.(
+              GATEWAY_EVENT_UPDATE_PROGRESS,
+              {
+                kind: "step.complete",
+                step: { name: step.name, index: step.index, total: step.total },
+                completion: { durationMs: step.durationMs, exitCode: step.exitCode },
+              } satisfies GatewayUpdateProgressEventPayload,
+              { dropIfSlow: true },
+            );
+          },
+        },
       });
     } catch (err) {
       result = {
@@ -148,10 +177,20 @@ export const updateHandlers: GatewayRequestHandlers = {
       );
     }
 
+    context?.broadcast?.(
+      GATEWAY_EVENT_UPDATE_PROGRESS,
+      {
+        kind: "finished",
+        result: { status: result.status, reason: result.reason },
+      } satisfies GatewayUpdateProgressEventPayload,
+      { dropIfSlow: true },
+    );
+
     respond(
       true,
       {
-        ok: result.status !== "error",
+        ok: result.status === "ok",
+        skipped: result.status === "skipped",
         result,
         restart,
         sentinel: {

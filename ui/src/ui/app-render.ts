@@ -38,6 +38,9 @@ import {
   loadConfig,
   openConfigFile,
   runUpdate,
+  forceUpdate,
+  dismissUpdateConfirm,
+  getSkippedReasonInfo,
   saveConfig,
   updateConfigFormValue,
   removeConfigFormValue,
@@ -594,25 +597,86 @@ export function renderApp(state: AppViewState) {
           ? html`<div class="update-banner callout danger" role="alert">
               <strong>Update available:</strong> v${state.updateAvailable.latestVersion} (running
               v${state.updateAvailable.currentVersion}).
-              <button
-                class="btn btn--sm update-banner__btn"
-                ?disabled=${state.updateRunning || !state.connected}
-                @click=${() => runUpdate(state)}
-              >
-                ${state.updateRunning ? "Updating…" : "Update now"}
-              </button>
-              <button
-                class="update-banner__close"
-                type="button"
-                title="Dismiss"
-                aria-label="Dismiss update banner"
-                @click=${() => {
-                  dismissUpdateBanner(state.updateAvailable);
-                  state.updateAvailable = null;
-                }}
-              >
-                ${icons.x}
-              </button>
+              ${state.updateConfirmPending
+                ? html`
+                    <div class="update-banner__confirm">
+                      <div class="update-banner__reason">
+                        ${(() => {
+                          const info = getSkippedReasonInfo(state.updateSkippedReason);
+                          return info
+                            ? html`<strong>Update skipped:</strong> ${info.message}<br />
+                                <span class="update-banner__warning">${info.warning}</span>`
+                            : nothing;
+                        })()}
+                      </div>
+                      <div class="update-banner__actions">
+                        <button
+                          class="btn btn--sm update-banner__force-btn"
+                          ?disabled=${state.updateRunning || !state.connected}
+                          @click=${() => forceUpdate(state)}
+                        >
+                          ${state.updateRunning
+                            ? "Forcing update…"
+                            : `Force update to v${state.updateAvailable?.latestVersion}`}
+                        </button>
+                        <button
+                          class="btn btn--sm update-banner__btn"
+                          @click=${() => dismissUpdateConfirm(state)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  `
+                : state.updateRunning
+                  ? html`<div class="update-banner__progress">
+                      <div class="update-banner__progress-header">
+                        Updating to v${state.updateAvailable.latestVersion}…
+                        ${state.updateProgress?.currentStep?.total
+                          ? html`<span class="update-banner__progress-count">
+                              Step
+                              ${(state.updateProgress.currentStep?.index ??
+                                state.updateProgress.completedSteps.length) + 1}/${state
+                                .updateProgress.currentStep.total}
+                            </span>`
+                          : nothing}
+                      </div>
+                      ${state.updateProgress?.currentStep
+                        ? html`<div class="update-banner__progress-step">
+                            <span class="update-banner__spinner"></span>
+                            ${state.updateProgress.currentStep.name}
+                          </div>`
+                        : nothing}
+                      ${state.updateProgress?.completedSteps
+                        .slice(-2)
+                        .map(
+                          (s) => html`<div class="update-banner__progress-done">
+                            ${s.exitCode === 0 ? "+" : "x"} ${s.name}
+                            (${(s.durationMs / 1000).toFixed(1)}s)
+                          </div>`,
+                        )}
+                    </div>`
+                  : html`
+                      <button
+                        class="btn btn--sm update-banner__btn"
+                        ?disabled=${!state.connected}
+                        @click=${() => runUpdate(state)}
+                      >
+                        Update now
+                      </button>
+                      <button
+                        class="update-banner__close"
+                        type="button"
+                        title="Dismiss"
+                        aria-label="Dismiss update banner"
+                        @click=${() => {
+                          dismissUpdateBanner(state.updateAvailable);
+                          state.updateAvailable = null;
+                        }}
+                      >
+                        ${icons.x}
+                      </button>
+                    `}
             </div>`
           : nothing}
         ${state.tab === "config"

@@ -219,6 +219,106 @@
   stroke-linecap: round;
 }
 
+.update-banner__confirm {
+  display: block;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.update-banner__reason {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.update-banner__warning {
+  display: block;
+  margin-top: 4px;
+  font-weight: 400;
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+.update-banner__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-banner__force-btn {
+  background: var(--danger) !important;
+  color: #fff !important;
+  border-color: var(--danger) !important;
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+.update-banner__force-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 85%, #000) !important;
+}
+
+.update-banner__force-btn:disabled {
+  opacity: 0.5;
+}
+
+.update-banner__status {
+  margin-left: 8px;
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.update-banner__progress {
+  display: block;
+  margin-top: 8px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.update-banner__progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.update-banner__progress-count {
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+.update-banner__progress-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.update-banner__spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--danger);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: update-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes update-spin {
+  to { transform: rotate(360deg); }
+}
+
+.update-banner__progress-done {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  opacity: 0.6;
+  padding: 1px 0;
+}
+
 /* ===========================================
    Cards - Refined with depth
    =========================================== */
