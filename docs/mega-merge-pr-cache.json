@@ -1,25 +1,324 @@
 {
-  "fetchedAt": 1774874174358,
+  "fetchedAt": 1774881601094,
   "prs": [
     {
       "author": "jacobtomlinson",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "249c553ffc0fca9e92a0ba3584295a37be15aab4",
+      "headSha": "bec1dbb18eb967099a5ea680332c8ee514b9814f",
       "isDraft": null,
       "labels": [
+        "channel: tlon",
+        "app: web-ui",
+        "agents",
         "maintainer",
         "size: S"
       ],
       "mergedAt": null,
-      "number": 57690,
-      "title": "reply: enforce ACP attachment roots"
+      "number": 57744,
+      "title": "infra: harden identifier entropy and delay jitter"
+    },
+    {
+      "author": "nimbleenigma",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c3c4437ac1ba8e0a37ab329ddfffa7815100b591",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57741,
+      "title": "fix(agents): accept canonical edits[] in wrapped edit tool"
+    },
+    {
+      "author": "w-sss",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7576e77711b052918a58a8551248be73d463dc6e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57740,
+      "title": "fix(agents): resolve transcript tool call ID mode for proxy providers (openrouter+mistral)"
+    },
+    {
+      "author": "samzong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9a77c51cf9e336a0ccfd0c433266532bfeec408d",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57739,
+      "title": "fix(subagents): correct duration display showing 5-6x inflated runtime"
+    },
+    {
+      "author": "Vitalcheffe",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "516628e1c2e04c963f08f162833122096a2d95e8",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57737,
+      "title": "fix(telegram): increase polling stall threshold from 90s to 300s"
+    },
+    {
+      "author": "drobison00",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9f3b2285bf5fd325a10346ca0319369bd150a5f9",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57735,
+      "title": "Fix Discord native commands bypassing group DM channel allowlist"
+    },
+    {
+      "author": "itilys",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "82b23db74914ea4cd221c9eb3ea49cec3c4ddcf4",
+      "isDraft": null,
+      "labels": [
+        "extensions: memory-core",
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57733,
+      "title": "Add non-batch memory embedding concurrency control"
+    },
+    {
+      "author": "alexanderkreidich",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4126c363dc29c4cdf5261b0d49f623c3a3890d4d",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57732,
+      "title": "fix(acp): resolve agent profile alias to harness ID in sessions_spawn"
+    },
+    {
+      "author": "jkyotnfjfbjnknh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4b639363c4792f9056c9faf4539d3b358e663f33",
+      "isDraft": null,
+      "labels": [
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57728,
+      "title": "feat: add save-load plugin for conversation context persistence"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "abb8b87b5cdd2f355f09adb312b36cdd96bc1e5f",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57723,
+      "title": "msteams: filter thread history by sender allowlist"
+    },
+    {
+      "author": "jkyotnfjfbjnknh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1d28df900179747a9d3ff6b502119fed576c695d",
+      "isDraft": null,
+      "labels": [
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57719,
+      "title": "feat: add save-load plugin for conversation context persistence"
+    },
+    {
+      "author": "rachelbotley",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8766b1893ede445c268e62bc0b03bf95e9d9d226",
+      "isDraft": null,
+      "labels": [
+        "channel: slack",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57717,
+      "title": "feat(slack): wire Block Kit table send path"
+    },
+    {
+      "author": "Leihb",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "948297dc93b8c920dcf644dfdc984ae0ac40880f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57716,
+      "title": "fix: preserve required parameter constraints in tool schema aliases"
+    },
+    {
+      "author": "BlackishGreen33",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e8a3349bf4752ca40bbb819af868528a173639fe",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57714,
+      "title": "fix(cli): write skills --json output to stdout"
+    },
+    {
+      "author": "jkyotnfjfbjnknh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f44196a286713d88ace83d5a05ca000188aa04f9",
+      "isDraft": null,
+      "labels": [
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57712,
+      "title": "feat: add save-load plugin for conversation context persistence"
+    },
+    {
+      "author": "ckybit",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1745ffe86b452632fb1ac428844768564c2068a1",
+      "isDraft": null,
+      "labels": [
+        "extensions: memory-core",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57711,
+      "title": "feat(memory): enable query expansion in hybrid search mode"
+    },
+    {
+      "author": "rrpsantos",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "52b6b0506be2220e6e961516456fa01ad1127d8d",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57710,
+      "title": "Fix Windows test hangs: settle child wait on exit + force gateway close"
+    },
+    {
+      "author": "ericberic",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "87dd378330ad432bbf1582d1f99f934f9159f1b5",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: discord",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57709,
+      "title": "Clarify sender_principal as canonical trusted identity"
+    },
+    {
+      "author": "topcheer",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6d2a14e4b2e726521cdc017842fc1a16935b1b9c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57707,
+      "title": "feat: support all file types as webchat attachments"
+    },
+    {
+      "author": "clawyouseeme",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3b612c8d3c107027ea573b27edd1ddf9e489ceaf",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57698,
+      "title": "Fix security audit missing CRITICAL warnings for open dmPolicy"
+    },
+    {
+      "author": "xujk2008",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8d4ec22d2cdbfc8f40675a14eff2c83b35790f15",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57697,
+      "title": "fix(sessions_send): route agent-to-agent announce delivery to requester target"
+    },
+    {
+      "author": "potterdigital",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5d11a8716f681d989b47114f3f4d25ee1b056fa4",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57694,
+      "title": "docs: fix missing config keys and add absent zh-CN reference sections"
     },
     {
       "author": "pgondhi987",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c5380beaa25e3274b9f6fd484ba3218b8998dab3",
+      "headSha": "829d276b96f692b22142070cc4ef5cf060d33ffd",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -29,40 +328,10 @@
       "title": "fix(auto-reply): thread per-agent tools.exec defaults into reply directives"
     },
     {
-      "author": "jacobtomlinson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "295bc874a9c2dd56ebf697974957da99269a9b01",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "maintainer",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57687,
-      "title": "Discord: gate audio preflight on member access"
-    },
-    {
-      "author": "jacobtomlinson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "28870e42c0297a00ced80fdcdef650aef09f55cf",
-      "isDraft": null,
-      "labels": [
-        "channel: msteams",
-        "maintainer",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57686,
-      "title": "MS Teams: validate webhook auth before JSON parsing"
-    },
-    {
       "author": "jkyotnfjfbjnknh",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a177ac111ff9eea8b92875a9532cdc2becfea4c7",
+      "headSha": "2c467f5d4398a18ed58a1493158299d8ae705043",
       "isDraft": null,
       "labels": [
         "size: L"
@@ -75,11 +344,12 @@
       "author": "samirsawarkar",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "95c94bc308e63b7c671585ac8abd3b392d102139",
+      "headSha": "f36b32cc597bc0f5b8981eefc671d2bda99ffe2a",
       "isDraft": null,
       "labels": [
         "gateway",
         "cli",
+        "scripts",
         "commands",
         "size: M"
       ],
@@ -309,7 +579,7 @@
       "author": "Enthusiasm-Dylan",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "0287c4732f4939b49fd815886efac4ca090c0061",
+      "headSha": "b7b1874b740a6995b576deccb5fd95702c52ec21",
       "isDraft": null,
       "labels": [
         "docs",
@@ -436,7 +706,7 @@
       "author": "efe-arv",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "31a228d513c8cb0351b04d17ce7645a7954e6aff",
+      "headSha": "5a72a424f501ef0faafb460e42f1b0c66a49c3b5",
       "isDraft": null,
       "labels": [
         "channel: googlechat",
@@ -530,20 +800,6 @@
       "mergedAt": null,
       "number": 57597,
       "title": "fix(acp): persist spawn labels in target session store"
-    },
-    {
-      "author": "openperf",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "d80e93956290afeb8fa9563d2cb23821b2337c35",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57596,
-      "title": "fix(gateway): restore default operator scopes for pure HTTP token auth"
     },
     {
       "author": "tymrtn",
@@ -650,19 +906,6 @@
       "title": "feat: inject structured metadata into sessions_send"
     },
     {
-      "author": "hellomypastor",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "7ddeb4a33b9a9e7aeaad00f83d61e8f9060543af",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57576,
-      "title": "fix(mcp): include full data in content field for channel tools"
-    },
-    {
       "author": "EronFan",
       "closedAt": null,
       "createdAt": null,
@@ -698,7 +941,7 @@
       "author": "openperf",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b9f58d0ca8998426277f3d667ed02fb20c817951",
+      "headSha": "cd98233a5b911b496242709378bcf701da0e49fb",
       "isDraft": null,
       "labels": [
         "agents",
@@ -941,7 +1184,7 @@
       "author": "wangshu94",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "7cb6d28d24d0ed21e0b18281db07023f581ac172",
+      "headSha": "962f8ee53031134688ec2de20324af6d5186d27d",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -955,7 +1198,7 @@
       "author": "pgondhi987",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4826ebaf7180964739e2bcc9ce9f9877bb54ed83",
+      "headSha": "57c3145f474af41b34a98d5ea4efff3b372f764b",
       "isDraft": null,
       "labels": [
         "agents",
@@ -1071,7 +1314,7 @@
       "author": "chasehainey",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "76e0d2a6497b3f76190a1769e214c6c37f4360d7",
+      "headSha": "dd3047732f77d7a555b8358da18a079c78b3fd8b",
       "isDraft": null,
       "labels": [
         "channel: discord",
@@ -1141,10 +1384,11 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "0c0c6ca7c3e21639ee372d39ef9ecfdc132cef6c",
+      "headSha": "9fb82d6a8ec2c0904246aa3a5bd8b05a85339427",
       "isDraft": null,
       "labels": [
-        "size: S"
+        "agents",
+        "size: M"
       ],
       "mergedAt": null,
       "number": 57488,
@@ -1274,7 +1518,7 @@
       "author": "geekhuashan",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "786aecce9aec010e5292805206227a200a01d0fb",
+      "headSha": "0087a5ebd80ba2cba0e2e179a68fa9268fdd9cd3",
       "isDraft": null,
       "labels": [
         "docs",
@@ -1431,11 +1675,10 @@
       "author": "sinogello",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "047b972c0635ed7fcf08d9d76a7ec7bdc37917c2",
+      "headSha": "cb09a81fcda8ae5f5ec896b8580720b25026a847",
       "isDraft": null,
       "labels": [
         "channel: telegram",
-        "commands",
         "size: M"
       ],
       "mergedAt": null,
@@ -1492,12 +1735,12 @@
       "author": "mcaxtr",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "caa98996c952baf06184fd42f3aa126a10b41103",
+      "headSha": "edc9024721eacec72b9e26dbfca55a0e2c67aaee",
       "isDraft": null,
       "labels": [
         "channel: whatsapp-web",
         "maintainer",
-        "size: M"
+        "size: L"
       ],
       "mergedAt": null,
       "number": 57413,
@@ -1755,11 +1998,13 @@
       "author": "lawaetzm",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "989767903b4107210d1a3bab88e20b17cfe688f4",
+      "headSha": "240e5177bec3c0851e810ae33f7209f228e7cba0",
       "isDraft": null,
       "labels": [
+        "channel: slack",
+        "commands",
         "channel: feishu",
-        "size: XS"
+        "size: S"
       ],
       "mergedAt": null,
       "number": 57345,
@@ -1831,7 +2076,7 @@
       "author": "oaslananka",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "d93c37d252e69cb44c5ca6ed0126f5236ecaf48d",
+      "headSha": "963e4564fef9ecac97ae3f7b4f403d51d511783e",
       "isDraft": null,
       "labels": [
         "docs",
@@ -2181,7 +2426,7 @@
       "author": "oNo500",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "773c78d43b2ba34dfbbcd82347557abbab165c6f",
+      "headSha": "298ae9f08a96c6e2de9f6fdf59138998aa93791d",
       "isDraft": null,
       "labels": [
         "scripts",
@@ -2264,7 +2509,7 @@
       "author": "buddyh",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4cfc44bd173ecb3aaaaef7bedf6cc40a161b1bfc",
+      "headSha": "93bc71d0af756031c6e096d4e12f2c7c9e42666b",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -2373,19 +2618,6 @@
       "mergedAt": null,
       "number": 57194,
       "title": "feat(web-search): add SearXNG as a search provider"
-    },
-    {
-      "author": "Blicae8917",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "d380baf4a692547c722e32cae661fc2770d7c785",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57193,
-      "title": "fix(feishu): add compatibility fields for official @larksuite/openclaw-lark plugin"
     },
     {
       "author": "apexscaleai",
@@ -2645,7 +2877,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "1b2fe0234aea91188686d3e4f8a1060233563cb4",
+      "headSha": "f959275f0306d5ec4c99ff142a9c31159b0ed2e5",
       "isDraft": null,
       "labels": [
         "size: XS"
@@ -2658,7 +2890,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "6fde9fa25464bc552afd2c0bd6fa523599f61302",
+      "headSha": "7095ea0f39c14d9861058ef43a425f0e586bb471",
       "isDraft": null,
       "labels": [
         "channel: matrix",
@@ -2672,21 +2904,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "fec8e09c484b83edd3b45e163d43a055c6f6cf3e",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57122,
-      "title": "fix(agents): preserve optional annotation in mergePropertySchemas for buttons parameter"
-    },
-    {
-      "author": "w-sss",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "4e272714173975b41d1d40c981ca8afa30afe120",
+      "headSha": "c6b89c9a3ecae02df79adbb5fdd3e0eab1a582ab",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -2727,7 +2945,7 @@
       "author": "WeiYu021",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "670400d1aea8d5b0aa408126793c655443afbd26",
+      "headSha": "26f6349bfa52dc9c95fe57993d40231d762d65ab",
       "isDraft": null,
       "labels": [
         "commands",
@@ -2795,7 +3013,7 @@
       "author": "karanuppal",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "78e642583f449138c317e75ddd5f4f03f8fb177f",
+      "headSha": "4dbb2dd3ea5ba0993af348b4c3fecb0418f39999",
       "isDraft": null,
       "labels": [
         "agents",
@@ -2809,10 +3027,11 @@
       "author": "karanuppal",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "dd2098344015a72f133882beee04c067ee0ad561",
+      "headSha": "329705f71effe58eb2de3cf401c19d7264387cf0",
       "isDraft": null,
       "labels": [
-        "size: S"
+        "gateway",
+        "size: M"
       ],
       "mergedAt": null,
       "number": 57088,
@@ -3369,7 +3588,7 @@
       "author": "bbddbb1",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8c2b9113c99f951403cbc0cad0e2ff47835917c3",
+      "headSha": "7048877773036608cdb265fce30dfc22ae5bfffc",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -4845,7 +5064,7 @@
       "author": "drobison00",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "39d8519882ed298cc3872672192bb8f5417047f1",
+      "headSha": "99ee4291731dbbd00554ae731e4d3ee53c984cdf",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -5157,23 +5376,7 @@
       "author": "livingghost",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "ed8cf773b1d08e361c0dbecbd0848d54ee273ee1",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "gateway",
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 56527,
-      "title": "feat(plugins): add gateway-backed subagent runtime dispatch"
-    },
-    {
-      "author": "livingghost",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "5953045f0265b2db1cfd4fdb364fae310402619b",
+      "headSha": "dfc60e167598c9d9926a4992eb569f639c3061a6",
       "isDraft": null,
       "labels": [
         "docs",
@@ -5192,7 +5395,23 @@
       "author": "livingghost",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cdfd0bcb58b6c4ece62abfb7d86245d42b1304cc",
+      "headSha": "ed8cf773b1d08e361c0dbecbd0848d54ee273ee1",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 56527,
+      "title": "feat(plugins): add gateway-backed subagent runtime dispatch"
+    },
+    {
+      "author": "livingghost",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "41805d54e6191655d3dd04d85538e9f248932220",
       "isDraft": null,
       "labels": [
         "docs",
@@ -5515,15 +5734,15 @@
       "author": "Lanfei",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c949ebede646c78e485c99678d61676f3f8e9309",
+      "headSha": "0a2d64d6b7a8527af6860ef4934614be4d1b5bdf",
       "isDraft": null,
       "labels": [
         "docs",
-        "size: S"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 56461,
-      "title": "fix: baseUrl support for xAI and Gemini web search providers"
+      "title": "fix(web-search): baseUrl support for xAI and Gemini web search providers"
     },
     {
       "author": "catlee",
@@ -5730,7 +5949,7 @@
       "author": "livingghost",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b26ee40fa1d6e173a2730a34fc7dc83ba103de0f",
+      "headSha": "e2834d84ef5dda98e76287552083e582a486006c",
       "isDraft": null,
       "labels": [
         "docs",
@@ -5913,7 +6132,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "036f15c4b6ca7860f4e80903b45ea74ab9e41085",
+      "headSha": "cb331c8cf9025542b05b5d299d8ed7632e78cb69",
       "isDraft": null,
       "labels": [
         "docs",
@@ -7238,20 +7457,6 @@
       "author": "bde1",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4192f259c6dad405b493e35321f6b3f4a21ad33d",
-      "isDraft": null,
-      "labels": [
-        "cli",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 56026,
-      "title": "fix(plugins): fall back to npm on clawhub request failures"
-    },
-    {
-      "author": "bde1",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "79f3aee487dc4303a867b3e31940ec58f9dac9d8",
       "isDraft": null,
       "labels": [
@@ -7263,19 +7468,18 @@
       "title": "fix(voice-call): read telnyx transcription_data fields"
     },
     {
-      "author": "jacobtomlinson",
+      "author": "bde1",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b9f2abc3252ae47220b57fe0a59c668eafde65e0",
+      "headSha": "4192f259c6dad405b493e35321f6b3f4a21ad33d",
       "isDraft": null,
       "labels": [
-        "agents",
-        "maintainer",
+        "cli",
         "size: S"
       ],
       "mergedAt": null,
-      "number": 56024,
-      "title": "sandbox: block sensitive external bind sources"
+      "number": 56026,
+      "title": "fix(plugins): fall back to npm on clawhub request failures"
     },
     {
       "author": "samibs",
@@ -7555,7 +7759,7 @@
       "author": "yujuntea",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "da03065b839331de3d7f5b436004837d1b5e5669",
+      "headSha": "ebc949588ed88ed01b5874aa1e9df2e8f9016800",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -8450,7 +8654,7 @@
       "author": "sbezludny",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "ead96e92002b0bde423ae8cc713fdaf14f70f4d9",
+      "headSha": "4b5f5d7927b6f2c7b482e6a1411847552a6468dd",
       "isDraft": null,
       "labels": [
         "docs",
@@ -8858,7 +9062,7 @@
       "author": "seasonhuang",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "43e00bc3c1904732b4ee5fdef9fcb7be2c5756a7",
+      "headSha": "abb056f297ad297eb2481534ef8654cf3fad3e8d",
       "isDraft": null,
       "labels": [
         "channel: discord",
@@ -9394,7 +9598,7 @@
       "author": "Syysean",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "faf9ab00cd998a724fd081c98439d656bbce94ca",
+      "headSha": "9f0971417e4711795f01d42f7ae4f6a8933af25e",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -9607,11 +9811,19 @@
       "author": "factnest365-ops",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "48cd3c605922f702497118a3b6143ab8a019e005",
+      "headSha": "955166325febdb6634eaaa5015d798a219be7c25",
       "isDraft": null,
       "labels": [
+        "docs",
+        "channel: bluebubbles",
+        "channel: googlechat",
+        "channel: msteams",
+        "channel: zalouser",
+        "gateway",
+        "commands",
+        "docker",
         "agents",
-        "size: XS"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 55465,
@@ -9933,7 +10145,7 @@
       "author": "priyansh19",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5a7c00542fffb5fedd1e51717ffa1b49a1e84b8b",
+      "headSha": "8076817b8d99a79cbdc1e8886d962a6bd368d7a2",
       "isDraft": null,
       "labels": [
         "agents",
@@ -10540,7 +10752,7 @@
       "author": "rynomster",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "25cfbdda3c24516b2aa6279392adf27dc4c878be",
+      "headSha": "17340c517e6effbc43ac1b1da06cfd8051d2a06e",
       "isDraft": null,
       "labels": [
         "docs",
@@ -12606,19 +12818,6 @@
       "title": "feat: add dangerouslyAllowHostNetwork escape hatch for sandbox Docker networking"
     },
     {
-      "author": "maneiybrar-sudo",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "4e3c4348d1403ac13d1b0c165105aa1a7b765cc5",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 54573,
-      "title": "Change plan from 'starter' to 'free' in render.yaml"
-    },
-    {
       "author": "emoubarak",
       "closedAt": null,
       "createdAt": null,
@@ -12923,6 +13122,20 @@
       "title": "fix(gateway): seed subagent session deliveryContext from spawn request params"
     },
     {
+      "author": "ruanrrn",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af48d5006fe7204b09d28ac67d21b79e3f8f58b1",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 54475,
+      "title": "fix(gateway): tolerate transient pre-hello closes in CLI calls"
+    },
+    {
       "author": "kevinbentley",
       "closedAt": null,
       "createdAt": null,
@@ -12936,20 +13149,6 @@
       "mergedAt": null,
       "number": 54476,
       "title": "feat(discord): add per-channel model override support (AI-assisted)"
-    },
-    {
-      "author": "ruanrrn",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "af48d5006fe7204b09d28ac67d21b79e3f8f58b1",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 54475,
-      "title": "fix(gateway): tolerate transient pre-hello closes in CLI calls"
     },
     {
       "author": "liuestc",
@@ -13717,7 +13916,7 @@
       "author": "livingghost",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "49f0cf40cff5fa2c4b2c5b946764bbdc04ec8d87",
+      "headSha": "e3b2fb5181db6e3af434c86629c47e071f3b7281",
       "isDraft": null,
       "labels": [
         "channel: discord",
@@ -13759,10 +13958,10 @@
       "author": "livingghost",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5cc6f03352c091da1814eed69ad9d2bd09cba27a",
+      "headSha": "576728c424433864dca9f7c3b6a56cae98cc3aea",
       "isDraft": null,
       "labels": [
-        "size: S"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 54267,
@@ -14569,7 +14768,7 @@
       "author": "Kaspre",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c7ff75f437eb8a4194b223efeb378ceea61a0ba4",
+      "headSha": "6eea92ebfcd78dc94249ed0633b8a50810afee51",
       "isDraft": null,
       "labels": [
         "agents",
@@ -14949,7 +15148,7 @@
       "author": "ats3v",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "065d98b2aad7099f0e57cd737aaf5e637eaa5aa9",
+      "headSha": "372988e732022598d7a8cf7bfe42acc8c2809c69",
       "isDraft": null,
       "labels": [
         "docs",
@@ -15166,7 +15365,7 @@
       "author": "Lanfei",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "695fbb535362228d6217c653534cafedd0f45bf0",
+      "headSha": "4c542b256dc48b75873a7a50af2602476a84b876",
       "isDraft": null,
       "labels": [
         "agents",
@@ -16261,19 +16460,6 @@
       "title": "fix(cron): allow cron-triggered heartbeat runs when heartbeat.every=\"0m\" (#46046)"
     },
     {
-      "author": "dennis-lynch",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ed540ea7235e87235b30586fc5497d1815ea5ddb",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 53441,
-      "title": "fix(synology-chat): handle HEAD probe and return 200 on webhook ACK"
-    },
-    {
       "author": "kotoyuuko",
       "closedAt": null,
       "createdAt": null,
@@ -16286,6 +16472,19 @@
       "mergedAt": null,
       "number": 53440,
       "title": "fix(memory-lancedb): resolve package.json path in bundled mode"
+    },
+    {
+      "author": "dennis-lynch",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ed540ea7235e87235b30586fc5497d1815ea5ddb",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 53441,
+      "title": "fix(synology-chat): handle HEAD probe and return 200 on webhook ACK"
     },
     {
       "author": "hun9008",
@@ -16631,7 +16830,7 @@
       "author": "liudf0716",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cb4c14a869dcc9017787f17b7094d741d1ef2591",
+      "headSha": "76d0ff5d9d323a1ee380104b418c39694cb22c12",
       "isDraft": null,
       "labels": [
         "docs",
@@ -17637,7 +17836,7 @@
       "author": "JuanRdBO",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "51903ac427a77fc0d849081534fde5223a33bcb9",
+      "headSha": "a3314be2aca006a1c5b1b690bcabb39461ad456c",
       "isDraft": null,
       "labels": [
         "docs",
@@ -19199,7 +19398,7 @@
       "author": "Kaspre",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "ee04165c4ab39301e6a305eec940b795827ba2b5",
+      "headSha": "c88b1947a10cc3ec719b204bbc8904948d447a8e",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -19368,20 +19567,6 @@
       "title": "perf(discord): split runtime lazy ops"
     },
     {
-      "author": "p3nchan",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "cb552bff2d5dd92bb3c4bb10f94e328e97b43ac0",
-      "isDraft": null,
-      "labels": [
-        "app: web-ui",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 52357,
-      "title": "i18n(zh-TW): rewrite locale with Taiwan-standard terminology + full key parity"
-    },
-    {
       "author": "edubur",
       "closedAt": null,
       "createdAt": null,
@@ -19395,6 +19580,20 @@
       "mergedAt": null,
       "number": 52356,
       "title": "clarify persistent session target vs thread-bound session UX"
+    },
+    {
+      "author": "p3nchan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cb552bff2d5dd92bb3c4bb10f94e328e97b43ac0",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 52357,
+      "title": "i18n(zh-TW): rewrite locale with Taiwan-standard terminology + full key parity"
     },
     {
       "author": "scottyallen",
@@ -19609,20 +19808,6 @@
       "author": "aidenwildenbadt",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "99ba1fa787c51681f947785298f9cecb92e7eff9",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 52278,
-      "title": "[codex] fix(embedded): recover orphaned turns without dropping repeats"
-    },
-    {
-      "author": "aidenwildenbadt",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "cd959b6471a4a5c27516d4adaed3df0aef542ce7",
       "isDraft": null,
       "labels": [
@@ -19632,6 +19817,20 @@
       "mergedAt": null,
       "number": 52277,
       "title": "[codex] fix(bluebubbles): dedupe webhook replays without dropping edits"
+    },
+    {
+      "author": "aidenwildenbadt",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "99ba1fa787c51681f947785298f9cecb92e7eff9",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 52278,
+      "title": "[codex] fix(embedded): recover orphaned turns without dropping repeats"
     },
     {
       "author": "aidenwildenbadt",
@@ -22760,12 +22959,12 @@
       "author": "HeroSizy",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5ffb0e3ea373016e25b53eded5e66d082dc3a657",
+      "headSha": "cca9953cf65d9c9169cb9021e66bc48cf263779e",
       "isDraft": null,
       "labels": [
         "docs",
         "agents",
-        "size: M"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 51476,
@@ -25282,7 +25481,7 @@
       "author": "Kaspre",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "13650d6e23da92227936b40da14a676ba0e8f1b7",
+      "headSha": "bb51d89ab9b436a7be1631671a6334dd498ed661",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -29110,20 +29309,6 @@
       "author": "wufunc",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cde09ab1359278b6e56746652e85214be9e60ea1",
-      "isDraft": null,
-      "labels": [
-        "commands",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 49796,
-      "title": "fix: preserve logical symlinked session paths"
-    },
-    {
-      "author": "wufunc",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "bd1b25ab81cc3115249a6ddeb64093c363d1c4f4",
       "isDraft": null,
       "labels": [
@@ -29133,6 +29318,20 @@
       "mergedAt": null,
       "number": 49797,
       "title": "fix: preserve raw WebUI model aliases"
+    },
+    {
+      "author": "wufunc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cde09ab1359278b6e56746652e85214be9e60ea1",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 49796,
+      "title": "fix: preserve logical symlinked session paths"
     },
     {
       "author": "ChroniCat",
@@ -30495,6 +30694,19 @@
       "author": "plabzzxx",
       "closedAt": null,
       "createdAt": null,
+      "headSha": "3411f807249bc7197e945c01958165689df08963",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 49409,
+      "title": "hooks: avoid LLM-blocking slug path on /new,/reset and use canonical daily memory file"
+    },
+    {
+      "author": "plabzzxx",
+      "closedAt": null,
+      "createdAt": null,
       "headSha": "9d28839ecac94389a4f6e0d2454ecf322500358b",
       "isDraft": null,
       "labels": [
@@ -30504,19 +30716,6 @@
       "mergedAt": null,
       "number": 49410,
       "title": "docs: clarify multi-account GPT OAuth profile rotation"
-    },
-    {
-      "author": "plabzzxx",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "3411f807249bc7197e945c01958165689df08963",
-      "isDraft": null,
-      "labels": [
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 49409,
-      "title": "hooks: avoid LLM-blocking slug path on /new,/reset and use canonical daily memory file"
     },
     {
       "author": "y471823206",
@@ -34684,7 +34883,7 @@
       "author": "haoruilee",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f44858d07bb1431e7f07ca3512ef6b8701c10a3c",
+      "headSha": "9855624baac3233a4a87327f3fd7d48fc2acf7f0",
       "isDraft": null,
       "labels": [
         "cli",
@@ -35002,7 +35201,7 @@
       "author": "gambletan",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "3fa17a4a7cf0bbd2574d47894d0943227dbb5c2c",
+      "headSha": "2444cd8eb5c1c4b4d2193c1c6e42fd0d09218b99",
       "isDraft": null,
       "labels": [
         "docs",
@@ -35535,11 +35734,11 @@
       "author": "kn1ghtc",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "d8fb545c40b73a631cfb944b564069defdc2a2e1",
+      "headSha": "ad3c16d157125a4fb191049a806d42906cdb534d",
       "isDraft": null,
       "labels": [
         "gateway",
-        "size: XS"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 48149,
@@ -35633,7 +35832,7 @@
       "author": "kn1ghtc",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "d95baef0f4b93de9e06beaeec448345d36309e55",
+      "headSha": "5a562ba86730b987bb5aade583a4afe1c80dd97a",
       "isDraft": null,
       "labels": [
         "size: M"
@@ -39827,11 +40026,15 @@
       "author": "anon019",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4cef32b4da184d2799da5cdc19cee758f409be56",
+      "headSha": "84bf635b0e5ba1d27e8e7e72cb21f42ea260d3cc",
       "isDraft": null,
       "labels": [
         "channel: telegram",
-        "size: M"
+        "gateway",
+        "commands",
+        "agents",
+        "size: M",
+        "extensions: acpx"
       ],
       "mergedAt": null,
       "number": 46730,
@@ -40783,7 +40986,7 @@
       "author": "onesmash",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4da20c659bd6421069c0beb4809b86bea23ac159",
+      "headSha": "9d924ee86f3acaf1e962363ad81aabaf794fde3b",
       "isDraft": null,
       "labels": [
         "size: M"
@@ -51111,7 +51314,7 @@
       "author": "rpkruse",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8795338f76bfd14d0636185047e144a9f8b5f01e",
+      "headSha": "825910f57cfdbb59b02453ad2d8420af26fba9d6",
       "isDraft": null,
       "labels": [
         "docs",
@@ -53907,7 +54110,7 @@
       "author": "imwyvern",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f3400d9927d9a3080cbc3026ef8babd16fa34384",
+      "headSha": "47b247c6c5253d830a70b18cd8c508ea56c61965",
       "isDraft": null,
       "labels": [
         "docs",
@@ -53992,10 +54195,9 @@
       "author": "imwyvern",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8d96dcf00a366a1055dc83a29a7bec80b46168ec",
+      "headSha": "0f6e7a4443f60f27023fb9052c69a4255a4e738d",
       "isDraft": null,
       "labels": [
-        "docs",
         "agents",
         "size: S"
       ],
@@ -54378,7 +54580,7 @@
       "author": "trothe",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "bdfc80133a286653db16664da7fc1105d79d3d8c",
+      "headSha": "a0e622c2e6a784a3cf8458d13b69fbdce75efeed",
       "isDraft": null,
       "labels": [
         "channel: mattermost",
@@ -59691,19 +59893,6 @@
       "mergedAt": null,
       "number": 41095,
       "title": "fix(config): preserve $include directives when writing config"
-    },
-    {
-      "author": "randyjtw",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "b9ec9509e0e9b0d02364b110283a72cf17ff1294",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 41093,
-      "title": "browser/extension: release idle relay connection for cross-profile handoff"
     },
     {
       "author": "randyjtw",
@@ -67018,7 +67207,7 @@
       "author": "imwyvern",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "ea16143ac9b215d94c77f2142aba224342b29345",
+      "headSha": "68662079caea6c37ef17edbbeb404c30234da1d3",
       "isDraft": null,
       "labels": [
         "docs",
@@ -68732,19 +68921,6 @@
       "mergedAt": null,
       "number": 38075,
       "title": "fix(gateway): filter delivery-mirror entries from chat.history"
-    },
-    {
-      "author": "hkc5",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "16af74d061792171ae04a1387d0d4aebb0a1f6c9",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 38071,
-      "title": "fix(skill-creator): make .skill package file order deterministic"
     },
     {
       "author": "garysng",
@@ -70889,6 +71065,20 @@
       "mergedAt": null,
       "number": 36418,
       "title": "Zh cn localized links"
+    },
+    {
+      "author": "ArgadronRey",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "026d27c29626161d557ce7a1cef3789b4526bed5",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 36407,
+      "title": "fix(subagents): raise sessions_spawn gateway timeout budget (replacement for #29468)"
     },
     {
       "author": "ArgadronRey",
@@ -73434,7 +73624,7 @@
       "author": "efe-arv",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c537377bcc5806420c5c79bcb04f594f79c8dd90",
+      "headSha": "bb44ff09b5dd8d2ee5baa0e46e40a03d8b5598cd",
       "isDraft": null,
       "labels": [
         "agents",
@@ -87244,7 +87434,7 @@
       "author": "efe-arv",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "7e5806690db4ad49998e1099d3ccfd6c965e1b02",
+      "headSha": "3fefbecf3482a72a54e3fc9deea5ebc76bcf3e90",
       "isDraft": null,
       "labels": [
         "channel: telegram",
@@ -89314,10 +89504,11 @@
       "author": "hakonhagland",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "319ea86d65e0d300fee1563e0fbb4c8a7c41cd6f",
+      "headSha": "86184c20920743cb29015e7ceddb1611f55b192b",
       "isDraft": null,
       "labels": [
         "docs",
+        "channel: telegram",
         "extensions: lobster",
         "stale",
         "size: S"

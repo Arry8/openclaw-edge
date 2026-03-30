@@ -977,11 +977,14 @@ async function main() {
     process.exit(1);
   }
 
-  // Auto-commit history/changelog if they're the only dirty files — these are
-  // always safe to commit and are commonly left dirty by interrupted runs.
+  // Auto-commit mega-merge data files if they're the only dirty files — these
+  // are always safe to commit and are commonly left dirty by interrupted runs.
   const AUTO_COMMIT_PATHS = [
     resolve(REPO_DIR, "docs/mega-merge-history.json"),
     resolve(REPO_DIR, "docs/mega-merge-changelog.md"),
+    resolve(REPO_DIR, "docs/mega-merge-pr-cache.json"),
+    resolve(REPO_DIR, "docs/mega-merge-report.json"),
+    resolve(REPO_DIR, "docs/mega-merge-autoskip.json"),
   ];
   {
     const dirty = run("git", ["status", "--porcelain"]);

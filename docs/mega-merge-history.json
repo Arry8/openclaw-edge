@@ -2111,6 +2111,516 @@
         "status": "merged",
         "commitSha": "cb87eca955f5c9c7a768650f94050501c574c88e"
       }
+    },
+    {
+      "author": "clawyouseeme",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3b612c8d3c107027ea573b27edd1ddf9e489ceaf",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57698,
+      "title": "Fix security audit missing CRITICAL warnings for open dmPolicy",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts"
+        ]
+      }
+    },
+    {
+      "author": "haoyu-haoyu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b4d3ebdb6474382d9797e1699a3a4981f84e77b3",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 45611,
+      "title": "fix(security): replace exec() with execFile() and harden SSRF blocklist",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/config.ts"
+        ]
+      }
+    },
+    {
+      "author": "MastrXplorer",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "548dcda3c62189fd79d43e3eff46479b556ed6a1",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 45526,
+      "title": "fix(skills): validate frontmatter archive field against argument injection",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "ed20eaaa763df59ca76b948153b0ec24b5742f6d"
+      }
+    },
+    {
+      "author": "kirs-hi",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "475bc48d30017476bf2e205ca3587628d2a8797e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 45383,
+      "title": "fix(security): wrap inbound media file content to prevent prompt injection (#11207)",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "a83bfae27a1fd80d469cad3b72bd6f07d25f831a"
+      }
+    },
+    {
+      "author": "kvenux",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "eec0a15d248e1639834e33806596d0bebd3fd26d",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 45288,
+      "title": "fix(gateway-status): validate WebSocket URL hostnames against SSRF (CWE-918)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/gateway-status/helpers.ts"
+        ]
+      }
+    },
+    {
+      "author": "qiuyuemartin-max",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3df438e468bb3578887273fe6f66b705919c0436",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 45228,
+      "title": "docs(subagents): fix bootstrap file injection list (5 files, not 2)",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "81195ee91ab7d28d638cc97e0b0a7edf5e71e8c8"
+      }
+    },
+    {
+      "author": "BenediktSchackenberg",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0a5860ddf870eebfc2eced733c80885f645f72f2",
+      "isDraft": null,
+      "labels": [
+        "app: macos",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 45174,
+      "title": "fix(security): extend env variable blocklist with missing injection vectors",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "apps/macos/Sources/OpenClaw/HostEnvSecurityPolicy.generated.swift",
+          "src/infra/host-env-security-policy.json"
+        ]
+      }
+    },
+    {
+      "author": "kvenux",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "dc947a60d829850097c30fd925c22cd6ae75f8d8",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 45139,
+      "title": "fix(utils): validate parsed command argv to prevent split-args misuse as security boundary (CWE-78)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/daemon-cli/lifecycle.ts",
+          "src/daemon/schtasks.ts"
+        ]
+      }
+    },
+    {
+      "author": "laolin5564",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "25a423587289ce7659477047b5297eccc8f67bd0",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 45081,
+      "title": "fix(models): lazy-init ANTHROPIC_MODEL_ALIASES to avoid TDZ crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "4a431fbffa6df8bf6eff0fcbc1e985b34d78162d"
+      }
+    },
+    {
+      "author": "yiShanXin",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "154a89183f9271707ec2f01c0d08941c5b0c55fa",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 45073,
+      "title": "fix: resolve TDZ crash on ANTHROPIC_MODEL_ALIASES",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-selection.ts"
+        ]
+      }
+    },
+    {
+      "author": "kvenux",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8f69a01a22603c78343437b35359eaf88046a07d",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 44892,
+      "title": "fix(link-understanding): prevent command injection via URL templates (CWE-78)",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "f558077489d26ed94fee1cacde78f09ba22c9dfc"
+      }
+    },
+    {
+      "author": "yeyanle6",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "84960eddcd623814be11c597aef54c0a30323226",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "commands",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 44884,
+      "title": "security: gateway public network hardening",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/auth.ts",
+          "src/gateway/server-http.ts",
+          "src/gateway/server-runtime-state.ts",
+          "src/gateway/server.impl.ts",
+          "src/security/audit.ts"
+        ]
+      }
+    },
+    {
+      "author": "Yapie0",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "76f834a4cfa2259130813d57de2794addb97f63f",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 44860,
+      "title": "feat(extensions): add security-shield plugin",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "d30c30055d90926d0d208d55d6c1c41bfa5cb1b2"
+      }
+    },
+    {
+      "author": "haoruilee",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "49a5b3ff692f784d4655afa35cb71ecd9faa93a4",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 44736,
+      "title": "fix(sandbox): detect silent data loss in write_atomic on fakeowner/network mounts, fix #44657",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "8b60dbb2f8126c6469ab83849f160d7cddac90f5"
+      }
+    },
+    {
+      "author": "Boeckbot",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d8a265df9d92e7159b34e7e0190720e7b1180ef7",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 44316,
+      "title": "fix(web-ui): filter tool results and security notices from gateway chat",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/chat.ts"
+        ]
+      }
+    },
+    {
+      "author": "qianjunye",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af87803b8c64ba3905844d8952a506dcc1519a64",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "cli",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 44255,
+      "title": "security: redact sensitive values in outbound messages",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/program/preaction.ts",
+          "src/infra/outbound/outbound-send-service.ts"
+        ]
+      }
+    },
+    {
+      "author": "THE-MAN839",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8ece009abb998b6f95bf132c51c942ec7ee95cb1",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 44242,
+      "title": "Fix memory leak in createPinnedDispatcher",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/net/ssrf.ts"
+        ]
+      }
+    },
+    {
+      "author": "Jackey0903",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "166fc81f96ea6c1d5cffcf75e55368f2cc152937",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 44098,
+      "title": "fix(security): add default pidsLimit for sandbox containers",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "c2c40e2d4b7d893ac79ce9d2ff196052a63b1e25"
+      }
+    },
+    {
+      "author": "ProjectAILiberation",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "05651d0d121c7fbbcc5397c725cd35154a66bb75",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 43725,
+      "title": "feat(security): add Markdown prompt injection scanning to skill-scanner",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/skill-scanner.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "maweibin",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "865b471fdf480370a9b35f19588503c200e1d0f9",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 43585,
+      "title": "security: config include path hardening (NUL + length)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/includes.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "Alex-Alaniz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b0c88223645f59f93e4b77deb10bbe14f9856006",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 43469,
+      "title": "security: scan markdown skill definitions for injection threats",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/skill-scanner.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "okuyam2y",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0d47fda6570282ee67464a6a5b970ce4956d1d6b",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 43217,
+      "title": "fix: gate Google thinkingLevel injection on model.reasoning",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner-extraparams.live.test.ts",
+          "src/agents/pi-embedded-runner-extraparams.test.ts",
+          "src/agents/pi-embedded-runner/extra-params.ts"
+        ]
+      }
+    },
+    {
+      "author": "chengjialu8888",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "925bc04ae0d33d5d6fd9c9d13b960064cdd3bdf1",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 43212,
+      "title": "docs(security): add Security Defaults Audit and Hardening Guide",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "add1466d84cfe467bb8184a921c5d827b38809cf"
+      }
+    },
+    {
+      "author": "LakshmanTurlapati",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b66c1ec6e6f9b656667e1a042b9008358b73c911",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 42906,
+      "title": "fix(security): block non-self messages in WhatsApp self-chat mode",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b7ad488615dbdd435e4ce09824e8fbf42205f6e6"
+      }
+    },
+    {
+      "author": "ahua2020qq",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "835c188dcc13407f4bc104f0fea23f973185800c",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 42810,
+      "title": "feat(acp): add audit logging system for control plane security",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "fa67bce14cc43d77c1abff152d485891c431fda3"
+      }
     }
   ]
 }

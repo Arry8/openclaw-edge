@@ -83,3 +83,24 @@
 - [#45782](https://github.com/openclaw/openclaw/pull/45782) fix: improve error handling and logging for security-critical operations (@NickyLam)
 
 ---
+## 2026-03-30 14:41 — 11 PRs merged
+
+**Base:** `22e9bfd35bdf` → **Head:** `fa67bce14cc4` on `mega/latest`  
+**Build:** passed  
+**Duration:** 3m
+
+### security/crash (11)
+
+- [#45526](https://github.com/openclaw/openclaw/pull/45526) fix(skills): validate frontmatter archive field against argument injection (@MastrXplorer)
+- [#45383](https://github.com/openclaw/openclaw/pull/45383) fix(security): wrap inbound media file content to prevent prompt injection (#11207) (@kirs-hi)
+- [#45228](https://github.com/openclaw/openclaw/pull/45228) docs(subagents): fix bootstrap file injection list (5 files, not 2) (@qiuyuemartin-max)
+- [#45081](https://github.com/openclaw/openclaw/pull/45081) fix(models): lazy-init ANTHROPIC_MODEL_ALIASES to avoid TDZ crash (@laolin5564)
+- [#44892](https://github.com/openclaw/openclaw/pull/44892) fix(link-understanding): prevent command injection via URL templates (CWE-78) (@kvenux)
+- [#44860](https://github.com/openclaw/openclaw/pull/44860) feat(extensions): add security-shield plugin (@Yapie0)
+- [#44736](https://github.com/openclaw/openclaw/pull/44736) fix(sandbox): detect silent data loss in write_atomic on fakeowner/network mounts, fix #44657 (@haoruilee)
+- [#44098](https://github.com/openclaw/openclaw/pull/44098) fix(security): add default pidsLimit for sandbox containers (@Jackey0903)
+- [#43212](https://github.com/openclaw/openclaw/pull/43212) docs(security): add Security Defaults Audit and Hardening Guide (@chengjialu8888)
+- [#42906](https://github.com/openclaw/openclaw/pull/42906) fix(security): block non-self messages in WhatsApp self-chat mode (@LakshmanTurlapati)
+- [#42810](https://github.com/openclaw/openclaw/pull/42810) feat(acp): add audit logging system for control plane security (@ahua2020qq)
+
+---
