@@ -1081,6 +1081,17 @@ export function classifyFailoverReason(raw: string): FailoverReason | null {
   if (isModelNotFoundErrorMessage(raw)) {
     return "model_not_found";
   }
+  const apiInfo = parseApiErrorInfo(raw);
+  const isOpenRouterModel404 =
+    apiInfo?.httpCode === "404" &&
+    isRawApiErrorPayload(raw) &&
+    typeof apiInfo.message === "string" &&
+    apiInfo.message.toLowerCase().includes("openrouter.ai");
+  if (isOpenRouterModel404) {
+    // OpenRouter model-not-found payloads can be JSON-wrapped and only expose
+    // a numeric 404 code plus an OpenRouter model URL in the message body.
+    return "model_not_found";
+  }
   const reasonFrom402Text = classifyFailoverReasonFrom402Text(raw);
   if (reasonFrom402Text) {
     return reasonFrom402Text;
