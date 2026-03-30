@@ -11,6 +11,8 @@ RAW_SANDBOX_SETTING="${OPENCLAW_SANDBOX:-}"
 SANDBOX_ENABLED=""
 DOCKER_SOCKET_PATH="${OPENCLAW_DOCKER_SOCKET:-}"
 TIMEZONE="${OPENCLAW_TZ:-}"
+RAW_SKIP_ONBOARDING="${OPENCLAW_SKIP_ONBOARDING:-}"
+SKIP_ONBOARDING=""
 
 fail() {
   echo "ERROR: $*" >&2
@@ -228,6 +230,9 @@ fi
 if is_truthy_value "$RAW_SANDBOX_SETTING"; then
   SANDBOX_ENABLED="1"
 fi
+if is_truthy_value "$RAW_SKIP_ONBOARDING"; then
+  SKIP_ONBOARDING="1"
+fi
 
 OPENCLAW_CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-$HOME/.openclaw}"
 OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-$HOME/.openclaw/workspace}"
@@ -281,6 +286,7 @@ export OPENCLAW_ALLOW_INSECURE_PRIVATE_WS="${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:
 export OPENCLAW_SANDBOX="$SANDBOX_ENABLED"
 export OPENCLAW_DOCKER_SOCKET="$DOCKER_SOCKET_PATH"
 export OPENCLAW_TZ="$TIMEZONE"
+export OPENCLAW_SKIP_ONBOARDING="$SKIP_ONBOARDING"
 
 # Detect Docker socket GID for sandbox group_add.
 DOCKER_GID=""
@@ -466,7 +472,8 @@ upsert_env "$ENV_FILE" \
   DOCKER_GID \
   OPENCLAW_INSTALL_DOCKER_CLI \
   OPENCLAW_ALLOW_INSECURE_PRIVATE_WS \
-  OPENCLAW_TZ
+  OPENCLAW_TZ \
+  OPENCLAW_SKIP_ONBOARDING
 
 if [[ "$IMAGE_NAME" == "openclaw:local" ]]; then
   echo "==> Building Docker image: $IMAGE_NAME"
@@ -502,15 +509,19 @@ run_prestart_gateway --user root --entrypoint sh openclaw-gateway -c \
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
 
 echo ""
-echo "==> Onboarding (interactive)"
-echo "Docker setup pins Gateway mode to local."
-echo "Gateway runtime bind comes from OPENCLAW_GATEWAY_BIND (default: lan)."
-echo "Current runtime bind: $OPENCLAW_GATEWAY_BIND"
-echo "Gateway token: $OPENCLAW_GATEWAY_TOKEN"
-echo "Tailscale exposure: Off (use host-level tailnet/Tailscale setup separately)."
-echo "Install Gateway daemon: No (managed by Docker Compose)"
-echo ""
-run_prestart_cli onboard --mode local --no-install-daemon
+if [[ -n "$SKIP_ONBOARDING" ]]; then
+  echo "==> Skipping onboarding (OPENCLAW_SKIP_ONBOARDING is set)"
+else
+  echo "==> Onboarding (interactive)"
+  echo "Docker setup pins Gateway mode to local."
+  echo "Gateway runtime bind comes from OPENCLAW_GATEWAY_BIND (default: lan)."
+  echo "Current runtime bind: $OPENCLAW_GATEWAY_BIND"
+  echo "Gateway token: $OPENCLAW_GATEWAY_TOKEN"
+  echo "Tailscale exposure: Off (use host-level tailnet/Tailscale setup separately)."
+  echo "Install Gateway daemon: No (managed by Docker Compose)"
+  echo ""
+  run_prestart_cli onboard --mode local --no-install-daemon
+fi
 
 echo ""
 echo "==> Docker gateway defaults"
