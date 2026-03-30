@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Logger as TsLogger } from "tslog";
+import { getCommandPathWithRootOptions } from "../cli/argv.js";
 import type { OpenClawConfig } from "../config/types.js";
 import {
   POSIX_OPENCLAW_TMP_DIR,
   resolvePreferredOpenClawTmpDir,
 } from "../infra/tmp-openclaw-dir.js";
-import { readLoggingConfig, shouldSkipMutatingLoggingConfigRead } from "./config.js";
+import { readLoggingConfig } from "./config.js";
 import type { ConsoleStyle } from "./console.js";
 import { resolveEnvLogLevelOverride } from "./env-log-level.js";
 import { type LogLevel, levelToMinLevel, normalizeLogLevel } from "./levels.js";
@@ -64,6 +65,7 @@ type ResolvedSettings = {
   level: LogLevel;
   file: string;
   maxFileBytes: number;
+  logFilePrefix?: string | null;
 };
 export type LoggerResolvedSettings = ResolvedSettings;
 export type LogTransportRecord = Record<string, unknown>;
@@ -116,6 +118,11 @@ function publishActiveLogger(logger: TsLogger<LogObj>): void {
   }
 }
 
+function shouldSkipLoadConfigFallback(argv: string[] = process.argv): boolean {
+  const [primary, secondary] = getCommandPathWithRootOptions(argv, 2);
+  return primary === "config" && (secondary === "validate" || secondary === "schema");
+}
+
 function attachExternalTransport(logger: TsLogger<LogObj>, transport: LogTransport): void {
   logger.attachTransport((logObj: LogObj) => {
     if (!externalTransports.has(transport)) {
@@ -160,7 +167,7 @@ function resolveSettings(): ResolvedSettings {
 
   let cfg: OpenClawConfig["logging"] | undefined =
     (loggingState.overrideSettings as LoggerSettings | null) ?? readLoggingConfig();
-  if (!cfg && !shouldSkipMutatingLoggingConfigRead()) {
+  if (!cfg && !shouldSkipLoadConfigFallback()) {
     try {
       const loaded = requireConfig?.("../config/config.js") as
         | {
@@ -176,9 +183,21 @@ function resolveSettings(): ResolvedSettings {
     process.env.VITEST === "true" && process.env.OPENCLAW_TEST_FILE_LOG !== "1" ? "silent" : "info";
   const fromConfig = normalizeLogLevel(cfg?.level, defaultLevel);
   const level = envLevel ?? fromConfig;
-  const file = cfg?.file ?? defaultRollingPathForToday();
+
+  let file = cfg?.file ?? defaultRollingPathForToday();
+  let logFilePrefix: string | null = null;
+
+  if (file.includes("%DATE%") && cfg?.file) {
+    const today = formatLocalDate(new Date());
+    file = file.replace(/%DATE%/g, today);
+    // Extract the basename pattern and derive prefix
+    const basename = path.basename(cfg.file);
+    const parts = basename.split("%DATE%");
+    logFilePrefix = parts[0] || null;
+  }
+
   const maxFileBytes = resolveMaxLogFileBytes(cfg?.maxFileBytes);
-  return { level, file, maxFileBytes };
+  return { level, file, maxFileBytes, logFilePrefix };
 }
 
 function settingsChanged(a: ResolvedSettings | null, b: ResolvedSettings) {
@@ -217,8 +236,8 @@ function buildLogger(settings: ResolvedSettings): TsLogger<LogObj> {
 
   fs.mkdirSync(path.dirname(settings.file), { recursive: true });
   // Clean up stale rolling logs when using a dated log filename.
-  if (isRollingPath(settings.file)) {
-    pruneOldRollingLogs(path.dirname(settings.file));
+  if (isRollingPath(settings.file) || settings.logFilePrefix) {
+    pruneOldRollingLogs(path.dirname(settings.file), settings.logFilePrefix);
   }
   let currentFileBytes = getCurrentLogFileBytes(settings.file);
   let warnedAboutSizeCap = false;
@@ -389,7 +408,7 @@ export function registerLogTransport(transport: LogTransport): () => void {
 }
 
 export const __test__ = {
-  shouldSkipMutatingLoggingConfigRead,
+  shouldSkipLoadConfigFallback,
 };
 
 function formatLocalDate(date: Date): string {
@@ -413,7 +432,11 @@ function isRollingPath(file: string): boolean {
   );
 }
 
-function pruneOldRollingLogs(dir: string): void {
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function pruneOldRollingLogs(dir: string, logFilePrefix?: string | null): void {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const cutoff = Date.now() - MAX_LOG_AGE_MS;
@@ -421,9 +444,27 @@ function pruneOldRollingLogs(dir: string): void {
       if (!entry.isFile()) {
         continue;
       }
-      if (!entry.name.startsWith(`${LOG_PREFIX}-`) || !entry.name.endsWith(LOG_SUFFIX)) {
+      if (!entry.name.endsWith(LOG_SUFFIX)) {
         continue;
       }
+
+      // If prefix is configured, only prune files matching that prefix + date pattern
+      if (logFilePrefix) {
+        if (!entry.name.startsWith(logFilePrefix)) {
+          continue;
+        }
+        // Check for date pattern: prefix + YYYY-MM-DD.log
+        const datePattern = new RegExp(`^${escapeRegex(logFilePrefix)}\\d{4}-\\d{2}-\\d{2}\\.log$`);
+        if (!datePattern.test(entry.name)) {
+          continue;
+        }
+      } else {
+        // No prefix: use default logic (only openclaw-*.log)
+        if (!entry.name.startsWith(`${LOG_PREFIX}-`)) {
+          continue;
+        }
+      }
+
       const fullPath = path.join(dir, entry.name);
       try {
         const stat = fs.statSync(fullPath);
