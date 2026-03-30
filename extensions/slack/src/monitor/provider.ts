@@ -285,19 +285,6 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
           clientOptions,
         },
   );
-
-  // Pre-set shuttingDown on the SocketModeClient before app.stop() to prevent
-  // a race where the library's internal ping timeout fires disconnect() before
-  // shuttingDown is set, causing orphaned reconnects with leaked ping intervals.
-  // See: openclaw/openclaw#56508
-  const gracefulStop = async () => {
-    const socketClient = (app.receiver as { client?: { shuttingDown?: boolean } })?.client;
-    if (socketClient) {
-      socketClient.shuttingDown = true;
-    }
-    await app.stop().catch(() => undefined);
-  };
-
   const slackHttpHandler =
     slackMode === "http" && receiver
       ? async (req: IncomingMessage, res: ServerResponse) => {
@@ -497,7 +484,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
 
   const stopOnAbort = () => {
     if (opts.abortSignal?.aborted && slackMode === "socket") {
-      void gracefulStop();
+      void app.stop();
     }
   };
   opts.abortSignal?.addEventListener("abort", stopOnAbort, { once: true });
@@ -575,7 +562,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
             disconnect.error ? ` (${formatUnknownError(disconnect.error)})` : ""
           }`,
         );
-        await gracefulStop();
+        await app.stop().catch(() => undefined);
         try {
           await sleepWithAbort(delayMs, opts.abortSignal);
         } catch {
@@ -595,7 +582,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   } finally {
     opts.abortSignal?.removeEventListener("abort", stopOnAbort);
     unregisterHttpHandler?.();
-    await gracefulStop();
+    await app.stop().catch(() => undefined);
   }
 }
 
