@@ -352,9 +352,22 @@ function getCompatibleActivePluginRegistry(
   if (!activeCacheKey) {
     return undefined;
   }
-  return resolvePluginLoadCacheContext(options).cacheKey === activeCacheKey
-    ? activeRegistry
-    : undefined;
+  const requestedMode = resolveRuntimeSubagentMode(options.runtimeOptions);
+  const requestCacheKey = resolvePluginLoadCacheContext(options).cacheKey;
+  if (requestCacheKey === activeCacheKey) {
+    return activeRegistry;
+  }
+  // "gateway-bindable" is a superset of "default": if the active registry was
+  // loaded with gateway-bindable subagent access, it satisfies any "default"
+  // mode request without reloading. Reloading would downgrade api.runtime.subagent
+  // from a live proxy to an unavailable stub, breaking hooks like agent_end.
+  // Note: we only check the mode segment of the cacheKey, not the full key,
+  // because gateway startup passes extra params (coreGatewayHandlers) that
+  // differ from runtime calls but don't affect plugin registration correctness.
+  if (requestedMode === "default" && activeCacheKey.includes("::gateway-bindable::")) {
+    return activeRegistry;
+  }
+  return undefined;
 }
 
 export function resolveRuntimePluginRegistry(
