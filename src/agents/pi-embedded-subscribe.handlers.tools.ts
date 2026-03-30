@@ -5,6 +5,8 @@ import {
   buildExecApprovalPendingReplyPayload,
   buildExecApprovalUnavailableReplyPayload,
 } from "../infra/exec-approval-reply.js";
+import { logInfo } from "../logger.js";
+import { redactSensitiveText } from "../logging/redact.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { PluginHookAfterToolCallEvent } from "../plugins/types.js";
 import { normalizeTextForComparison } from "./pi-embedded-helpers.js";
@@ -360,6 +362,30 @@ async function emitToolResultOutput(params: {
   });
 }
 
+/**
+ * Build a compact, redacted summary of tool call arguments for log output.
+ * Truncates the raw serialized form *before* redaction so that large tool
+ * inputs (e.g. write/edit calls carrying full file contents) don't incur
+ * full JSON allocation + regex redaction cost for a 200-char preview.
+ * A 2× preview buffer is kept before redaction so that secret patterns
+ * straddling the boundary are still caught by `redactSensitiveText`.
+ */
+function buildSanitizedArgSummary(args: unknown, maxLen = 200): string {
+  if (args == null) {
+    return "";
+  }
+  try {
+    const raw = typeof args === "string" ? args : JSON.stringify(args);
+    // Truncate to bounded window before running regex-heavy redaction.
+    const previewWindow = maxLen * 2;
+    const bounded = raw.length > previewWindow ? raw.slice(0, previewWindow) : raw;
+    const redacted = redactSensitiveText(bounded);
+    return redacted.length > maxLen ? `${redacted.slice(0, maxLen)}…` : redacted;
+  } catch {
+    return "[unserializable]";
+  }
+}
+
 export async function handleToolExecutionStart(
   ctx: ToolHandlerContext,
   evt: AgentEvent & { toolName: string; toolCallId: string; args: unknown },
@@ -412,6 +438,11 @@ export async function handleToolExecutionStart(
   ctx.state.toolMetaById.set(toolCallId, buildToolCallSummary(toolName, args, meta));
   ctx.log.debug(
     `embedded run tool start: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
+  );
+  // INFO-level observability for tool calls (see #55806).
+  const argSummary = buildSanitizedArgSummary(args);
+  logInfo(
+    `tool-call: start runId=${runId} toolCallId=${toolCallId} tool=${toolName}${argSummary ? ` args=${JSON.stringify(argSummary)}` : ""}`,
   );
 
   const shouldEmitToolEvents = ctx.shouldEmitToolResult();
@@ -649,13 +680,40 @@ export async function handleToolExecutionEnd(
   ctx.log.debug(
     `embedded run tool end: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
   );
+  // INFO-level observability for tool results (see #55806).
+  const durationMs = startData?.startTime != null ? Date.now() - startData.startTime : undefined;
+  {
+    const parts = [`tool-call: end runId=${runId} toolCallId=${toolCallId} tool=${toolName}`];
+    if (durationMs != null) {
+      parts.push(`duration=${durationMs}ms`);
+    }
+    if (isToolError) {
+      // extractToolErrorMessage handles object payloads; fall back to string results directly.
+      const rawError =
+        extractToolErrorMessage(sanitizedResult) ??
+        (typeof sanitizedResult === "string" ? sanitizedResult : undefined);
+      const errorMessage = rawError ? redactSensitiveText(rawError) : undefined;
+      parts.push("status=error");
+      if (errorMessage) {
+        const truncated =
+          errorMessage.length > 200 ? `${errorMessage.slice(0, 200)}…` : errorMessage;
+        parts.push(`error=${JSON.stringify(truncated)}`);
+      }
+    } else {
+      parts.push("status=ok");
+    }
+    logInfo(parts.join(" "));
+  }
 
   await emitToolResultOutput({ ctx, toolName, meta, isToolError, result, sanitizedResult });
 
   // Run after_tool_call plugin hook (fire-and-forget)
   const hookRunnerAfter = ctx.hookRunner ?? getGlobalHookRunner();
   if (hookRunnerAfter?.hasHooks("after_tool_call")) {
-    const durationMs = startData?.startTime != null ? Date.now() - startData.startTime : undefined;
+    // Compute duration after emitToolResultOutput so hook consumers get total
+    // wall-clock time (including output emission), preserving original semantics.
+    const hookDurationMs =
+      startData?.startTime != null ? Date.now() - startData.startTime : undefined;
     const hookEvent: PluginHookAfterToolCallEvent = {
       toolName,
       params: afterToolCallArgs,
@@ -663,7 +721,7 @@ export async function handleToolExecutionEnd(
       toolCallId,
       result: sanitizedResult,
       error: isToolError ? extractToolErrorMessage(sanitizedResult) : undefined,
-      durationMs,
+      durationMs: hookDurationMs,
     };
     void hookRunnerAfter
       .runAfterToolCall(hookEvent, {
