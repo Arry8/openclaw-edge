@@ -537,6 +537,529 @@
           "src/agents/command/attempt-execution.ts"
         ]
       }
+    },
+    {
+      "author": "Syysean",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "faf9ab00cd998a724fd081c98439d656bbce94ca",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 55513,
+      "title": "fix(gateway): prevent OOM and socket hang up via Claim Check pattern for large attachments [media://inbound/<id> contract]",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "c3994632ef1b7b4ea6e87231c5bfc1a17660405a"
+      }
+    },
+    {
+      "author": "code-sayuri",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "92333510421e98297f99c3c42003e3e02bfb55f6",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: mattermost",
+        "channel: msteams",
+        "channel: signal",
+        "channel: zalouser",
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 55485,
+      "title": "Config: plumb opt-in SSRF policy for web fetch, citation redirects, and remote media",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.generated/config-baseline.json",
+          "docs/.generated/config-baseline.jsonl",
+          "docs/.generated/plugin-sdk-api-baseline.json",
+          "docs/.generated/plugin-sdk-api-baseline.jsonl",
+          "extensions/google/src/gemini-web-search-provider.ts",
+          "src/config/legacy-web-search.test.ts",
+          "src/media/load-options.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "lml2468",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "faa2461e248e86aee5eefa050b1b331c99ff0ed2",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 55440,
+      "title": "fix(msteams): prevent path-to-regexp crash with express 5 (#55161)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/msteams/src/sdk.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "cgdusek",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9adc03aac7dce71fdef16e7df539aaf80451f4f7",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 55221,
+      "title": "perf(agents): add contextInjection option to skip workspace re-injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.generated/config-baseline.jsonl"
+        ]
+      }
+    },
+    {
+      "author": "karanuppal",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b6daf20530fabe73b934d3d938c3c5b4420a3eb2",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 55176,
+      "title": "fix: allow RFC2544 benchmark IPs in image tool SSRF guard",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "969bbf49ebc6ed53cd7be4048c9f3b789e85d993"
+      }
+    },
+    {
+      "author": "keepmind9",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6c6f1a1078f7a4a55cdca5549888296430ac0c50",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 55139,
+      "title": "fix: prevent infinite recursion in resolveConsoleSettings() during startup",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "dddcd2a74768ae2a2e47a889091976c7780fd833"
+      }
+    },
+    {
+      "author": "hnshah",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a48a7bc324f7d9aebd911d7be5ff40a8826bd622",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 54990,
+      "title": "security(54737): sanitize group metadata to prevent prompt injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/subagent-announce.ts",
+          "src/auto-reply/reply/groups.ts"
+        ]
+      }
+    },
+    {
+      "author": "lyfuci",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3dfa622eb429c627b0157f4a6560371de02b1920",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 54945,
+      "title": "fix(discord): catch gateway emitter errors to prevent whole-gateway crash on WebSocket failure",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/provider.lifecycle.ts"
+        ]
+      }
+    },
+    {
+      "author": "Salamony4all",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3ac1b4cd34b7d77f704befe30b3a943bcbd5f5c1",
+      "isDraft": null,
+      "labels": [
+        "scripts",
+        "docker",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 54423,
+      "title": "infra: fix Railway deployment by configuring gateway security flags before startup",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "Dockerfile",
+          "scripts/stage-bundled-plugin-runtime.mjs"
+        ]
+      }
+    },
+    {
+      "author": "ymrdf",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f70e653d90b82ed4c3367cb86be2dceec6882ef3",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 54386,
+      "title": "fix(skill-creator): default to workspace skills directory to prevent data loss on upgrade",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "e42a07ad9c9716d38c2d1e5227b374f87d4f3e0c"
+      }
+    },
+    {
+      "author": "Yourdaylight",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e5e1da46381c7887ecfe931d86be0f061a8a96ed",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 54376,
+      "title": "feat(security): add Chinese deployment audit checks for Feishu webhook and reverse proxy",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "artwalker",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d7cb86411bdc0742f8ffc24b9c26b0e50c4d3112",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 52731,
+      "title": "fix(gateway): add TTL cleanup for 3 Maps that grow unbounded causing OOM",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/subagent-registry.ts",
+          "src/infra/agent-events.ts"
+        ]
+      }
+    },
+    {
+      "author": "Valisthea",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "87c31b571e0a87103518ade48c8f6833ef72c58b",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 52636,
+      "title": "🛡️ [SECURITY] Zero-Dep Runtime Shield — Circuit Breaker, Anomaly Detection & 4 Critical Vuln Patches",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/config.ts"
+        ]
+      }
+    },
+    {
+      "author": "artwalker",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "02abc6a4bf59d720d6b7120e79551eee51797130",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 52619,
+      "title": "fix(cron): catch schedule errors in createJob to prevent Gateway crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "51bdeb8b5d1732da6fc685e100b23209bc2dab51"
+      }
+    },
+    {
+      "author": "AIwork4me",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9e561a88e320df3716be4137f193408e8f971e91",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 52506,
+      "title": "docs(zh-CN): complete gateway/security frontmatter + fix sandboxing links",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "7c7e7103ae644d044ffd83a9ad5aeef72b82d72a"
+      }
+    },
+    {
+      "author": "scottyallen",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7057b6c8994df6db1f273f6073c819095cecad6d",
+      "isDraft": null,
+      "labels": [
+        "channel: slack",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 52351,
+      "title": "fix: use isActive instead of isStreaming for steer mode message injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/runs.test.ts",
+          "src/auto-reply/reply/agent-runner.ts"
+        ]
+      }
+    },
+    {
+      "author": "chasebank2017",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0172b4f88b72f2bcda63bbb3b89b1d2531f79bc0",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 52138,
+      "title": "docs(i18n): expand zh-CN glossary with 138 missing terms across automation, security, agent, and channel domains",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.i18n/glossary.zh-CN.json"
+        ]
+      }
+    },
+    {
+      "author": "lurui1997",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af2cba154530ce81e2e400ffc99805ebb305b752",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 51960,
+      "title": "Security: avoid pipe-to-shell false positive on logical OR (||) (#51908) (#51908)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "author": "TurboTheTurtle",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f0c0651db7f897bfe818e300a5f2d5e849c48674",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 51910,
+      "title": "fix(security): exclude logical OR (||) from pipe-to-shell obfuscation detector",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "51b9630c7ad83acdc5070b42d4ab5e9a80530118"
+      }
+    },
+    {
+      "author": "fengqiliang93",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ace75abbb239ba160a4e205fea23b428082e1823",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 51722,
+      "title": "fix (ssrf): 修复浏览器 SSRF 策略缺失导致的导航阻断问题，补充 dangerouslyAllowPrivateNetwork 配置",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "635eee219b91f4b4b84171c71bd3890081a26d23"
+      }
+    },
+    {
+      "author": "Wayazi",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5dafbfeb4c4f0f35948decb34e0bf9ca012c5027",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 51627,
+      "title": "fix(rust-plugin): critical security fixes - ready for review",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "pnpm-lock.yaml"
+        ]
+      }
+    },
+    {
+      "author": "adrianwedd",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d016f13e7a98125b20da99b825fbec347136268a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 51362,
+      "title": "fix: gateway stability — OOM, failover 404, hook crash, handshake timeout",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/failover-error.test.ts",
+          "src/agents/failover-error.ts",
+          "src/config/sessions/store.ts",
+          "src/gateway/server-constants.ts",
+          "src/gateway/session-utils.ts"
+        ]
+      }
+    },
+    {
+      "author": "ernestodeoliveira",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6c0cee0bcbf2e7249f39eb7a1b7b23f891be55ac",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 51323,
+      "title": "fix(sandbox): sanitize security errors before posting to channels",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/agent-runner-execution.ts"
+        ]
+      }
+    },
+    {
+      "author": "yuntan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6442a740323ba2fc617d6fc6808f61fd7e5bbb95",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 51311,
+      "title": "fix(ios): guard sendPing continuation against double-resume crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "8c541c1b70e23e23a7ca56780142c2f52834b142"
+      }
+    },
+    {
+      "author": "chziyue",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8862a95f19382d4bf5962eac252eb0604306ac58",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 56923,
+      "title": "fix(security): include dangerous commands in known commands list",
+      "tier": 1,
+      "result": {
+        "status": "already-applied"
+      }
     }
   ]
 }
