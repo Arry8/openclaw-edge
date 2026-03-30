@@ -233,6 +233,11 @@ function sanitizeLiveConfig(raw: string): string {
             list?: Array<Record<string, unknown>>;
           };
         } = JSON5.parse(raw);
+      agents?: {
+        defaults?: Record<string, unknown>;
+        list?: Array<Record<string, unknown>>;
+      };
+    } = JSON5.parse(raw);
     if (!parsed || typeof parsed !== "object") {
       return raw;
     }

@@ -21,12 +21,13 @@ import {
   resolveAgentDeliveryPlan,
   resolveAgentOutboundTarget,
 } from "../../infra/outbound/agent-delivery.js";
+import { shouldDowngradeDeliveryToSessionOnly } from "../../infra/outbound/best-effort-delivery.js";
 import { resolveMessageChannelSelection } from "../../infra/outbound/channel-selection.js";
 import { classifySessionKeyShape, normalizeAgentId } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
-import { createTaskRecord } from "../../tasks/task-registry.js";
+import { createRunningTaskRun } from "../../tasks/task-executor.js";
 import {
   normalizeDeliveryContext,
   normalizeSessionDeliveryFields,
@@ -191,7 +192,7 @@ function dispatchAgentRunFromGateway(params: {
 }) {
   if (params.ingressOpts.sessionKey?.trim()) {
     try {
-      createTaskRecord({
+      createRunningTaskRun({
         runtime: "cli",
         sourceId: params.runId,
         requesterSessionKey: params.ingressOpts.sessionKey,
@@ -204,7 +205,6 @@ function dispatchAgentRunFromGateway(params: {
         childSessionKey: params.ingressOpts.sessionKey,
         runId: params.runId,
         task: params.ingressOpts.message,
-        status: "running",
         deliveryStatus: "not_applicable",
         startedAt: Date.now(),
       });
@@ -704,6 +704,7 @@ export const agentHandlers: GatewayRequestHandlers = {
     let resolvedAccountId = deliveryPlan.resolvedAccountId;
     let resolvedTo = deliveryPlan.resolvedTo;
     let effectivePlan = deliveryPlan;
+    let deliveryDowngradeReason: string | null = null;
 
     if (wantsDelivery && resolvedChannel === INTERNAL_MESSAGE_CHANNEL) {
       const cfgResolved = cfgForAgent ?? cfg;
@@ -718,8 +719,16 @@ export const agentHandlers: GatewayRequestHandlers = {
           resolvedAccountId,
         };
       } catch (err) {
-        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
-        return;
+        const shouldDowngrade = shouldDowngradeDeliveryToSessionOnly({
+          wantsDelivery,
+          bestEffortDeliver,
+          resolvedChannel,
+        });
+        if (!shouldDowngrade) {
+          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+          return;
+        }
+        deliveryDowngradeReason = String(err);
       }
     }
 
@@ -737,15 +746,27 @@ export const agentHandlers: GatewayRequestHandlers = {
     }
 
     if (wantsDelivery && resolvedChannel === INTERNAL_MESSAGE_CHANNEL) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          "delivery channel is required: pass --channel/--reply-channel or use a main session with a previous channel",
-        ),
+      const shouldDowngrade = shouldDowngradeDeliveryToSessionOnly({
+        wantsDelivery,
+        bestEffortDeliver,
+        resolvedChannel,
+      });
+      if (!shouldDowngrade) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "delivery channel is required: pass --channel/--reply-channel or use a main session with a previous channel",
+          ),
+        );
+        return;
+      }
+      context.logGateway.info(
+        deliveryDowngradeReason
+          ? `agent delivery downgraded to session-only (bestEffortDeliver): ${deliveryDowngradeReason}`
+          : "agent delivery downgraded to session-only (bestEffortDeliver): no deliverable channel",
       );
-      return;
     }
 
     const normalizedTurnSource = normalizeMessageChannel(turnSourceChannel);
