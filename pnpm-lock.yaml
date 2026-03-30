@@ -412,6 +412,16 @@ importers:
 
   extensions/image-generation-core: {}
 
+  extensions/guardian:
+    dependencies:
+      '@mariozechner/pi-ai':
+        specifier: 0.58.0
+        version: 0.58.0(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/imessage: {}
 
   extensions/irc: {}
