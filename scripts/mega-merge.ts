@@ -415,8 +415,11 @@ function appendChangelog(params: {
   lines.push(`---`);
   lines.push(``);
 
-  appendFileSync(CHANGELOG_PATH, lines.join("\n"));
-  log(`  Changelog appended to             : ${CHANGELOG_PATH}`);
+  // Prepend so newest entries appear at the top of the file.
+  const entry = lines.join("\n");
+  const existing = existsSync(CHANGELOG_PATH) ? readFileSync(CHANGELOG_PATH, "utf8") : "";
+  writeFileSync(CHANGELOG_PATH, entry + existing);
+  log(`  Changelog updated                 : ${CHANGELOG_PATH}`);
 }
 
 // ── GitHub release creator ────────────────────────────────────────────────────
