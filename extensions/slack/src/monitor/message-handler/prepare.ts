@@ -519,6 +519,40 @@ export async function prepareSlackMessage(params: {
     return null;
   }
 
+  // Drop messages that mention other users/bots but not this bot (parity with Discord).
+  // Guard on canDetectMention so we don't false-drop when bot ID resolution failed.
+  const ignoreOtherMentions = channelConfig?.ignoreOtherMentions ?? false;
+  if (
+    isRoom &&
+    ignoreOtherMentions &&
+    canDetectMention &&
+    hasAnyMention &&
+    !wasMentioned &&
+    !implicitMention
+  ) {
+    logInboundDrop({
+      log: logVerbose,
+      channel: "slack",
+      reason: "other user/bot mentioned (ignoreOtherMentions)",
+      target: senderId,
+    });
+    const pendingText = (message.text ?? "").trim();
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: ctx.channelHistories,
+      historyKey,
+      limit: ctx.historyLimit,
+      entry: pendingText
+        ? {
+            sender: await resolveSenderName(),
+            body: pendingText,
+            timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
+            messageId: message.ts,
+          }
+        : null,
+    });
+    return null;
+  }
+
   const threadStarter =
     isThreadReply && threadTs
       ? await resolveSlackThreadStarter({

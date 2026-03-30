@@ -11,6 +11,7 @@ import { allowListMatches, normalizeAllowListLower, normalizeSlackSlug } from ".
 export type SlackChannelConfigResolved = {
   allowed: boolean;
   requireMention: boolean;
+  ignoreOtherMentions?: boolean;
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -23,6 +24,7 @@ export type SlackChannelConfigEntry = {
   enabled?: boolean;
   allow?: boolean;
   requireMention?: boolean;
+  ignoreOtherMentions?: boolean;
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -147,6 +149,10 @@ export function resolveSlackChannelConfig(params: {
   const requireMention =
     firstDefined(resolved.requireMention, fallback?.requireMention, requireMentionDefault) ??
     requireMentionDefault;
+  const ignoreOtherMentions = firstDefined(
+    resolved.ignoreOtherMentions,
+    fallback?.ignoreOtherMentions,
+  );
   const allowBots = firstDefined(resolved.allowBots, fallback?.allowBots);
   const users = firstDefined(resolved.users, fallback?.users);
   const skills = firstDefined(resolved.skills, fallback?.skills);
@@ -154,6 +160,7 @@ export function resolveSlackChannelConfig(params: {
   const result: SlackChannelConfigResolved = {
     allowed,
     requireMention,
+    ignoreOtherMentions,
     allowBots,
     users,
     skills,
