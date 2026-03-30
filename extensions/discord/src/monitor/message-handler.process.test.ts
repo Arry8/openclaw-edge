@@ -32,11 +32,23 @@ const deliveryMocks = vi.hoisted(() => ({
   deliverDiscordReply: vi.fn<(params: unknown) => Promise<void>>(async () => {}),
   createDiscordDraftStream: vi.fn(() => createMockDraftStream()),
 }));
+const dispatcherLifecycleMocks = vi.hoisted(() => ({
+  markDispatchIdle: vi.fn(() => {}),
+  markRunComplete: vi.fn(() => {}),
+}));
 const editMessageDiscord = deliveryMocks.editMessageDiscord;
 const deliverDiscordReply = deliveryMocks.deliverDiscordReply;
 const createDiscordDraftStream = deliveryMocks.createDiscordDraftStream;
 type DispatchInboundParams = {
   dispatcher: {
+    sendToolResult: (payload: {
+      text?: string;
+      isReasoning?: boolean;
+      channelData?: unknown;
+      isError?: boolean;
+      mediaUrl?: string;
+      mediaUrls?: string[];
+    }) => boolean | Promise<boolean>;
     sendBlockReply: (payload: {
       text?: string;
       isReasoning?: boolean;
@@ -127,7 +139,10 @@ vi.spyOn(replyRuntimeModule, "createReplyDispatcherWithTyping").mockImplementati
   deliver: (payload: unknown, info: { kind: string }) => Promise<void> | void;
 }) => ({
   dispatcher: {
-    sendToolResult: vi.fn(() => true),
+    sendToolResult: vi.fn((payload: unknown) => {
+      void opts.deliver(payload as never, { kind: "tool" });
+      return true;
+    }),
     sendBlockReply: vi.fn((payload: unknown) => {
       void opts.deliver(payload as never, { kind: "block" });
       return true;
@@ -141,8 +156,8 @@ vi.spyOn(replyRuntimeModule, "createReplyDispatcherWithTyping").mockImplementati
     markComplete: vi.fn(),
   },
   replyOptions: {},
-  markDispatchIdle: vi.fn(),
-  markRunComplete: vi.fn(),
+  markDispatchIdle: dispatcherLifecycleMocks.markDispatchIdle,
+  markRunComplete: dispatcherLifecycleMocks.markRunComplete,
 })) as never);
 
 const conversationRuntimeModule = await import("openclaw/plugin-sdk/conversation-runtime");
@@ -214,8 +229,11 @@ beforeEach(() => {
   sendMocks.reactMessageDiscord.mockClear();
   sendMocks.removeReactionDiscord.mockClear();
   editMessageDiscord.mockClear();
-  deliverDiscordReply.mockClear();
+  deliverDiscordReply.mockReset();
+  deliverDiscordReply.mockResolvedValue(undefined);
   createDiscordDraftStream.mockClear();
+  dispatcherLifecycleMocks.markDispatchIdle.mockClear();
+  dispatcherLifecycleMocks.markRunComplete.mockClear();
   dispatchInboundMessage.mockClear();
   recordInboundSession.mockClear();
   readSessionUpdatedAt.mockClear();
@@ -276,6 +294,13 @@ function createMockDraftStreamForTest() {
   const draftStream = createMockDraftStream();
   createDiscordDraftStream.mockReturnValueOnce(draftStream);
   return draftStream;
+}
+
+function getDeliveredReplyTexts(): Array<string | undefined> {
+  return deliveryMocks.deliverDiscordReply.mock.calls.map((call) => {
+    const params = call[0] as { replies?: Array<{ text?: string }> } | undefined;
+    return params?.replies?.[0]?.text;
+  });
 }
 
 function expectSinglePreviewEdit() {
@@ -667,6 +692,123 @@ describe("processDiscordMessage draft streaming", () => {
     await processStreamOffDiscordMessage();
 
     expect(deliverDiscordReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("delivers the final reply before deferred text-only tool summaries", async () => {
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.dispatcher.sendToolResult({ text: "🔧 exec: rate lookup" });
+      await params?.dispatcher.sendFinalReply({ text: "USD/KRW is 1400" });
+      return { queuedFinal: true, counts: { final: 1, tool: 1, block: 0 } };
+    });
+
+    const ctx = await createBaseContext({
+      ...createDirectMessageContextOverrides(),
+      discordConfig: { streamMode: "off" },
+    });
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    await processDiscordMessage(ctx as any);
+
+    expect(getDeliveredReplyTexts()).toEqual(["USD/KRW is 1400", "🔧 exec: rate lookup"]);
+  });
+
+  it("drops deferred tool summaries when dispatch fails before a final reply", async () => {
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.dispatcher.sendToolResult({ text: "🔧 exec: rate lookup" });
+      throw new Error("simulated dispatch failure");
+    });
+
+    const ctx = await createBaseContext({
+      ...createDirectMessageContextOverrides(),
+      discordConfig: { streamMode: "off" },
+    });
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    await expect(processDiscordMessage(ctx as any)).rejects.toThrow("simulated dispatch failure");
+
+    expect(getDeliveredReplyTexts()).toEqual([]);
+  });
+
+  it("continues flushing later deferred tool summaries after one send fails", async () => {
+    deliverDiscordReply.mockImplementation(async (params: unknown) => {
+      const text = (params as { replies?: Array<{ text?: string }> })?.replies?.[0]?.text;
+      if (text === "first deferred") {
+        throw new Error("simulated deferred send failure");
+      }
+    });
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.dispatcher.sendToolResult({ text: "first deferred" });
+      await params?.dispatcher.sendToolResult({ text: "second deferred" });
+      await params?.dispatcher.sendFinalReply({ text: "final first" });
+      return { queuedFinal: true, counts: { final: 1, tool: 2, block: 0 } };
+    });
+
+    const ctx = await createBaseContext({
+      ...createDirectMessageContextOverrides(),
+      discordConfig: { streamMode: "off" },
+    });
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    await processDiscordMessage(ctx as any);
+
+    expect(getDeliveredReplyTexts()).toEqual(["final first", "first deferred", "second deferred"]);
+  });
+
+  it("bounds deferred tool summaries and appends an overflow notice", async () => {
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      for (let index = 1; index <= 13; index += 1) {
+        await params?.dispatcher.sendToolResult({ text: `tool ${index}` });
+      }
+      await params?.dispatcher.sendFinalReply({ text: "final first" });
+      return { queuedFinal: true, counts: { final: 1, tool: 13, block: 0 } };
+    });
+
+    const ctx = await createBaseContext({
+      ...createDirectMessageContextOverrides(),
+      discordConfig: { streamMode: "off" },
+    });
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    await processDiscordMessage(ctx as any);
+
+    expect(getDeliveredReplyTexts()).toEqual([
+      "final first",
+      "tool 1",
+      "tool 2",
+      "tool 3",
+      "tool 4",
+      "tool 5",
+      "tool 6",
+      "tool 7",
+      "tool 8",
+      "tool 9",
+      "tool 10",
+      "tool 11",
+      "tool 12",
+      "Note: 1 additional tool update was suppressed to keep Discord delivery bounded.",
+    ]);
+  });
+
+  it("marks dispatch idle only after deferred summaries finish flushing", async () => {
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.dispatcher.sendToolResult({ text: "deferred tool" });
+      await params?.dispatcher.sendFinalReply({ text: "final first" });
+      return { queuedFinal: true, counts: { final: 1, tool: 1, block: 0 } };
+    });
+
+    const ctx = await createBaseContext({
+      ...createDirectMessageContextOverrides(),
+      discordConfig: { streamMode: "off" },
+    });
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    await processDiscordMessage(ctx as any);
+
+    const deliveryCallOrder = deliverDiscordReply.mock.invocationCallOrder;
+    const idleCallOrder = dispatcherLifecycleMocks.markDispatchIdle.mock.invocationCallOrder;
+    expect(deliveryCallOrder).toHaveLength(2);
+    expect(idleCallOrder).toHaveLength(1);
+    expect(idleCallOrder[0]).toBeGreaterThan(deliveryCallOrder[1] ?? 0);
   });
 
   it("streams block previews using draft chunking", async () => {

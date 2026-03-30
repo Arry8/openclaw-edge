@@ -498,10 +498,15 @@ export async function processDiscordMessage(
       : undefined;
   const shouldSplitPreviewMessages = discordStreamMode === "block";
   const draftChunker = draftChunking ? new EmbeddedBlockChunker(draftChunking) : undefined;
+  const MAX_DEFERRED_TOOL_SUMMARIES = 12;
+  const MAX_DEFERRED_TOOL_SUMMARY_CHARS = 12_000;
   let lastPartialText = "";
   let draftText = "";
   let hasStreamedMessage = false;
   let finalizedViaPreviewMessage = false;
+  const deferredToolSummaries: ReplyPayload[] = [];
+  let deferredToolSummaryChars = 0;
+  let suppressedDeferredToolSummaries = 0;
 
   const resolvePreviewFinalText = (text?: string) => {
     if (typeof text !== "string") {
@@ -608,6 +613,105 @@ export async function processDiscordMessage(
     await draftStream.flush();
   };
 
+  const clearDeferredToolSummaries = () => {
+    deferredToolSummaries.length = 0;
+    deferredToolSummaryChars = 0;
+    suppressedDeferredToolSummaries = 0;
+  };
+
+  const shouldDeferToolSummary = (payload: ReplyPayload, kind: "tool" | "block" | "final") => {
+    if (kind !== "tool" || payload.isError) {
+      return false;
+    }
+    const execApproval =
+      payload.channelData &&
+      typeof payload.channelData === "object" &&
+      !Array.isArray(payload.channelData)
+        ? payload.channelData.execApproval
+        : undefined;
+    if (execApproval && typeof execApproval === "object" && !Array.isArray(execApproval)) {
+      return false;
+    }
+    return !resolveSendableOutboundReplyParts(payload).hasMedia;
+  };
+
+  const deliverImmediatePayload = async (payload: ReplyPayload, isFinal: boolean) => {
+    const replyToId = replyReference.use();
+    if (isFinal) {
+      notifyFinalReplyStart();
+    }
+    await deliverDiscordReply({
+      cfg,
+      replies: [payload],
+      target: deliverTarget,
+      token,
+      accountId,
+      rest: client.rest,
+      runtime,
+      replyToId,
+      replyToMode,
+      textLimit,
+      maxLinesPerMessage,
+      tableMode,
+      chunkMode,
+      sessionKey: ctxPayload.SessionKey,
+      threadBindings,
+      mediaLocalRoots,
+    });
+    replyReference.markSent();
+    if (isFinal) {
+      observer?.onFinalReplyDelivered?.();
+    }
+  };
+
+  const queueDeferredToolSummary = (payload: ReplyPayload) => {
+    const nextText = payload.text ?? "";
+    if (
+      deferredToolSummaries.length >= MAX_DEFERRED_TOOL_SUMMARIES ||
+      deferredToolSummaryChars + nextText.length > MAX_DEFERRED_TOOL_SUMMARY_CHARS
+    ) {
+      suppressedDeferredToolSummaries += 1;
+      return;
+    }
+    deferredToolSummaries.push(payload);
+    deferredToolSummaryChars += nextText.length;
+  };
+
+  const flushDeferredToolSummaries = async () => {
+    if (
+      (deferredToolSummaries.length === 0 && suppressedDeferredToolSummaries === 0) ||
+      isProcessAborted(abortSignal)
+    ) {
+      clearDeferredToolSummaries();
+      return;
+    }
+    const pendingPayloads = deferredToolSummaries.splice(0);
+    deferredToolSummaryChars = 0;
+    const suppressedCount = suppressedDeferredToolSummaries;
+    suppressedDeferredToolSummaries = 0;
+    for (const payload of pendingPayloads) {
+      try {
+        await deliverImmediatePayload(payload, false);
+      } catch (err) {
+        logVerbose(`discord: deferred tool summary delivery failed: ${String(err)}`);
+      }
+    }
+    if (suppressedCount > 0) {
+      const nounSuffix = suppressedCount === 1 ? "" : "s";
+      const verb = suppressedCount === 1 ? "was" : "were";
+      try {
+        await deliverImmediatePayload(
+          {
+            text: `Note: ${suppressedCount} additional tool update${nounSuffix} ${verb} suppressed to keep Discord delivery bounded.`,
+          },
+          false,
+        );
+      } catch (err) {
+        logVerbose(`discord: deferred tool summary overflow notice failed: ${String(err)}`);
+      }
+    }
+  };
+
   // When draft streaming is active, suppress block streaming to avoid double-streaming.
   const disableBlockStreamingForDraft = draftStream ? true : undefined;
   let finalReplyStartNotified = false;
@@ -630,6 +734,10 @@ export async function processDiscordMessage(
         const isFinal = info.kind === "final";
         if (payload.isReasoning) {
           // Reasoning/thinking payloads should not be delivered to Discord.
+          return;
+        }
+        if (shouldDeferToolSummary(payload, info.kind)) {
+          queueDeferredToolSummary(payload);
           return;
         }
         if (draftStream && isFinal) {
@@ -713,33 +821,7 @@ export async function processDiscordMessage(
         if (isProcessAborted(abortSignal)) {
           return;
         }
-
-        const replyToId = replyReference.use();
-        if (isFinal) {
-          notifyFinalReplyStart();
-        }
-        await deliverDiscordReply({
-          cfg,
-          replies: [payload],
-          target: deliverTarget,
-          token,
-          accountId,
-          rest: client.rest,
-          runtime,
-          replyToId,
-          replyToMode,
-          textLimit,
-          maxLinesPerMessage,
-          tableMode,
-          chunkMode,
-          sessionKey: ctxPayload.SessionKey,
-          threadBindings,
-          mediaLocalRoots,
-        });
-        replyReference.markSent();
-        if (isFinal) {
-          observer?.onFinalReplyDelivered?.();
-        }
+        await deliverImmediatePayload(payload, isFinal);
       },
       onError: (err, info) => {
         runtime.error?.(danger(`discord ${info.kind} reply failed: ${String(err)}`));
@@ -845,7 +927,15 @@ export async function processDiscordMessage(
       logVerbose(`discord: draft cleanup failed: ${String(err)}`);
     } finally {
       markRunComplete();
-      markDispatchIdle();
+      try {
+        if (dispatchError || dispatchAborted) {
+          clearDeferredToolSummaries();
+        } else {
+          await flushDeferredToolSummaries();
+        }
+      } finally {
+        markDispatchIdle();
+      }
     }
     if (statusReactionsEnabled) {
       if (dispatchAborted) {
