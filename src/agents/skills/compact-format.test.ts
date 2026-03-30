@@ -18,10 +18,10 @@ function makeSkill(name: string, desc = "A skill", filePath = `/skills/${name}/S
     description: desc,
     filePath,
     baseDir: `/skills/${name}`,
-    baseDir: `/skills/${name}`,
     source: "workspace",
     disableModelInvocation: false,
     } as unknown as Skill;
+}
 function makeEntry(skill: Skill): SkillEntry {
   return { skill, frontmatter: {} };
 }
