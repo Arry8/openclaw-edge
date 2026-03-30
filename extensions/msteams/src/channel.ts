@@ -152,6 +152,8 @@ function jsonActionResultWithDetails(
   };
 }
 
+// Kept for future use when delegated-auth support enables the react handler.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MSTEAMS_REACTION_TYPES = ["like", "heart", "laugh", "surprised", "sad", "angry"] as const;
 
 function actionError(message: string) {
@@ -316,6 +318,9 @@ function describeMSTeamsMessageTool({
     cfg.channels?.msteams?.enabled !== false &&
     Boolean(resolveMSTeamsCredentials(cfg.channels?.msteams));
   return {
+    // "react" and "reactions" are omitted: setReaction/unsetReaction require Delegated
+    // permissions, but the bot authenticates with Application credentials (client_credentials
+    // flow). Re-enable "react"/"reactions" here once delegated-auth support is available.
     actions: enabled
       ? ([
           "upload-file",
@@ -326,8 +331,6 @@ function describeMSTeamsMessageTool({
           "unpin",
           "list-pins",
           "read",
-          "react",
-          "reactions",
           "search",
           "addParticipant",
           "removeParticipant",
@@ -750,73 +753,16 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount, ProbeMSTeamsRe
             });
           }
 
-          if (ctx.action === "react") {
-            return await runWithRequiredActionMessageTarget({
-              actionLabel: "React",
-              toolParams: ctx.params,
-              currentChannelId: ctx.toolContext?.currentChannelId,
-              run: async (target) => {
-                const emoji = typeof ctx.params.emoji === "string" ? ctx.params.emoji.trim() : "";
-                const remove = typeof ctx.params.remove === "boolean" ? ctx.params.remove : false;
-                if (!emoji) {
-                  return {
-                    isError: true,
-                    content: [
-                      {
-                        type: "text" as const,
-                        text: `React requires an emoji (reaction type). Valid types: ${MSTEAMS_REACTION_TYPES.join(", ")}.`,
-                      },
-                    ],
-                    details: {
-                      error: "React requires an emoji (reaction type).",
-                      validTypes: [...MSTEAMS_REACTION_TYPES],
-                    },
-                  };
-                }
-                if (remove) {
-                  const { unreactMessageMSTeams } = await loadMSTeamsChannelRuntime();
-                  const result = await unreactMessageMSTeams({
-                    cfg: ctx.cfg,
-                    to: target.to,
-                    messageId: target.messageId,
-                    reactionType: emoji,
-                  });
-                  return jsonMSTeamsActionResult("react", {
-                    removed: true,
-                    reactionType: emoji,
-                    ...result,
-                  });
-                }
-                const { reactMessageMSTeams } = await loadMSTeamsChannelRuntime();
-                const result = await reactMessageMSTeams({
-                  cfg: ctx.cfg,
-                  to: target.to,
-                  messageId: target.messageId,
-                  reactionType: emoji,
-                });
-                return jsonMSTeamsActionResult("react", {
-                  reactionType: emoji,
-                  ...result,
-                });
-              },
-            });
-          }
-
-          if (ctx.action === "reactions") {
-            return await runWithRequiredActionMessageTarget({
-              actionLabel: "Reactions",
-              toolParams: ctx.params,
-              currentChannelId: ctx.toolContext?.currentChannelId,
-              run: async (target) => {
-                const { listReactionsMSTeams } = await loadMSTeamsChannelRuntime();
-                const result = await listReactionsMSTeams({
-                  cfg: ctx.cfg,
-                  to: target.to,
-                  messageId: target.messageId,
-                });
-                return jsonMSTeamsOkActionResult("reactions", result);
-              },
-            });
+          if (ctx.action === "react" || ctx.action === "reactions") {
+            // Guard: setReaction/unsetReaction only supports Delegated permissions.
+            // The bot currently authenticates with Application credentials (client_credentials
+            // flow), so outbound reactions cannot succeed. Return a clear, actionable error
+            // immediately instead of letting the Graph API return a raw 403.
+            return actionError(
+              "Reaction sending requires Delegated permissions. " +
+                "Current auth mode: Application (client_credentials). " +
+                "Re-enable once delegated-auth support is available.",
+            );
           }
 
           if (ctx.action === "search") {
