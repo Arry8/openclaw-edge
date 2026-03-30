@@ -487,6 +487,7 @@ export async function createMattermostPost(
     rootId?: string;
     fileIds?: string[];
     props?: Record<string, unknown>;
+    signal?: AbortSignal;
   },
 ): Promise<MattermostPost> {
   const payload: Record<string, unknown> = {
@@ -505,6 +506,7 @@ export async function createMattermostPost(
   return await client.request<MattermostPost>("/posts", {
     method: "POST",
     body: JSON.stringify(payload),
+    signal: params.signal,
   });
 }
 
@@ -579,4 +581,31 @@ export async function uploadMattermostFile(
     throw new Error("Mattermost file upload failed");
   }
   return info;
+}
+
+/**
+ * Update an existing Mattermost post (partial patch).
+ * Requires edit_post (own) or edit_others_posts permission.
+ */
+export async function patchMattermostPost(
+  client: MattermostClient,
+  params: { postId: string; message: string; signal?: AbortSignal },
+): Promise<void> {
+  await client.request<void>(`/posts/${params.postId}/patch`, {
+    method: "PUT",
+    body: JSON.stringify({ message: params.message }),
+    signal: params.signal,
+  });
+}
+
+/**
+ * Delete a Mattermost post (soft delete).
+ */
+export async function deleteMattermostPost(
+  client: MattermostClient,
+  postId: string,
+): Promise<void> {
+  await client.request<void>(`/posts/${postId}`, {
+    method: "DELETE",
+  });
 }
