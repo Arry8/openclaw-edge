@@ -6,6 +6,7 @@ export type AcpRuntimeBackend = {
   id: string;
   runtime: AcpRuntime;
   healthy?: () => boolean;
+  unhealthyReason?: () => string | undefined;
 };
 
 type AcpRuntimeRegistryGlobalState = {
@@ -37,6 +38,17 @@ function isBackendHealthy(backend: AcpRuntimeBackend): boolean {
     return backend.healthy();
   } catch {
     return false;
+  }
+}
+
+function resolveBackendUnhealthyReason(backend: AcpRuntimeBackend): string | undefined {
+  if (!backend.unhealthyReason) {
+    return undefined;
+  }
+  try {
+    return backend.unhealthyReason()?.trim();
+  } catch {
+    return undefined;
   }
 }
 
@@ -88,9 +100,12 @@ export function requireAcpRuntimeBackend(id?: string): AcpRuntimeBackend {
     );
   }
   if (!isBackendHealthy(backend)) {
+    const unhealthyReason = resolveBackendUnhealthyReason(backend);
     throw new AcpRuntimeError(
       "ACP_BACKEND_UNAVAILABLE",
-      "ACP runtime backend is currently unavailable. Try again in a moment.",
+      unhealthyReason
+        ? `ACP runtime backend is currently unavailable: ${unhealthyReason}`
+        : "ACP runtime backend is currently unavailable. Try again in a moment.",
     );
   }
   if (normalized && backend.id !== normalized) {

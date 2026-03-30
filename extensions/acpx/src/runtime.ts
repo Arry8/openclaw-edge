@@ -99,6 +99,33 @@ function formatAcpxExitMessage(params: {
   return `acpx exited with code ${params.exitCode ?? "unknown"}`;
 }
 
+function formatAcpxHealthProbeExitMessage(params: {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null | undefined;
+  signal?: NodeJS.Signals | null;
+}): string {
+  const stderr = params.stderr.trim();
+  const stdout = params.stdout.trim();
+  if (params.exitCode === ACPX_EXIT_CODE_PERMISSION_DENIED) {
+    return [
+      stderr || stdout || "Permission denied by ACP runtime (acpx).",
+      "ACPX blocked a write/exec permission request in a non-interactive session.",
+      formatPermissionModeGuidance(),
+    ].join(" ");
+  }
+  if (stderr) {
+    return stderr;
+  }
+  if (stdout) {
+    return stdout;
+  }
+  if (params.signal) {
+    return `acpx exited with signal ${params.signal}`;
+  }
+  return `acpx exited with code ${params.exitCode ?? "unknown"}`;
+}
+
 function didAcpxProcessExitWithFailure(params: {
   exitCode: number | null | undefined;
   signal?: NodeJS.Signals | null;
@@ -177,6 +204,8 @@ export function decodeAcpxRuntimeHandleState(runtimeSessionName: string): AcpxHa
 
 export class AcpxRuntime implements AcpRuntime {
   private healthy = false;
+  private setupError: string | undefined;
+  private healthError: string | undefined;
   private readonly logger?: PluginLogger;
   private readonly queueOwnerTtlSeconds: number;
   private readonly spawnCommandCache: SpawnCommandCache = {};
@@ -210,6 +239,15 @@ export class AcpxRuntime implements AcpRuntime {
 
   isHealthy(): boolean {
     return this.healthy;
+  }
+
+  setSetupError(message?: string): void {
+    const normalized = message?.trim();
+    this.setupError = normalized ? normalized : undefined;
+  }
+
+  getUnhealthyReason(): string | undefined {
+    return this.setupError ?? this.healthError;
   }
 
   private logSpawnResolution(event: SpawnResolutionEvent): void {
@@ -289,9 +327,38 @@ export class AcpxRuntime implements AcpRuntime {
     }
   }
 
+  private resolveHealthFailureMessage(
+    result: Extract<AcpxHealthCheckResult, { ok: false }>,
+  ): string {
+    const failure = result.failure;
+    if (failure.kind === "version-check") {
+      return failure.versionCheck.message;
+    }
+    if (failure.kind === "help-check") {
+      if (failure.result.error) {
+        const spawnFailure = resolveSpawnFailure(failure.result.error, this.config.cwd);
+        if (spawnFailure === "missing-command") {
+          return `acpx command not found: ${this.config.command}`;
+        }
+        if (spawnFailure === "missing-cwd") {
+          return `ACP runtime working directory does not exist: ${this.config.cwd}`;
+        }
+        return failure.result.error.message;
+      }
+      return formatAcpxHealthProbeExitMessage({
+        stdout: failure.result.stdout,
+        stderr: failure.result.stderr,
+        exitCode: failure.result.code,
+        signal: failure.result.signal,
+      });
+    }
+    return failure.error instanceof Error ? failure.error.message : String(failure.error);
+  }
+
   async probeAvailability(): Promise<void> {
     const result = await this.checkHealth();
     this.healthy = result.ok;
+    this.healthError = result.ok ? undefined : this.resolveHealthFailureMessage(result);
   }
 
   private async createNamedSession(params: {
@@ -821,8 +888,12 @@ export class AcpxRuntime implements AcpRuntime {
       return {
         ok: false,
         code: "ACP_BACKEND_UNAVAILABLE",
-        message:
-          helpResult.stderr.trim() || `acpx exited with code ${helpResult.code ?? "unknown"}`,
+        message: formatAcpxHealthProbeExitMessage({
+          stdout: helpResult.stdout,
+          stderr: helpResult.stderr,
+          exitCode: helpResult.code,
+          signal: helpResult.signal,
+        }),
       };
     }
 

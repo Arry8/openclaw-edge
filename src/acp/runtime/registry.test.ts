@@ -78,6 +78,41 @@ describe("acp runtime registry", () => {
     }
   });
 
+  it("includes unhealthy backend reasons in unavailable errors", () => {
+    registerAcpRuntimeBackend({
+      id: "acpx",
+      runtime: createRuntimeStub(),
+      healthy: () => false,
+      unhealthyReason: () =>
+        "failed to install plugin-local acpx: npm ERR! code EACCES. Fix: sudo chown -R $(id -u):$(id -g) ~/.npm",
+    });
+
+    expect(() => requireAcpRuntimeBackend("acpx")).toThrowError(
+      /failed to install plugin-local acpx/i,
+    );
+    expect(() => requireAcpRuntimeBackend("acpx")).toThrowError(/sudo chown -R/);
+  });
+
+  it("falls back to the generic unavailable error when unhealthyReason throws", () => {
+    registerAcpRuntimeBackend({
+      id: "acpx",
+      runtime: createRuntimeStub(),
+      healthy: () => false,
+      unhealthyReason: () => {
+        throw new Error("transient diagnostic failure");
+      },
+    });
+
+    try {
+      requireAcpRuntimeBackend("acpx");
+      throw new Error("expected requireAcpRuntimeBackend to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AcpRuntimeError);
+      expect((err as AcpRuntimeError).code).toBe("ACP_BACKEND_UNAVAILABLE");
+      expect((err as Error).message).toMatch(/currently unavailable\. try again in a moment\./i);
+    }
+  });
+
   it("unregisters a backend by id", () => {
     registerAcpRuntimeBackend({ id: "acpx", runtime: createRuntimeStub() });
     unregisterAcpRuntimeBackend("acpx");

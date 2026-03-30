@@ -12,6 +12,8 @@ import { ACPX_BACKEND_ID, AcpxRuntime } from "./runtime.js";
 type AcpxRuntimeLike = AcpRuntime & {
   probeAvailability(): Promise<void>;
   isHealthy(): boolean;
+  setSetupError(message?: string): void;
+  getUnhealthyReason(): string | undefined;
 };
 
 type AcpxRuntimeFactoryParams = {
@@ -51,11 +53,14 @@ export function createAcpxRuntimeService(
         queueOwnerTtlSeconds: pluginConfig.queueOwnerTtlSeconds,
         logger: ctx.logger,
       });
+      const startupRuntime = runtime;
+      startupRuntime.setSetupError();
 
       registerAcpRuntimeBackend({
         id: ACPX_BACKEND_ID,
         runtime,
         healthy: () => runtime?.isHealthy() ?? false,
+        unhealthyReason: () => runtime?.getUnhealthyReason(),
       });
       const expectedVersionLabel = pluginConfig.expectedVersion ?? "any";
       const installLabel = pluginConfig.allowPluginLocalInstall ? "enabled" : "disabled";
@@ -80,16 +85,24 @@ export function createAcpxRuntimeService(
           if (currentRevision !== lifecycleRevision) {
             return;
           }
-          await runtime?.probeAvailability();
-          if (runtime?.isHealthy()) {
+          await startupRuntime.probeAvailability();
+          if (currentRevision !== lifecycleRevision) {
+            return;
+          }
+          if (startupRuntime.isHealthy()) {
+            startupRuntime.setSetupError();
             ctx.logger.info("acpx runtime backend ready");
           } else {
+            if (!startupRuntime.getUnhealthyReason()) {
+              startupRuntime.setSetupError("acpx runtime probe failed after local install");
+            }
             ctx.logger.warn("acpx runtime backend probe failed after local install");
           }
         } catch (err) {
           if (currentRevision !== lifecycleRevision) {
             return;
           }
+          startupRuntime.setSetupError(err instanceof Error ? err.message : String(err));
           ctx.logger.warn(
             `acpx runtime setup failed: ${err instanceof Error ? err.message : String(err)}`,
           );

@@ -1,4 +1,3 @@
-import { AcpRuntimeError } from "openclaw/plugin-sdk/acp-runtime";
 import {
   __testing,
   getAcpRuntimeBackend,
@@ -20,15 +19,29 @@ vi.mock("./ensure.js", () => ({
 type RuntimeStub = AcpRuntime & {
   probeAvailability(): Promise<void>;
   isHealthy(): boolean;
+  setSetupError(message?: string): void;
+  getUnhealthyReason(): string | undefined;
 };
+
+type RuntimeFactory = NonNullable<
+  NonNullable<Parameters<typeof createAcpxRuntimeService>[0]>["runtimeFactory"]
+>;
 
 function createRuntimeStub(healthy: boolean): {
   runtime: RuntimeStub;
   probeAvailabilitySpy: ReturnType<typeof vi.fn>;
   isHealthySpy: ReturnType<typeof vi.fn>;
+  setSetupErrorSpy: ReturnType<typeof vi.fn>;
+  getUnhealthyReasonSpy: ReturnType<typeof vi.fn>;
 } {
   const probeAvailabilitySpy = vi.fn(async () => {});
   const isHealthySpy = vi.fn(() => healthy);
+  let setupError: string | undefined;
+  const setSetupErrorSpy = vi.fn((message?: string) => {
+    const normalized = message?.trim();
+    setupError = normalized ? normalized : undefined;
+  });
+  const getUnhealthyReasonSpy = vi.fn(() => setupError);
   return {
     runtime: {
       ensureSession: vi.fn(async (input) => ({
@@ -47,9 +60,17 @@ function createRuntimeStub(healthy: boolean): {
       isHealthy() {
         return isHealthySpy();
       },
+      setSetupError(message?: string) {
+        setSetupErrorSpy(message);
+      },
+      getUnhealthyReason() {
+        return getUnhealthyReasonSpy();
+      },
     },
     probeAvailabilitySpy,
     isHealthySpy,
+    setSetupErrorSpy,
+    getUnhealthyReasonSpy,
   };
 }
 
@@ -102,7 +123,7 @@ describe("createAcpxRuntimeService", () => {
   });
 
   it("marks backend unavailable when runtime health check fails", async () => {
-    const { runtime } = createRuntimeStub(false);
+    const { runtime, probeAvailabilitySpy, setSetupErrorSpy } = createRuntimeStub(false);
     const service = createAcpxRuntimeService({
       runtimeFactory: () => runtime,
     });
@@ -110,13 +131,40 @@ describe("createAcpxRuntimeService", () => {
 
     await service.start(context);
 
-    expect(() => requireAcpRuntimeBackend("acpx")).toThrowError(AcpRuntimeError);
-    try {
-      requireAcpRuntimeBackend("acpx");
-      throw new Error("expected ACP backend lookup to fail");
-    } catch (error) {
-      expect((error as AcpRuntimeError).code).toBe("ACP_BACKEND_UNAVAILABLE");
-    }
+    await vi.waitFor(() => {
+      expect(ensureAcpxSpy).toHaveBeenCalledOnce();
+      expect(probeAvailabilitySpy).toHaveBeenCalledOnce();
+      expect(setSetupErrorSpy).toHaveBeenCalledWith(
+        "acpx runtime probe failed after local install",
+      );
+      expect(() => requireAcpRuntimeBackend("acpx")).toThrowError(
+        /probe failed after local install/i,
+      );
+    });
+  });
+
+  it("surfaces async setup failures through backend lookup", async () => {
+    const { runtime, setSetupErrorSpy } = createRuntimeStub(false);
+    ensureAcpxSpy.mockRejectedValueOnce(
+      new Error(
+        "failed to install plugin-local acpx: npm ERR! code EACCES Fix: sudo chown -R $(id -u):$(id -g) ~/.npm",
+      ),
+    );
+    const service = createAcpxRuntimeService({
+      runtimeFactory: () => runtime,
+    });
+    const context = createServiceContext();
+
+    await service.start(context);
+
+    await vi.waitFor(() => {
+      expect(setSetupErrorSpy).toHaveBeenCalledWith(
+        "failed to install plugin-local acpx: npm ERR! code EACCES Fix: sudo chown -R $(id -u):$(id -g) ~/.npm",
+      );
+      expect(() => requireAcpRuntimeBackend("acpx")).toThrowError(
+        /sudo chown -R \$\(id -u\):\$\(id -g\) ~\/\.npm/,
+      );
+    });
   });
 
   it("passes queue-owner TTL from plugin config", async () => {
@@ -176,5 +224,45 @@ describe("createAcpxRuntimeService", () => {
 
     expect(startResult).toBe("started");
     expect(getAcpRuntimeBackend("acpx")?.runtime).toBe(runtime);
+  });
+
+  it("does not let a stale probe overwrite a newer runtime setup state", async () => {
+    let releaseFirstProbe: (() => void) | undefined;
+    const first = createRuntimeStub(false);
+    first.probeAvailabilitySpy.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirstProbe = resolve;
+        }),
+    );
+    const second = createRuntimeStub(true);
+    const runtimeFactoryMock = vi
+      .fn()
+      .mockReturnValueOnce(first.runtime)
+      .mockReturnValueOnce(second.runtime);
+    const runtimeFactory: RuntimeFactory = (params: Parameters<RuntimeFactory>[0]) =>
+      runtimeFactoryMock(params);
+    const service = createAcpxRuntimeService({ runtimeFactory });
+    const context = createServiceContext();
+
+    await service.start(context);
+    await vi.waitFor(() => {
+      expect(first.probeAvailabilitySpy).toHaveBeenCalledOnce();
+    });
+
+    await service.stop?.(context);
+    await service.start(context);
+    await vi.waitFor(() => {
+      expect(second.probeAvailabilitySpy).toHaveBeenCalledOnce();
+      expect(getAcpRuntimeBackend("acpx")?.runtime).toBe(second.runtime);
+    });
+
+    releaseFirstProbe?.();
+    await vi.waitFor(() => {
+      expect(second.setSetupErrorSpy).toHaveBeenCalledWith(undefined);
+    });
+    expect(second.setSetupErrorSpy).not.toHaveBeenCalledWith(
+      "acpx runtime probe failed after local install",
+    );
   });
 });
