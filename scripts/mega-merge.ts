@@ -83,11 +83,14 @@ const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // PRs whose changes we never want to apply regardless of merge cleanliness.
 // Add PR numbers here when they cause build failures after the fact.
 const SKIP_LIST = new Set<number>([
-  // Example: 12345, // breaks tls on node 22
+  29181, // brings in broken shim imports (../signal, ../telegram) removed by #45967
+  36307, // missing `detail:` key in audit.ts object literal — syntax error
+  48125, // mixed || and ?? without parens in feishu/card-action.ts
+  56660, // duplicate observedSuspiciousSignatures declaration in config/io.ts
 ]);
 
 // Files that, if a PR touches only these, we skip (noise-only changes).
-const SKIP_ONLY_PATHS = [
+const _SKIP_ONLY_PATHS = [
   "appcast.xml",
   "docs/zh-CN/",
   "CHANGELOG.md",
@@ -147,7 +150,7 @@ function warn(msg: string) {
 function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; input?: string } = {}
+  opts: { cwd?: string; input?: string } = {},
 ): { ok: boolean; stdout: string; stderr: string } {
   const result = spawnSync(cmd, args, {
     cwd: opts.cwd ?? REPO_DIR,
@@ -190,7 +193,7 @@ async function fetchAllOpenPrs(): Promise<PrRecord[]> {
       "api",
       `repos/openclaw/openclaw/pulls?state=${PR_STATE}&per_page=${perPage}&page=${page}`,
       "--jq",
-      '.[] | {number, title, isDraft, createdAt, closedAt: .closed_at, mergedAt: .merged_at, headSha: .head.sha, author: .user.login, labels: [.labels[].name]}',
+      ".[] | {number, title, isDraft, createdAt, closedAt: .closed_at, mergedAt: .merged_at, headSha: .head.sha, author: .user.login, labels: [.labels[].name]}",
     ]);
 
     if (!result.ok) {
@@ -198,11 +201,15 @@ async function fetchAllOpenPrs(): Promise<PrRecord[]> {
       break;
     }
 
-    if (!result.stdout) break;
+    if (!result.stdout) {
+      break;
+    }
 
     // jq outputs one JSON object per line when iterating
     const lines = result.stdout.split("\n").filter((l) => l.trim());
-    if (lines.length === 0) break;
+    if (lines.length === 0) {
+      break;
+    }
 
     for (const line of lines) {
       try {
@@ -214,7 +221,9 @@ async function fetchAllOpenPrs(): Promise<PrRecord[]> {
 
     log(`  page ${page}: ${lines.length} PRs (total so far: ${all.length})`);
 
-    if (lines.length < perPage) break; // last page
+    if (lines.length < perPage) {
+      break;
+    } // last page
     page++;
 
     // Small delay to avoid hammering the API
@@ -233,11 +242,17 @@ const DUPLICATE_LABELS = new Set(["duplicate", "wontfix", "won't fix", "invalid"
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: false } {
-  if (pr.isDraft) return { skip: true, reason: "draft" };
-  if (SKIP_LIST.has(pr.number)) return { skip: true, reason: "in SKIP_LIST" };
+  if (pr.isDraft) {
+    return { skip: true, reason: "draft" };
+  }
+  if (SKIP_LIST.has(pr.number)) {
+    return { skip: true, reason: "in SKIP_LIST" };
+  }
 
   // For closed PRs: always skip ones that were actually merged (commits already in base)
-  if (pr.mergedAt !== null) return { skip: true, reason: "merged upstream" };
+  if (pr.mergedAt !== null) {
+    return { skip: true, reason: "merged upstream" };
+  }
 
   if (AGGRESSIVE_FILTER && pr.closedAt !== null) {
     // Skip old abandoned PRs with no obvious value
@@ -247,7 +262,10 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
     }
     // Skip PRs labelled as duplicates or explicitly rejected
     if (pr.labels.some((l) => DUPLICATE_LABELS.has(l.toLowerCase()))) {
-      return { skip: true, reason: `label: ${pr.labels.find((l) => DUPLICATE_LABELS.has(l.toLowerCase()))}` };
+      return {
+        skip: true,
+        reason: `label: ${pr.labels.find((l) => DUPLICATE_LABELS.has(l.toLowerCase()))}`,
+      };
     }
   }
 
@@ -256,7 +274,9 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
 
 function assignTier(title: string): 1 | 2 | 3 | 4 {
   for (const { tier, pattern } of TIER_PATTERNS) {
-    if (pattern.test(title)) return tier;
+    if (pattern.test(title)) {
+      return tier;
+    }
   }
   return 4;
 }
@@ -264,8 +284,10 @@ function assignTier(title: string): 1 | 2 | 3 | 4 {
 function sortPrs(prs: PrRecord[]): Array<PrRecord & { tier: 1 | 2 | 3 | 4 }> {
   return prs
     .map((pr) => ({ ...pr, tier: assignTier(pr.title) }))
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier - b.tier;
+    .toSorted((a, b) => {
+      if (a.tier !== b.tier) {
+        return a.tier - b.tier;
+      }
       // Within the same tier, older PRs first (more likely to be the "original" fix)
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
@@ -274,17 +296,21 @@ function sortPrs(prs: PrRecord[]): Array<PrRecord & { tier: 1 | 2 | 3 | 4 }> {
 // ── Deduplication by head SHA ─────────────────────────────────────────────────
 
 function deduplicateBySha(
-  prs: Array<PrRecord & { tier: 1 | 2 | 3 | 4 }>
+  prs: Array<PrRecord & { tier: 1 | 2 | 3 | 4 }>,
 ): Array<PrRecord & { tier: 1 | 2 | 3 | 4 }> {
   const seen = new Set<string>();
   const result: Array<PrRecord & { tier: 1 | 2 | 3 | 4 }> = [];
   for (const pr of prs) {
-    if (seen.has(pr.headSha)) continue;
+    if (seen.has(pr.headSha)) {
+      continue;
+    }
     seen.add(pr.headSha);
     result.push(pr);
   }
   const dupes = prs.length - result.length;
-  if (dupes > 0) log(`Deduplicated ${dupes} PRs with identical head SHA.`);
+  if (dupes > 0) {
+    log(`Deduplicated ${dupes} PRs with identical head SHA.`);
+  }
   return result;
 }
 
@@ -299,7 +325,9 @@ function isAlreadyApplied(headSha: string): boolean {
 // ── Resume support ─────────────────────────────────────────────────────────────
 
 function loadPreviouslyProcessed(): Set<number> {
-  if (!RESUME || !existsSync(REPORT_PATH)) return new Set();
+  if (!RESUME || !existsSync(REPORT_PATH)) {
+    return new Set();
+  }
   try {
     const prev = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as Report;
     const processed = new Set(prev.entries.map((e) => e.number));
@@ -315,7 +343,7 @@ function loadPreviouslyProcessed(): Set<number> {
 
 async function attemptMerge(
   pr: PrRecord & { tier: 1 | 2 | 3 | 4 },
-  tmpBranch: string
+  tmpBranch: string,
 ): Promise<MergeResult> {
   // Check if already in history
   if (isAlreadyApplied(pr.headSha)) {
@@ -323,23 +351,12 @@ async function attemptMerge(
   }
 
   // Merge attempt
-  const mergeResult = run("git", [
-    "merge",
-    "--no-commit",
-    "--no-ff",
-    tmpBranch,
-  ]);
+  const mergeResult = run("git", ["merge", "--no-commit", "--no-ff", tmpBranch]);
 
   if (!mergeResult.ok) {
     // Collect conflicting files before aborting
-    const conflictResult = run("git", [
-      "diff",
-      "--name-only",
-      "--diff-filter=U",
-    ]);
-    const conflictFiles = conflictResult.stdout
-      .split("\n")
-      .filter((f) => f.trim());
+    const conflictResult = run("git", ["diff", "--name-only", "--diff-filter=U"]);
+    const conflictFiles = conflictResult.stdout.split("\n").filter((f) => f.trim());
 
     abortMerge();
     return { status: "conflict", conflictFiles };
@@ -361,12 +378,7 @@ async function attemptMerge(
   }
 
   const commitMsg = `merge(pr#${pr.number}): ${pr.title}`;
-  const commitResult = run("git", [
-    "commit",
-    "--no-edit",
-    "-m",
-    commitMsg,
-  ]);
+  const commitResult = run("git", ["commit", "--no-edit", "-m", commitMsg]);
 
   if (!commitResult.ok) {
     abortMerge();
@@ -385,25 +397,20 @@ async function attemptMerge(
 function fetchBatch(numbers: number[]): Map<number, boolean> {
   const results = new Map<number, boolean>();
   // Build refspecs: refs/pull/<n>/head:tmp/pr-<n>
-  const refspecs = numbers.map(
-    (n) => `refs/pull/${n}/head:tmp/pr-${n}`
-  );
+  const refspecs = numbers.map((n) => `refs/pull/${n}/head:tmp/pr-${n}`);
 
   const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs]);
 
   if (r.ok) {
-    for (const n of numbers) results.set(n, true);
+    for (const n of numbers) {
+      results.set(n, true);
+    }
     return results;
   }
 
   // Batch failed — try each individually to identify bad refs
   for (const n of numbers) {
-    const single = run("git", [
-      "fetch",
-      "--no-tags",
-      UPSTREAM,
-      `refs/pull/${n}/head:tmp/pr-${n}`,
-    ]);
+    const single = run("git", ["fetch", "--no-tags", UPSTREAM, `refs/pull/${n}/head:tmp/pr-${n}`]);
     results.set(n, single.ok);
   }
   return results;
@@ -419,7 +426,7 @@ async function main() {
   if (!remoteCheck.ok) {
     process.stderr.write(
       `[mega-merge] ERROR: remote '${UPSTREAM}' not found.\n` +
-        `  Add it with: git remote add ${UPSTREAM} https://github.com/openclaw/openclaw.git\n`
+        `  Add it with: git remote add ${UPSTREAM} https://github.com/openclaw/openclaw.git\n`,
     );
     process.exit(1);
   }
@@ -429,22 +436,20 @@ async function main() {
   if (statusCheck.stdout) {
     process.stderr.write(
       `[mega-merge] ERROR: working tree has uncommitted changes.\n` +
-        `  Commit or stash before running mega-merge.\n`
+        `  Commit or stash before running mega-merge.\n`,
     );
     process.exit(1);
   }
 
   const baseCommit = run("git", ["rev-parse", "HEAD"]).stdout;
-  const baseBranch = run("git", [
-    "rev-parse",
-    "--abbrev-ref",
-    "HEAD",
-  ]).stdout;
+  const baseBranch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]).stdout;
 
   log(`Base commit: ${baseCommit.slice(0, 12)}`);
   log(`Base branch: ${baseBranch}`);
   log(`Upstream remote: ${UPSTREAM} (${remoteCheck.stdout})`);
-  if (DRY_RUN) log("DRY RUN — git tree will not be modified.");
+  if (DRY_RUN) {
+    log("DRY RUN — git tree will not be modified.");
+  }
 
   // Fetch all open PRs
   const rawPrs = await fetchAllOpenPrs();
@@ -457,7 +462,9 @@ async function main() {
 
   // Decide which to attempt
   const candidates = sorted.filter((pr) => {
-    if (previouslyProcessed.has(pr.number)) return false;
+    if (previouslyProcessed.has(pr.number)) {
+      return false;
+    }
     const s = shouldSkip(pr);
     return !s.skip;
   });
@@ -465,18 +472,18 @@ async function main() {
   const limit = Math.min(candidates.length, isFinite(LIMIT) ? LIMIT : candidates.length);
   log(
     `PRs to attempt: ${limit} (of ${sorted.length} total, ` +
-      `${sorted.length - candidates.length} pre-filtered)`
+      `${sorted.length - candidates.length} pre-filtered)`,
   );
 
   // Print tier breakdown
   const tierCounts = [1, 2, 3, 4].map(
-    (t) => candidates.filter((p) => p.tier === t).slice(0, limit).length
+    (t) => candidates.filter((p) => p.tier === t).slice(0, limit).length,
   );
   log(
     `  Tier 1 (security/crash): ${tierCounts[0]}  ` +
       `Tier 2 (fix): ${tierCounts[1]}  ` +
       `Tier 3 (feat): ${tierCounts[2]}  ` +
-      `Tier 4 (other): ${tierCounts[3]}`
+      `Tier 4 (other): ${tierCounts[3]}`,
   );
 
   const toProcess = candidates.slice(0, limit);
@@ -490,11 +497,13 @@ async function main() {
     const batch = toProcess.slice(i, i + FETCH_BATCH);
     const batchNums = batch.map((p) => p.number);
     const results = fetchBatch(batchNums);
-    for (const [n, ok] of results) fetchSuccess.set(n, ok);
+    for (const [n, ok] of results) {
+      fetchSuccess.set(n, ok);
+    }
 
     const fetchedCount = [...fetchSuccess.values()].filter(Boolean).length;
     process.stdout.write(
-      `\r  fetched ${fetchedCount}/${Math.min(i + FETCH_BATCH, toProcess.length)}...`
+      `\r  fetched ${fetchedCount}/${Math.min(i + FETCH_BATCH, toProcess.length)}...`,
     );
 
     if (i + FETCH_BATCH < toProcess.length) {
@@ -570,7 +579,7 @@ async function main() {
 
     process.stdout.write(
       `\r  [${pct}%] ${statusChar} #${pr.number} (T${pr.tier}) — ` +
-        `merged:${mergedCount} conflict:${conflictCount} skip:${skippedCount + alreadyAppliedCount}`
+        `merged:${mergedCount} conflict:${conflictCount} skip:${skippedCount + alreadyAppliedCount}`,
     );
 
     // Interval build: catch breakage early rather than discovering it at the end
@@ -587,7 +596,7 @@ async function main() {
       if (!buildOk.ok) {
         process.stderr.write(
           `[mega-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
-            `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n`
+            `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n`,
         );
         // Write partial report before exiting so --resume can continue from here
         writeFileSync(
@@ -609,8 +618,8 @@ async function main() {
               entries,
             },
             null,
-            2
-          )
+            2,
+          ),
         );
         process.exit(1);
       }
@@ -661,7 +670,7 @@ async function main() {
       process.stderr.write(
         `[mega-merge] Final build FAILED.\n` +
           `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
-          `  add its number to SKIP_LIST, then rerun with --resume.\n`
+          `  add its number to SKIP_LIST, then rerun with --resume.\n`,
       );
       process.exit(1);
     }
@@ -675,7 +684,7 @@ async function main() {
         process.stderr.write(
           `[mega-merge] pnpm test FAILED.\n` +
             `  Check test output above. If failures are pre-existing on the base tag, they are not\n` +
-            `  caused by this run. Otherwise use 'git bisect' to identify the offending PR.\n`
+            `  caused by this run. Otherwise use 'git bisect' to identify the offending PR.\n`,
         );
         process.exit(1);
       }
