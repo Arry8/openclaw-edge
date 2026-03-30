@@ -47,6 +47,8 @@ export type SkillStatusEntry = {
   missing: Requirements;
   configChecks: SkillStatusConfigCheck[];
   install: SkillInstallOption[];
+  /** True when the skill defines at least one install spec, even if none apply to the current OS. */
+  hasInstallSpecs: boolean;
 };
 
 export type SkillStatusReport = {
@@ -222,6 +224,7 @@ function buildSkillStatus(
     missing,
     configChecks,
     install: normalizeInstallOptions(entry, prefs ?? resolveSkillsInstallPreferences(config)),
+    hasInstallSpecs: (entry.metadata?.install ?? []).length > 0,
   };
 }
 
