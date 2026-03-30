@@ -1272,7 +1272,6 @@
       "@whiskeysockets/baileys",
       "authenticate-pam",
       "esbuild",
-      "local-browser-bridge",
       "node-llama-cpp",
       "protobufjs",
       "sharp"
