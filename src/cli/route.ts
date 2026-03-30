@@ -36,10 +36,7 @@ async function prepareRoutedCommand(params: {
     }
     try {
       ensurePluginRegistryLoaded({
-        scope:
-          params.commandPath[0] === "status" || params.commandPath[0] === "health"
-            ? "channels"
-            : "all",
+        scope: params.commandPath[0] === "health" ? "channels" : "all",
       });
     } finally {
       loggingState.forceConsoleToStderr = prev;
