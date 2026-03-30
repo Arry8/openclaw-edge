@@ -13,7 +13,13 @@ import type { SessionsPatchParams } from "../gateway/protocol/index.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
-export type InternalHookEventType = "command" | "session" | "agent" | "gateway" | "message";
+export type InternalHookEventType =
+  | "command"
+  | "session"
+  | "agent"
+  | "gateway"
+  | "message"
+  | "tool";
 
 export type AgentBootstrapHookContext = {
   workspaceDir: string;
@@ -303,6 +309,25 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
       log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
     }
   }
+}
+
+// ============================================================================
+// Tool Hook Events
+// ============================================================================
+export type ToolAfterCallHookContext = {
+  toolName: string;
+  params: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+  durationMs?: number;
+};
+export type ToolAfterCallHookEvent = InternalHookEvent & {
+  type: "tool";
+  action: "after_call";
+  context: ToolAfterCallHookContext;
+};
+export function isToolAfterCallEvent(event: InternalHookEvent): event is ToolAfterCallHookEvent {
+  return event.type === "tool" && event.action === "after_call";
 }
 
 /**

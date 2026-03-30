@@ -144,6 +144,7 @@ export function toToolDefinitions(tools: AnyAgentTool[]): ToolDefinition[] {
             toolName: normalizedName,
             result: rawResult,
           });
+
           return result;
         } catch (err) {
           if (signal?.aborted) {
