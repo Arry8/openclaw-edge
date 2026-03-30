@@ -104,3 +104,1117 @@
 - [#42810](https://github.com/openclaw/openclaw/pull/42810) feat(acp): add audit logging system for control plane security (@ahua2020qq)
 
 ---
+
+---
+
+## 2026-03-30 22:37 — 1098 PRs merged (manual snapshot)
+
+**Base:** `unknown` → **Head:** `7e2175db8a38` on `mega/latest`  
+**Duration:** ~2h | **Build:** passed
+
+### T1 Security/Crash (65)
+- #57603 fix(discord): treat reconnect-exhausted as clean stop to prevent gateway crash
+- #57624 fix(telegram): allow RFC 2544 benchmark IPs in media download SSRF policy (#5745
+- #57614 fix(sandbox): pass global browser SSRF policy to sandbox browser
+- #57088 fix(cron): add defensive prune before reading run log to prevent OOM
+- #57015 fix: sweep orphaned toolStartData entries to prevent memory leak
+- #56964 fix(security): warn about insecure session.dmScope in multi-user setups
+- #56863 feat(whatsapp): native outbound @mentions and reply-target media injection
+- #56840 fix(discord): use listener-stripping disconnect in abort handler to prevent cras
+- #56737 fix(browser): close SSRF bypass — request-time redirect guard and follow-up acti
+- #56617 fix(discord): prevent gateway crash and set reconnect attempts to 5
+- #56506 fix(security): strip provider API keys from exec tool child process env
+- #56436 fix(exec): skip length-only obfuscation flag when security=full; make threshold 
+- #56256 feat(security): add skill integrity verification with SHA-256 hashing
+- #55875 feat(security): add YARA-based skill security scanner
+- #55726 fix(security): include dmPolicy in exposure matrix audit
+- #55513 fix(gateway): prevent OOM and socket hang up via Claim Check pattern for large a
+- #55176 fix: allow RFC2544 benchmark IPs in image tool SSRF guard
+- #55139 fix: prevent infinite recursion in resolveConsoleSettings() during startup
+- #54386 fix(skill-creator): default to workspace skills directory to prevent data loss o
+- #52619 fix(cron): catch schedule errors in createJob to prevent Gateway crash
+- #52506 docs(zh-CN): complete gateway/security frontmatter + fix sandboxing links
+- #51910 fix(security): exclude logical OR (||) from pipe-to-shell obfuscation detector
+- #51722 fix (ssrf): 修复浏览器 SSRF 策略缺失导致的导航阻断问题，补充 dangerouslyAllowPrivateNetwork 配置
+- #51311 fix(ios): guard sendPing continuation against double-resume crash
+- #51277 fix(reply): redact sandbox security errors from public channels
+- #50527 security: add input length limits to hook agent payload metadata fields
+- #50525 security: add periodic cleanup to control plane rate limiter
+- #50521 security: reject null bytes in archive entry paths
+- #50518 security: replace Math.random with crypto.randomInt in session slug generation
+- #50516 security: use crypto.timingSafeEqual for Nextcloud Talk webhook signatures
+- #50515 security: sanitize control characters in channel error logging
+- #50180 fix(ssrf): honor empty URL allowlists as deny-all
+- #49234 fix(hooks): suppress system event injection when deliver is false
+- #49120 fix(security): reject private/internal hosts in cron webhook URLs
+- #49083 fix(security): use constant-time comparison for TLS fingerprint verification
+- #48958 fix: prevent phantom image injection from memory context into agent prompt
+- #48930 fix(ui): defer fs.constants eval to prevent browser bundle crash
+- #48565 feat(rag): local RAG pipeline for workspace context injection
+- #48339 fix(gateway): add Cache-Control: no-store to default security headers
+- #48149 security: prevent requester self-approval in exec.approval.resolve
+- #48134 security(openshell): prevent host environment variable leakage to SSH subprocess
+- #48133 security(firecrawl): validate scraped URL to prevent SSRF + cap cache size
+- #48001 fix(browser): prevent gateway crash from unhandled MCP handshake rejection in ex
+- #47652 fix(feishu): isolate per-account credential resolution to prevent full plugin cr
+- #47225 feat(context-engine): add toolsOverride to AssembleResult for selective tool sch
+- #46813 perf: add contextInjection option to skip workspace re-injection (#9157)
+- #45782 fix: improve error handling and logging for security-critical operations
+- #45526 fix(skills): validate frontmatter archive field against argument injection
+- #45383 fix(security): wrap inbound media file content to prevent prompt injection (#112
+- #45228 docs(subagents): fix bootstrap file injection list (5 files, not 2)
+- #45081 fix(models): lazy-init ANTHROPIC_MODEL_ALIASES to avoid TDZ crash
+- #44892 fix(link-understanding): prevent command injection via URL templates (CWE-78)
+- #44860 feat(extensions): add security-shield plugin
+- #44736 fix(sandbox): detect silent data loss in write_atomic on fakeowner/network mount
+- #44098 fix(security): add default pidsLimit for sandbox containers
+- #43212 docs(security): add Security Defaults Audit and Hardening Guide
+- #42906 fix(security): block non-self messages in WhatsApp self-chat mode
+- #42810 feat(acp): add audit logging system for control plane security
+- #27454 fix(telegram): prevent crash loop on oversized file attachments
+- #26780 Skill/1password security hardening
+- #23175 feat(security): runtime safety — transcript retention, tool call budget, token r
+- #23174 feat(security): credential leak prevention — exfiltration patterns, outbound sca
+- #21140 test(security): add regression test for claude-opus-4-6 audit
+- #17702 feat: crash-loop detection and last-known-good config rollback
+- #12296 security: persistence-only secret redaction for session transcripts
+
+### T2 Fix (783)
+- #57741 fix(agents): accept canonical edits[] in wrapped edit tool
+- #57739 fix(subagents): correct duration display showing 5-6x inflated runtime
+- #57737 fix(telegram): increase polling stall threshold from 90s to 300s
+- #57732 fix(acp): resolve agent profile alias to harness ID in sessions_spawn
+- #57714 fix(cli): write skills --json output to stdout
+- #57697 fix(sessions_send): route agent-to-agent announce delivery to requester target
+- #57689 fix(auto-reply): thread per-agent tools.exec defaults into reply directives
+- #57655 fix(exec): add shared approval runtime
+- #57650 fix(exec): harden approval auth and account routing
+- #57641 fix(doc):update wecom doc and qq
+- #57640 fix(cron): recover flat schedule params and coerce non-object job values
+- #57635 fix(mattermost): accept legacy config compatibility keys
+- #57621 fix(mattermost): add WebSocket ping/pong keepalive to detect silent connection d
+- #57609 fix(mattermost): record pending history for non-allowlisted group senders
+- #57608 fix(channels): googlechat auth logging + Zalo mediaMaxBytes default
+- #57602 fix(agents): improve tool execution error visibility and logging
+- #57597 fix(acp): persist spawn labels in target session store
+- #57587 fix(agents): deduplicate bootstrap files by path
+- #57568 fix(exec): prevent infinite /approve loop when exec returns approval-pending
+- #57565 fix(mattermost): route thread replies correctly when replyToMode is off
+- #57561 fix(agents): add OpenRouter attribution to direct completions
+- #57548 fix(telegram): persist native command metadata to target sessions
+- #57545 fix(plugins): load bundled plugins with enabledByDefault at gateway startup
+- #57544 fix(telegram): break repeated update replay storms
+- #57541 fix(feishu): update feishu account key from 'main' to 'default' in doc
+- #57519 fix(skills): replace readFileSync with symlink-safe, root-confined skill file lo
+- #57483 fix(sessions): let a2a policy gate cross-agent sends independently of visibility
+- #57480 fix(tools): strip patternProperties for all non-Anthropic providers
+- #57476 fix(plugins): bundled channel plugins bypass plugins.allow allowlist
+- #57470 fix(cron): honour payload.model override even when not in allowlist
+- #57445 fix(memory): include reset and deleted session files in indexer
+- #57440 fix(agents): forward resolved model to agent gateway call in sessions_spawn
+- #57411 fix(gateway): suppress false-positive token drift warning for SecretRef-backed a
+- #57381 fix(acpx): surface unhealthy backend diagnostics
+- #57374 fix(gateway): use configured probe auth during restart health checks
+- #57373 fix(memory): index archived session transcripts
+- #57366 fix(msteams): extract emoji unicode from Teams CDN img tags instead of treating 
+- #57365 fix(plugins): discover channel config schemas for external plugins
+- #57364 fix(msteams): delete FileConsentCard after user accepts, declines, or upload exp
+- #57347 fix(acpx): retain named sessions on queue owner unavailable (rebased)
+- #57345 fix(plugin-sdk): keep debounce helpers on channel-inbound
+- #57343 fix(discord): return native /status reply directly
+- #57335 fix(message-tool): support buffer (base64) attachments in send action
+- #57310 fix(slack): keep block streaming replies in thread (rebased #49715)
+- #57308 fix(slack): wake interaction system events (rebased #56766)
+- #57298 fix(telegram): skip bot-authored media in reply resolution
+- #57293 fix(config): add approvalRunningNoticeMs to ToolExecBaseShape
+- #57283 fix(failover): defer profile cooldown marking to unblock rate-limit rotation
+- #57276 fix(daemon): support system-scoped systemd gateway units on linux
+- #57245 fix(browser): normalize WS3 existing-session attach fixes
+- #57237 fix(image): resolve relative paths against workspaceDir
+- #57236 fix(run-node): skip rebuild when dirty tree has no newer source files
+- #57229 fix(gateway): apply bundled allowlist compat for channel plugins at startup
+- #57207 fix(lancedb-runtime): resolve extension package.json when dist/package.json is a
+- #57161 fix(voicewake): add CJK prefix matching for wake word detection
+- #57136 fix(heartbeat): clear sessionFile on new isolated session to prevent context acc
+- #57125 fix(cron): add runtime type guard and exception handling in delivery dispatch
+- #57124 fix(matrix): correct DM classification with three-tier is_direct logic and 2-mem
+- #57121 fix(mistral): resolve onboarding 422 errors with model compatibility settings
+- #57096 fix(plugins): defer provider-setup import in sglang/vllm models to break circula
+- #57092 fix(discord): pass proxy-aware fetch to Carbon Client REST operations
+- #57086 fix(gateway): avoid pinning stale session ids in agent runs
+- #57080 fix(cli): preload all plugins for status route
+- #56978 fix(whatsapp): exclude DM allowFrom from group policy sender bypass
+- #56953 fix(feishu): add botName to per-account config schema
+- #56924 fix(ui): prevent overview access grid layout overlap on resize
+- #56917 fix(agents): honor tools.alsoAllow for owner-only tools on external channels
+- #56889 fix(bluebubbles): add enrichGroupParticipantsFromContacts to core Zod schema
+- #56887 fix(acp): avoid final text replay when routed block text already delivered
+- #56886 fix(agents): add "terminated" to timeout ERROR_PATTERNS for model fallback
+- #56879 fix(memory): retry transient embedding transport failures
+- #56865 fix(whatsapp): make block streaming configurable and fix duplicate final deliver
+- #56847 fix(agents): accept read file/filePath aliases
+- #56792 fix(schema-validator): report specific property name for additionalProperties er
+- #56791 fix(signal): forward quote metadata to agent context
+- #56784 fix(telegram): resolve env SecretRef bot tokens before startup
+- #56758 fix(feishu): downgrade tool registration logs from info to debug (fixes #56695)
+- #56756 fix(plugins): warn when configured channel plugin is excluded by plugins.allow (
+- #56741 fix(telegram): respect topic-level groupPolicy overrides for /commands in forum 
+- #56736 fix(gmail): restore --exclude-labels SPAM,TRASH,DRAFT,SENT in buildGogWatchServe
+- #56728 fix(tts): skip directives inside code blocks
+- #56721 fix(agents): deduplicate bootstrap context files by path
+- #56677 fix(slack): enforce streaming mode mutual exclusion + guard stream teardown
+- #56671 fix(config): deduplicate clobbered config snapshots in-process
+- #56669 fix(tools): preserve Optional annotation when merging anyOf variants in normaliz
+- #56668 fix(gateway): add WebSocket ping keepalive to prevent idle connection drops
+- #56663 fix(tts): add verbose logging for TTS provider fallback debugging
+- #56646 fix(slack): pre-set shuttingDown before app.stop() to prevent orphaned ping inte
+- #56624 fix(cron): persist isolated run session status on completion
+- #56608 fix(msteams): preserve thread context in proactive fallback for channel conversa
+- #56606 fix(slack): process thread_broadcast as regular inbound messages
+- #56582 fix(clawhub): reject malformed trailing-at plugin specs
+- #56544 fix(slack): enable preview streaming in flat DMs (replyToMode: off)
+- #56530 fix(slack): match channel-prefixed allowlist keys
+- #56529 fix(agent): raise overload failover backoff ceiling from 1.5s to 30s and make co
+- #56509 fix(cron): prevent one-shot at jobs from re-triggering after completion
+- #56461 fix(web-search): baseUrl support for xAI and Gemini web search providers
+- #56453 fix(agent): respect configured default agent for --to sessions
+- #56391 fix(agents): replace blank tool names with sentinel to prevent dispatch loops
+- #56389 fix(cron): correct test assertion for legacy delivery:undefined path (#56078)
+- #56362 fix(discord): ensure resetTriggers rotate sessionId and clear history
+- #56360 fix(subagents): inherit originating channel for completion announce delivery
+- #56358 fix(plugins): deduplicate tool registration on config hot-reload
+- #56357 fix(control-ui): restore header logo and favicon display
+- #56356 fix(heartbeat): prevent subagent announcements from re-triggering heartbeat casc
+- #56353 fix(plugins): gateway-bindable registry satisfies default requests in agent_end 
+- #56285 fix(exec): implement Windows exec allowlist with argPattern and quote-aware anal
+- #56258 fix(gateway): add per-subsystem timeouts to shutdown close handler
+- #56213 fix(onboard): keep gateway remote token aligned with auth token
+- #56203 fix(sessions_send): prefer sessionKey over label when both are present (AI-assis
+- #56195 fix(gateway): preserve operator scopes for shared-auth connections
+- #56186 fix(ui): preserve config save error after loadChannels refresh (#53636)
+- #56170 fix(daemon): use detached handoff for macOS launchd self-restart
+- #56167 fix(feishu): suppress NO_REPLY silent token before Feishu API calls
+- #56166 fix(agents): check transcript validity before marking subagent runs as orphaned
+- #56153 fix(telegram): add max retries and backoff to sendChatAction
+- #56150 fix(cli-runner): classify 'No conversation found with session ID' as session_exp
+- #56145 fix(gateway): preserve indentation when recombining non-streaming replies
+- #56133 fix(gateway): use agent workspace dir in session transcript cwd
+- #56084 fix(hooks): load bundled hooks when hooks.internal.enabled is undefined
+- #56070 fix(memory-lancedb): add missing radix to parseInt call
+- #56069 fix(agents): ensure 402 Billing/Quota errors trigger model failover
+- #56060 fix(telegram): forum topic replies land in root chat + enable ACP child thread s
+- #56031 fix(pi-runner): use post-hook assistant for expect-final payloads
+- #56028 fix(sessions): honor spawned tree lineage across agents
+- #56025 fix(voice-call): read telnyx transcription_data fields
+- #56026 fix(plugins): fall back to npm on clawhub request failures
+- #56013 fix(pairing): expand default bootstrap profile and use subset matching for verif
+- #56006 fix(config): Prevent UI save crashes by correctly un-redacting Secret…
+- #55974 fix(session-memory): use local date + handle subagent_ended events
+- #55953 fix(telegram): use type-aware media placeholder for document attachments (#7116)
+- #55933 fix(docker): add pnpm store cache mount to prune step
+- #55928 fix(gateway): block internal session history over HTTP
+- #55913 fix(agents): add Doubao/BytePlus context caching prices and correct per-Mtok rat
+- #55906 fix(gateway): deny nodes over HTTP tools invoke
+- #55861 fix(ui): prevent collapsed sidebar overlap in control UI
+- #55838 fix(telegram): backoff for transient network errors in sendChatAction
+- #55831 fix(ui): clear stale sessions result when API returns empty
+- #55789 fix(gateway): block internal HTTP session overrides
+- #55773 fix(browser): require admin scope for browser.request
+- #55753 fix(k8s): prevent overwriting existing config files in deployment
+- #55747 fix(hooks): rebind routed session keys to target agent
+- #55719 fix(discord): prevent uncaught exception on stale-socket reconnect
+- #55712 fix(agents): clean up Browser MCP tabs on subagent lifecycle end
+- #55706 fix(config): skip no-op config writes to prevent phantom restart loop
+- #55697 fix(agents): correct ClawHub URL in system prompt (clawhub.com → clawhub.ai)
+- #55693 fix(gateway): avoid discord stale-socket reconnect thrash on idle accounts
+- #55664 fix(channels): replace console.warn with subsystem logger in typing
+- #55662 fix(bluebubbles): eliminate timing side-channel in secret comparison
+- #55659 fix(voice-call): wrap JSON.parse in try-catch for API responses
+- #55658 fix(feishu): guard parseInt in merge_forward sort against NaN
+- #55657 fix(agents): guard parseFloat in OpenRouter pricing against NaN
+- #55656 fix(config): apply TTL expiry to serialized session store cache
+- #55652 fix(discord): skip channels claimed by other instances
+- #55619 fix(feishu): exponential backoff + PingInterval guard for WS reconnect
+- #55617 fix(skills): preserve high-priority skills when truncating prompt
+- #55607 fix(hooks): enforce allowedAgentIds for implicit routing
+- #55596 fix(CLI) Markdown table columns misaligned with CJK characters on Telegram and D
+- #55593 fix(auto-reply): suppress verbose 'New session' notice when resetTrig…
+- #55592 fix(ui): sync message delete to session transcript backend
+- #55582 fix(discord): route REST API calls through configured proxy
+- #55539 fix(browser): captureBeyondViewport should respect fullPage option
+- #55502 fix(threading): populate currentThreadTs in buildToolContext fallback
+- #55480 fix(discord): preserve non-ASCII channel names in session display names
+- #55471 fix(slack): allow message_changed events through self-filter for Assistant API (
+- #55466 fix(feishu): read full CardKit streaming card content via raw_card_content param
+- #55463 fix(discord): prioritize final replies without losing deferred summaries
+- #55448 fix(gateway): resolve env-backed SecretRef in restart drift-check (#55029)
+- #55432 fix(github-copilot): strip reasoning params for gpt-5-mini (#54844)
+- #55413 fix(discord): canonicalize PluralKit inbound ids
+- #55397 fix(outbound): bootstrap missing requested channel in outbound resolution
+- #55313 fix(minimax): update portal base URL to api.minimaxi.com
+- #55265 fix(feishu): inject proxy agent into HTTP API requests
+- #55264 fix(status): clarify adaptive thinking runtime label
+- #55189 fix(plugins): skip auto-enable for plugins already in plugins.allow (#55163)
+- #55186 fix(mattermost): restore threadRootId priority in thread replies
+- #55051 fix(skills): reject malformed skill path metadata
+- #55007 fix(skills): refresh stale skillsSnapshot when version changes
+- #54941 fix(ui): include sourceChannel in exec.approval.resolve from Control UI to fix m
+- #54937 fix(slack): flush draft before reading messageId to prevent double messages on f
+- #54904 fix(feishu): enforce configured webhookPath
+- #54902 fix(feishu): use post format for replies to avoid upgrade prompt
+- #54900 fix(delivery-queue): skip stale first-attempt entries during startup recovery
+- #54899 fix(feishu): sanitize markdown in streaming cards to prevent truncation
+- #54847 fix(gateway): detect channels stuck before reporting connected (AI-assisted)
+- #54840 fix(gateway): preserve thread routing in delivery context for Slack/Telegram/Mat
+- #54811 fix(ui): prevent exec approval buttons from scrolling off-screen
+- #54800 fix(discord): keep components schema optional in message tool
+- #54774 fix(gateway): ignore transient pre-hello close in one-shot calls
+- #54730 fix(ui): prefer per-agent identity for subagents over global ui.assistant
+- #54673 fix(webchat): prevent system events from overwriting main session display name
+- #54646 fix(cli): validate gateway-rpc --timeout
+- #54641 fix(configure): preserve OpenRouter default model choice after auth
+- #54624 fix(openai-completions): extract usage tokens from non-streaming response
+- #54603 fix(telegram): preserve content type for local Bot API media files
+- #54595 fix(docs/zh-CN): correct node pairing commands in zh-CN node doc
+- #54552 fix(ui): tolerate malformed cron payloads in chat nav
+- #54528 fix(ui): Stop button shows Send during tool execution
+- #54525 fix(cron): tighten payload recovery guard + clear channel after target promotion
+- #54486 fix(gateway): prune orphaned session entries when transcript files are missing
+- #54471 fix(acp): add system_event stream relay to parent session for ACP spawn
+- #54447 fix(pdf): configure pdfjs standard font assets
+- #54426 fix(gateway): allow local connections in trusted-proxy auth mode
+- #54394 fix(tlon): use CSPRNG for approval ID generation
+- #54388 fix(gateway): propagate AbortController signal on HTTP client disconnect
+- #54380 fix(media): treat legacy .doc containers as binary
+- #54374 fix(gateway): avoid duplicate pre-tool text in streaming chat deltas
+- #54361 fix(skills): add canvas frontmatter
+- #54360 fix(skills): remove unsupported gh-issues frontmatter
+- #54345 fix(telegram): skip DM access check for bot's own messages
+- #54344 fix(auto-reply): enforce operator.admin scope for /config mutating commands
+- #54343 fix(auto-reply): require operator.admin for /stop command
+- #54318 fix(discord): wire message_sending and message_sent hooks in inbound delivery (F
+- #54314 fix(gateway): isolate cron nested lane concurrency
+- #54313 fix(browser): retry stale snapshot target with bounded backoff
+- #54307 fix(cron): infer agentId from workspace when adding jobs
+- #54306 fix(config): avoid repo cache dir in isolated config-surface retry
+- #54271 fix(gateway): fix hook dispatch routing and delivery channel resolution
+- #54267 fix(plugins): skip non-provider registrations during snapshot loads
+- #54229 fix(memory-lancedb): show full UUID in memory_forget candidate list
+- #54173 fix(macOS): prefer launchctl restart over SIGUSR1 for unmanaged gateway
+- #54141 fix(secrets): stop flagging $VAR env refs as PLAINTEXT_FOUND in audit
+- #54120 fix(windows): hide console window during gateway restart
+- #54066 fix(tools): detect Windows drive-letter paths as absolute on POSIX hosts (#54039
+- #53966 fix(slack): include API error details in log messages
+- #53961 fix(delivery): track and log silent delivery failures
+- #53920 fix(scripts): avoid mutating tracked auth-monitor template during setup
+- #53872 fix(gateway): emit before_reset on session reset
+- #53846 fix(agents): normalize Mistral openai-compat request flags
+- #53804 fix(elevated): fall back to session key channel for Discord slash elevated resol
+- #53800 fix(message-tool): make channel plugin schema properties optional
+- #53787 fix(feishu): guard against undefined receiveIdType in resolveFeishuSendTarget
+- #53782 fix(discord): graceful degradation when account missing Message Content Intent
+- #53779 fix(models): log warning and continue when one provider fails validation
+- #53713 fix(gateway): resolve thinkingLevel from model config after /reset
+- #53706 fix(startup): avoid redundant file rereads when context is already injected
+- #53663 fix(ui): prevent skills search autofill
+- #53642 fix(plugins): ensure httpRouteRegistry fields exist across bundle chunks
+- #53627 fix(discord): allow user:<id> DM targets in message tool
+- #53620 fix(docker): ensure /home/node exists before USER switch
+- #53607 fix(discord): mirror Components v2 outbound messages to session transcript
+- #53576 fix(workspace): prioritize cwd templates over npm package
+- #53565 fix(sandbox): allow cron tool in sandbox mode (gateway-routed, not containerized
+- #53553 fix(talk): Talk Mode TTS improvements for CJK languages
+- #53552 fix(docs): fix zh-CN doc redirection links
+- #53518 fix(agents): clarify config.apply/patch/update auto-restarts in system prompt (#
+- #53459 fix(config): replace hardcoded API keys with env var substitution
+- #53444 fix(cron): allow cron-triggered heartbeat runs when heartbeat.every="0m" (#46046
+- #53420 fix(media): normalize redirected media file mode after rename
+- #53367 fix(auth): invalidate stale runtime auth-profile snapshots when disk file is new
+- #53326 fix(workspace): store workspace-state.json in workspace root, not .openclaw/ sub
+- #53315 fix(config): downgrade missing channel plugin from fatal error to warning
+- #53314 fix(subagents): prevent descendant cleanup from consuming announce retry budget
+- #53277 fix(cli): allow bundled plugin resolution when catalog npmSpec is bare pluginId
+- #53275 fix(discord): add media-gallery and file block hints for models
+- #53270 fix(agents): warn when attachAs.mountPath is unsupported for subagent runtime
+- #53259 fix(elevated): restore Discord allowFrom fallback
+- #53161 fix(slack): bypass mention gate for app_mention events
+- #53123 fix(whatsapp): add outbound guard for group allowlist policy
+- #53064 fix(telegram): handle thinking-only empty replies
+- #53015 fix(irc): prevent silent send failures and fix NickServ nick reclaim
+- #53014 fix(heartbeat): skip heartbeat when main session is stale to allow daily reset
+- #52795 fix(cron): prioritize explicit isolated delivery targets
+- #52782 fix(auto-reply): pass topicId when cleaning up transcript after session reset
+- #52770 fix(gateway): guard getRuntimeSnapshot() and preserve probe intent in health ref
+- #52764 fix(plugins): resolve BlueBubbles webhook 404 when pinned registry empty (#52095
+- #52762 fix(infra): lazy prune in DedupeCache to resolve Discord 33-122s message delays
+- #52745 fix(tui): clear stuck streaming when final has no active run in flight
+- #52740 fix(agents): guard SSE stream against empty data events
+- #52739 fix(agents): clamp out-of-range read offset instead of aborting run
+- #52733 fix(moonshot): disable thinking and replay tool args verbatim for Kimi web_searc
+- #52670 fix(feishu): do not treat @all as explicit bot mention
+- #52644 fix(agents): skip tool-call ID sanitization for Anthropic providers
+- #52601 fix(fs): route FreeBSD writes through legacy fallback
+- #52562 fix(gateway): preserve control ui scopes with dangerouslyDisableDeviceAuth
+- #52557 fix(voice-call): resolve pending TTS entries on queue clear to prevent hanging p
+- #52521 fix(usage): attribute per-channel stats by origin provider, not delivery channel
+- #52487 fix(windows): prevent restart race from duplicate schtasks /Run
+- #52485 fix(windows): detect stale gateway PIDs via netstat
+- #52437 fix(agents): call eventStream.end() on success path in OpenAI WS stream
+- #52423 fix(routing): prevent cross-channel reply routing in same-provider multi-channel
+- #52365 fix(cron): stop fallback attempts when cron budget is exhausted
+- #52363 fix(session-status): report channel-routed model instead of agent default (#5218
+- #52349 fix(usage): improve MiniMax coding-plan usage parsing for model_remains array
+- #52342 fix(feishu): treat OpenChat (oc_) topic groups as group chats
+- #52329 fix(agents): include cache tokens in /status cost estimate
+- #52316 fix(tts): add inbound and tagged modes to /tts help output
+- #52293 fix(daemon): add "transport endpoint is not connected" to isSystemc...
+- #52291 fix(ui): make ui:build work on Windows
+- #52245 fix(launchd): re-bootstrap LaunchAgent when kickstart failure leaves service unl
+- #52236 fix(mattermost): persist threadId in delivery context for all session types
+- #52212 fix(msteams): download DM inline images via Graph API
+- #52200 fix(skills): normalize backslashes in compacted skill paths on Windows
+- #52191 fix(memory): apply env proxy guard to withRemoteHttpResponse
+- #52140 fix(skills): propagate abort signal to download pipeline
+- #52139 fix(gateway-client): restore stored scopes on device-token reconnect
+- #52137 fix(config): coerce boolean retry.jitter to number
+- #52134 fix(acp): await finishPrompt on error state to prevent hanging prompts
+- #52109 fix(cron): apply MIN_REFIRE_GAP_MS to every-schedule jobs
+- #52078 fix(cli): add WSL2 detection for gateway handshake timeout (#51879)
+- #52057 fix(browser): add explicit enabled check to status endpoint
+- #52055 fix(ui): preserve history image attachments after chat reload
+- #52052 fix(telegram): surface sticker file_id in inbound context
+- #52021 fix(sessions): preserve updatedAt in updateLastRoute for idle reset
+- #52017 fix(agents): add supportsPromptCache compat opt-in for third-party OpenAI proxie
+- #51994 fix(plugin-sdk): add compat to exported subpaths
+- #51983 fix(openrouter): enable context caching for DeepSeek and other models via OpenRo
+- #51970 fix(utils): reduce maskApiKey exposure from 16 to 4 characters
+- #51902 fix(config): inline model alias lookup to avoid TDZ during config loading
+- #51895 fix(telegram): retry network errors wrapped in grammY HttpError
+- #51893 fix(onboard): infer vision input for non-Azure custom models
+- #51861 fix(cron): include subagent and ACP sessions in retention sweep
+- #51846 fix(ui): resolve model alias in qualified refs for Control UI model picker
+- #51768 fix(acpx): kill entire process group on runTurn exit to prevent grandchild orpha
+- #51761 fix(usage): add Google/Gemini usageMetadata field mapping (#51743)
+- #51739 fix(gateway): suppress announce/reply skip chat leakage
+- #51657 fix(heartbeat): force execution after 5min queue contention timeout
+- #51653 fix(outbound): strip inbound metadata in normalizeReplyPayloadsForDelivery
+- #51641 fix(cli): route diagnostic logs to stderr when stdout is piped
+- #51615 fix(errors): exclude Jinja template errors from context overflow detection
+- #51600 fix(errors): detect OpenRouter JSON 404 payloads as model-not-found
+- #51595 fix(gateway): initialize nested command lane concurrency
+- #51594 fix(cron): handle step/list/range minute fields in top-of-hour stagger detection
+- #51580 fix(model): infer provider from allowlist for bare model IDs to prevent prefix d
+- #51579 fix(completion): add compinit guard to zsh completion output
+- #51562 fix(whatsapp): add HTML/XML/CSS to MIME map + fallback for unknown media types
+- #51559 fix(process): add windowsHide to spawn in runCommandWithTimeout
+- #51556 fix(pairing): propagate non-ENOENT errors in sync allowlist reader
+- #51553 fix(sessions): prevent stale cache read in updateLastRoute
+- #51547 fix(exec): default to GBK encoding on Windows (#50519)
+- #51536 fix(webchat): use totalTokens for context utilization display
+- #51486 fix(daemon): query Windows task runtime directly
+- #51445 fix(feishu): extractPermissionError also recognizes code 99991401
+- #51436 fix(install): suppress gum ioctl errors and fix premature @next fallback
+- #51433 fix(ios): use existing CLLocationManager for authorizationStatus check
+- #51421 fix(memory): memoryFlush fires every compaction cycle instead of every other
+- #51388 fix(tool-policy): include alsoAllow entries in plugin tool allowlist …
+- #51384 fix(config): prevent synthetic raw content in redaction fallback
+- #51375 fix(feishu): pass mediaLocalRoots to enable local media file uploads
+- #51326 fix(hooks): graceful degradation when hook entry fails to load
+- #51291 fix(telegram): route sendMessage with poll fields to sendPollTelegram (#50879)
+- #51256 fix(bluebubbles): always use private-api method when Private API is enabled
+- #51201 fix(ui): constrain cron job entries within list boundary
+- #51198 fix(scripts): close pipes on partial RPC client init failure
+- #51179 fix(status): show all allowFrom entries in channels --probe summary
+- #51166 fix(sandbox): pull pre-built image from GHCR instead of plain debian:bookworm-sl
+- #51121 fix(imessage): clear stop timeout timer to prevent leak
+- #51107 fix(providers): strip store param for non-Responses APIs when supportsStore=fals
+- #51091 fix(agent): respect suppressToolErrors for all tools including mutating ones
+- #51086 fix(cli): prevent plugin loading logs from polluting 'openclaw agent --json' std
+- #51053 fix(cli): align nodes list with node status
+- #51026 fix(cron): preserve parent session updatedAt for isolated cron jobs
+- #51024 fix(cron): clear stale running markers using per-job timeouts
+- #50998 fix(ios): restore contacts/calendar permission prompts
+- #50994 fix(cron): preserve empty expr field instead of silently deleting
+- #50979 fix(slack): add mrkdwn formatting hints to messageToolHints
+- #50977 fix(feishu): use app_name from bot_info API for bot name resolution
+- #50960 fix(skills): allow sensitive-pattern env vars in skills.entries.*.env to reach e
+- #50929 fix(ui): suppress leaked TUI debug lines in chat
+- #50920 fix(ui): hide assistant internal scaffolding in webchat
+- #50818 fix(heartbeat): propagate sessionKey in exec/hooks to fix async context loss
+- #50796 fix(control-ui): hide relevant-memories scaffolding in chat output
+- #50777 fix(ui): prevent copy button showing CopyCopied! by using hidden attr
+- #50723 fix(cron): use agent-turn safety timeout for systemEvent jobs with wakeMode=now
+- #50708 fix(daemon): suppress stale exit details when systemd service is running
+- #50705 fix(ollama): deserialize string tool call arguments to object
+- #50704 fix(session-model): prefer model overrides over stale runtime fields
+- #50703 fix(directives): preserve xhigh thinking level in session entry
+- #50683 fix(src/gateway/server-reload-handlers.ts): missing event/recovery handler
+- #50680 fix(extensions/feishu/src/reply-dispatcher.ts): missing cleanup in error path
+- #50575 fix(cli): message send delegates to gateway RPC to avoid missing listener
+- #50567 fix(diagnostics-otel): fix log transport module isolation and add opt-in content
+- #50522 fix(discord): only include ThreadStarterBody for new sessions
+- #50483 fix(ios): stabilize chat streaming layout and session flow
+- #50479 fix(install.sh): warn about .npmrc prefix override and sudo npm incom…
+- #50435 fix(feishu): recover Chinese filenames from Latin-1 mojibake in Content-Disposit
+- #50433 fix(usage): treat MiniMax current_interval_usage_count as remaining
+- #50429 fix(feishu): fall back to plain text when card delivery fails
+- #50368 fix(telegram): add client-side timeout to #confirmPersistedOffset getUpdates
+- #50331 fix(discord): avoid pre-dispatch group last-route updates
+- #50307 fix(cron): clear stale runningAtMs after timeout #50280
+- #50304 fix(qianfan): drop replayed thinking for qianfan code
+- #50256 fix(daemon): avoid killing current gateway pid on restart
+- #50250 fix(health): show gateway probe duration in text output
+- #50214 fix(msteams): pass teamId and teamName to resolveAgentRoute() [AI-assisted]
+- #50200 fix(slack): fetch fresh download URL via files.info for DM file attachments
+- #50189 fix(cron): report ok status when primary delivery succeeded despite follow-up er
+- #50188 fix(tui): restore hook visibility for /new command (#49918)
+- #50164 fix(feishu): fallback to type=media when file download returns 502
+- #50163 fix(discord): avoid parameter properties in strip-only runtime
+- #50148 fix(failover): classify INTERNAL 500 responses as retryable timeouts
+- #50141 fix(ui): preserve provider prefix in model toggle for non-Anthropic models
+- #50069 fix(bedrock): pass configured region to Bedrock runtime and support inference pr
+- #49980 fix(telegram): prioritize topic-level requireMention over activation override
+- #49979 fix(cron): preserve nested object properties in payload normalization
+- #49963 fix(memory): respect configured batch timeout for direct embedding calls
+- #49869 fix(nextcloud-talk): parse rich object file shares from webhook payload
+- #49837 fix(feishu): use lark_md mention format in post messages (fixes #49833)
+- #49821 fix(agents): normalize isDirectiveOnly check across group and p2p sessions
+- #49819 fix(channels): treat Feishu p2p chats as direct messages
+- #49814 fix(config): accept sandbox browser evaluateEnabled
+- #49707 fix(token): tokens usage statistics show "?" when provider returns zero-valued u
+- #49675 fix(ui): add .catch() handler to createLazy — prevents permanent blank Control U
+- #49673 fix(installer): load nvm before Node.js version check
+- #49671 fix(heartbeat): non-default agents now inherit agents.defaults.heartbeat
+- #49660 fix(session-lock): clean orphan self-lock files during startup cleanup
+- #49654 fix(heartbeat): non-default agents inherit defaults.heartbeat
+- #49520 fix(plugin-sdk): fix circular reexport in twitch plugin-sdk barrel
+- #49485 fix(tui): prioritize modelOverride over runtime model in status bar
+- #49366 fix(gateway): avoid persisting service env secrets [AI-assisted]
+- #49361 fix(googlechat): use agent identity.name in typing indicator fallback chain
+- #49334 fix(pi-extensions): improve VS Code launch reliability on Windows in /diff and /
+- #49229 fix(cron): wrap async gateway handler operations in try-catch to prevent gateway
+- #49215 fix(plugins): stage bundled skills inside runtime root
+- #49156 fix(tools): remove cron from coding profile to match docs
+- #49135 fix(telegram): add block streaming coalesce defaults to prevent message splittin
+- #49119 fix(agents): prefer agent model for subagent spawns
+- #49082 fix(feishu): pass mediaLocalRoots to sendMediaFeishu in reply dispatcher
+- #49072 fix(acp): route logs to stderr to keep stdout JSON-RPC clean
+- #49068 fix(agent): suppress silent gateway wait summaries
+- #48971 fix(media): harden MIME type sanitization
+- #48916 fix(channels): bypass debounce for bare abort triggers
+- #48871 fix(model): keep @version suffixes in custom model ids
+- #48845 fix(feishu): support reaction synthetic events
+- #48821 fix(model-selection): infer provider from configured models when mode…
+- #48807 fix(health-monitor): drain active runs before abort on channel restart
+- #48801 fix(cli): accept local policy closes during gateway restart health checks
+- #48769 fix(plugins): resolve gateway auth against active http route registry
+- #48741 fix(plugins): add timeout protection to before_agent_start hook
+- #48673 fix(plugins): suppress duplicate warning for npm-installed plugin overriding bun
+- #48671 fix(ui): include all known agents in webchat session dropdown
+- #48588 fix(feishu): await HTTP server close before clearing state references
+- #48563 fix(browser): add missing Linux Chromium fallback paths to findChro...
+- #48535 fix(gateway): respect models.mode "replace" in dashboard model dropdown
+- #48476 fix(daemon): resilient launchctl bootstrap with retry and load fallback
+- #48466 fix(telegram): recover from HTML parse errors during streaming preview
+- #48455 fix(daemon): use disable+kill instead of bootout in gateway stop
+- #48448 fix(ui): show provider name for qualified model ids
+- #48445 fix(tui): preserve code block tokens verbatim in sanitizeRenderableText (#48432)
+- #48416 fix(install): retry npm install with --strict-ssl=false on TLS verification fail
+- #48394 fix(feishu): ensure spatial boundaries for parsed rich text links and mentions
+- #48392 fix(ui): add missing CSS for code-block copy button states
+- #48382 fix(feishu): improve streaming card update performance
+- #48377 fix(feishu): feishu_doc create action now populates content when provided
+- #48326 fix(cron): fix ms/s timestamp confusion, sessionTarget conflict logging, and obs
+- #48324 fix(skills): refresh snapshots when eligibility changes
+- #48320 fix(windows): add windowsHide to all Windows spawn resolution paths
+- #48303 fix(agent): inherit per-agent model override in embedded/subagent runs (fixes #4
+- #48221 fix(agent): drop thinking blocks for non-native anthropic-messages proxies
+- #48147 fix(gateway): keep long-running clients alive across reconnect delays
+- #48097 fix(acp): resume yielded session on ACP runtime errors
+- #48095 fix(gateway): make handshake timeout configurable and restore 10s default
+- #48072 fix(docker): resolve volume permission denied (EACCES) for non-root deployments
+- #48021 fix(context): fall back to path basename for unnamed bootstrap files
+- #48005 fix(cron): honor model override in isolated agentTurn payloads
+- #48000 fix(memory): return relevant snippets instead of file beginning in search result
+- #47937 fix(ui): polish code block copy button styling
+- #47822 fix(ui): show agent name in session dropdown for multi-agent setups (#47744)
+- #47672 fix(doctor): show update step progress during pre-doctor git update
+- #47663 fix(messages): add `unscheduledReminderNote` config to disable reminder guard no
+- #47579 fix(failover): detect bare leading 402 assistant errors
+- #47521 fix(failover): classify OpenRouter generic provider errors as timeout
+- #47463 fix(cli): prevent plugin double-registration via runtime boundary
+- #47417 fix(docker): include src in runtime image
+- #47407 fix(cron): warn when cron edit --model is not in allowlist
+- #47385 fix(ui): refresh avatar when switching sessions via switchChatSession
+- #47379 fix(status): show configured fallback models in /status output
+- #47377 fix(ui): deduplicate cumulative streaming text in webchat segments
+- #47362 fix(slack): check interactiveReplies capability for inline buttons prompt
+- #47291 fix(platform): extend startup optimization hints to support macOS (darwin)
+- #47245 fix(ui): distinguish command palette hover and selection states
+- #47222 fix(gateway): prevent spurious SIGTERM shutdown on CLI disconnect under systemd
+- #47174 fix(memory-flush): allow first flush when compactionCount is 0
+- #47114 fix(feishu): prevent duplicate messages by waiting for streaming to start
+- #46980 fix(config): models array optional + test(providers): DashScope/Bailian endpoint
+- #46960 fix(sessions): preserve origin for heartbeat system turns
+- #46947 fix(ui): limit sidebar markdown image max-width to prevent oversized display
+- #46940 fix(exec-approvals): preserve outbound tool context for forwarded not…
+- #46936 fix(models): resolve bare model id across providers in sessions.patch
+- #46782 fix(logs): default to local timezone display
+- #46714 fix(discord): prevent internal tool/commentary payloads from leaking to visible 
+- #46697 fix(agents): post full target reply to thread in sessions_send A2A flow
+- #46619 fix(completion): guard compdef with compinit autoload for zsh
+- #46537 fix(acp): resolve ensured identities when session ids exist
+- #46472 fix(feishu): add WebSocket heartbeat config to prevent silent disconnection
+- #46373 fix(ui): i18n locale before render + fix: tool_use mismatch suggest /new (#46366
+- #46243 fix(onboard): detect interrupted wizard run and restart from scratch (WSL2 / ter
+- #46236 fix(cron): skip announce delivery when agent output is raw error text
+- #46177 fix(cron): clarify default timezone for cron expressions
+- #46069 fix(memory-lancedb): use float encoding for Ollama embedding compatibility
+- #46065 fix(sandbox): workspaceAccess 'none' should mount sandbox workspace as read-writ
+- #46044 fix(cron): suppress NO_REPLY on thread-based and structured delivery
+- #46025 fix(ui): constrain context notice icon size to prevent viewport overflow
+- #46019 fix(feishu): flush pre-tool text block when blockStreamingBreak is text_end
+- #45995 fix(acp): sweep stale runId mappings on session removal
+- #45979 fix(gateway): pre-compute dedupe cache excess before cleanup loop
+- #45939 fix(memory): watch for external file changes and auto-reindex
+- #45930 fix(ui): reduce polling intervals to prevent progressive UI sluggishness
+- #45912 fix(skills): allow symlinked skills in configured roots
+- #45910 fix(cron): suppress NO_REPLY for thread-based and structured content delivery
+- #45894 fix(sanitize): strip raw tool_call/tool_result XML tags from user-facing text
+- #45829 fix(tlon): enforce media download size limit
+- #45809 fix(failover): recognize proxy 402 with purchase/subscription wording (fixes #45
+- #45784 fix(paths): use OPENCLAW_HOME directly as config dir when explicitly set
+- #45760 fix(agents): add MEMORY.md to minimal bootstrap allowlist
+- #45704 fix(ui): restore scrollbar visibility and fix Firefox support
+- #45525 fix(skills): extend skill-scanner to detect dynamic require() and import() calls
+- #45521 fix(gateway): reject weak/default tokens at startup
+- #45405 fix(gateway): honour dangerouslyDisableDeviceAuth for remote WS connections (#45
+- #45347 fix(ui): add missing CSS for context-notice warning banner
+- #45276 fix(gateway): normalize IPv6 in isLocalGatewayAddress tailnet check
+- #45250 fix(ui): raise tool output inline threshold to reduce sidebar popups (fixes #450
+- #45246 fix(feishu): resolve tool account by session accountId before config defaultAcco
+- #45125 fix(config): coerce numeric Discord IDs to strings instead of rejecting
+- #45071 fix(agents): heartbeat/cron prompts carry stale "Current time" that never refres
+- #44978 fix(deps): add missing packages to onlyBuiltDependencies
+- #44961 fix(ui): add missing styles for scroll-pill button to prevent SVG overflow
+- #44939 fix(ios): respect explicit TLS choice for manual gateway connections
+- #44829 fix(feishu): avoid post text truncation when line ends with colon
+- #44827 fix(agents): preserve thinking/redacted_thinking blocks in session history
+- #44761 fix(image): respect imageModel config for OpenRouter vision models
+- #44726 fix(fs-safe): sync to disk before stat in atomic write
+- #44646 fix(logging): correct levelToMinLevel mapping and related filter logic for tslog
+- #44614 fix(windows): delegate npm global update to detached helper to avoid EBUSY
+- #44567 fix(feishu): prevent duplicate plugin id by respecting channels.* config for ext
+- #44545 fix(discord): add content-based fallback for mention detection
+- #44543 fix(acpx): parse JSON-RPC done/error prompt events
+- #44538 fix(memory): add qmd get fallback for get memory read file
+- #44518 fix(daemon): trigger SIGUSR1 in-process restart when scheduling launchd handoff
+- #44433 fix(daemon): add Nix Home Manager PATH support to service environment
+- #44412 fix(cron): harden telegram direct-thread delivery inference
+- #44329 fix(skills): add trigger phrases to 3 skill descriptions
+- #44215 fix(path): add Windows PATH bootstrap dirs
+- #44187 fix(gateway): resolve invalid unicode escape sequence in error message
+- #44118 fix(feishu): bypass mention gate for slash commands in group chats
+- #44097 fix(cron-cli): handle object model in printCronList
+- #44068 fix(media-understanding): skip legacy Word docs from text extraction
+- #44018 fix(failover): classify ZenMux 402 as rate_limit
+- #43938 fix(gateway): use account-scoped reload for channel account changes
+- #43861 fix(gateway): stop deduplicating repeated characters in streaming deltas
+- #43859 fix(plugins): skip node_modules and other non-plugin directories during discover
+- #43832 fix(cron): drain in-flight ops on hot reload to prevent state overwrite
+- #43770 fix(config): use passthrough for plugin entry schema to accept provider-specific
+- #43727 fix(docker): isolate IPC namespace for both services
+- #43624 fix(gateway): fall back to PowerShell when wmic is unavailable on Win…
+- #43512 fix(feishu): bypass per-chat queue for control commands
+- #43488 fix(discord): allow gateway inbound media paths to bypass workspace sandbox chec
+- #43411 fix(logging): make user redactPatterns additive with defaults + fix config resol
+- #43404 fix(cron): support isolated cron jobs in reminder guard + preserve counter acros
+- #43390 fix(cron): prune resolved storeLocks entries to prevent unbounded Map growth
+- #43370 fix(agents): deduplicate tool_use IDs when merging consecutive assistant message
+- #43320 fix(ui): increase tool card preview max-height to show full commands
+- #43257 fix(network): wire env proxy dispatcher bootstrap at CLI startup
+- #43254 fix(control-ui): share gateway token scope across loopback hosts
+- #43253 fix(skills): skill-creator quote YAML-sensitive description values
+- #43151 fix(agents): clear tool error when same tool type retries successfully
+- #43056 fix(memory,skills): add depth limit to chokidar watchers to prevent FD exhaustio
+- #43044 fix(tui): show 0/ctx instead of ?/ctx for context tokens (#43009)
+- #43030 fix(auto-reply): avoid duplicate local media note urls
+- #42973 fix(docker): add no-new-privileges to gateway service
+- #42972 fix(docker): add log rotation to prevent unbounded disk growth
+- #42970 fix(slack): fix slash commands with button arg menu errors
+- #42962 fix(agents): suppress gateway schema lookup warning noise
+- #42940 fix(feishu): prevent streaming card duplication on multi-final replies
+- #42898 fix(agents): classify compound read-only gateway actions correctly
+- #42874 fix(status): skip tailscale binary probe when gateway.tailscale.mode is off
+- #42847 fix(slack): respect userTokenReadOnly flag for read operations
+- #42749 fix(auth): show actual expiry status for OAuth profiles with refresh tokens
+- #42729 fix(cron): prevent duplicate job execution after gateway restart (#42640)
+- #42637 fix(skills): list omitted skill names when prompt is truncated
+- #42571 fix(telegram): normalize delivery-only group chat ids
+- #42567 fix(setup): enable named account when patching config
+- #42480 fix(discord): preserve mentionedUsers on debounced synthetic messages
+- #42479 fix(telegram): restore draft-style auto transport for DM answer preview
+- #42415 fix(config): guard against non-string values in hook schema validation
+- #42377 fix(config): add type guard to containsEnvVarReference to prevent crashes
+- #42343 fix(signal): add extraction limits for signal-cli archive
+- #42327 fix(cli): accept positional id for cron runs
+- #42301 fix(feishu): improve external key validation to allow legitimate keys containing
+- #42296 fix(feishu): replace raw media JSON with placeholder in agent body
+- #42295 fix(models): guard missing input in custom provider rows
+- #42267 fix(models): avoid spending probe timeout budget on post-run idle flush
+- #42260 fix(agents): strip tool_call/tool_result XML leaking into channel messages
+- #42131 fix(doctor): case-insensitive safe-bin trusted dir matching on macOS/Windows
+- #42109 fix(gateway): skip health checks for channels removed from config
+- #42085 fix(cron): clear stale runningAtMs in run() before already-running check (#41979
+- #42083 fix(memory-lancedb): skip already-processed messages in auto-capture
+- #42063 fix(gateway): aggregate usage.cost across agents
+- #42042 fix(memory): add watcher error handling and non-zero default intervalMinutes
+- #41983 fix(gateway): isolate control-plane write rate limits by connection
+- #41969 fix(browser): return host URL from resolveBrowserBaseUrl instead of undefined
+- #41964 fix(tui): render external-channel session messages live
+- #41952 fix(infra): tolerate already-loaded bootstrap and drop -k from post-bootstrap ki
+- #41897 fix(web-fetch): cap error detail for access-denied responses (401/403/407/451)
+- #41861 fix(export): fix broken template placeholders in session export HTML
+- #41853 fix(prompt): inspect and preserve existing system config before edits
+- #41802 fix(auto-reply): inject timestamp into BodyForAgent for channel messages
+- #41745 fix(session): defer systemSent persistence until LLM response succeeds
+- #41696 fix (discord): resolve bare numeric allowlist entries as guilds before channel l
+- #41670 fix(embedding): add encoding_format parameter to OpenAI-compatible requests
+- #41643 fix(anthropic): recover from empty session error stubs
+- #41638 fix(ui): allow cronjob edit form to scroll independently on narrow screens
+- #41624 fix(docker): Change ownership of cache directory
+- #41614 fix(cron): reload external store edits before reusing cache
+- #41593 fix(daemon): include OrbStack and Docker Desktop in macOS LaunchAgent PATH
+- #41552 fix(control-ui): preserve token when editing WebSocket URL
+- #41509 fix(ui): align chat composer buttons with message input
+- #41284 fix(ios): read IDEProvisioningTeamByIdentifier
+- #41275 fix(cron): allow timeoutSeconds: 0 for no-timeout mode
+- #41250 fix(config): filter empty values in raw redaction
+- #41098 fix(acpx): prefer OAuth session auth and block OpenAI key env leakage in chatgpt
+- #41095 fix(config): preserve $include directives when writing config
+- #41062 fix(configure): auto-add Tailscale origin to allowedOrigins
+- #41051 fix(agents): dedupe duplicate assistant tool calls by id
+- #41038 fix(chatui): show stdout for structured tool results
+- #41032 fix(agents): reduce env base64 heuristic false positives
+- #41030 fix(gateway): avoid false stuck restarts with fresh events
+- #40866 fix(telegram): clear previous draft on forceNewMessage to prevent stale drafts
+- #40829 fix(media): preserve under-cap PNG
+- #40816 fix(update): align entrypoint candidate order with program-args
+- #40779 fix(tui): strip <think> tags from text content when thinking is disabled
+- #40756 fix(heartbeat): do not append workspace path hint to user-configured prompts
+- #40699 fix(cron): pass messageTo and messageThreadId to embedded PI agent in announce m
+- #40663 fix(agents): correct sandbox path guidance in system prompt
+- #40627 fix(agents): inject trigger into requester session after direct completion
+- #40602 fix(feishu): improve bitable placeholder row cleanup to handle non-empty default
+- #40597 fix(cron): reduce timer debug logs to trace level
+- #40571 fix(cron): auto-fill agentId from session when not explicitly provided
+- #40490 fix(telegram): preserve media paths in group chat history entries
+- #40441 fix(ui): reset config dirty on reload
+- #40318 fix(agents): use nullish coalescing for context_length in kilocode model discove
+- #40248 fix(googlechat): synchronous space events and chunked message thread continuity
+- #40230 fix(agents): follow symlinks when loading workspace bootstrap files
+- #40217 fix(agents): clear stale tool call history to prevent loop detection false posit
+- #40209 fix(heartbeat): normalize system event session keys to lowercase
+- #40200 fix(exec): prevent shell startup files from overriding daemon env
+- #40112 fix(agents): suppress intermediate tool failure messages when agent self-correct
+- #40000 fix(workspace): tolerate missing packaged templates with built-in fallback
+- #39941 fix(ui): prefer matching object variant in config coercion
+- #39891 fix(googlechat): clean up typing message on NO_REPLY
+- #39785 fix(config): respect explicit input modalities override in provider model merge
+- #39778 fix(discord): infer media placeholder from file extension as fallback
+- #39773 fix(session): correct totalTokensFresh flag for fallback path
+- #39654 fix(config): accept flat array for commands.allowFrom, coerce to record
+- #39644 fix(windows): PowerShell completion install and time-format detection
+- #39615 fix(ui): persist Control UI gateway token in sessionStorage
+- #39386 fix(gateway): forward child session node events to spawnedBy subscribers
+- #39370 fix(openresponses): normalize tool definitions to accept Anthropic and flat form
+- #39350 fix(gateway): suppress NO_REPLY lead fragment in chat final message
+- #39349 fix(exec): warn when pty:true is silently disabled in sandbox
+- #39338 fix(config): accept video and audio in models.input schema
+- #39137 fix(pre-commit): use single pytest dependency specifier
+- #39085 fix(feishu): treat block payloads as snapshots to avoid duplication with tool ca
+- #39079 fix(agents): prevent limitHistoryTurns from orphaning toolResult messages
+- #39001 fix(feishu): preserve sender identity and resolve mentions in merge_forward mess
+- #38925 fix(agents): strip legacy <tool_call> dump blocks from assistant text
+- #38713 fix(skills): resolve `skills info` name mismatches
+- #38691 fix(android): support non-Google speech recognizer on Chinese OEM devices
+- #38502 fix(tui): clarify Ctrl+C status when run is still active
+- #38488 fix(ui): clear connectTimer in GatewayBrowserClient.stop() to prevent…
+- #38435 fix(googlechat): use globalThis.fetch to avoid gaxios node-fetch v3 ESM failure 
+- #38413 fix(message-tool): ignore empty/default tool bridge fields for send
+- #38271 fix(webchat): extract text from array-shaped tool result content
+- #38216 fix(telegram): guard against file paths in target id
+- #38130 fix(slack): prevent auth-failure retry storm by disabling SDK auto-reconnect
+- #38075 fix(gateway): filter delivery-mirror entries from chat.history
+- #37972 fix(agents): always include configured fallbacks in cross-provider model resolut
+- #37949 fix(browser): use local chrome relay defaults in gateway.mode=remote
+- #37892 fix(telegram): suppress bare Reasoning: prefix leak during Gemini streaming
+- #37750 fix(image-tool): handle aws-sdk auth mode for Amazon Bedrock
+- #37671 fix(agents): re-run tool_use/tool_result pairing repair after late me…
+- #37423 fix(infra): treat wrapped "fetch failed" as transient network error
+- #37129 fix(media): resolve relative paths against allowed roots instead of CWD
+- #37050 fix(telegram): add HTML parse fallback for media captions
+- #37045 fix(whatsapp): reject empty/non-numeric input in toWhatsappJid
+- #37034 fix(i18n): add missing zh-CN cron keys (schedule, lastRun, reset)
+- #36867 fix(config): support bracket notation in paths for keys with periods
+- #36726 fix(agents): prune history images even without prior assistant reply
+- #36639 fix(agents): make reasoning line static to preserve prompt cache
+- #36629 fix(sessions): always cleanup .deleted files during maintenance
+- #36509 fix(gateway): refresh stale OPENCLAW_SERVICE_VERSION at startup
+- #35986 fix(gateway,auto-reply): guard toolUsage.tools iteration and fix indexOf semanti
+- #35507 fix(telegram): add editMessage and createForumTopic fields to schema
+- #35463 fix(llm-task): add explicit type to input/schema params for llama.cpp compat
+- #35344 fix(agents): add cross-turn separator in deltaBuffer for blockStreaming
+- #35329 fix(skills): coerce skill name to string to prevent TypeError
+- #35291 fix(auth-profiles): sync runtime snapshot and rotate profiles on /new
+- #35138 fix(skill-creator): reject empty name and description in quick_validate.py
+- #35117 fix(googlechat): accept Workspace Add-on JWT issuers in project-number auth path
+- #34962 fix(macOS): enable undo/redo in webchat composer text input
+- #34957 fix(onboard): default local tools profile to coding
+- #34823 fix(typing): suppress typing indicator for NO_REPLY runs (#33951)
+- #34733 fix(tokens): catch pre-underscore prefix in silent reply detection
+- #34617 fix(discord): add User-Agent header to REST API requests
+- #34234 fix(whatsapp): use fresh config per-message instead of stale handler snapshot (#
+- #34229 fix(inbound-meta): skip sender metadata for Control UI / webchat (#34153)
+- #34136 fix(install): check for git before installing
+- #34131 fix the regular expression error of the exe file path when using brow…
+- #34048 fix(media): cap inbound extracted file blocks (#14231)
+- #34000 fix(ui): prevent control-ui freezes on heavy chat sessions
+- #33981 fix(channels): reschedule flush after send failure to avoid losing pending text
+- #33979 fix(process): guard draining flag against generation change in pump finally
+- #33977 fix(hooks): clean up previous gmail watcher on restart to prevent state leak
+- #33973 fix(heartbeat): trim whitespace from activeHours time strings
+- #33923 fix(daemon): preserve empty quoted args in service parsing
+- #33869 fix(workspace): ensure memory/ dir exists
+- #33780 fix(gateway): avoid fake success when tool has no execute
+- #33523 fix(macos): use user login shell in restart-mac.sh for nvm/fnm compat
+- #33500 fix(feishu): prefetch bot open_id in single-account startup path
+- #33409 fix(cli): clarify wildcard entries in approvals output
+- #33321 fix(build): add WSL detection to bundle-a2ui.sh
+- #33283 fix(slug-generator): use full model resolution path for auth inheritance
+- #33254 fix(plugins): suppress duplicate warning for same package at different paths
+- #33061 fix(auto-reply): trim static thread metadata in inbound context (#33042)
+- #33003 fix(session-logs): add prerequisites and fix glob patterns
+- #32946 fix(tui): serialize loadHistory calls to prevent race conditions
+- #32925 fix(memory): broaden temporal decay date regex to match real-world memory filena
+- #32734 fix(gateway): isolate channels.status probe/audit per-account failures
+- #32728 fix(feishu): skip debounce for group @Bot command messages
+- #32680 fix(CLI): validate channels status timeout input
+- #32589 fix(agents): use agents.defaults.workspace for default subagents (#29367)
+- #32555 fix(msteams): clear pending upload timeout on removal
+- #32523 fix(acp): reap failed startup identity reconciliations
+- #32521 fix(exec-approval): support safe slug prefix resolution for /approve
+- #32457 fix(fs-safe): respect umask by defaulting to 0o666 instead of 0o600
+- #32436 fix(cron): timezone dropdown suggestions and add Asia/Shanghai
+- #32246 fix(cron): narrow agentEntry type to fix TS2339
+- #32026 fix(signal): drop bare emoji reaction envelopes before dispatch
+- #31730 fix(gateway): prevent sessions_send from corrupting target session channel
+- #31347 fix(signal): map control events and support new reaction payload shapes
+- #31091 fix(telegram): inline model fallback notice in reply (AI-assisted)
+- #31020 fix(queue): strip inbound metadata from queued prompts in collect mode
+- #30856 fix(macos): Prevent duplicate menu bar icons on macOS 26.3 when using wss: to ga
+- #30388 fix(bootstrap): skip [MISSING] marker for BOOTSTRAP.md after onboarding deletion
+- #30310 fix(channels): include default account when base config has tokens  [claude, hum
+- #30271 fix(control-ui): prevent infinite render loop in cron form name field
+- #30213 fix(auto-reply): increase transient HTTP retry delay to 30s
+- #30060 fix(windows): prevent conhost.exe zombie leak + fix agentEntry type narrowing
+- #29840 fix(docs): preserve h1 anchor without layout gap
+- #29768 fix(message): add channels.defaults.defaultChannel to resolve ambiguity when mul
+- #29620 fix(agents): preserve thinking/redacted_thinking blocks in stripThoughtSignature
+- #29540 fix(canvas-host): serve .js and .css files with correct MIME types in…
+- #29515 fix(plugins): preserve plugin-registered internal hooks across gateway startup
+- #29513 fix bug: exec tool accepts cmd alias and empty args (#29458)
+- #29410 fix(ui): stabilize websocket reconnect auth token selection
+- #29361 fix(skills): clear hasBinary cache after successful skill install
+- #29326 fix(irc): keep provider alive after connecting to prevent restart loop
+- #29161 fix(gateway): add handshake lock to prevent concurrent WS handshake race (#19168
+- #28971 fix(skills): rebuild skills prompt when running in sandbox
+- #28844 fix(config): coerce Discord Snowflake IDs to string in schema
+- #28683 fix(exec): apply default timeout to backgrounded exec sessions
+- #28646 fix(heartbeat): skip heartbeat when session was recently active
+- #28626 fix(gateway): replace socket.once with socket.on to handle multiple error events
+- #28441 fix(irc): dedupe active account client to prevent duplicate IRC sessions
+- #28417 fix(signal): don't drop valid group dataMessage when syncMessage exists
+- #28406 fix(skills): parse system.which Record response in remote bin probe
+- #28316 fix(provider): add xai to reasoning tag provider list (#27533)
+- #28275 fix(tui): wrap markdown link text with OSC 8 to prevent terminal autolink overri
+- #28188 fix(control-ui): parse backtick-wrapped avatar paths from IDENTITY.md
+- #28119 fix(config): accept bluebubbles allowPrivateNetwork setting
+- #28040 fix(update): infer default channel from git tag/branch
+- #27985 fix(gateway): promote --password to env var to hide from process listings
+- #27970 fix(typing): always clean up on TTL expiry regardless of loop state
+- #27914 fix(chat): preserve newlines in user messages across page refresh
+- #27750 fix(routing): include accountId in group/channel session keys
+- #27699 fix(telegram): Add detailed logging for group message blocking
+- #27677 fix(onboard): add manual endpoint type selection when custom provider detection 
+- #27164 fix(typing): prevent keepalive restart after cleanup during in-flight onReplySta
+- #27017 fix(gateway-lock): detect any running gateway process to prevent duplicates
+- #26638 fix(sessions): allow clearing session labels without cryptic validati…
+- #25930 fix(ui): add AbortController to refreshChatAvatar to cancel stale requests
+- #25626 fix(ui): use conservative wrapping for chat text
+- #25351 fix(heartbeat): preserve transcript when heartbeat run made tool calls
+- #24309 fix(browser): lower default screenshot max dimension to 1600 px
+- #22966 fix(onboard): error on unknown --auth-choice in non-interactive mode
+- #22011 fix(transcript): drop empty toolCallId toolResults during persistence + repair
+- #21728 fix(boot): deduplicate startup notification within restart cycle
+- #21186 fix(gateway): strict loopback guard for Control UI (v2)
+- #21075 fix(media): use sips on Node.js + darwin to prevent Photos TCC prompt
+- #20319 fix(whisper-skill): set execute bit on transcribe.sh (fixes #9303)
+- #20241 fix(memory-lancedb): consolidate preference keyword/category detection (EN+CS+CJ
+- #17684 fix(skills): update notion skill for API 2025-09-03
+- #14308 fix(sandbox): pass docker.env config to container creation
+
+### T3 Feat (197)
+- #57717 feat(slack): wire Block Kit table send path
+- #57711 feat(memory): enable query expansion in hybrid search mode
+- #57630 feat(plugins): add appendContext and prompt to PluginHookBeforePromptBuildResult
+- #57615 feat(plugins): upgrade llm_input/llm_output hooks from fire-and-forget to modify
+- #57572 feat(gateway): add channelHealthRestartMode to preserve Anthropic prompt cache o
+- #57531 feat(i18n): add Korean locale for control UI
+- #57511 feat(msteams): Teams live voice support with .NET media worker
+- #57510 feat(hooks): implement pre_route hook for dynamic routing before dispatch
+- #57507 feat(plugins): support multi-kind plugins for dual slot ownership
+- #57309 feat(slack): add per-channel replyToMode config override (rebased #51848)
+- #57199 feat(cli): add agent-id and session-key to system event wake
+- #57128 feat(telegram): add proxy-ingress route for transparent Telegram forwarding
+- #57090 feat(extensions): add kafka-producer plugin — publish agent events to Apache Kaf
+- #57042 feat(skills): add deepsleep — two-phase daily memory persistence
+- #56955 feat(slack): enable inline buttons by default
+- #56891 feat(fish-audio): add Fish Audio TTS speech provider
+- #56806 feat(exec): expose knownLongFlags in safeBinProfiles config schema
+- #56765 feat(onboarding): add select-all to skills and hooks setup
+- #56655 feat(wizard): mention ClawMetry observability in post-onboard note
+- #56590 feat(extensions): add jira-cloud skill pack scaffold
+- #56545 feat(cron): add agent-turn mode for failure alerts
+- #56497 feat(extension): support session cache for volcengine
+- #56431 feat(feishu): add bot reply chain detection to prevent infinite loops…
+- #56257 feat(plugins): add declarative capabilities model to plugin manifest
+- #56239 feat(tts): add local CLI TTS plugin
+- #56130 feat(nodes): add visionOS node app (Apple Vision Pro spatial peripheral)
+- #55982 feat(cron): add skipWhenIdle option to skip jobs during idle sessions
+- #55766 feat(acp): forward image blocks in tool call results
+- #55737 feat(ui): complete zh-CN translations for Control UI usage dashboard
+- #55714 feat(skills): add simple operations skills for backup, status, update, and remot
+- #55710 feat(skills): add OpenClaw backup-to-remote automation skill
+- #55614 feat(tts): add Xiaomi MiMo-V2-TTS as speech provider
+- #55576 feat(config): add google-vertex as a supported api type
+- #55570 feat(slack): add ignoreOtherMentions channel option
+- #55521 feat(feishu): add immediate Typing reaction on message receipt
+- #55518 feat(docker): add OPENCLAW_SKIP_ONBOARDING env to skip onboarding during Docker 
+- #55295 feat(whatsapp): add allowOutboundTo config for separate outbound target authoriz
+- #55225 feat(feishu): support im.message.recall_v1 event
+- #55037 feat(routing): support per-binding workspace override
+- #54750 feat(memory): add episodic memory system (CLS-inspired hippocampal memory)
+- #54483 feat(models): expand authHeader into provider headers at config load time
+- #54315 feat(runtime): prioritize bootstrap files to reduce truncation regressions
+- #54309 feat(infra): add AgentProcessFactory for plugin-driven worker process spawning
+- #54105 feat(ui): add cron sessions filter to mobile WebUI settings dropdown
+- #53716 feat(gateway): add watchdog + startup error diagnostics (closes #53684)
+- #53629 feat(telegram): add Telegram Business Chat support (business_message, business_c
+- #53535 feat(feishu): expand permission management tools
+- #53520 feat(cli): add migrate export/import for cross-device migration
+- #53421 feat(plugins): add smart-router plugin for intelligent model routing
+- #53296 feat(skills): add mineru document extraction skill by mineru official
+- #53288 feat(discord): extract embed fields and footer for agent visibility
+- #52943 feat(imessage): wire typing indicators via imsg v0.5.0 CLI
+- #52742 feat(providers): add OfoxAI as an AI provider
+- #52588 feat(tui): allow overriding user message colors via env vars
+- #52388 feat(skills): add web-screenshot skill for reliable full-page screenshots
+- #52304 feat(skills): add video-transcribe — video-to-word transcription
+- #52176 feat(docker): add optional uv installation for skills and extensions
+- #52059 feat(gateway): add gateway.auth.scopes for device-less token/password connection
+- #51890 feat(gateway): add SSE endpoint for real-time agent events
+- #51848 feat(slack): add per-channel replyToMode config override
+- #51765 feat(skills): add trading-agents skill for TauricResearch/TradingAgents
+- #51668 feat(outbound): gateway-layer secret sanitization with named reference handles
+- #51581 feat(cron): add --thread-id flag to cron create/edit for Telegram forum topics
+- #51446 feat(apple-notes): update skill for memo fork with pipx install and notes api
+- #51268 feat(acp): add --no-device-identity flag for token-only auth
+- #51156 feat(config): add enforceFinalTag option to agent defaults
+- #51038 feat(browser): add headless mode support
+- #51002 feat(web_search): add SearXNG as zero-config web search provider
+- #50992 feat(plugin-sdk): expose steer/abort APIs for active agent runs
+- #50884 feat(feishu): add bot-refresh skill for identity refresh
+- #50375 feat(control-ui): display session label in chat header
+- #50172 feat(bluebubbles): resolve exec approvals from tapback reactions
+- #50066 feat(agents): auto-log sessions_send to JSONL for observability
+- #49840 feat(heartbeat): add maxCostPerRun config to cap embedded run cost
+- #49737 feat(extensions): add official GenPark Marketplace & Circle integration plugin
+- #49477 feat(skill-creator): add best practices from real-world skill engineering
+- #49387 feat(skills): add operon-guard — pre-flight trust verification for AI agents
+- #49064 feat(cli): add `openclaw usage` command for token and cost summaries
+- #48900 feat(media): native audio/video forwarding for multimodal models
+- #48835 feat(tui): add --theme CLI flag for light/dark theme selection
+- #48681 feat(agents): support multiple workspaces via composite symlink directory
+- #48540 feat(skills): add skill-finder for discovering and installing skills
+- #48530 feat(tts): Support for Xai tts API
+- #48396 feat(ui): add message preview to session list
+- #48336 feat(gateway): add general per-IP request rate limiter
+- #48327 feat(skills): add waiaas — self-hosted crypto wallet for AI agents
+- #48194 feat(cron): support additionalTargets for multi-channel delivery
+- #48156 feat(agents): add minimal Context Book bootstrap pipeline
+- #48150 feat(feishu): expose directory peer email fields
+- #48138 feat(feishu): add document ownership transfer support to feishu_doc tool
+- #48103 feat(commands): write restart sentinel on /restart slash command
+- #47658 feat(skills): add `openclaw skills install <name>` CLI command
+- #47619 feat(skills): ClawTrust v1.13.0 — multi-chain Base Sepolia + SKALE Testnet (18 l
+- #47302 feat(doctor): add --check-config for deep config validation
+- #47285 feat(memory-lancedb): native Azure OpenAI support
+- #47252 feat(channels): add KakaoTalk channel via Kakao i Open Builder
+- #46865 feat(guardian): LLM-based intent-alignment guardian plugin
+- #46730 feat(telegram): animated/video sticker passthrough & animation/GIF metadata extr
+- #46660 feat(plugins): add agent_to_agent_turn hook for A2A ping-pong visibility
+- #46178 feat(compaction): adaptive reserveTokensFloor based on model context window
+- #46036 feat(slack): add global/DM systemPrompt and built-in mrkdwn platform prompt
+- #45879 feat(metabolism): add homeostatic token budget management system
+- #45613 feat(anthropic): migrate 1M context from beta to GA
+- #45584 feat(cron): add freshSession option to control session reuse per job
+- #45278 feat(feishu): enable streaming card replies in thread/topic mode
+- #45262 feat(slack): add contextAware option for slash commands
+- #45209 feat(feishu): add configuration toggle for Bitable tools
+- #44868 feat(plugin-sdk): add session.readRecentMessages for channel plugins
+- #44780 feat(ios): add configurable speech recognition locale for Talk Mode
+- #44745 feat(router): add intelligent request routing with escalation gate
+- #44683 feat(deploy): add Helm chart for OpenClaw (equivalent to existing k8s manifests)
+- #44489 feat(sessions): add adaptive reset mode with AND logic (atHour + idleMinutes)
+- #44200 feat(acp): default streamTo to "parent" for ACP sessions
+- #43974 feat(HaromonyApp): add HarmonyOS node app (bridge+chat)
+- #43873 feat(cli): add `openclaw env` command to manage gateway environment variables
+- #43792 feat(mcp): add MCP server with browser transport and persistent memor…
+- #43416 feat(ui): add copy button for assistant messages
+- #43317 feat(sandbox): pluggable provider interface + Docker/gVisor backends
+- #43304 feat(agents): include current date and day-of-week in system prompt
+- #43218 feat(session): inject outbound messages into target session history in per-chann
+- #42971 feat(Pulaoecho-voice-assistant): Implement WSS connection with passwo…
+- #42967 feat(tts): add optional voiceId parameter for per-agent voice overrides
+- #42965 feat(usage): add Kilo balance endpoint to provider usage tracking
+- #42945 feat(ui): add mouse-based drag scrolling for horizontal navigation bar
+- #42304 feat(android): add inline Adaptive Card rendering in chat
+- #42286 feat(tracing): add agent execution tracing plugin
+- #42195 feat(doc): How to develop the page of UI in OpenClaw
+- #42105 feat(typing): make typing indicator TTL configurable via typingTtlSeconds
+- #41892 feat(control-ui): add cron calendar timeline view
+- #41742 feat(ui-mc): add Mavis Mission Control — agency-wide SPA with 80+ agents
+- #41723 feat(sessions): JSONL transcript archival with configurable retention
+- #41616 feat(docker): add non-headless Ubuntu Chrome container with GUI support
+- #41421 feat(cli): add `openclaw agents view-system-prompt` command
+- #41324 feat(feishu): auto-grant requester permission when creating Bitable
+- #41307 feat(routing): support peer.id wildcard for kind-level route matching
+- #41127 feat(skills): add local-db and rag-store community skills
+- #40972 feat(content): add thought leadership content pipeline
+- #40874 feat(ios): Liquid Glass UI, Action Button & Dynamic Island
+- #40291 feat(voice-call): add response-generator patch
+- #39982 feat(config): use datetime suffix for backup rotation instead of numeric
+- #39961 feat(agent): add text repetition guard for streaming output
+- #39853 feat(feishu): expose non-bot @mentions in inbound conversation metadata
+- #39567 feat(feishu): add feishu_reaction tool for message emoji reactions
+- #39520 feat(feishu): add localRoots configuration for media uploads and enhance media h
+- #39510 feat(plugins): workspace-shield — protect critical files from agent writes
+- #39322 feat(imessage): add tapback reaction support as inbound agent events
+- #39055 feat(agent-runner): abort active run on priority message during steer…
+- #38930 feat(retry): expand global retry codes and migrate Venice discovery 🦞🙏
+- #38446 feat(media): auto-convert non-WAV audio to WAV for whisper-cli transcription
+- #38444 feat(gateway): allow node role to call config.schema and UI methods
+- #38381 feat(coding-agent): add Codex CLI multi-agent orchestration support
+- #38070 feat(pack): Agent Pack — shareable workspace templates
+- #36784 feat(email): enable direct outbound sends for message.send
+- #36542 feat(browser): expose profile name as OPENCLAW_BROWSER_PROFILE env var
+- #36481 feat(session): add /resume command to list and restore previous sessions
+- #36347 feat(feishu): add filter, sort, field_names, view_id to feishu_bitable_list_reco
+- #36310 feat(config): add per-chat-type model routing (DM vs Group Chat)
+- #35735 feat(sessions): add rm and clear subcommands
+- #35663 feat(feishu): support replyToMode config to control reply attachment behavior
+- #35281 feat(slack): add message formatting section — link unfurl prevention + markdown 
+- #35022 feat(tui): show activity status indicator in footer bar
+- #34916 feat(imessage): add reply context support for conversation threading
+- #34046 feat(hooks): add auto-wake hook — assistant speaks first after restart
+- #33506 feat(mattermost): block streaming edit-in-place (rebased)
+- #33495 feat(web): add sender name prefix to BodyForAgent in DMs
+- #33479 feat(web): allow outbound DM passthrough in access control
+- #33412 feat(feishu): add message read status API support
+- #33365 feat(config): add discovery toggles for Copilot, HuggingFace, and Ollama
+- #33114 feat(scripts): add gateway CLI tools and live monitor dashboard
+- #32750 feat(context-pruning): add file block awareness to softTrim
+- #32636 feat(agents): implement run-lock watchdog hardening (Phase 1)
+- #31680 feat(skills): enhance cursor-agent support in coding-agent skill
+- #30996 feat(coding-agent): structured context handoff protocol
+- #30845 feat(feishu): add image message support
+- #30641 feat(agents): add @import directives for workspace bootstrap MD files [AI-assist
+- #30354 feat(voicewake): trigger-based routing to agent/session
+- #29816 feat(heartbeat): stage runtime safety phase-1 draft
+- #29590 feat(hooks): bridge after_tool_call to internal hook handlers
+- #29495 feat(scripts): add AGENTS.md / CLAUDE.md quality linter
+- #27999 feat(pairing): support configurable pairing code TTL via OPENCLAW_PAIRING_TTL_MI
+- #27148 feat(signal): add outbound native mention support
+- #26974 feat(ENGN-5609–5612): Cascade prevention — concurrency gate, circuit breaker, se
+- #26850 feat(auth-profiles): Add schema validation for auth-profiles.json
+- #26603 feat(gateway): scaffold models.auth RPC methods (start/status/cancel)
+- #26096 feat(plugins): expose session store API and sessionKey for plugin commands
+- #25688 feat(exec): add backgroundMode config to reduce polling token usage
+- #25445 feat(telegram): handle web_app_data from Soul wizard Mini App
+- #25135 feat(openai): header-based rate limit shaping (inert behind OPENAI_SHAPING)
+- #22607 feat(cli): add --omit-system-prompt flag to agent --json
+- #22591 feat(cli): expose Discord channel lifecycle management through unified CLI inter
+- #22140 feat(config): add usageDefault to agent defaults for persistent /usage mode
+- #21446 feat(ra2): implement Context Sovereignty Layer (Phase 1)
+- #20058 feat(voice-call): add Twilio non-US region support (region/edge config)
+- #19644 feat(docker): add init script support via /openclaw-init.d/
+- #16831 feat(status): group cron sessions for readability
+- #13820 feat(agents): retry empty-stream once before fallback
+- #12033 feat(docker): add linux/riscv64 image to Docker release
+
+### T4 Other (53)
+- #57733 Add non-batch memory embedding concurrency control
+- #57694 docs: fix missing config keys and add absent zh-CN reference sections
+- #57668 warn when running without auth on public interface (prevent accidental exposure)
+- #57665 fix: fallback version resolution for module/binary builds (closes #57589)
+- #57631 docs: add Pompelmi Attachment Firewall to community plugins
+- #57598 build(deps): bump the android-deps group across 1 directory with 11 updates
+- #57584 fix: evaluate shell wrapper inline compound commands against allowlist (#57377)
+- #57582 fix: release gateway lock on shutdown timeout (#57052)
+- #57580 venice: add strip_thinking_response for reasoning models
+- #57579 feat: inject structured metadata into sessions_send
+- #57530 msteams: add group management actions (add/remove participant, rename)
+- #57525 fix: make registerChannel/registerHttpRoute idempotent for same-plugin re-regist
+- #57518 Browser: restore relay attach selection UX
+- #57505 Matrix: stop no-progress bot loops with semantic judge
+- #57502 fix: add Discord targetResolver to fix user:<id> delivery in isolated cron sessi
+- #57499 fix: strip reasoning replay for Azure OpenAI Responses API
+- #57495 feat: add bootstrap-alternate-files bundled hook
+- #57479 AuthVault: Secure Isolated Sandbox for Secrets
+- #57477 fix: "Update now" button silently fails — show reasons, support force, add live 
+- #57468 refactor(models): centralize model metadata and provider-aware resolution
+- #57464 fix: skip loading unused bundled channels when plugins.allow is set
+- #57449 CLI: devices list 可区分设备 (#57424)
+- #57416 Fix project-local .env regression (#57408)
+- #57356 CLI: keep sessions --json stdout parseable
+- #57328 fix: cron isolated sessions fail with LiveSessionModelSwitchError when payload.m
+- #57327 fix: resolve provider runtime hooks for CLI backends
+- #57285 Fix/#57256 status mem0 false negative
+- #57247 feat: dedicated model identity line in system prompt
+- #57238 Browser/Profiles: add per-profile headless + executablePath overrides
+- #57224 Skills: replace legacy gh-issues clawdbot paths
+- #57192 Allow macOS screen recording by default
+- #57190 Persist fallback model overrides before retrying
+- #57189 Fallback when Windows runtime symlinks are denied
+- #57187 fix: strip context-1m beta when apiKey is unresolved (OAuth compat)
+- #57184 Fix session sync during session-start full reindex
+- #57170 fix: resolveOpenClawPackageRootSync incorrectly resolves dist/ as package root
+- #57127 fix: auto-enable minimax plugin for API key auth route
+- #57116 fix: skip discovery for providers not in openclaw.json
+- #57089 fix: emit warning on consecutive QueuedFileWriter failures
+- #57081 docs: document browser.request failures caused by gateway install drift
+- #57060 fix: include paired users from credentials store in command authoriza…
+- #57041 fix: keep subagents list active while run cleanup is pending
+- #57024 chore: remove unused dependencies (hono, long, uuid)
+- #57008 openclaw 升级后修复
+- #57002 perf: reuse char estimate cache in tool result context guard
+- #57001 perf: hoist billing error normalization to module level
+- #57000 fix: command poll backoff skips first tier after output reset
+- #56999 perf: hoist regex patterns to module level in detectImageReferences
+- #56993 docs: Add Skill Development Guide (技能开发指南)
+- #56991 docs: Add Deployment Guide (部署指南)
+- #56990 docs: Add Configuration Examples (配置示例)
+- #56989 docs: Add Chinese Troubleshooting Guide (故障排除指南)
+- #56988 docs: Add API usage examples (API使用示例)
+
