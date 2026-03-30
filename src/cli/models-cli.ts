@@ -348,6 +348,10 @@ export function registerModelsCli(program: Command) {
       "--expires-in <duration>",
       "Optional expiry duration (e.g. 365d, 12h). Stored as absolute expiresAt.",
     )
+    .option(
+      "--token <value>",
+      'Token value. Use "-" to read from stdin. Falls back to OPENCLAW_PASTE_TOKEN env var or interactive prompt.',
+    )
     .action(async (opts) => {
       await runModelsCommand(async () => {
         await modelsAuthPasteTokenCommand(
@@ -355,6 +359,7 @@ export function registerModelsCli(program: Command) {
             provider: opts.provider as string | undefined,
             profileId: opts.profileId as string | undefined,
             expiresIn: opts.expiresIn as string | undefined,
+            token: opts.token as string | undefined,
           },
           defaultRuntime,
         );
