@@ -977,6 +977,28 @@ async function main() {
     process.exit(1);
   }
 
+  // Auto-commit history/changelog if they're the only dirty files — these are
+  // always safe to commit and are commonly left dirty by interrupted runs.
+  const AUTO_COMMIT_PATHS = [
+    resolve(REPO_DIR, "docs/mega-merge-history.json"),
+    resolve(REPO_DIR, "docs/mega-merge-changelog.md"),
+  ];
+  {
+    const dirty = run("git", ["status", "--porcelain"]);
+    const dirtyTracked = dirty.stdout
+      .split("\n")
+      .filter((l) => l.trim() && !l.startsWith("??"));
+    const dirtyFiles = dirtyTracked.map((l) => resolve(REPO_DIR, l.slice(3).trim()));
+    const allAutoCommittable = dirtyFiles.every((f) => AUTO_COMMIT_PATHS.includes(f));
+    if (dirtyTracked.length > 0 && allAutoCommittable) {
+      run("git", ["add", ...AUTO_COMMIT_PATHS]);
+      const result = run("git", ["commit", "--no-verify", "-m", "chore(mega-merge): update history and changelog"]);
+      if (result.ok) {
+        log("Auto-committed history/changelog leftover from previous run.");
+      }
+    }
+  }
+
   // Verify working tree is clean (no uncommitted tracked changes; ignore untracked)
   const statusCheck = run("git", ["status", "--porcelain"]);
   const trackedChanges = statusCheck.stdout
