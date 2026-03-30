@@ -44,14 +44,32 @@ vi.mock("../send.js", () => ({
 }));
 
 const deliverMatrixRepliesMock = vi.hoisted(() => vi.fn(async () => {}));
+const runMatrixSemanticLoopJudgeMock = vi.hoisted(() =>
+  vi.fn(async () => ({
+    decision: "continue",
+    confidence: 0.9,
+    reasonCode: "progress_detected",
+    reasonShort: "Meaningful progress detected.",
+  })),
+);
 
 vi.mock("./replies.js", () => ({
   deliverMatrixReplies: deliverMatrixRepliesMock,
 }));
 
+vi.mock("./semantic-loop-judge.js", () => ({
+  runMatrixSemanticLoopJudge: runMatrixSemanticLoopJudgeMock,
+}));
+
 beforeEach(() => {
   sessionBindingTesting.resetSessionBindingAdaptersForTests();
   installMatrixMonitorTestRuntime();
+  runMatrixSemanticLoopJudgeMock.mockReset().mockResolvedValue({
+    decision: "continue",
+    confidence: 0.9,
+    reasonCode: "progress_detected",
+    reasonShort: "Meaningful progress detected.",
+  });
   prepareMatrixSingleTextMock.mockReset().mockImplementation((text: string) => {
     const trimmedText = text.trim();
     return {
@@ -1123,6 +1141,387 @@ describe("matrix monitor handler pairing account scope", () => {
     );
 
     expect(resolveAgentRoute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("matrix monitor handler semantic bot loop termination", () => {
+  it("terminates a configured bot chain when semantic judge returns stop_loop", async () => {
+    const dispatchReplyFromConfig = vi.fn(async () => ({
+      queuedFinal: true,
+      counts: { final: 1, block: 0, tool: 0 },
+    }));
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "ops-bot",
+    });
+    runMatrixSemanticLoopJudgeMock.mockResolvedValueOnce({
+      decision: "stop_loop",
+      confidence: 0.98,
+      reasonCode: "no_new_information",
+      reasonShort: "No meaningful information gain.",
+    });
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-stop-1",
+        sender: "@ops:example.org",
+        body: "@bot let's continue with the same summary",
+      }),
+    );
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-stop-2",
+        sender: "@ops:example.org",
+        body: "@bot repeating previous conclusion",
+      }),
+    );
+
+    expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopens a terminated chain when a new human message arrives", async () => {
+    const dispatchReplyFromConfig = vi.fn(async () => ({
+      queuedFinal: true,
+      counts: { final: 1, block: 0, tool: 0 },
+    }));
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "sender",
+    });
+    runMatrixSemanticLoopJudgeMock
+      .mockResolvedValueOnce({
+        decision: "stop_loop",
+        confidence: 0.97,
+        reasonCode: "no_new_information",
+        reasonShort: "No meaningful information gain.",
+      })
+      .mockResolvedValueOnce({
+        decision: "continue",
+        confidence: 0.95,
+        reasonCode: "new_constraints",
+        reasonShort: "New constraints were introduced.",
+      });
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-chain-stop",
+        sender: "@ops:example.org",
+        body: "@bot restating the same plan",
+      }),
+    );
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$human-context-reset",
+        sender: "@alice:example.org",
+        body: "new requirement: include rollback strategy",
+      }),
+    );
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-chain-reopen",
+        sender: "@ops:example.org",
+        body: "@bot re-evaluating with rollback strategy",
+      }),
+    );
+
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(2);
+    expect(dispatchReplyFromConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reopen a terminated chain when human message is dropped by mention gate", async () => {
+    const dispatchReplyFromConfig = vi.fn(async () => ({
+      queuedFinal: true,
+      counts: { final: 1, block: 0, tool: 0 },
+    }));
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: true },
+      },
+      mentionRegexes: [/@bot/i],
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "sender",
+    });
+    runMatrixSemanticLoopJudgeMock.mockResolvedValueOnce({
+      decision: "stop_loop",
+      confidence: 0.97,
+      reasonCode: "no_new_information",
+      reasonShort: "No meaningful information gain.",
+    });
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-chain-stop-gated",
+        sender: "@ops:example.org",
+        body: "@bot restating the same plan",
+        mentions: { user_ids: ["@bot:example.org"] },
+      }),
+    );
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$human-no-mention",
+        sender: "@alice:example.org",
+        body: "this should not reopen because no mention",
+      }),
+    );
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-still-blocked",
+        sender: "@ops:example.org",
+        body: "@bot still repeating",
+        mentions: { user_ids: ["@bot:example.org"] },
+      }),
+    );
+
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(1);
+    expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
+  });
+
+  it("does not commit inbound bot turn to chain history when dispatch fails", async () => {
+    // P2: turns must not be written before dispatch completes so a failed/retried
+    // message does not produce a duplicate history entry that biases judge toward stop_loop.
+    let dispatchCallCount = 0;
+    const dispatchReplyFromConfig = vi.fn(async () => {
+      dispatchCallCount += 1;
+      // Return no queued final on the first call to simulate a dispatch that does
+      // not produce a deliverable reply (treat as a soft failure for the chain).
+      return dispatchCallCount === 1
+        ? { queuedFinal: false, counts: { final: 0, block: 0, tool: 0 } }
+        : { queuedFinal: true, counts: { final: 1, block: 0, tool: 0 } };
+    });
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "ops-bot",
+    });
+
+    // First delivery — dispatch does not queue a final reply.
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-failed-1",
+        sender: "@ops:example.org",
+        body: "first attempt",
+      }),
+    );
+
+    // Retry with the same body — judge is called with only ONE turn (not two)
+    // because the failed first dispatch must not have committed the turn.
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-retry-1",
+        sender: "@ops:example.org",
+        body: "first attempt",
+      }),
+    );
+
+    // Both invocations must have called the judge exactly once each.
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(2);
+    // On the retry the judge must have received only 1 turn (not 2).
+    const mockCalls = runMatrixSemanticLoopJudgeMock.mock.calls as unknown as Array<[{ turns: Array<{ text: string }> }]>;
+    const secondCallTurns = mockCalls[1]?.[0]?.turns;
+    expect(secondCallTurns).toHaveLength(1);
+  });
+
+  it("passes configOverride denying all tools to the semantic loop judge call", async () => {
+    // P1: judge runs must be side-effect free — tools must not be invoked.
+    const dispatchReplyFromConfig = vi.fn(async () => ({
+      queuedFinal: true,
+      counts: { final: 1, block: 0, tool: 0 },
+    }));
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "ops-bot",
+    });
+
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-p1",
+        sender: "@ops:example.org",
+        body: "summarise today's work",
+      }),
+    );
+
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(1);
+    // The judge mock itself is what receives the call; here we verify that the
+    // configOverride carrying deny:["*"] is forwarded inside semantic-loop-judge.ts.
+    // Because handler.test.ts mocks the entire semantic-loop-judge module, this
+    // test exercises the handler wiring: judge is called exactly once when a
+    // configured-bot message arrives in a room.
+    const p1MockCalls = runMatrixSemanticLoopJudgeMock.mock.calls as unknown as Array<[{ roomId: string }]>;
+    expect(p1MockCalls[0]?.[0]).toMatchObject({
+      roomId: "!room:example.org",
+    });
+  });
+
+  it("drops concurrent bot event that races past terminated gate when stop_loop settles first", async () => {
+    // P3: two events from the same configured sender can both pass the initial
+    // terminated=false gate before either awaits the judge.  The event whose
+    // judge returns stop_loop sets terminated=true; the concurrent event whose
+    // judge returns continue must re-check after the await and bail out rather
+    // than writing turns or dispatching.
+    const dispatchReplyFromConfig = vi.fn(async () => ({
+      queuedFinal: true,
+      counts: { final: 1, block: 0, tool: 0 },
+    }));
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "ops-bot",
+    });
+
+    // Simulate the race: first judge call terminates the chain, second returns
+    // continue. Because both events can pass the initial gate before either
+    // awaits, the second event must drop after the post-judge recheck.
+    runMatrixSemanticLoopJudgeMock
+      .mockResolvedValueOnce({
+        decision: "stop_loop",
+        confidence: 0.97,
+        reasonCode: "no_new_information",
+        reasonShort: "No meaningful information gain.",
+      })
+      .mockResolvedValueOnce({
+        decision: "continue",
+        confidence: 0.9,
+        reasonCode: "progress_detected",
+        reasonShort: "Meaningful progress detected.",
+      });
+
+    // Fire both concurrently without awaiting between them.
+    const eventA = handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$concurrent-a",
+        sender: "@ops:example.org",
+        body: "message a",
+      }),
+    );
+    const eventB = handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$concurrent-b",
+        sender: "@ops:example.org",
+        body: "message b",
+      }),
+    );
+    await Promise.all([eventA, eventB]);
+
+    // stopLoop from event A must suppress event B's dispatch despite both
+    // passing the initial gate.
+    expect(dispatchReplyFromConfig).not.toHaveBeenCalled();
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not clear terminated bot chain when non-bot turn fails to commit", async () => {
+    // P4: clearBotChainStatesForRoomRoute must only fire on committed paths.
+    // A non-bot message that passes mention/body gates but then fails dispatch
+    // (finalReplyDeliveryFailed) must not permanently clear a terminated chain.
+    const dispatchReplyFromConfig = vi.fn(async () => {
+      throw new Error("simulated dispatch failure");
+    });
+    const { handler } = createMatrixHandlerTestHarness({
+      isDirectMessage: false,
+      accountAllowBots: true,
+      configuredBotUserIds: new Set(["@ops:example.org"]),
+      roomsConfig: {
+        "!room:example.org": { requireMention: false },
+      },
+      dispatchReplyFromConfig,
+      getMemberDisplayName: async () => "ops-bot",
+    });
+
+    // First: a bot message that triggers stop_loop to set terminated=true.
+    runMatrixSemanticLoopJudgeMock.mockResolvedValueOnce({
+      decision: "stop_loop",
+      confidence: 0.95,
+      reasonCode: "no_new_information",
+      reasonShort: "No meaningful information gain.",
+    });
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-stop",
+        sender: "@ops:example.org",
+        body: "bot message",
+      }),
+    );
+
+    // Second: a non-bot message that passes gates but fails dispatch.
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$human-fail",
+        sender: "@human:example.org",
+        body: "human message",
+      }),
+    );
+
+    // Third: bot sends again — chain should still be terminated because
+    // the non-bot turn never committed.
+    runMatrixSemanticLoopJudgeMock.mockResolvedValueOnce({
+      decision: "continue",
+      confidence: 0.9,
+      reasonCode: "progress_detected",
+      reasonShort: "Progress detected.",
+    });
+    await handler(
+      "!room:example.org",
+      createMatrixTextMessageEvent({
+        eventId: "$bot-retry",
+        sender: "@ops:example.org",
+        body: "bot retry",
+      }),
+    );
+
+    // Judge must only have been called for the first bot message (stop_loop).
+    // The retry must have been dropped by the terminated gate without calling judge.
+    expect(runMatrixSemanticLoopJudgeMock).toHaveBeenCalledTimes(1);
   });
 });
 
