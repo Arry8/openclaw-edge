@@ -262,9 +262,9 @@ export async function processGatewayAllowlist(
             env: params.env,
             platform: process.platform,
           });
-          for (const pattern of patterns) {
-            if (pattern) {
-              addAllowlistEntry(approvals.file, params.agentId, pattern);
+          for (const p of patterns) {
+            if (p.pattern) {
+              addAllowlistEntry(approvals.file, params.agentId, p.pattern, p.argPattern);
             }
           }
         }

@@ -293,6 +293,57 @@ async function validateScriptFileForShellBleed(params: {
   }
 }
 
+/**
+ * Derive the executable token to show in the pre-approved command hint.
+ * Absolute paths to scripts (.ps1, .js, .py, .bat, .cmd) are kept as-is
+ * because they are not on PATH and must be invoked with their full path.
+ * Other absolute paths use the basename-without-.exe short name so the LLM
+ * invokes them via PATH lookup (consistent with the Windows guidance above).
+ */
+function deriveExecShortName(fullPath: string): string {
+  if (path.isAbsolute(fullPath)) {
+    const ext = path.extname(fullPath).toLowerCase();
+    const scriptExts = new Set([".ps1", ".js", ".py", ".bat", ".cmd", ".sh"]);
+    if (scriptExts.has(ext)) {
+      return fullPath; // keep full path for scripts not on PATH
+    }
+  }
+  const base = path.basename(fullPath);
+  return base.replace(/\.exe$/i, "") || base;
+}
+
+
+function buildExecToolDescription(agentId?: string): string {
+  const base =
+    "Execute shell commands with background continuation. Use yieldMs/background to continue later via process tool. Use pty=true for TTY-required commands (terminal UIs, coding agents).";
+  if (process.platform !== "win32") {
+    return base;
+  }
+  const lines: string[] = [base];
+  lines.push(
+    "IMPORTANT (Windows): Run executables directly — do NOT wrap commands in `cmd /c`, `powershell -Command`, `& ` prefix, or WSL. Use backslash paths (C:\\path), not forward slashes. Use short executable names (e.g. `node`, `python3`) instead of full paths.",
+  );
+  try {
+    const approvals = loadExecApprovals();
+    const agentKey = agentId ?? "main";
+    const agentEntry = approvals.agents?.[agentKey];
+    const allowlist = Array.isArray(agentEntry?.allowlist) ? agentEntry.allowlist : [];
+    if (allowlist.length > 0) {
+      lines.push(
+        "Pre-approved executables (exact arguments are enforced at runtime; no approval prompt needed when args match):",
+      );
+      for (const entry of allowlist.slice(0, 10)) {
+        const shortName = deriveExecShortName(entry.pattern);
+        const argNote = entry.argPattern ? "(restricted args)" : "(any arguments)";
+        lines.push(`  ${shortName} ${argNote}`);
+      }
+    }
+  } catch {
+    // Allowlist loading is best-effort; don't block tool creation.
+  }
+  return lines.join("\n");
+}
+
 export function createExecTool(
   defaults?: ExecToolDefaults,
   // oxlint-disable-next-line typescript/no-explicit-any
@@ -345,11 +396,12 @@ export function createExecTool(
     defaults?.agentId ??
     (parsedAgentSession ? resolveAgentIdFromSessionKey(defaults?.sessionKey) : undefined);
 
+  const execDescription = buildExecToolDescription(agentId);
+
   return {
     name: "exec",
     label: "exec",
-    description:
-      "Execute shell commands with background continuation. Use yieldMs/background to continue later via process tool. Use pty=true for TTY-required commands (terminal UIs, coding agents).",
+    description: execDescription,
     parameters: execSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
       const params = args as {

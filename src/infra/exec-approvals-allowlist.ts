@@ -26,6 +26,7 @@ import {
   extractShellWrapperInlineCommand,
   isShellWrapperExecutable,
   normalizeExecutableToken,
+  POWERSHELL_WRAPPERS,
 } from "./exec-wrapper-resolution.js";
 import { resolveExecWrapperTrustPlan } from "./exec-wrapper-trust-plan.js";
 import { expandHomePrefix } from "./home-dir.js";
@@ -232,7 +233,12 @@ function evaluateSegments(
       candidatePath && executableResolution
         ? { ...executableResolution, resolvedPath: candidatePath }
         : executableResolution;
-    const executableMatch = matchAllowlist(params.allowlist, candidateResolution);
+    const executableMatch = matchAllowlist(
+      params.allowlist,
+      candidateResolution,
+      effectiveArgv,
+      params.platform,
+    );
     const inlineCommand = extractShellWrapperInlineCommand(allowlistSegment.argv);
     const shellPositionalArgvCandidatePath = resolveShellWrapperPositionalArgvCandidatePath({
       segment: allowlistSegment,
@@ -240,11 +246,16 @@ function evaluateSegments(
       env: params.env,
     });
     const shellPositionalArgvMatch = shellPositionalArgvCandidatePath
-      ? matchAllowlist(params.allowlist, {
-          rawExecutable: shellPositionalArgvCandidatePath,
-          resolvedPath: shellPositionalArgvCandidatePath,
-          executableName: path.basename(shellPositionalArgvCandidatePath),
-        })
+      ? matchAllowlist(
+          params.allowlist,
+          {
+            rawExecutable: shellPositionalArgvCandidatePath,
+            resolvedPath: shellPositionalArgvCandidatePath,
+            executableName: path.basename(shellPositionalArgvCandidatePath),
+          },
+          undefined,
+          params.platform,
+        )
       : null;
     const shellScriptCandidatePath =
       inlineCommand === null
@@ -253,13 +264,39 @@ function evaluateSegments(
             cwd: params.cwd,
           })
         : undefined;
-    const shellScriptMatch = shellScriptCandidatePath
-      ? matchAllowlist(params.allowlist, {
-          rawExecutable: shellScriptCandidatePath,
-          resolvedPath: shellScriptCandidatePath,
-          executableName: path.basename(shellScriptCandidatePath),
-        })
+    // For script-wrapper cases the saved argPattern encodes only the arguments
+    // after the script path token (see buildScriptArgPatternFromArgv).  Build a
+    // synthetic argv whose [0] is the script and whose [1..] are the script args
+    // so that matchArgPattern compares against the right portion of argv.
+    const shellScriptArgv = shellScriptCandidatePath
+      ? (() => {
+          const scriptBase = path.basename(shellScriptCandidatePath).toLowerCase();
+          const cwdBase = params.cwd && params.cwd.trim() ? params.cwd.trim() : process.cwd();
+          const resolveArgPath = (a: string): string =>
+            path.isAbsolute(a) ? a : path.resolve(cwdBase, a);
+          // Prefer exact path match (normalizing relative tokens) to avoid
+          // shadowing by earlier args with the same basename.
+          let idx = effectiveArgv.findIndex((a) => resolveArgPath(a) === shellScriptCandidatePath);
+          if (idx === -1) {
+            idx = effectiveArgv.findIndex((a) => path.basename(a).toLowerCase() === scriptBase);
+          }
+          const scriptArgs = idx !== -1 ? effectiveArgv.slice(idx + 1) : [];
+          return [shellScriptCandidatePath, ...scriptArgs];
+        })()
       : null;
+    const shellScriptMatch =
+      shellScriptCandidatePath && shellScriptArgv
+        ? matchAllowlist(
+            params.allowlist,
+            {
+              rawExecutable: shellScriptCandidatePath,
+              resolvedPath: shellScriptCandidatePath,
+              executableName: path.basename(shellScriptCandidatePath),
+            },
+            shellScriptArgv,
+            params.platform,
+          )
+        : null;
     const match = executableMatch ?? shellPositionalArgvMatch ?? shellScriptMatch;
     if (match) {
       matches.push(match);
@@ -370,6 +407,12 @@ const SHELL_WRAPPER_OPTIONS_WITH_VALUE = new Set([
   "--startup-file",
 ]);
 
+// PowerShell flags (other than -File and -Command, which are handled explicitly above)
+// that consume one positional value.  PowerShell supports prefix abbreviations, so we
+// list the full names and common short forms.  Case-insensitive match.
+const POWERSHELL_OPTIONS_WITH_VALUE_RE =
+  /^-(?:executionpolicy|ep|windowstyle|w|workingdirectory|wd|inputformat|outputformat|settingsfile|configurationfile|version|v|psconsolefile|pscf|encodedcommand|en|enc|encodedarguments|ea)$/i;
+
 function resolveShellWrapperScriptCandidatePath(params: {
   segment: ExecCommandSegment;
   cwd?: string;
@@ -382,6 +425,9 @@ function resolveShellWrapperScriptCandidatePath(params: {
   if (!Array.isArray(argv) || argv.length < 2) {
     return undefined;
   }
+
+  const wrapperName = normalizeExecutableToken(argv[0] ?? "");
+  const isPowerShell = POWERSHELL_WRAPPERS.has(wrapperName);
 
   let idx = 1;
   while (idx < argv.length) {
@@ -397,13 +443,23 @@ function resolveShellWrapperScriptCandidatePath(params: {
     if (token === "-c" || token === "--command") {
       return undefined;
     }
-    if (/^-[^-]*c[^-]*$/i.test(token)) {
+    // Combined short-flag checks (e.g. -lc, -ic) only apply to POSIX shells.
+    // PowerShell uses full-word flags and never combines them; applying the
+    // regex to PowerShell flags like -ExecutionPolicy or -SettingsFile would
+    // incorrectly match because those words contain the letter 'c' or 's'.
+    if (!isPowerShell && /^-[^-]*c[^-]*$/i.test(token)) {
       return undefined;
     }
-    if (token === "-s" || /^-[^-]*s[^-]*$/i.test(token)) {
+    if (token === "-s" || (!isPowerShell && /^-[^-]*s[^-]*$/i.test(token))) {
       return undefined;
     }
     if (SHELL_WRAPPER_OPTIONS_WITH_VALUE.has(token)) {
+      idx += 2;
+      continue;
+    }
+    // PowerShell value-taking flags (e.g. -ExecutionPolicy Bypass) must skip both
+    // the flag and its argument so the script token is identified correctly.
+    if (isPowerShell && POWERSHELL_OPTIONS_WITH_VALUE_RE.test(token)) {
       idx += 2;
       continue;
     }
@@ -492,13 +548,104 @@ function isDirectShellPositionalCarrierInvocation(command: string): boolean {
   ).test(trimmed);
 }
 
+export type AllowAlwaysPattern = {
+  pattern: string;
+  argPattern?: string;
+};
+
+function escapeRegExpLiteral(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Build an argPattern for a shell-wrapper script invocation.
+ * Only the arguments *after* the script token are encoded so that the pattern
+ * is independent of wrapper spelling (e.g. `pwsh -File script.ps1 foo` and
+ * `C:\full\script.ps1 foo` both produce the same argPattern `^foo$`).
+ */
+function buildScriptArgPatternFromArgv(
+  argv: string[],
+  scriptPath: string,
+  cwd?: string,
+): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+  const scriptBase = path.basename(scriptPath).toLowerCase();
+  const base = cwd && cwd.trim() ? cwd.trim() : process.cwd();
+  // Prefer exact path match so that an earlier arg sharing the same basename
+  // (e.g. -SettingsFile C:\tmp\deploy.ps1 before -File C:\scripts\deploy.ps1)
+  // does not shadow the actual script token.  Normalize relative argv tokens to
+  // absolute paths (using cwd) before comparing so that -File .\scripts\deploy.ps1
+  // is correctly identified when scriptPath is already absolute.
+  const resolveArgPath = (arg: string): string =>
+    path.isAbsolute(arg) ? arg : path.resolve(base, arg);
+  let scriptIdx = argv.findIndex((arg) => resolveArgPath(arg) === scriptPath);
+  if (scriptIdx === -1) {
+    scriptIdx = argv.findIndex((arg) => path.basename(arg).toLowerCase() === scriptBase);
+  }
+  const scriptArgs = scriptIdx !== -1 ? argv.slice(scriptIdx + 1) : [];
+  // Always append a trailing \x00 sentinel so that matchArgPattern can detect
+  // auto-generated patterns by .includes("\x00") even when there is only one arg
+  // (or zero). Without the sentinel, a single-arg pattern like ^hello world$ would
+  // be misidentified as a legacy space-joined pattern and allow a split-arg bypass.
+  const normalized = scriptArgs.map((a) => a.replace(/\//g, "\\"));
+  // Mirror the zero-args double-sentinel from buildArgPatternFromArgv so that
+  // a script invocation with no trailing args (scriptArgs = []) is distinct from
+  // one that passes a single explicit empty-string arg (scriptArgs = [""]).
+  if (normalized.length === 0) {
+    return "^\x00\x00$";
+  }
+  return `^${normalized.map(escapeRegExpLiteral).join("\x00")}\x00$`;
+}
+
+function buildArgPatternFromArgv(argv: string[]): string | undefined {
+  // argPattern is currently Windows-only.  On other platforms, allow-always
+  // creates path-only entries (the pre-existing behaviour).
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+  const args = argv.slice(1);
+  // Use \x00 as the argument separator so that argv boundaries are preserved.
+  // Space-joined strings cannot distinguish `["a b"]` from `["a", "b"]`;
+  // the null byte cannot appear in shell arguments and makes boundaries unambiguous.
+  // A trailing \x00 sentinel is always appended so that matchArgPattern can detect
+  // auto-generated patterns by .includes("\x00") regardless of argument count —
+  // including the zero-arg and single-arg cases where the body contains no separator.
+  //
+  // Zero args use a double sentinel "^\x00\x00$" to distinguish [] from [""].
+  // Both would otherwise join to "" and produce the identical "^\x00$", allowing
+  // a zero-arg allow-always entry to incorrectly match a command that passes an
+  // explicit empty-string argument.  matchArgPattern mirrors this: zero-arg argv
+  // emits "\x00\x00" while one-empty-arg argv emits "\x00".
+  const normalized = args.map((a) => a.replace(/\//g, "\\"));
+  if (normalized.length === 0) {
+    return "^\x00\x00$";
+  }
+  const joined = normalized.join("\x00");
+  return `^${escapeRegExpLiteral(joined)}\x00$`;
+}
+
+function addAllowAlwaysPattern(
+  out: AllowAlwaysPattern[],
+  pattern: string,
+  argPattern?: string,
+): void {
+  const exists = out.some(
+    (p) => p.pattern === pattern && (p.argPattern ?? undefined) === (argPattern ?? undefined),
+  );
+  if (!exists) {
+    out.push({ pattern, argPattern });
+  }
+}
+
 function collectAllowAlwaysPatterns(params: {
   segment: ExecCommandSegment;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   platform?: string | null;
   depth: number;
-  out: Set<string>;
+  out: AllowAlwaysPattern[];
 }) {
   if (params.depth >= 3) {
     return;
@@ -522,7 +669,10 @@ function collectAllowAlwaysPatterns(params: {
     return;
   }
   if (!trustPlan.shellWrapperExecutable) {
-    params.out.add(candidatePath);
+    // Use the unwrapped argv (segment.argv) so that dispatch-wrapper tokens
+    // (e.g. "env FOO=1") are not baked into the argPattern.
+    const argPattern = buildArgPatternFromArgv(segment.argv);
+    addAllowAlwaysPattern(params.out, candidatePath, argPattern);
     return;
   }
   const positionalArgvPath = resolveShellWrapperPositionalArgvCandidatePath({
@@ -531,18 +681,37 @@ function collectAllowAlwaysPatterns(params: {
     env: params.env,
   });
   if (positionalArgvPath) {
-    params.out.add(positionalArgvPath);
+    addAllowAlwaysPattern(params.out, positionalArgvPath);
     return;
   }
-  const inlineCommand =
-    trustPlan.shellInlineCommand ?? extractShellWrapperInlineCommand(segment.argv);
+  // For PowerShell -File invocations, POWERSHELL_INLINE_COMMAND_FLAGS includes "-file"
+  // so extractShellWrapperInlineCommand returns the script path as the "inline command".
+  // Treating it as an inline shell command loses the script's trailing arguments.
+  // Detect this case and fall through to resolveShellWrapperScriptCandidatePath instead,
+  // which correctly slices out the script args for argPattern building.
+  const isPowerShellFileInvocation =
+    POWERSHELL_WRAPPERS.has(normalizeExecutableToken(segment.argv[0] ?? "")) &&
+    segment.argv.some((t) => {
+      const lower = t.trim().toLowerCase();
+      return lower === "-file" || lower === "-f";
+    }) &&
+    !segment.argv.some((t) => {
+      const lower = t.trim().toLowerCase();
+      return lower === "-command" || lower === "-c" || lower === "--command";
+    });
+  const inlineCommand = isPowerShellFileInvocation
+    ? null
+    : (trustPlan.shellInlineCommand ?? extractShellWrapperInlineCommand(segment.argv));
   if (!inlineCommand) {
     const scriptPath = resolveShellWrapperScriptCandidatePath({
       segment,
       cwd: params.cwd,
     });
     if (scriptPath) {
-      params.out.add(scriptPath);
+      // Use script-specific helper so the argPattern encodes only the arguments
+      // passed to the script itself, not the wrapper tokens (e.g. -File, pwsh).
+      const argPattern = buildScriptArgPatternFromArgv(params.segment.argv, scriptPath, params.cwd);
+      addAllowAlwaysPattern(params.out, scriptPath, argPattern);
     }
     return;
   }
@@ -577,8 +746,8 @@ export function resolveAllowAlwaysPatterns(params: {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   platform?: string | null;
-}): string[] {
-  const patterns = new Set<string>();
+}): AllowAlwaysPattern[] {
+  const patterns: AllowAlwaysPattern[] = [];
   for (const segment of params.segments) {
     collectAllowAlwaysPatterns({
       segment,
@@ -589,7 +758,7 @@ export function resolveAllowAlwaysPatterns(params: {
       out: patterns,
     });
   }
-  return Array.from(patterns);
+  return patterns;
 }
 
 /**

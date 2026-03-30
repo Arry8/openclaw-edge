@@ -558,9 +558,9 @@ async function executeSystemRunPhase(
         env: phase.env,
         platform: process.platform,
       });
-      for (const pattern of patterns) {
-        if (pattern) {
-          addAllowlistEntry(phase.approvals.file, phase.agentId, pattern);
+      for (const p of patterns) {
+        if (p.pattern) {
+          addAllowlistEntry(phase.approvals.file, phase.agentId, p.pattern, p.argPattern);
         }
       }
     }

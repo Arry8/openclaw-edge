@@ -48,6 +48,10 @@ describe("resolveAllowAlwaysPatterns", () => {
     };
   }
 
+  function persistedPaths(patterns: ReturnType<typeof resolveAllowAlwaysPatterns>): string[] {
+    return patterns.map((p) => p.pattern);
+  }
+
   function expectAllowAlwaysBypassBlocked(params: {
     dir: string;
     firstCommand: string;
@@ -62,7 +66,7 @@ describe("resolveAllowAlwaysPatterns", () => {
       env: params.env,
       safeBins,
     });
-    expect(persisted).toEqual([params.persistedPattern]);
+    expect(persistedPaths(persisted)).toEqual([params.persistedPattern]);
 
     const second = evaluateShellAllowlist({
       command: params.secondCommand,
@@ -107,7 +111,7 @@ describe("resolveAllowAlwaysPatterns", () => {
       env: params.env,
       safeBins: params.safeBins,
     });
-    expect(persisted).toEqual([params.script]);
+    expect(persistedPaths(persisted)).toEqual([params.script]);
 
     const second = evaluateShellAllowlist({
       command: params.command,
@@ -138,9 +142,9 @@ describe("resolveAllowAlwaysPatterns", () => {
       safeBins,
     });
     if (params.expectPersisted) {
-      expect(persisted).toEqual([touch]);
+      expect(persistedPaths(persisted)).toEqual([touch]);
     } else {
-      expect(persisted).not.toContain(touch);
+      expect(persistedPaths(persisted)).not.toContain(touch);
     }
 
     const second = evaluateShellAllowlist({
@@ -171,7 +175,7 @@ describe("resolveAllowAlwaysPatterns", () => {
         },
       ],
     });
-    expect(patterns).toEqual([exe]);
+    expect(persistedPaths(patterns)).toEqual([exe]);
   });
 
   it("unwraps shell wrappers and persists the inner executable instead", () => {
@@ -198,8 +202,8 @@ describe("resolveAllowAlwaysPatterns", () => {
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(patterns).toEqual([whoami]);
-    expect(patterns).not.toContain("/bin/zsh");
+    expect(persistedPaths(patterns)).toEqual([whoami]);
+    expect(persistedPaths(patterns)).not.toContain("/bin/zsh");
   });
 
   it("extracts all inner binaries from shell chains and deduplicates", () => {
@@ -227,7 +231,7 @@ describe("resolveAllowAlwaysPatterns", () => {
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(new Set(patterns)).toEqual(new Set([whoami, ls]));
+    expect(new Set(persistedPaths(patterns))).toEqual(new Set([whoami, ls]));
   });
 
   it("persists shell script paths for wrapper invocations without inline commands", () => {
@@ -285,7 +289,7 @@ describe("resolveAllowAlwaysPatterns", () => {
       env,
       safeBins,
     });
-    expect(persisted).toEqual([touch]);
+    expect(persistedPaths(persisted)).toEqual([touch]);
 
     const second = evaluateShellAllowlist({
       command: `sh -lc '$0 "$1"' touch ${path.join(dir, "second-marker")}`,
@@ -403,7 +407,7 @@ $0 \\"$1\\"" touch {marker}`,
       ],
       platform: process.platform,
     });
-    expect(patterns).toEqual([]);
+    expect(persistedPaths(patterns)).toEqual([]);
   });
 
   it("detects shell wrappers even when unresolved executableName is a full path", () => {
@@ -430,7 +434,7 @@ $0 \\"$1\\"" touch {marker}`,
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(patterns).toEqual([whoami]);
+    expect(persistedPaths(patterns)).toEqual([whoami]);
   });
 
   it("unwraps known dispatch wrappers before shell wrappers", () => {
@@ -457,8 +461,8 @@ $0 \\"$1\\"" touch {marker}`,
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(patterns).toEqual([whoami]);
-    expect(patterns).not.toContain("/usr/bin/nice");
+    expect(persistedPaths(patterns)).toEqual([whoami]);
+    expect(persistedPaths(patterns)).not.toContain("/usr/bin/nice");
   });
 
   it("unwraps time wrappers and persists the inner executable instead", () => {
@@ -485,8 +489,8 @@ $0 \\"$1\\"" touch {marker}`,
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(patterns).toEqual([whoami]);
-    expect(patterns).not.toContain("/usr/bin/time");
+    expect(persistedPaths(patterns)).toEqual([whoami]);
+    expect(persistedPaths(patterns)).not.toContain("/usr/bin/time");
   });
 
   it("unwraps busybox/toybox shell applets and persists inner executables", () => {
@@ -516,8 +520,8 @@ $0 \\"$1\\"" touch {marker}`,
       env,
       platform: process.platform,
     });
-    expect(patterns).toEqual([whoami]);
-    expect(patterns).not.toContain(busybox);
+    expect(persistedPaths(patterns)).toEqual([whoami]);
+    expect(persistedPaths(patterns)).not.toContain(busybox);
   });
 
   it("fails closed for unsupported busybox/toybox applets", () => {
@@ -544,7 +548,7 @@ $0 \\"$1\\"" touch {marker}`,
       env: makePathEnv(dir),
       platform: process.platform,
     });
-    expect(patterns).toEqual([]);
+    expect(persistedPaths(patterns)).toEqual([]);
   });
 
   it("fails closed for unresolved dispatch wrappers", () => {
@@ -564,7 +568,7 @@ $0 \\"$1\\"" touch {marker}`,
       ],
       platform: process.platform,
     });
-    expect(patterns).toEqual([]);
+    expect(persistedPaths(patterns)).toEqual([]);
   });
 
   it("prevents allow-always bypass for busybox shell applets", () => {
@@ -672,7 +676,7 @@ $0 \\"$1\\"" touch {marker}`,
 
     const second = evaluateShellAllowlist({
       command: `sh -lc '$0 "$@"' env BASH_ENV=/tmp/payload.sh bash -lc 'id > /tmp/pwned'`,
-      allowlist: persisted.map((pattern) => ({ pattern })),
+      allowlist: persisted.map((p) => ({ pattern: p.pattern })),
       safeBins,
       cwd: dir,
       env,
@@ -700,12 +704,126 @@ $0 \\"$1\\"" touch {marker}`,
 
     const second = evaluateShellAllowlist({
       command: `sh -lc '$0 "$@"' bash -lc 'id > /tmp/pwned'`,
-      allowlist: persisted.map((pattern) => ({ pattern })),
+      allowlist: persisted.map((p) => ({ pattern: p.pattern })),
       safeBins,
       cwd: dir,
       env,
       platform: process.platform,
     });
     expect(second.allowlistSatisfied).toBe(false);
+  });
+
+  it("includes argPattern for non-shell segments with arguments", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const exe = path.join("/tmp", "python3");
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: `${exe} a.py`,
+          argv: [exe, "a.py"],
+          resolution: {
+            execution: { rawExecutable: exe, resolvedPath: exe, executableName: "python3" },
+            policy: { rawExecutable: exe, resolvedPath: exe, executableName: "python3" },
+          },
+        },
+      ],
+    });
+    expect(patterns).toHaveLength(1);
+    expect(patterns[0].pattern).toBe(exe);
+    expect(patterns[0].argPattern).toBe("^a\\.py\x00$"); // trailing \x00 sentinel
+  });
+
+  it("returns ^$ argPattern for segments with no arguments (prevents path-only fallback)", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const exe = path.join("/tmp", "whoami");
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: exe,
+          argv: [exe],
+          resolution: {
+            execution: { rawExecutable: exe, resolvedPath: exe, executableName: "whoami" },
+            policy: { rawExecutable: exe, resolvedPath: exe, executableName: "whoami" },
+          },
+        },
+      ],
+    });
+    expect(patterns).toHaveLength(1);
+    expect(patterns[0].pattern).toBe(exe);
+    expect(patterns[0].argPattern).toBe("^\x00\x00$"); // double sentinel: zero args distinct from [""]
+  });
+
+  it("escapes regex special characters in argPattern", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const exe = path.join("/tmp", "python3");
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: `${exe} test.py --flag=val`,
+          argv: [exe, "test.py", "--flag=val"],
+          resolution: {
+            execution: { rawExecutable: exe, resolvedPath: exe, executableName: "python3" },
+            policy: { rawExecutable: exe, resolvedPath: exe, executableName: "python3" },
+          },
+        },
+      ],
+    });
+    expect(patterns).toHaveLength(1);
+    // \x00 separator preserves argument boundaries; trailing \x00 sentinel ensures detection
+    expect(patterns[0].argPattern).toBe("^test\\.py\x00--flag=val\x00$");
+  });
+
+  it("resolves correct script path for powershell -ExecutionPolicy Bypass -File script.ps1", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const script = path.join(dir, "deploy.ps1");
+    fs.writeFileSync(script, "echo ok");
+    const pwshExe = path.join(dir, "powershell.exe");
+    fs.writeFileSync(pwshExe, "");
+    fs.chmodSync(pwshExe, 0o755);
+    const env = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}` };
+    const safeBins = resolveSafeBins(undefined);
+
+    const { persisted } = resolvePersistedPatterns({
+      command: `powershell -ExecutionPolicy Bypass -File "${script}"`,
+      dir,
+      env,
+      safeBins,
+    });
+    // Must resolve to the actual script path, not to "Bypass"
+    expect(persistedPaths(persisted)).toContain(script);
+    expect(persistedPaths(persisted).some((p) => p.includes("Bypass"))).toBe(false);
+  });
+
+  it("resolves correct script path for powershell -Version 7 -File script.ps1", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const script = path.join(dir, "deploy.ps1");
+    fs.writeFileSync(script, "echo ok");
+    const pwshExe = path.join(dir, "powershell.exe");
+    fs.writeFileSync(pwshExe, "");
+    fs.chmodSync(pwshExe, 0o755);
+    const env = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}` };
+    const safeBins = resolveSafeBins(undefined);
+
+    const { persisted } = resolvePersistedPatterns({
+      command: `powershell -Version 7 -File "${script}"`,
+      dir,
+      env,
+      safeBins,
+    });
+    // -Version consumes "7"; must resolve to the actual script path, not to "7"
+    expect(persistedPaths(persisted)).toContain(script);
+    expect(persistedPaths(persisted).some((p) => p.includes("7"))).toBe(false);
   });
 });
