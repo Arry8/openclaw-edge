@@ -2,11 +2,23 @@ import { getChannelPlugin, listChannelPlugins } from "../channels/plugins/index.
 import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { CONFIG_PATH } from "../config/config.js";
+import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { note } from "../terminal/note.js";
 import { shortenHomePath } from "../utils.js";
 import { confirm, select } from "./configure.shared.js";
 import { guardCancel } from "./onboard-helpers.js";
+
+function removeChannelSection(cfg: OpenClawConfig, channel: string): OpenClawConfig {
+  const nextChannels: Record<string, unknown> = { ...cfg.channels };
+  delete nextChannels[channel];
+  return {
+    ...cfg,
+    channels: Object.keys(nextChannels).length
+      ? (nextChannels as OpenClawConfig["channels"])
+      : undefined,
+  };
+}
 
 export async function removeChannelConfigWizard(
   cfg: OpenClawConfig,
@@ -51,7 +63,8 @@ export async function removeChannelConfigWizard(
       return next;
     }
 
-    const label = getChannelPlugin(channel)?.meta.label ?? channel;
+    const plugin = getChannelPlugin(channel);
+    const label = plugin?.meta.label ?? channel;
     const confirmed = guardCancel(
       await confirm({
         message: `Delete ${label} configuration from ${shortenHomePath(CONFIG_PATH)}?`,
@@ -63,14 +76,37 @@ export async function removeChannelConfigWizard(
       continue;
     }
 
-    const nextChannels: Record<string, unknown> = { ...next.channels };
-    delete nextChannels[channel];
-    next = {
-      ...next,
-      channels: Object.keys(nextChannels).length
-        ? (nextChannels as OpenClawConfig["channels"])
-        : undefined,
-    };
+    if (!plugin?.config.deleteAccount) {
+      next = removeChannelSection(next, channel);
+    } else {
+      const accountIds = plugin.config.listAccountIds(next);
+      const orderedAccountIds = [...accountIds].toSorted((a, b) => {
+        if (a === DEFAULT_ACCOUNT_ID && b !== DEFAULT_ACCOUNT_ID) {
+          return 1;
+        }
+        if (b === DEFAULT_ACCOUNT_ID && a !== DEFAULT_ACCOUNT_ID) {
+          return -1;
+        }
+        return a.localeCompare(b);
+      });
+
+      for (const accountId of orderedAccountIds) {
+        const prevCfg = next;
+        next = plugin.config.deleteAccount({
+          cfg: next,
+          accountId,
+        });
+        await plugin.lifecycle?.onAccountRemoved?.({
+          prevCfg,
+          accountId,
+          runtime,
+        });
+      }
+
+      if (next.channels?.[channel] !== undefined) {
+        next = removeChannelSection(next, channel);
+      }
+    }
 
     note(
       [`${label} removed from config.`, "Note: credentials/sessions on disk are unchanged."].join(
