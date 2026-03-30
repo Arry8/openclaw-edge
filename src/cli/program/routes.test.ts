@@ -7,6 +7,7 @@ const modelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const modelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runDaemonStatusMock = vi.hoisted(() => vi.fn(async () => {}));
 const statusJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const runPairingListMock = vi.hoisted(() => vi.fn(async () => {}));
 
 vi.mock("../config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
@@ -24,6 +25,10 @@ vi.mock("../daemon-cli/status.js", () => ({
 
 vi.mock("../../commands/status-json.js", () => ({
   statusJsonCommand: statusJsonCommandMock,
+}));
+
+vi.mock("../pairing-list.js", () => ({
+  runPairingList: runPairingListMock,
 }));
 
 describe("program routes", () => {
@@ -327,5 +332,100 @@ describe("program routes", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("matches pairing list route and always preloads plugins", () => {
+    const route = expectRoute(["pairing", "list"]);
+    expect(route?.loadPlugins).toBe(true);
+  });
+
+  it("passes --channel flag to pairing list", async () => {
+    const route = expectRoute(["pairing", "list"]);
+    await expect(
+      route?.run(["node", "openclaw", "pairing", "list", "--channel", "telegram"]),
+    ).resolves.toBe(true);
+    expect(runPairingListMock).toHaveBeenCalledWith({
+      channel: "telegram",
+      account: undefined,
+      json: false,
+      channelArg: undefined,
+    });
+  });
+
+  it("passes positional channel argument to pairing list", async () => {
+    const route = expectRoute(["pairing", "list"]);
+    await expect(route?.run(["node", "openclaw", "pairing", "list", "telegram"])).resolves.toBe(
+      true,
+    );
+    expect(runPairingListMock).toHaveBeenCalledWith({
+      channel: undefined,
+      account: undefined,
+      json: false,
+      channelArg: "telegram",
+    });
+  });
+
+  it("passes --json and --account flags to pairing list", async () => {
+    const route = expectRoute(["pairing", "list"]);
+    await expect(
+      route?.run([
+        "node",
+        "openclaw",
+        "pairing",
+        "list",
+        "--channel",
+        "telegram",
+        "--account",
+        "myaccount",
+        "--json",
+      ]),
+    ).resolves.toBe(true);
+    expect(runPairingListMock).toHaveBeenCalledWith({
+      channel: "telegram",
+      account: "myaccount",
+      json: true,
+      channelArg: undefined,
+    });
+  });
+
+  it("returns false for pairing list when --channel value is missing", async () => {
+    await expectRunFalse(["pairing", "list"], ["node", "openclaw", "pairing", "list", "--channel"]);
+  });
+
+  it("returns false for pairing list when --account value is missing", async () => {
+    await expectRunFalse(["pairing", "list"], ["node", "openclaw", "pairing", "list", "--account"]);
+  });
+
+  it("returns false for pairing list when unknown flag is present", async () => {
+    await expectRunFalse(
+      ["pairing", "list"],
+      ["node", "openclaw", "pairing", "list", "--unknown-flag", "val"],
+    );
+  });
+
+  it("handles root options before pairing list", async () => {
+    const route = expectRoute(["pairing", "list"]);
+    await expect(
+      route?.run([
+        "node",
+        "openclaw",
+        "--profile",
+        "work",
+        "pairing",
+        "list",
+        "--channel",
+        "signal",
+      ]),
+    ).resolves.toBe(true);
+    expect(runPairingListMock).toHaveBeenCalledWith({
+      channel: "signal",
+      account: undefined,
+      json: false,
+      channelArg: undefined,
+    });
+  });
+
+  it("does not match pairing approve as pairing list", () => {
+    expect(findRoutedCommand(["pairing", "approve"])).toBeNull();
   });
 });

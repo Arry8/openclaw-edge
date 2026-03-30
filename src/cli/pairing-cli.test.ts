@@ -176,7 +176,10 @@ describe("pairing cli", () => {
   });
 
   it("defaults list to the sole available channel", async () => {
-    listPairingChannels.mockReturnValueOnce(["slack"]);
+    // Mock twice: once for registration-time (Commander help text) and once
+    // for action-time (runPairingList resolves the default channel).
+    listPairingChannels.mockReturnValueOnce(["slack"]).mockReturnValueOnce(["slack"]);
+    normalizeChannelId.mockReturnValueOnce("slack");
     listChannelPairingRequests.mockResolvedValueOnce([]);
 
     await runPairing(["pairing", "list"]);

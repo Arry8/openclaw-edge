@@ -293,6 +293,43 @@ const routeModelsStatus: RouteSpec = {
   },
 };
 
+const routePairingList: RouteSpec = {
+  match: (path) => path[0] === "pairing" && path[1] === "list",
+  // Pairing always needs channel plugins to resolve available pairing channels.
+  loadPlugins: true,
+  run: async (argv) => {
+    const channel = getFlagValue(argv, "--channel");
+    if (channel === null) {
+      return false;
+    }
+    const account = getFlagValue(argv, "--account");
+    if (account === null) {
+      return false;
+    }
+    const json = hasFlag(argv, "--json");
+    const positionals = getCommandPositionalsWithRootOptions(argv, {
+      commandPath: ["pairing", "list"],
+      booleanFlags: ["--json"],
+      valueFlags: ["--channel", "--account"],
+    });
+    if (!positionals) {
+      return false;
+    }
+    if (positionals.length > 1) {
+      return false;
+    }
+    const channelArg = positionals[0];
+    const { runPairingList } = await import("../pairing-list.js");
+    await runPairingList({
+      channel: channel ?? undefined,
+      account: account ?? undefined,
+      json,
+      channelArg,
+    });
+    return true;
+  },
+};
+
 const routes: RouteSpec[] = [
   routeHealth,
   routeStatus,
@@ -303,6 +340,7 @@ const routes: RouteSpec[] = [
   routeConfigUnset,
   routeModelsList,
   routeModelsStatus,
+  routePairingList,
 ];
 
 export function findRoutedCommand(path: string[]): RouteSpec | null {
