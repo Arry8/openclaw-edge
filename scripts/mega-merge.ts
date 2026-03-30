@@ -681,6 +681,27 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
   return results;
 }
 
+// ── History helpers ───────────────────────────────────────────────────────────
+
+// Append a single entry to the cumulative history file immediately.
+// Called after every successful merge so restarts resume from the exact last PR.
+function appendToHistory(entry: ReportEntry): void {
+  let history: { entries: ReportEntry[] } = { entries: [] };
+  if (existsSync(HISTORY_PATH)) {
+    try {
+      history = JSON.parse(readFileSync(HISTORY_PATH, "utf8"));
+    } catch {
+      warn("Could not parse history file; will overwrite.");
+    }
+  }
+  // Skip if already recorded (e.g. duplicate call on retry).
+  if (history.entries.some((e) => e.number === entry.number)) {
+    return;
+  }
+  history.entries.push(entry);
+  writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -902,6 +923,15 @@ async function main() {
 
     entries.push({ ...pr, result });
 
+    // Write to history immediately so restarts resume from this point.
+    if (
+      result.status === "merged" ||
+      result.status === "conflict" ||
+      result.status === "fetch-failed"
+    ) {
+      appendToHistory({ ...pr, result });
+    }
+
     const statusChar =
       result.status === "merged"
         ? "✓"
@@ -1017,8 +1047,9 @@ async function main() {
 
   writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
 
-  // ── Append to cumulative history ──────────────────────────────────────────
-  // History persists across runs so --resume always skips previously processed PRs.
+  // ── Flush remaining entries to history ────────────────────────────────────
+  // merged/conflict/fetch-failed are already written mid-loop; this catches
+  // skipped and already-applied entries for a complete end-of-run record.
   {
     let history: { entries: ReportEntry[] } = { entries: [] };
     if (existsSync(HISTORY_PATH)) {
@@ -1030,9 +1061,12 @@ async function main() {
     }
     const existingNums = new Set(history.entries.map((e) => e.number));
     const newEntries = entries.filter((e) => !existingNums.has(e.number));
-    history.entries.push(...newEntries);
-    writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
-    log(`  History updated (${history.entries.length} total entries)  : ${HISTORY_PATH}`);
+    if (newEntries.length > 0) {
+      history.entries.push(...newEntries);
+      writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+    }
+    log(`  History total entries             : ${history.entries.length}`);
+    log(`  History path                      : ${HISTORY_PATH}`);
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
