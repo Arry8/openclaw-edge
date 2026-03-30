@@ -204,6 +204,17 @@ function fromSessionBindingInput(params: {
     metadata: {
       ...existing?.metadata,
       ...metadata,
+      ...(existing && existing.targetSessionKey !== params.input.targetSessionKey
+        ? {
+            previousBinding: {
+              targetSessionKey: existing.targetSessionKey,
+              targetKind: existing.targetKind,
+              metadata: existing.metadata,
+              idleTimeoutMs: existing.idleTimeoutMs,
+              maxAgeMs: existing.maxAgeMs,
+            },
+          }
+        : {}),
     },
   };
 
@@ -220,6 +231,50 @@ function fromSessionBindingInput(params: {
   }
 
   return record;
+}
+
+/**
+ * Restores the previous binding into the in-memory map after an unbind.
+ * Caller is responsible for calling persistBindingsSafely() afterward.
+ */
+function maybeRestorePreviousThreadBinding(params: {
+  accountId: string;
+  key: string;
+  removed: TelegramThreadBindingRecord;
+}): void {
+  const raw = params.removed.metadata?.previousBinding;
+  const prev =
+    raw != null &&
+    typeof raw === "object" &&
+    typeof (raw as Record<string, unknown>).targetSessionKey === "string"
+      ? (raw as {
+          targetSessionKey: string;
+          targetKind: string;
+          metadata?: Record<string, unknown>;
+          idleTimeoutMs?: number;
+          maxAgeMs?: number;
+        })
+      : undefined;
+  if (!prev?.targetSessionKey) {
+    return;
+  }
+  const now = Date.now();
+  const restored: TelegramThreadBindingRecord = {
+    accountId: params.accountId,
+    conversationId: params.removed.conversationId,
+    targetKind: toTelegramTargetKind(prev.targetKind === "subagent" ? "subagent" : "session"),
+    targetSessionKey: prev.targetSessionKey,
+    boundAt: now,
+    lastActivityAt: now,
+    ...(typeof prev.idleTimeoutMs === "number" ? { idleTimeoutMs: prev.idleTimeoutMs } : {}),
+    ...(typeof prev.maxAgeMs === "number" ? { maxAgeMs: prev.maxAgeMs } : {}),
+    metadata: {
+      ...prev.metadata,
+      lastActivityAt: now,
+      restoredFrom: params.removed.targetSessionKey,
+    },
+  };
+  getThreadBindingsState().bindingsByAccountConversation.set(params.key, restored);
 }
 
 function resolveBindingsPath(accountId: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -503,6 +558,7 @@ export function createTelegramThreadBindingManager(
         return null;
       }
       getThreadBindingsState().bindingsByAccountConversation.delete(key);
+      maybeRestorePreviousThreadBinding({ accountId, key, removed });
       persistBindingsSafely({
         accountId,
         persist: manager.shouldPersistMutations(),
@@ -526,6 +582,7 @@ export function createTelegramThreadBindingManager(
           conversationId: entry.conversationId,
         });
         getThreadBindingsState().bindingsByAccountConversation.delete(key);
+        maybeRestorePreviousThreadBinding({ accountId, key, removed: entry });
         removed.push(entry);
       }
       if (removed.length > 0) {

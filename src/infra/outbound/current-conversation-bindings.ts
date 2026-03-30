@@ -114,8 +114,9 @@ function pruneExpiredBinding(key: string): SessionBindingRecord | null {
     return record;
   }
   bindingsByConversationKey.delete(key);
+  maybeRestorePreviousBinding(key, record);
   void enqueuePersist();
-  return null;
+  return bindingsByConversationKey.get(key) ?? null;
 }
 
 function resolveChannelSupportsCurrentConversationBinding(channel: string): boolean {
@@ -179,6 +180,16 @@ export async function bindGenericCurrentConversation(
       ...existing?.metadata,
       ...input.metadata,
       lastActivityAt: now,
+      ...(existing && existing.targetSessionKey !== targetSessionKey
+        ? {
+            previousBinding: {
+              targetSessionKey: existing.targetSessionKey,
+              targetKind: existing.targetKind,
+              metadata: existing.metadata,
+              expiresAt: existing.expiresAt,
+            },
+          }
+        : {}),
     },
   };
   bindingsByConversationKey.set(key, record);
@@ -226,6 +237,39 @@ export function touchGenericCurrentConversationBinding(bindingId: string, at = D
   });
 }
 
+function maybeRestorePreviousBinding(key: string, removed: SessionBindingRecord): void {
+  const raw = removed.metadata?.previousBinding;
+  const prev =
+    raw != null &&
+    typeof raw === "object" &&
+    typeof (raw as Record<string, unknown>).targetSessionKey === "string"
+      ? (raw as {
+          targetSessionKey: string;
+          targetKind: string;
+          metadata?: Record<string, unknown>;
+          expiresAt?: number;
+        })
+      : undefined;
+  if (!prev?.targetSessionKey) {
+    return;
+  }
+  const now = Date.now();
+  bindingsByConversationKey.set(key, {
+    bindingId: buildBindingId(removed.conversation),
+    targetSessionKey: prev.targetSessionKey,
+    targetKind: prev.targetKind === "subagent" ? "subagent" : "session",
+    conversation: removed.conversation,
+    status: "active",
+    boundAt: now,
+    ...(typeof prev.expiresAt === "number" ? { expiresAt: prev.expiresAt } : {}),
+    metadata: {
+      ...prev.metadata,
+      lastActivityAt: now,
+      restoredFrom: removed.targetSessionKey,
+    },
+  });
+}
+
 export async function unbindGenericCurrentConversationBindings(
   input: SessionBindingUnbindInput,
 ): Promise<SessionBindingRecord[]> {
@@ -238,6 +282,7 @@ export async function unbindGenericCurrentConversationBindings(
     const record = pruneExpiredBinding(key);
     if (record) {
       bindingsByConversationKey.delete(key);
+      maybeRestorePreviousBinding(key, record);
       removed.push(record);
       await enqueuePersist();
     }
@@ -252,6 +297,7 @@ export async function unbindGenericCurrentConversationBindings(
       continue;
     }
     bindingsByConversationKey.delete(key);
+    maybeRestorePreviousBinding(key, record);
     removed.push(record);
   }
   if (removed.length > 0) {
