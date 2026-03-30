@@ -292,7 +292,8 @@ export function isHookAgentAllowed(
   hooksConfig: HooksConfigResolved,
   agentId: string | undefined,
 ): boolean {
-  // Keep backwards compatibility for callers that omit agentId.
+  // Preserve backwards compatibility for callers that omit agentId. The
+  // allowlist is meant to constrain explicit routing requests.
   const raw = agentId?.trim();
   if (!raw) {
     return true;

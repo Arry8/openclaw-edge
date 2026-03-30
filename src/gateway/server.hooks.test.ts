@@ -495,10 +495,11 @@ describe("gateway server hooks", () => {
       const resNoAgent = await postHook(port, "/hooks/agent", { message: "No explicit agent" });
       expect(resNoAgent.status).toBe(200);
       await waitForSystemEvent();
-      const noAgentCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as {
-        job?: { agentId?: string };
-      };
-      expect(noAgentCall?.job?.agentId).toBeUndefined();
+      const implicitCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as
+        | { job?: { agentId?: string } }
+        | undefined;
+      expect(implicitCall?.job?.agentId).toBeUndefined();
+      expect(peekSystemEvents(resolveMainKey()).length).toBeGreaterThan(0);
       drainSystemEvents(resolveMainKey());
 
       mockIsolatedRunOkOnce();
@@ -540,6 +541,19 @@ describe("gateway server hooks", () => {
       list: [{ id: "main", default: true }, { id: "hooks" }],
     };
     await withGatewayServer(async ({ port }) => {
+      mockIsolatedRunOkOnce();
+      const resImplicitAllowed = await postHook(port, "/hooks/agent", {
+        message: "Implicit allowed",
+      });
+      expect(resImplicitAllowed.status).toBe(200);
+      await waitForSystemEvent();
+      const implicitCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as
+        | { job?: { agentId?: string } }
+        | undefined;
+      expect(implicitCall?.job?.agentId).toBeUndefined();
+      expect(peekSystemEvents(resolveMainKey()).length).toBeGreaterThan(0);
+      drainSystemEvents(resolveMainKey());
+
       const resDenied = await postHook(port, "/hooks/agent", {
         message: "Denied",
         agentId: "hooks",

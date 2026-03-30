@@ -191,7 +191,7 @@ describe("gateway hooks helpers", () => {
     expect(resolveHookTargetAgentId(resolved, undefined)).toBeUndefined();
   });
 
-  test("isHookAgentAllowed honors hooks.allowedAgentIds for explicit routing", () => {
+  test("isHookAgentAllowed only enforces hooks.allowedAgentIds for explicit routing", () => {
     const resolved = resolveHooksConfigOrThrow(buildHookAgentConfig(["hooks"]));
     expect(isHookAgentAllowed(resolved, undefined)).toBe(true);
     expect(isHookAgentAllowed(resolved, "hooks")).toBe(true);
@@ -210,6 +210,13 @@ describe("gateway hooks helpers", () => {
     expect(isHookAgentAllowed(resolved, undefined)).toBe(true);
     expect(isHookAgentAllowed(resolved, "hooks")).toBe(true);
     expect(isHookAgentAllowed(resolved, "missing-agent")).toBe(true);
+  });
+
+  test("isHookAgentAllowed keeps implicit routing compatible regardless of allowlist", () => {
+    const resolved = resolveHooksConfigOrThrow(buildHookAgentConfig(["main"]));
+    expect(isHookAgentAllowed(resolved, undefined)).toBe(true);
+    expect(isHookAgentAllowed(resolved, "hooks")).toBe(false);
+    expect(isHookAgentAllowed(resolved, "main")).toBe(true);
   });
 
   test("resolveHookSessionKey disables request sessionKey by default", () => {
