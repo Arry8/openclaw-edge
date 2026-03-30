@@ -75,6 +75,9 @@ importers:
       ajv:
         specifier: ^8.18.0
         version: 8.18.0
+      axios:
+        specifier: ^1.13.5
+        version: 1.13.6
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -8273,7 +8276,7 @@ snapshots:
     dependencies:
       '@types/node': 24.10.13
     optionalDependencies:
-      axios: 1.13.5
+      axios: 1.13.6
     transitivePeerDependencies:
       - debug
 
