@@ -49,8 +49,8 @@ vi.mock("../config/sessions.js", () => ({
   },
 }));
 
-vi.mock("./auth.js", () => ({
-  authorizeHttpGatewayConnect: async () => ({ ok: true }),
+vi.mock("./http-auth-helpers.js", () => ({
+  authorizeGatewayBearerRequestOrReply: async () => true,
 }));
 
 vi.mock("../logger.js", () => ({
@@ -113,6 +113,12 @@ vi.mock("../agents/openclaw-tools.js", () => {
       execute: async () => {
         throw toolInputError("invalid args");
       },
+    },
+    {
+      name: "nodes",
+      ownerOnly: true,
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ ok: true, ownerOnly: true }),
     },
     {
       name: "tools_invoke_test",
@@ -568,6 +574,18 @@ describe("POST /tools/invoke", () => {
     });
 
     expect(res.status).toBe(404);
+  });
+
+  it("denies owner-only nodes tool via HTTP even when agent policy allows it", async () => {
+    setMainAllowedTools({ allow: ["nodes"] });
+
+    const res = await invokeToolAuthed({
+      tool: "nodes",
+      sessionKey: "main",
+    });
+
+    expect(res.status).toBe(404);
+    expect(hookMocks.runBeforeToolCallHook).not.toHaveBeenCalled();
   });
 
   it("allows gateway tool via HTTP when explicitly enabled in gateway.tools.allow", async () => {
