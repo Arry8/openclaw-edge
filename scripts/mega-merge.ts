@@ -494,7 +494,7 @@ function createGhRelease(params: {
     `Mega-merge ${runDate}`,
     "--notes",
     notes,
-    "--prerelease",
+    "--latest",
   ]);
 
   if (releaseResult.ok) {
