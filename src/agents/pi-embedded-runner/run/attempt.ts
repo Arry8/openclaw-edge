@@ -1292,6 +1292,7 @@ export async function runEmbeddedAttempt(
         getLastToolError,
         getUsageTotals,
         getCompactionCount,
+        getLastAssistantRateLimits,
       } = subscription;
 
       const queueHandle: EmbeddedPiQueueHandle = {
@@ -1835,6 +1836,8 @@ export async function runEmbeddedAttempt(
               assistantTexts,
               lastAssistant,
               usage: getUsageTotals(),
+              // TODO(pi-ai): This is a placeholder. Rate limit headers need to be exposed
+              rateLimits: getLastAssistantRateLimits(),
             },
             {
               runId: params.runId,
