@@ -241,6 +241,13 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs
 
+# Pre-create .openclaw directory with correct ownership for volume mounts.
+# Without this, Docker creates the directory as root when mounting named volumes,
+# causing EACCES errors for the non-root node user at runtime.
+RUN mkdir -p /home/node/.openclaw && \
+    chown -R node:node /home/node/.openclaw && \
+    chmod 0700 /home/node/.openclaw
+
 ENV NODE_ENV=production
 
 # Ensure the node user's home directory exists with correct ownership.
