@@ -368,6 +368,7 @@ export async function handleFeishuMessage(params: {
     : Date.now();
 
   let requireMention = false; // DMs never require mention; groups may override below
+  let hasCommandInGroup = false;
   if (isGroup) {
     if (groupConfig?.enabled === false) {
       log(`feishu[${account.accountId}]: group ${ctx.chatId} is disabled`);
@@ -430,7 +431,19 @@ export async function handleFeishuMessage(params: {
       groupPolicy,
     }));
 
+    // Detect slash commands before enforcing mention gate — commands like
+    // /reset, /new, /status should be processed even without a bot mention,
+    // matching the behavior of Discord and Telegram channels.
     if (requireMention && !ctx.mentionedBot) {
+      const core = getFeishuRuntime();
+      const commandProbeBody = normalizeFeishuCommandProbeBody(ctx.content);
+      hasCommandInGroup = core.channel.commands.shouldComputeCommandAuthorized(
+        commandProbeBody,
+        cfg,
+      );
+    }
+
+    if (requireMention && !ctx.mentionedBot && !hasCommandInGroup) {
       log(`feishu[${account.accountId}]: message in group ${ctx.chatId} did not mention bot`);
       // Record to pending history for non-broadcast groups only. For broadcast groups,
       // the mentioned handler's broadcast dispatch writes the turn directly into all
@@ -985,7 +998,9 @@ export async function handleFeishuMessage(params: {
         ((cfg as Record<string, unknown>).broadcast as Record<string, unknown> | undefined)
           ?.strategy || "parallel";
       const activeAgentId =
-        ctx.mentionedBot || !requireMention ? normalizeAgentId(route.agentId) : null;
+        ctx.mentionedBot || !requireMention || hasCommandInGroup
+          ? normalizeAgentId(route.agentId)
+          : null;
       const agentIds = (cfg.agents?.list ?? []).map((a: { id: string }) => normalizeAgentId(a.id));
       const hasKnownAgents = agentIds.length > 0;
 
