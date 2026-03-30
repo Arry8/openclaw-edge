@@ -191,6 +191,27 @@ For the generic Docker flow, see [Docker](/install/docker).
             "${OPENCLAW_GATEWAY_PORT}",
             "--allow-unconfigured",
           ]
+      openclaw-cli:
+        image: ${OPENCLAW_IMAGE}
+        build: .
+        env_file:
+          - .env
+        environment:
+          - HOME=/home/node
+          - TERM=xterm-256color
+          - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+          - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
+          - XDG_CONFIG_HOME=${XDG_CONFIG_HOME}
+        volumes:
+          - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+          - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+        network_mode: "service:openclaw-gateway"
+        stdin_open: true
+        tty: true
+        init: true
+        entrypoint: ["node", "dist/index.js"]
+        depends_on:
+          - openclaw-gateway
     ```
 
     > **Warning:** If you are adapting the repository's default `docker-compose.yml`, replace
@@ -212,6 +233,18 @@ For the generic Docker flow, see [Docker](/install/docker).
 
   </Step>
 
+  <Step title="Hetzner-specific launch notes">
+    When binding to LAN (`OPENCLAW_GATEWAY_BIND=lan`), configure a trusted browser origin before continuing:
+
+    ```bash
+    docker compose run --rm openclaw-cli config set gateway.controlUi.allowedOrigins '["http://127.0.0.1:18789"]' --strict-json
+    docker compose restart openclaw-gateway
+    ```
+
+    If you changed the gateway port, replace `18789` with your configured port.
+
+  </Step>
+
   <Step title="Hetzner-specific access">
     After the shared build and launch steps, tunnel from your laptop:
 
@@ -225,7 +258,20 @@ For the generic Docker flow, see [Docker](/install/docker).
 
     `http://127.0.0.1:18789/`
 
-    Paste your gateway token.
+    Fetch a fresh tokenized dashboard link:
+
+    ```bash
+    docker compose run --rm openclaw-cli dashboard --no-open
+    ```
+
+    Paste the token from that URL.
+
+    If Control UI shows `unauthorized` or `disconnected (1008): pairing required`, approve the browser device:
+
+    ```bash
+    docker compose run --rm openclaw-cli devices list
+    docker compose run --rm openclaw-cli devices approve <requestId>
+    ```
 
   </Step>
 </Steps>
