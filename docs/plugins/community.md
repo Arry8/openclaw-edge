@@ -21,6 +21,17 @@ OpenClaw checks ClawHub first and falls back to npm automatically.
 
 ## Listed plugins
 
+### AIFBA Amazon Listing Analyzer for OpenClaw
+
+Cloud-powered Amazon listing analyzer for OpenClaw. Built for Amazon sellers who want one-click listing analysis, competitor-backed optimization, and a structured AIFBA web report.
+
+- **npm:** `aifba-amazon-listing-analyzer-openclaw`
+- **repo:** [github.com/corli-AIFBA/aifba-amazon-listing-analyzer-openclaw](https://github.com/corli-AIFBA/aifba-amazon-listing-analyzer-openclaw)
+
+```bash
+openclaw plugins install aifba-amazon-listing-analyzer-openclaw
+```
+
 ### Codex App Server Bridge
 
 Independent OpenClaw bridge for Codex App Server conversations. Bind a chat to
