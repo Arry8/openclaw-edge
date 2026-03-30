@@ -64,6 +64,7 @@ import {
 } from "../pi-hooks/compaction-safeguard-runtime.js";
 import { createPreparedEmbeddedPiSettingsManager } from "../pi-project-settings.js";
 import { createOpenClawCodingTools } from "../pi-tools.js";
+import { applyProviderAttributionHeadersToModel } from "../provider-attribution.js";
 import { registerProviderStreamForModel } from "../provider-stream.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import { resolveSandboxContext } from "../sandbox.js";
@@ -449,11 +450,13 @@ export async function compactEmbeddedPiSessionDirect(
       modelContextWindow: runtimeModel.contextWindow,
       defaultTokens: DEFAULT_CONTEXT_TOKENS,
     });
-    const effectiveModel = applyLocalNoAuthHeaderOverride(
-      ctxInfo.tokens < (runtimeModel.contextWindow ?? Infinity)
-        ? { ...runtimeModel, contextWindow: ctxInfo.tokens }
-        : runtimeModel,
-      apiKeyInfo,
+    const effectiveModel = applyProviderAttributionHeadersToModel(
+      applyLocalNoAuthHeaderOverride(
+        ctxInfo.tokens < (runtimeModel.contextWindow ?? Infinity)
+          ? { ...runtimeModel, contextWindow: ctxInfo.tokens }
+          : runtimeModel,
+        apiKeyInfo,
+      ),
     );
 
     const runAbortController = new AbortController();

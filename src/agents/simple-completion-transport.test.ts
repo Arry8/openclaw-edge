@@ -103,4 +103,34 @@ describe("prepareModelForSimpleCompletion", () => {
       api: "openclaw-anthropic-vertex-simple:https%3A%2F%2Fus-central1-aiplatform.googleapis.com",
     });
   });
+
+  it("applies OpenRouter attribution headers to direct simple completion models", () => {
+    const model: Model<"openai-completions"> = {
+      id: "anthropic/claude-sonnet-4-5",
+      name: "Claude Sonnet",
+      api: "openai-completions",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200000,
+      maxTokens: 8192,
+      headers: {
+        "X-Custom": "1",
+      },
+    };
+
+    const result = prepareModelForSimpleCompletion({ model });
+
+    expect(result).toEqual({
+      ...model,
+      headers: {
+        "HTTP-Referer": "https://openclaw.ai",
+        "X-OpenRouter-Title": "OpenClaw",
+        "X-OpenRouter-Categories": "cli-agent",
+        "X-Custom": "1",
+      },
+    });
+  });
 });

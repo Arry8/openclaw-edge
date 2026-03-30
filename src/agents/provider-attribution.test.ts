@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyProviderAttributionHeadersToModel,
   listProviderAttributionPolicies,
   resolveProviderAttributionHeaders,
   resolveProviderAttributionIdentity,
@@ -113,5 +114,27 @@ describe("provider attribution", () => {
       ["mistral", false, "vendor-sdk-hook-only", "custom-user-agent"],
       ["together", false, "vendor-sdk-hook-only", "default-headers"],
     ]);
+  });
+
+  it("applies provider attribution headers to direct-completion models without clobbering existing headers", () => {
+    expect(
+      applyProviderAttributionHeadersToModel(
+        {
+          provider: "openrouter",
+          headers: {
+            "X-Custom": "1",
+          },
+        },
+        { OPENCLAW_VERSION: "2026.3.22" },
+      ),
+    ).toEqual({
+      provider: "openrouter",
+      headers: {
+        "HTTP-Referer": "https://openclaw.ai",
+        "X-OpenRouter-Title": "OpenClaw",
+        "X-OpenRouter-Categories": "cli-agent",
+        "X-Custom": "1",
+      },
+    });
   });
 });

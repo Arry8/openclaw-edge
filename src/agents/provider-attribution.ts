@@ -174,3 +174,23 @@ export function resolveProviderAttributionHeaders(
   }
   return policy.headers;
 }
+
+export function applyProviderAttributionHeadersToModel<
+  T extends { provider?: string | null; headers?: Record<string, string> | undefined },
+>(model: T, env: RuntimeVersionEnv = process.env as RuntimeVersionEnv): T {
+  const normalizedProvider = normalizeProviderId(model.provider ?? "");
+  if (normalizedProvider !== "openrouter") {
+    return model;
+  }
+  const attributionHeaders = resolveProviderAttributionHeaders(normalizedProvider, env);
+  if (!attributionHeaders || Object.keys(attributionHeaders).length === 0) {
+    return model;
+  }
+  return {
+    ...model,
+    headers: {
+      ...attributionHeaders,
+      ...model.headers,
+    },
+  };
+}
