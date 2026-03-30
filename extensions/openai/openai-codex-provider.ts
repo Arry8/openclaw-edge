@@ -206,6 +206,7 @@ export function buildOpenAICodexProviderPlugin(): ProviderPlugin {
   return {
     id: PROVIDER_ID,
     label: "OpenAI Codex",
+    hookAliases: ["codex-cli"],
     docsPath: "/providers/models",
     deprecatedProfileIds: [CODEX_CLI_PROFILE_ID],
     auth: [

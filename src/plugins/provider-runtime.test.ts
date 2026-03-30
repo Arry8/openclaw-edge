@@ -269,6 +269,58 @@ describe("provider-runtime", () => {
     });
   });
 
+  it("matches CLI backend ids through provider hook aliases", () => {
+    resolveOwningPluginIdsForProviderMock.mockImplementation((params) => {
+      if (params.provider === "claude-cli") {
+        return ["anthropic"];
+      }
+      if (params.provider === "codex-cli") {
+        return ["openai"];
+      }
+      return undefined;
+    });
+    resolvePluginProvidersMock.mockImplementation((params) => {
+      const onlyPluginIds = params?.onlyPluginIds;
+      if (onlyPluginIds?.includes("anthropic")) {
+        return [
+          {
+            id: "anthropic",
+            label: "Anthropic",
+            hookAliases: ["claude-cli"],
+            auth: [],
+          },
+        ];
+      }
+      if (onlyPluginIds?.includes("openai")) {
+        return [
+          {
+            id: "openai",
+            label: "OpenAI",
+            auth: [],
+          },
+          {
+            id: "openai-codex",
+            label: "OpenAI Codex",
+            hookAliases: ["codex-cli"],
+            auth: [],
+          },
+        ];
+      }
+      return [];
+    });
+
+    expectProviderRuntimePluginLoad({
+      provider: "claude-cli",
+      expectedPluginId: "anthropic",
+      expectedOnlyPluginIds: ["anthropic"],
+    });
+    expectProviderRuntimePluginLoad({
+      provider: "codex-cli",
+      expectedPluginId: "openai-codex",
+      expectedOnlyPluginIds: ["openai"],
+    });
+  });
+
   it("skips plugin loading when the provider has no owning plugin", () => {
     expectProviderRuntimePluginLoad({
       provider: "anthropic",
