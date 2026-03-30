@@ -32,8 +32,6 @@ final class LocationService: NSObject, CLLocationManagerDelegate, LocationServic
     }
 
     func ensureAuthorization(mode: OpenClawLocationMode) async -> CLAuthorizationStatus {
-        guard CLLocationManager.locationServicesEnabled() else { return .denied }
-
         let status = self.manager.authorizationStatus
         if status == .notDetermined {
             self.manager.requestWhenInUseAuthorization()
