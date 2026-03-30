@@ -309,4 +309,84 @@ describe("gateway lock", () => {
     await expect(acquireForTest(env)).rejects.toBeInstanceOf(GatewayLockError);
     openSpy.mockRestore();
   });
+
+  it("cleans up stale lock left by a dead pid on non-linux platforms", async () => {
+    vi.useRealTimers();
+    const env = await makeEnv();
+    const { lockPath } = resolveLockPath(env);
+
+    // Write a lock file with a PID that does not exist.
+    const deadPid = 2_147_483_647; // max pid, extremely unlikely to be alive
+    const lockDir = path.dirname(lockPath);
+    await fs.mkdir(lockDir, { recursive: true });
+    await fs.writeFile(
+      lockPath,
+      JSON.stringify({
+        pid: deadPid,
+        createdAt: new Date().toISOString(),
+        configPath: resolveLockPath(env).configPath,
+      }),
+      "utf8",
+    );
+
+    // Should detect the dead PID and clean up the lock.
+    const lock = await acquireForTest(env, {
+      timeoutMs: 200,
+      pollIntervalMs: 5,
+      platform: "darwin",
+    });
+    expect(lock).not.toBeNull();
+
+    // Verify the lock file now belongs to the current process.
+    const payload = JSON.parse(await fs.readFile(lockPath, "utf8"));
+    expect(payload.pid).toBe(process.pid);
+
+    await lock?.release();
+  });
+
+  it("releaseSync removes lock file synchronously", async () => {
+    vi.useRealTimers();
+    const env = await makeEnv();
+    const lock = await acquireForTest(env);
+    expect(lock).not.toBeNull();
+
+    // Lock file should exist.
+    const exists = fsSync.existsSync(lock!.lockPath);
+    expect(exists).toBe(true);
+
+    // releaseSync should remove it synchronously.
+    lock!.releaseSync();
+    const existsAfter = fsSync.existsSync(lock!.lockPath);
+    expect(existsAfter).toBe(false);
+  });
+
+  it("releaseSync is idempotent and does not throw", async () => {
+    vi.useRealTimers();
+    const env = await makeEnv();
+    const lock = await acquireForTest(env);
+    expect(lock).not.toBeNull();
+
+    lock!.releaseSync();
+    // Second call should not throw even though file is gone.
+    expect(() => lock!.releaseSync()).not.toThrow();
+  });
+
+  it("acquires lock after stale lock left by shutdown timeout (no port)", async () => {
+    vi.useRealTimers();
+    const env = await makeEnv();
+
+    // Simulate: gateway wrote lock, then exited without cleanup (shutdown timeout).
+    // Use current PID so the file is valid, then release it via releaseSync
+    // to simulate the new releaseSync-based cleanup.
+    const firstLock = await acquireForTest(env);
+    expect(firstLock).not.toBeNull();
+
+    // Simulate forced exit: releaseSync cleans up.
+    firstLock!.releaseSync();
+
+    // Now a new gateway start should succeed.
+    const secondLock = await acquireForTest(env);
+    expect(secondLock).not.toBeNull();
+    await secondLock?.release();
+  });
 });
