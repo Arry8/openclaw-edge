@@ -23,7 +23,6 @@ import {
   parseClickModifiers,
 } from "./agent.act.shared.js";
 import {
-  assertPlaywrightTabTargetAllowed,
   readBody,
   requirePwAi,
   resolveTargetIdFromBody,
@@ -1040,13 +1039,6 @@ export function registerBrowserAgentActRoutes(
             if (!pw) {
               return;
             }
-            await assertPlaywrightTabTargetAllowed({
-              ctx,
-              pw,
-              cdpUrl,
-              targetId: tab.targetId,
-              url: tab.url,
-            });
             const evalRequest: Parameters<typeof pw.evaluateViaPlaywright>[0] = {
               cdpUrl,
               targetId: tab.targetId,
@@ -1105,13 +1097,6 @@ export function registerBrowserAgentActRoutes(
             if (targetIdError) {
               return jsonError(res, 403, targetIdError);
             }
-            await assertPlaywrightTabTargetAllowed({
-              ctx,
-              pw,
-              cdpUrl,
-              targetId: tab.targetId,
-              url: tab.url,
-            });
             const stopOnError = toBoolean(body.stopOnError) ?? true;
             const result = await pw.batchViaPlaywright({
               cdpUrl,
@@ -1160,13 +1145,6 @@ export function registerBrowserAgentActRoutes(
         if (!pw) {
           return;
         }
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const result = await pw.responseBodyViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,

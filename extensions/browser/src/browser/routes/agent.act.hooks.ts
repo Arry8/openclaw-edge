@@ -78,8 +78,6 @@ export function registerBrowserAgentActHookRoutes(
           return;
         }
 
-        // These hook endpoints only arm or trigger local browser interactions. They do not
-        // read page content, so they intentionally stay outside the navigation read guards.
         if (inputRef || element) {
           if (ref) {
             return jsonError(res, 400, "ref cannot be combined with inputRef/element");
@@ -185,7 +183,6 @@ export function registerBrowserAgentActHookRoutes(
         if (!pw) {
           return;
         }
-        // Dialog hooks only pre-arm the next interaction and do not expose page data.
         await pw.armDialogViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,

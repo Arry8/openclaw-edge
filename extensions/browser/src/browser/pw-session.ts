@@ -24,7 +24,6 @@ import {
   assertBrowserNavigationAllowed,
   assertBrowserNavigationRedirectChainAllowed,
   assertBrowserNavigationResultAllowed,
-  withRequestTimeBrowserNavigationGuard,
   withBrowserNavigationPolicy,
 } from "./navigation-guard.js";
 import { withPageScopedCdpClient } from "./pw-session.page-cdp.js";
@@ -777,29 +776,18 @@ export async function createPageViaPlaywright(opts: {
       url: targetUrl,
       ...navigationPolicy,
     });
-    try {
-      const response = await withRequestTimeBrowserNavigationGuard({
-        page,
-        ...navigationPolicy,
-        navigate: async () =>
-          await page.goto(targetUrl, { timeout: 30_000 }).catch(() => {
-            // Preserve the longstanding create-page behavior: a page can still be useful
-            // even when goto() fails, while SSRF blocks still surface via blockedError.
-            return null;
-          }),
-      });
-      await assertBrowserNavigationRedirectChainAllowed({
-        request: response?.request(),
-        ...navigationPolicy,
-      });
-      await assertBrowserNavigationResultAllowed({
-        url: page.url(),
-        ...navigationPolicy,
-      });
-    } catch (err) {
-      await page.close().catch(() => {});
-      throw err;
-    }
+    const response = await page.goto(targetUrl, { timeout: 30_000 }).catch(() => {
+      // Navigation might fail for some URLs, but page is still created
+      return null;
+    });
+    await assertBrowserNavigationRedirectChainAllowed({
+      request: response?.request(),
+      ...navigationPolicy,
+    });
+    await assertBrowserNavigationResultAllowed({
+      url: page.url(),
+      ...navigationPolicy,
+    });
   }
 
   // Get the targetId for this page

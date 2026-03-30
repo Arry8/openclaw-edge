@@ -24,7 +24,6 @@ import {
 } from "../screenshot.js";
 import type { BrowserRouteContext } from "../server-context.js";
 import {
-  assertPlaywrightTabTargetAllowed,
   getPwAiModule,
   handleRouteError,
   readBody,
@@ -284,13 +283,6 @@ export function registerBrowserAgentSnapshotRoutes(
       targetId,
       feature: "pdf",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const pdf = await pw.pdfViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,
@@ -363,13 +355,6 @@ export function registerBrowserAgentSnapshotRoutes(
           if (!pw) {
             return;
           }
-          await assertPlaywrightTabTargetAllowed({
-            ctx,
-            pw,
-            cdpUrl,
-            targetId: tab.targetId,
-            url: tab.url,
-          });
           const snap = await pw.takeScreenshotViaPlaywright({
             cdpUrl,
             targetId: tab.targetId,
@@ -507,13 +492,6 @@ export function registerBrowserAgentSnapshotRoutes(
         if (!pw) {
           return;
         }
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl: profileCtx.profile.cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const roleSnapshotArgs = {
           cdpUrl: profileCtx.profile.cdpUrl,
           targetId: tab.targetId,
@@ -597,13 +575,6 @@ export function registerBrowserAgentSnapshotRoutes(
               if (!pw) {
                 return null;
               }
-              await assertPlaywrightTabTargetAllowed({
-                ctx,
-                pw,
-                cdpUrl: profileCtx.profile.cdpUrl,
-                targetId: tab.targetId,
-                url: tab.url,
-              });
               return await pw.snapshotAriaViaPlaywright({
                 cdpUrl: profileCtx.profile.cdpUrl,
                 targetId: tab.targetId,

@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import path from "node:path";
 import type { BrowserRouteContext } from "../server-context.js";
 import {
-  assertPlaywrightTabTargetAllowed,
   readBody,
   resolveTargetIdFromBody,
   resolveTargetIdFromQuery,
@@ -28,13 +27,6 @@ export function registerBrowserAgentDebugRoutes(
       targetId,
       feature: "console messages",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const messages = await pw.getConsoleMessagesViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,
@@ -56,13 +48,6 @@ export function registerBrowserAgentDebugRoutes(
       targetId,
       feature: "page errors",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const result = await pw.getPageErrorsViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,
@@ -85,13 +70,6 @@ export function registerBrowserAgentDebugRoutes(
       targetId,
       feature: "network requests",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const result = await pw.getNetworkRequestsViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,
@@ -117,13 +95,6 @@ export function registerBrowserAgentDebugRoutes(
       targetId,
       feature: "trace start",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         await pw.traceStartViaPlaywright({
           cdpUrl,
           targetId: tab.targetId,
@@ -148,13 +119,6 @@ export function registerBrowserAgentDebugRoutes(
       targetId,
       feature: "trace stop",
       run: async ({ cdpUrl, tab, pw }) => {
-        await assertPlaywrightTabTargetAllowed({
-          ctx,
-          pw,
-          cdpUrl,
-          targetId: tab.targetId,
-          url: tab.url,
-        });
         const id = crypto.randomUUID();
         const tracePath = await resolveWritableOutputPathOrRespond({
           res,
