@@ -1,70 +1,1139 @@
 {
-  "fetchedAt": 1774881601094,
+  "fetchedAt": 1774910461509,
   "prs": [
     {
-      "author": "jacobtomlinson",
+      "author": "l0hde",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "bec1dbb18eb967099a5ea680332c8ee514b9814f",
+      "headSha": "f6286eaadccedef3e4df9c9ed3aaf7a5634086ff",
       "isDraft": null,
       "labels": [
-        "channel: tlon",
-        "app: web-ui",
-        "agents",
-        "maintainer",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57971,
+      "title": "fix(macOS): write gateway LaunchAgent plist with 0600"
+    },
+    {
+      "author": "dave",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b98a5e91cc591175d70d0f470f0e5a0d45ff92ec",
+      "isDraft": null,
+      "labels": [
+        "channel: mattermost",
+        "channel: slack",
         "size: S"
       ],
       "mergedAt": null,
-      "number": 57744,
-      "title": "infra: harden identifier entropy and delay jitter"
+      "number": 57970,
+      "title": "fix(mattermost): return 'unknown' ChatType when channel type is not resolvable"
     },
     {
-      "author": "nimbleenigma",
+      "author": "jinjimz",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c3c4437ac1ba8e0a37ab329ddfffa7815100b591",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57741,
-      "title": "fix(agents): accept canonical edits[] in wrapped edit tool"
-    },
-    {
-      "author": "w-sss",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "7576e77711b052918a58a8551248be73d463dc6e",
+      "headSha": "d7819c0b542e75215215ce0f61cf7ea21461cee4",
       "isDraft": null,
       "labels": [
         "agents",
         "size: M"
       ],
       "mergedAt": null,
-      "number": 57740,
-      "title": "fix(agents): resolve transcript tool call ID mode for proxy providers (openrouter+mistral)"
+      "number": 57966,
+      "title": "fix: improve model alias resolution robustness and error messages"
     },
     {
-      "author": "samzong",
+      "author": "KChow-ctrl",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "9a77c51cf9e336a0ccfd0c433266532bfeec408d",
+      "headSha": "85e7a20425060dbe6a79249bd34b885eba51fd2a",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57962,
+      "title": "fix: restore token mode for Anthropic auth"
+    },
+    {
+      "author": "mitchmcalister",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "29cf1c59eec177051d54c6ad922e91d8acfbd473",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57959,
+      "title": "fix(agents): fallback retry image safety and partial execution detection"
+    },
+    {
+      "author": "jaspmf",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "835e54695c0f75ca1e985c4b95768d8fc8cb23e5",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57955,
+      "title": "Fix/webchat session isolation"
+    },
+    {
+      "author": "joshavant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af7220f307d8c9f82d95c5d96cd1d6add0cb6839",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "maintainer",
+        "size: L",
+        "extensions: openai"
+      ],
+      "mergedAt": null,
+      "number": 57954,
+      "title": "feat(tts): add structured provider diagnostics and fallback attempt analytics"
+    },
+    {
+      "author": "joshavant",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8c0baae057ecd747eac1d9fc01813ca67a1505d7",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: voice-call",
+        "gateway",
+        "maintainer",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57953,
+      "title": "fix(tts): restore 3.28 schema compatibility and fallback observability"
+    },
+    {
+      "author": "dinakars777",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c5189b32a4671887ccbd51a5c5fa2ad1d38f1dbd",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57948,
+      "title": "fix(telegram): ensure sender ID is converted to string before allowFrom matching"
+    },
+    {
+      "author": "jvpflum",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "096c7fb02c01e29fa0818b4e6d5acba090c574ea",
       "isDraft": null,
       "labels": [
         "agents",
         "size: XS"
       ],
       "mergedAt": null,
-      "number": 57739,
-      "title": "fix(subagents): correct duration display showing 5-6x inflated runtime"
+      "number": 57946,
+      "title": "fix: use FALLBACK_TEMPLATE_DIR when no candidate path exists (fixes isolated agentTurn cron jobs)"
+    },
+    {
+      "author": "factnest365-ops",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9569c4e04030eed60436743e80012b942c809308",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "cli",
+        "docker",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57944,
+      "title": "fix(cron): handle undefined state in cron table formatter"
+    },
+    {
+      "author": "livingghost",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f721f40d8761c8031d1a3165391a3e00fafd0de4",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57943,
+      "title": "feat(plugins): add gateway-backed subagent runtime dispatch"
+    },
+    {
+      "author": "livingghost",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6e9f437c1ad9a0f22a68df318c0971039e28fc2f",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57942,
+      "title": "perf: add configurable usage cache and startup prewarm for sessions.list"
+    },
+    {
+      "author": "livingghost",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3114c53b5b6441fe933b5e213585611dde246f20",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "app: web-ui",
+        "gateway",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57940,
+      "title": "feat(plugins): add api.runtime.agent.abort for aborting agent runs"
+    },
+    {
+      "author": "Quackstro",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "879dcd5293a342113bc192babb79fff9087eb555",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: telegram",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57937,
+      "title": "fix(telegram): scope exec approval delivery to matching account"
+    },
+    {
+      "author": "JosephKial",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "552e55ea316723358f71c90abb49c696fee9196d",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57932,
+      "title": "fix: stage inbound media to workspace when sandbox mode is off"
+    },
+    {
+      "author": "dinakars777",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "73a401cb1cbc20d42fdf01758a9cdf9c7ef26c44",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57929,
+      "title": "fix(plugins): load bundled plugins with enabledByDefault at gateway startup"
+    },
+    {
+      "author": "jamie8johnson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3178a17ae82326a668974de1d003ff9a7f2aab90",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57927,
+      "title": "fix: remove duplicate utilities + sweep orphaned toolStartData entries"
+    },
+    {
+      "author": "jamie8johnson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "195119eb2c274280f35579efc68e6d3ce1729a5c",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57926,
+      "title": "perf: hot-path optimizations (regex hoist, cache reuse, credential stripping)"
+    },
+    {
+      "author": "Tom4477",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "82aa0346d149117a6cb43521e72df6eb95b40a5c",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57924,
+      "title": "fix(telegram): fall back to HTML chunking for oversized IR chunks"
+    },
+    {
+      "author": "jamie8johnson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "69ccff4bcfd86678720ac6b05a1a78886e897b8e",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57919,
+      "title": "fix: register exit handler for gateway lock cleanup on early crash (closes #57032)"
+    },
+    {
+      "author": "juliabush",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5996c4f847e93afd30b38145e565f304cc37c192",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57915,
+      "title": "Fix/push undefined error (closes #57821)"
+    },
+    {
+      "author": "qualiobra",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2993dba309bee3731f2e7ac40f9c0d50f90791f2",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57914,
+      "title": "feat(agents): add replyMode tool-only to suppress auto-delivery"
+    },
+    {
+      "author": "alexanderkreidich",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fde6edb6455fdbbaaa84238fc8b25322f894b9ea",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57910,
+      "title": "feat(acp): DM conversation handoff -- bind:here for DMs with revertable bindings"
+    },
+    {
+      "author": "joeykrug",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9bb65411d6177716dbef8f4966815dd288936a4f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57903,
+      "title": "fix: safeguard compaction should prefer configured model over session model"
+    },
+    {
+      "author": "haoyu-haoyu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "102cad5420b3748c39c2d767b9aeb7dfcb872325",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57897,
+      "title": "fix(cron): guard against undefined values in cron table formatter"
+    },
+    {
+      "author": "jamie8johnson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a9631a730c10ad74e2512505e0f1398ecf73b876",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57895,
+      "title": "fix: use writeJsonAtomic for restart sentinel (crash-safety)"
     },
     {
       "author": "Vitalcheffe",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "516628e1c2e04c963f08f162833122096a2d95e8",
+      "headSha": "3ea4776b2781414aeb80029d905ca5a403470b85",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57889,
+      "title": "fix(gateway): preserve operator scopes for token-authenticated non-local clients"
+    },
+    {
+      "author": "haoyu-haoyu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "eb2b75b506834774b9600500728e3fd2c0a0af9c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57887,
+      "title": "fix(ui): clear pending run state on cross-run final to fix stuck typing indicator"
+    },
+    {
+      "author": "MonkeyLeeT",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "01a079cc215d8e48ae9ef15d7757c7999729cae1",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57886,
+      "title": "fix(replies): strip leaked tool_call XML"
+    },
+    {
+      "author": "spector-in-london",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "48d74771f9296b14cd9118c9b44a7cec9ca0ac7f",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57885,
+      "title": "feat(gateway): add memory proxy for Graphiti/Cognee (SPEC-006)"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6b35dadb86ae3ecd294403986e9704e6167e294e",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57884,
+      "title": "fix(discord): pass accountId to reaction helpers for multi-account setups"
+    },
+    {
+      "author": "chenxin-yan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b0854a2638c87af756b847728d8dae59672321b4",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57883,
+      "title": "docs: fix incorrect Kimi Coding provider ID and model refs"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3e4014f86b419c8535c4efb768c055f7abfa9d41",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57882,
+      "title": "fix(providers): apply Mistral strict9 tool call ID sanitization via OpenRouter"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6a786371a6b186d0574a7ee4cdf4004624cb7ca6",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57881,
+      "title": "fix(google): remove zero thinkingBudget for Gemini models"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7246702a4859338dfb489e53675f247e800c42ef",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57879,
+      "title": "fix(ui): show identity.name from IDENTITY.md in agent switcher dropdown"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1b1c19e7c9dae4090e2eee7089ec87a223753677",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57878,
+      "title": "fix(sanitize): strip tool_call XML tags from user-facing messages"
+    },
+    {
+      "author": "WuKongAI-CMU",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2bd8d3c1561eeb26a21a4e55c5949498a6579a1d",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57877,
+      "title": "fix(security): prevent command injection in config.openFile"
+    },
+    {
+      "author": "hephaestus-forge-clawbot",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f40d5ae4e68a1dab7c94eef2b16dd209a4ca4def",
+      "isDraft": null,
+      "labels": [
+        "size: S",
+        "extensions: acpx"
+      ],
+      "mergedAt": null,
+      "number": 57870,
+      "title": "feat(acpx): add computer use support for Claude Code sessions"
+    },
+    {
+      "author": "Mlightsnow",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2fdb52069b15aaba386fcb494837199ae5b6edee",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57863,
+      "title": "perf(subagent-registry): cache runs.json disk reads by mtime"
+    },
+    {
+      "author": "shakkernerd",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "705f4defa6d6bad5c4b25cdf6853f8e3a73e7434",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "gateway",
+        "extensions: memory-core",
+        "scripts",
+        "maintainer",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57861,
+      "title": "test: stabilize windows and browser CI guards"
+    },
+    {
+      "author": "qidu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "73942597b21715d49457f74e872121a9ef4dbbda",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57856,
+      "title": "Add QNAIGC provider plugin"
+    },
+    {
+      "author": "juliabush",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8f96240ce3efc1bea3385bd88a0f6f6daa9c0b39",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57853,
+      "title": "fix: handle message_start before message_stop from provider (closes #57654)"
+    },
+    {
+      "author": "GodsBoy",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "54a4e2f50ea80ba7a9177ac56cb9fe4c7964dc77",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57849,
+      "title": "fix(hooks): preserve provenance field in plugin hook event messages"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4c2f153d4c8a6f6bc519ae37e36753d384e5a88c",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "maintainer",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57847,
+      "title": "Gateway: stop honoring HTTP scope headers"
+    },
+    {
+      "author": "Kaspre",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "597f376c24b9e95609765a470c848a92853fb309",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57843,
+      "title": "fix(delivery): disambiguate hook cancellations from delivery failures"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bacd157d7c9a9c8abd760e85ffd5e9136638cce7",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57842,
+      "title": "Exec approvals: detect command carriers in strict inline eval"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4b12388db2a7b02647a92bed841d84d8ed5a2745",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57840,
+      "title": "Infra: unwrap additional macOS dispatch wrappers"
+    },
+    {
+      "author": "scoootscooob",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9c24696c2ee2a40fc0fbbc08983582db49b5c4b3",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57839,
+      "title": "fix(exec): harden shell-side approval guardrails"
+    },
+    {
+      "author": "scoootscooob",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af8953e67822a31c8006a454099fd4b86acfca43",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: discord",
+        "channel: telegram",
+        "maintainer",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57838,
+      "title": "refactor(exec): unify channel approvals and restore routing/auth"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2091fbcc3daad6eaec6b59cf9e3757a04e314554",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57837,
+      "title": "Media: reject oversized image inputs"
+    },
+    {
+      "author": "luoyanglang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7e414578a2f118576350ac3ec20a168cbcebec4a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57835,
+      "title": "gateway: use identity.name in agent summaries when name is unset"
+    },
+    {
+      "author": "jacobtomlinson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8a662a13f70471a7acb37fd0242061e67c3c73ab",
+      "isDraft": null,
+      "labels": [
+        "app: macos",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57833,
+      "title": "macOS: use MagicDNS for wide-area gateway discovery"
+    },
+    {
+      "author": "lttcnly",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "92b17c78c94def1caac53525961650b58dd0caf1",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57831,
+      "title": "fix(cron): keep current/session-bound jobs out of direct channel sessions"
+    },
+    {
+      "author": "vksco",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ff84fcbc15567c2ab8b1ec29bfd9ed99bb6d46a3",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57830,
+      "title": "fix(zai): support glm-5.1 and glm-5.* semver-style model ids"
+    },
+    {
+      "author": "realkim93",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ce338d23b204911ccc73f7b0fa432ef68cf15cc7",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57825,
+      "title": "Preserve session model overrides on generic persistence"
+    },
+    {
+      "author": "luoyanglang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "46b842552f470089bfd5bca2b32221e6149c072b",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57824,
+      "title": "Fix ACP image forwarding and Synology invalid-token throttling"
+    },
+    {
+      "author": "bluesky1018",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "deaa3d7b35e8dfda29dbc8653c1812c3bab34d0e",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57820,
+      "title": "test(extensions): add unit tests for speech-core, image-generation-core, and media-understanding-core"
+    },
+    {
+      "author": "ForestDengHK",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "480085d5cac3a56a4b372fc60c24620ef9f9bf47",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57816,
+      "title": "fix(telegram): restore outbound message splitting for long messages"
+    },
+    {
+      "author": "sharkqwy",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "02eaec1b52c6ce85b5903a8316e215cd396519f7",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57815,
+      "title": "docs: add positional interpreter category to exec-approvals"
+    },
+    {
+      "author": "EthanHunter1229",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8dc1c3f43c6a96a42ee6b7bbacefe4fb3883524e",
+      "isDraft": null,
+      "labels": [
+        "channel: voice-call",
+        "gateway",
+        "commands",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57809,
+      "title": "fix(security): GHSA-2x4x-cc5g-qmmg add caller permissions validation to node.pair.approve"
+    },
+    {
+      "author": "pritchie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "31d0cba9e4d8dce29137011230d48f670c30c361",
+      "isDraft": null,
+      "labels": [
+        "channel: signal",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57806,
+      "title": "Signal quote reply"
+    },
+    {
+      "author": "eliot-onbox",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6217de5a8a160fe5a17e30e62f8ea5ee5895f554",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57805,
+      "title": "fix: detect Mistral strict9 tool call ID mode through proxy providers"
+    },
+    {
+      "author": "singleGanghood",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e5573fd8b2853e46450428da4b17f84c39f6e153",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57804,
+      "title": "fix: accept edits[] multi-edit mode in edit tool param validation (#5…"
+    },
+    {
+      "author": "fagnersouza666",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0dd9cf8346d6d2209ef52878d12a740cb7d2de73",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57802,
+      "title": "fix: persist origin channel to ensure reply routing when dashboard is open (#54531)"
+    },
+    {
+      "author": "JasonIIVI",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d4f2bb5d75119d21ea8928f0cdefbdab810130f4",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 57799,
+      "title": "feat: Mission Control dashboard app"
+    },
+    {
+      "author": "MaxCHL",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0bfc448f916dc1e23439f5bb050b03f9c9c55428",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57793,
+      "title": "fix(minimax): drop thinking blocks from context to prevent content leakage"
+    },
+    {
+      "author": "buddyh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6b78a85beb966b6200a0aefade273354a295a6ce",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "docker",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57789,
+      "title": "fix(sandbox): fail fast on incompatible default image"
+    },
+    {
+      "author": "Bluetegu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3e1cc031d1776e43cd93af035ab50e2838c615c6",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: whatsapp-web",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57785,
+      "title": "WhatsApp: add group and direct system prompt support"
+    },
+    {
+      "author": "singleGanghood",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9c9d1533f35ee260a77939fed4fd83ff1a434549",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57784,
+      "title": "fix: use JSON5 fallback for plugin manifest parsing (#57734) [AI-assi…"
+    },
+    {
+      "author": "pyn3rd",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d5973333fb8fc059c3897be8524b9a6b9ed1bb73",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57782,
+      "title": "Openclaw Indirect prompt injection"
+    },
+    {
+      "author": "luoxiao6645",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3f452b52994a6f0a2e20be511f3b587d6714a362",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57781,
+      "title": "fix(discord): keep socket liveness from raw gateway traffic"
+    },
+    {
+      "author": "1052326311",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1e28ac2c38eefdb9206d068581ca34ff7838c69a",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57780,
+      "title": "feat(agents): implement session isolation audit"
+    },
+    {
+      "author": "1052326311",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1e28ac2c38eefdb9206d068581ca34ff7838c69a",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57759,
+      "title": "feat(doctor): implement health monitor watch mode"
+    },
+    {
+      "author": "Kaspre",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3deb3f414cf4a2b18853a2a3c1d3f4d1711ed740",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 57755,
+      "title": "feat(delivery): surface deliveryStatus in --json output"
+    },
+    {
+      "author": "leec85688-ctrl",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "208e33dce08fb62bdf98335cfc603de6d2cca21d",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57751,
+      "title": "fix: inline exec heartbeat event output"
+    },
+    {
+      "author": "Doraemon-Claw",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c9e5e9bf6747bae848edefe65c8ac3b44d5e37c6",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57750,
+      "title": "Hotfix/kimi toolcall 3.24"
+    },
+    {
+      "author": "w-sss",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e141b61f9ddae893d90a375a38594829da174ed2",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57748,
+      "title": "fix(agents): resolve transcript tool call ID mode for proxy providers (openrouter+mistral)"
+    },
+    {
+      "author": "nimbleenigma",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a91ba2d73c1d5a84081c49132bbe66e6991aca94",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57741,
+      "title": "fix(agents): accept canonical edits[] in wrapped edit tool"
+    },
+    {
+      "author": "Vitalcheffe",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "96194328763ce6047e8bedf6e7f2048ede8715ad",
       "isDraft": null,
       "labels": [
         "channel: telegram",
@@ -73,21 +1142,6 @@
       "mergedAt": null,
       "number": 57737,
       "title": "fix(telegram): increase polling stall threshold from 90s to 300s"
-    },
-    {
-      "author": "drobison00",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "9f3b2285bf5fd325a10346ca0319369bd150a5f9",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "maintainer",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57735,
-      "title": "Fix Discord native commands bypassing group DM channel allowlist"
     },
     {
       "author": "itilys",
@@ -132,21 +1186,6 @@
       "title": "feat: add save-load plugin for conversation context persistence"
     },
     {
-      "author": "jacobtomlinson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "abb8b87b5cdd2f355f09adb312b36cdd96bc1e5f",
-      "isDraft": null,
-      "labels": [
-        "channel: msteams",
-        "maintainer",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57723,
-      "title": "msteams: filter thread history by sender allowlist"
-    },
-    {
       "author": "jkyotnfjfbjnknh",
       "closedAt": null,
       "createdAt": null,
@@ -163,7 +1202,7 @@
       "author": "rachelbotley",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8766b1893ede445c268e62bc0b03bf95e9d9d226",
+      "headSha": "017c97b6c54ab898584b0fa65e21e74dbf1427ff",
       "isDraft": null,
       "labels": [
         "channel: slack",
@@ -177,15 +1216,15 @@
       "author": "Leihb",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "948297dc93b8c920dcf644dfdc984ae0ac40880f",
+      "headSha": "628bef1a39c822b205a43458feaeb32ce77dcbef",
       "isDraft": null,
       "labels": [
         "agents",
-        "size: XS"
+        "size: S"
       ],
       "mergedAt": null,
       "number": 57716,
-      "title": "fix: preserve required parameter constraints in tool schema aliases"
+      "title": "  Agents/tools: fix empty required array bug in tool schema alias handling"
     },
     {
       "author": "BlackishGreen33",
@@ -229,20 +1268,6 @@
       "title": "feat(memory): enable query expansion in hybrid search mode"
     },
     {
-      "author": "rrpsantos",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "52b6b0506be2220e6e961516456fa01ad1127d8d",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57710,
-      "title": "Fix Windows test hangs: settle child wait on exit + force gateway close"
-    },
-    {
       "author": "ericberic",
       "closedAt": null,
       "createdAt": null,
@@ -273,23 +1298,10 @@
       "title": "feat: support all file types as webchat attachments"
     },
     {
-      "author": "clawyouseeme",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "3b612c8d3c107027ea573b27edd1ddf9e489ceaf",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57698,
-      "title": "Fix security audit missing CRITICAL warnings for open dmPolicy"
-    },
-    {
       "author": "xujk2008",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8d4ec22d2cdbfc8f40675a14eff2c83b35790f15",
+      "headSha": "50e04ec2dfdfc6fd069124422c5db4dea51ce775",
       "isDraft": null,
       "labels": [
         "agents",
@@ -303,7 +1315,7 @@
       "author": "potterdigital",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5d11a8716f681d989b47114f3f4d25ee1b056fa4",
+      "headSha": "409df2f6de9d6bb4e3b00cce8198cf0376714e1a",
       "isDraft": null,
       "labels": [
         "docs",
@@ -313,19 +1325,6 @@
       "mergedAt": null,
       "number": 57694,
       "title": "docs: fix missing config keys and add absent zh-CN reference sections"
-    },
-    {
-      "author": "pgondhi987",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "829d276b96f692b22142070cc4ef5cf060d33ffd",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57689,
-      "title": "fix(auto-reply): thread per-agent tools.exec defaults into reply directives"
     },
     {
       "author": "jkyotnfjfbjnknh",
@@ -385,21 +1384,6 @@
       "title": "fix: prevent chat session desync and race conditions closes(#57627)"
     },
     {
-      "author": "scoootscooob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "454943a1a53ea363aea8a6e83a9d046a00ebd9e2",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "maintainer",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 57655,
-      "title": "fix(exec): add shared approval runtime"
-    },
-    {
       "author": "vincentkoc",
       "closedAt": null,
       "createdAt": null,
@@ -417,7 +1401,7 @@
       "author": "zons-zhaozhy",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "308a5f75c8f6b8c28878206a9097d4487bd21185",
+      "headSha": "b3b15ca7c08d29ccbd4949a4a095e61d81e93027",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -430,42 +1414,10 @@
       "title": "feat(acp): add file-backed session persistenceFeature/acp session persistence"
     },
     {
-      "author": "scoootscooob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "9b048c63f76d0c2cb9c849e0cb5d0979b7ab2da0",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "channel: telegram",
-        "maintainer",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 57650,
-      "title": "fix(exec): harden approval auth and account routing"
-    },
-    {
-      "author": "scoootscooob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "0fae95b10a0013ce5ac924b3a4133a8f1d72183b",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "channel: telegram",
-        "maintainer",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 57649,
-      "title": "fix(exec): restore channel approval routing"
-    },
-    {
       "author": "vincentkoc",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "9b77d0eadfe2a6255cba2d7ee58486c57a351ca9",
+      "headSha": "5cfe1884fc7396c635e49fec7f82bee0081206aa",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -473,8 +1425,8 @@
         "size: S"
       ],
       "mergedAt": null,
-      "number": 57646,
-      "title": "fix(gateway): disconnect active sessions after device token rotation"
+      "number": 57647,
+      "title": "fix(gateway): preserve shared-auth rate limits during mixed handshakes"
     },
     {
       "author": "vincentkoc",
@@ -579,7 +1531,7 @@
       "author": "Enthusiasm-Dylan",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b7b1874b740a6995b576deccb5fd95702c52ec21",
+      "headSha": "3168be1fd9058da3111c8b102b801bf7318d73a5",
       "isDraft": null,
       "labels": [
         "docs",
@@ -619,24 +1571,10 @@
       "title": "fix(mattermost): add WebSocket ping/pong keepalive to detect silent connection drops"
     },
     {
-      "author": "rrpsantos",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "d1c6bfa621d7f8cd4ecf92ac3fab4955f3babdbd",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57616,
-      "title": "Tests: harden Windows temp sqlite cleanup + reduce hook/test timeouts"
-    },
-    {
       "author": "parthamehta123",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8efe3a55eb198e022fb2519d6d265d4f8cffe2dd",
+      "headSha": "abdd98fd4dae4ec0df0849ea2e3a45d356d5b0ed",
       "isDraft": null,
       "labels": [
         "agents",
@@ -938,20 +1876,6 @@
       "title": "feat(gateway): add channelHealthRestartMode to preserve Anthropic prompt cache on stale-socket"
     },
     {
-      "author": "openperf",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "cd98233a5b911b496242709378bcf701da0e49fb",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57568,
-      "title": "fix(exec): prevent infinite /approve loop when exec returns approval-pending"
-    },
-    {
       "author": "dave",
       "closedAt": null,
       "createdAt": null,
@@ -999,7 +1923,7 @@
       "author": "rustyorb",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a3c4c95d80a59d61da27282d018946820576566a",
+      "headSha": "af0842ec7eca404d707ef2e40bdac3d303023de0",
       "isDraft": null,
       "labels": [
         "agents",
@@ -1036,19 +1960,6 @@
       "mergedAt": null,
       "number": 57548,
       "title": "fix(telegram): persist native command metadata to target sessions"
-    },
-    {
-      "author": "dinakars777",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "243a130e021ac3320018ad7ea95c25a09e048635",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57545,
-      "title": "fix(plugins): load bundled plugins with enabledByDefault at gateway startup"
     },
     {
       "author": "SweetSophia",
@@ -1171,7 +2082,7 @@
       "author": "bbshih",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "65c013a8120e95d27fb9170682256d424ac23128",
+      "headSha": "51d3850f360d8f98675652c4d6bc437c5b71b247",
       "isDraft": null,
       "labels": [
         "size: XS"
@@ -1195,20 +2106,6 @@
       "title": "daemon(systemd): fix sudo install unit path and ownership"
     },
     {
-      "author": "pgondhi987",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "57c3145f474af41b34a98d5ea4efff3b372f764b",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57519,
-      "title": "fix(skills): replace readFileSync with symlink-safe, root-confined skill file loader"
-    },
-    {
       "author": "mindsurf0176-ui",
       "closedAt": null,
       "createdAt": null,
@@ -1220,38 +2117,6 @@
       "mergedAt": null,
       "number": 57518,
       "title": "Browser: restore relay attach selection UX"
-    },
-    {
-      "author": "scoootscooob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "0ff526178faf5af245a60ed2a74c65a6474eb823",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "maintainer",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 57517,
-      "title": "fix(exec): harden approval handling"
-    },
-    {
-      "author": "scoootscooob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "20111aebe6b92847c94dd6e3947f880fa470d6d2",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "channel: discord",
-        "channel: telegram",
-        "maintainer",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 57516,
-      "title": "refactor(exec): centralize native approval delivery"
     },
     {
       "author": "lupuletic",
@@ -1325,24 +2190,10 @@
       "title": "fix: add Discord targetResolver to fix user:<id> delivery in isolated cron sessions"
     },
     {
-      "author": "rrpsantos",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "956a19b96c03d3e8efe73d434ddf26e3098f21ac",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57500,
-      "title": "CI: fix discord media-runtime mock + telegram auto-thread test"
-    },
-    {
       "author": "cr-liu",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a9a7348743b41043e6507d350947c3413bd175e8",
+      "headSha": "31fc98c46d6063ef06c883d2b6e94c1460214859",
       "isDraft": null,
       "labels": [
         "agents",
@@ -1379,20 +2230,6 @@
       "mergedAt": null,
       "number": 57495,
       "title": "feat: add bootstrap-alternate-files bundled hook"
-    },
-    {
-      "author": "w-sss",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "9fb82d6a8ec2c0904246aa3a5bd8b05a85339427",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 57488,
-      "title": "fix(plugins): rescue bundled channels from allowlist exclusion + tests"
     },
     {
       "author": "tristanmanchester",
@@ -1675,7 +2512,7 @@
       "author": "sinogello",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cb09a81fcda8ae5f5ec896b8580720b25026a847",
+      "headSha": "d2c86eca9bbb48d0a74e678c57aea22baebfb21f",
       "isDraft": null,
       "labels": [
         "channel: telegram",
@@ -1689,7 +2526,7 @@
       "author": "ninjaa",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "90f8bdb65351268c2853d45741ada76e3d41f00c",
+      "headSha": "98c7c92c91418f4eab562fe9ebba917296995eff",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -1735,12 +2572,16 @@
       "author": "mcaxtr",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "edc9024721eacec72b9e26dbfca55a0e2c67aaee",
+      "headSha": "c9593c1be6a6befb65523aac8f919c14549267d8",
       "isDraft": null,
       "labels": [
         "channel: whatsapp-web",
+        "app: macos",
+        "app: web-ui",
+        "gateway",
+        "cli",
         "maintainer",
-        "size: L"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 57413,
@@ -1812,11 +2653,11 @@
       "author": "MonkeyLeeT",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "459080abc30722c97f11d51dc1a5603998dd6533",
+      "headSha": "c4fc30abda8a4067e791228abd16d791cf64efda",
       "isDraft": null,
       "labels": [
         "agents",
-        "size: S"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 57378,
@@ -1936,20 +2777,6 @@
       "title": "Tools: add configurable image_generate timeout"
     },
     {
-      "author": "rrpsantos",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "a26f79a19e2f077ae5d6b30a849b12cfe2aedd8e",
-      "isDraft": null,
-      "labels": [
-        "cli",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57356,
-      "title": "CLI: keep sessions --json stdout parseable"
-    },
-    {
       "author": "EronFan",
       "closedAt": null,
       "createdAt": null,
@@ -1993,22 +2820,6 @@
       "mergedAt": null,
       "number": 57346,
       "title": "fix: require explicit agentId in sessions_spawn (rebased)"
-    },
-    {
-      "author": "lawaetzm",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "240e5177bec3c0851e810ae33f7209f228e7cba0",
-      "isDraft": null,
-      "labels": [
-        "channel: slack",
-        "commands",
-        "channel: feishu",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57345,
-      "title": "fix(plugin-sdk): keep debounce helpers on channel-inbound"
     },
     {
       "author": "tkozzer",
@@ -2063,7 +2874,7 @@
       "author": "lexfrei",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b3351f9ac0d9139cca08e05af176968f0323936b",
+      "headSha": "3d3b262d3f5264d75945a5b2239307b13ce41b5b",
       "isDraft": null,
       "labels": [
         "size: M"
@@ -2076,7 +2887,7 @@
       "author": "oaslananka",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "963e4564fef9ecac97ae3f7b4f403d51d511783e",
+      "headSha": "19b6fa5e86a59455e9b6a87aee98b328f9e96800",
       "isDraft": null,
       "labels": [
         "docs",
@@ -2222,20 +3033,6 @@
       "mergedAt": null,
       "number": 57293,
       "title": "fix(config): add approvalRunningNoticeMs to ToolExecBaseShape"
-    },
-    {
-      "author": "ericpearson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "0e0133d414ad66113cec9371177b4c874ccc0cdf",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57287,
-      "title": "fix: reduce log noise for xai-auth bootstrap config fallback"
     },
     {
       "author": "luoxiao6645",
@@ -2386,9 +3183,10 @@
       "author": "vasujain00",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "da8b1e8a992cb0b486066c6df3ffc2b99bff774f",
+      "headSha": "4b8a7bba80ac9e3f64d07e50e457508561972aee",
       "isDraft": null,
       "labels": [
+        "agents",
         "size: S"
       ],
       "mergedAt": null,
@@ -2677,21 +3475,6 @@
       "title": "fix: strip context-1m beta when apiKey is unresolved (OAuth compat)"
     },
     {
-      "author": "rogerdigital",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "c380e548c584c48cb39034bec8fed8b26195b67c",
-      "isDraft": null,
-      "labels": [
-        "channel: telegram",
-        "scripts",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 57185,
-      "title": "fix(telegram): avoid startup hangs in source mode"
-    },
-    {
       "author": "apexscaleai",
       "closedAt": null,
       "createdAt": null,
@@ -2877,7 +3660,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f959275f0306d5ec4c99ff142a9c31159b0ed2e5",
+      "headSha": "cb8129fe6bbec004124bddf1a169cf8c09f7b707",
       "isDraft": null,
       "labels": [
         "size: XS"
@@ -2890,7 +3673,7 @@
       "author": "w-sss",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "7095ea0f39c14d9861058ef43a425f0e586bb471",
+      "headSha": "b88993d9cf7f8df26367d534059dbbc486aa1f72",
       "isDraft": null,
       "labels": [
         "channel: matrix",
@@ -3000,7 +3783,7 @@
       "author": "d8joseph",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a2bd32d487e3e80a728bbbe5f6eb4207f7ad4251",
+      "headSha": "4213a0a43e19422117e229b8f4be4108faf99dec",
       "isDraft": null,
       "labels": [
         "size: L"
@@ -3097,7 +3880,7 @@
       "author": "bbddbb1",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f435d19b8db003d3e7f275f6129e2a1dace33cd4",
+      "headSha": "18e3e7ae0676ce5bf8f756cd0ad85c87f95a106b",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -3111,11 +3894,11 @@
       "author": "MaxCHL",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "9f9e372c1876bae561a996a296f474524d52b020",
+      "headSha": "7492c51c8b13e3f5178a5873dc594e9db1c3f2e2",
       "isDraft": null,
       "labels": [
         "agents",
-        "size: S"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 57076,
@@ -3236,21 +4019,6 @@
       "title": "chore: remove unused dependencies (hono, long, uuid)"
     },
     {
-      "author": "chain710",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "1ee780437a32f820417548a5b30634342731d7c5",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "channel: matrix",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 57022,
-      "title": "feat(matrix): add group chat history context for agent triggers"
-    },
-    {
       "author": "jamie8johnson",
       "closedAt": null,
       "createdAt": null,
@@ -3263,20 +4031,6 @@
       "mergedAt": null,
       "number": 57016,
       "title": "perf: add ASCII fast-path for text normalization emoji stripping"
-    },
-    {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "97c43db82e036747053d519002e6951bda68b18b",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 57015,
-      "title": "fix: sweep orphaned toolStartData entries to prevent memory leak"
     },
     {
       "author": "survivor998",
@@ -3295,34 +4049,6 @@
       "author": "jamie8johnson",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "fed508e92780a25315793488ad3a46e41d1550f1",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57002,
-      "title": "perf: reuse char estimate cache in tool result context guard"
-    },
-    {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "062325d68bb046bb3e054095a21afedce3653a78",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 57001,
-      "title": "perf: hoist billing error normalization to module level"
-    },
-    {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "d1cd2fb747032fadd07e930196985755f08bcc07",
       "isDraft": null,
       "labels": [
@@ -3332,20 +4058,6 @@
       "mergedAt": null,
       "number": 57000,
       "title": "fix: command poll backoff skips first tier after output reset"
-    },
-    {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "4111c10ac1484079cf9748f3995ceb2851d4fc38",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 56999,
-      "title": "perf: hoist regex patterns to module level in detectImageReferences"
     },
     {
       "author": "CJstate",
@@ -3447,21 +4159,6 @@
       "title": "fix(whatsapp): exclude DM allowFrom from group policy sender bypass"
     },
     {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "bc890f208536dcf269180fa952e977f19c7701f1",
-      "isDraft": null,
-      "labels": [
-        "commands",
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 56972,
-      "title": "fix: replace duplicate clamp and isRecord with shared utils imports"
-    },
-    {
       "author": "suboss87",
       "closedAt": null,
       "createdAt": null,
@@ -3544,6 +4241,19 @@
       "title": "fix: restore exec tool command argument validation (fixes #56916)"
     },
     {
+      "author": "smicbee",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0e40d832648734833cdce89cad29c2f582348ccf",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56936,
+      "title": "tui: improve /sessions search coverage for named sessions"
+    },
+    {
       "author": "lml2468",
       "closedAt": null,
       "createdAt": null,
@@ -3556,19 +4266,6 @@
       "mergedAt": null,
       "number": 56937,
       "title": "fix: prevent input/toggle overlap in Overview access section at narrow widths"
-    },
-    {
-      "author": "smicbee",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "0e40d832648734833cdce89cad29c2f582348ccf",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 56936,
-      "title": "tui: improve /sessions search coverage for named sessions"
     },
     {
       "author": "lml2468",
@@ -3900,10 +4597,10 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "dc5c27df6fdfd23cfbd35046eb0cccf87eb3c740",
+      "headSha": "e084c723e6a5e1f10494da37702252a4a778fa80",
       "isDraft": null,
       "labels": [
-        "size: XS"
+        "size: S"
       ],
       "mergedAt": null,
       "number": 56848,
@@ -3949,19 +4646,6 @@
       "mergedAt": null,
       "number": 56840,
       "title": "fix(discord): use listener-stripping disconnect in abort handler to prevent crash"
-    },
-    {
-      "author": "jamebobob",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "7f417058b84b10a21019c9c51ebd8e2d86f1a805",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 56836,
-      "title": "fix: prevent media understanding and speech provider resolution from replacing global hook runner"
     },
     {
       "author": "YoungMoneyInvestments",
@@ -4024,7 +4708,7 @@
       "author": "tonga54",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "04a379ca1bdd6d682f597fa12936d92bf35c06fa",
+      "headSha": "09ba1ced53101818ef983b820c1f01f82eebff9b",
       "isDraft": null,
       "labels": [
         "agents",
@@ -4258,7 +4942,7 @@
       "author": "tonga54",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c09f60bffb510d57ba4e780ea2d7d59964f1d5e3",
+      "headSha": "3f2bb4ad58eeacba88a96f5714fa0630e7eba26e",
       "isDraft": null,
       "labels": [
         "docs",
@@ -4273,7 +4957,7 @@
       "author": "tonga54",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2a74a35cbb1ba8db4434c4295d102a9e3a607fc8",
+      "headSha": "31254110b7e47263c88bf3917cca3dc994f69f4b",
       "isDraft": null,
       "labels": [
         "cli",
@@ -4702,7 +5386,7 @@
       "author": "tonga54",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4a24658dd1e8b2615d3b639c937914cc48cab082",
+      "headSha": "1d4f86a48ec532e29d43fc1bd815fa0cacb32b84",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -4799,7 +5483,7 @@
       "author": "ericpearson",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "24314c53ef31c0bf325035c5e57ed5a56f2796b6",
+      "headSha": "3ad5db70217f80b927ea414d2afd2bcf0504f283",
       "isDraft": null,
       "labels": [
         "size: XS"
@@ -5064,13 +5748,13 @@
       "author": "drobison00",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "99ee4291731dbbd00554ae731e4d3ee53c984cdf",
+      "headSha": "1e2b9df2b43b0449f8e05c8b93aad61b5ed62aeb",
       "isDraft": null,
       "labels": [
         "gateway",
         "maintainer",
         "extensions: device-pair",
-        "size: S"
+        "size: M"
       ],
       "mergedAt": null,
       "number": 56586,
@@ -5390,37 +6074,6 @@
       "mergedAt": null,
       "number": 56528,
       "title": "feat(plugins): add subagent structured output support"
-    },
-    {
-      "author": "livingghost",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ed8cf773b1d08e361c0dbecbd0848d54ee273ee1",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "gateway",
-        "agents",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 56527,
-      "title": "feat(plugins): add gateway-backed subagent runtime dispatch"
-    },
-    {
-      "author": "livingghost",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "41805d54e6191655d3dd04d85538e9f248932220",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "gateway",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 56526,
-      "title": "perf: add configurable usage cache and startup prewarm for sessions.list"
     },
     {
       "author": "zendy199x",
@@ -5944,23 +6597,6 @@
       "mergedAt": null,
       "number": 56411,
       "title": "fix: clean up seqByRun entry in clearAgentRunContext()"
-    },
-    {
-      "author": "livingghost",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "e2834d84ef5dda98e76287552083e582a486006c",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "app: web-ui",
-        "gateway",
-        "agents",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 56409,
-      "title": "feat(plugins): add api.runtime.agent.abort for aborting agent runs"
     },
     {
       "author": "shiguangtong",
@@ -6532,20 +7168,6 @@
       "mergedAt": null,
       "number": 56279,
       "title": "fix: auto-register custom providers with media-capable models"
-    },
-    {
-      "author": "jamie8johnson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "f15aba33b1db007061ae64f9c0839905b9747ec1",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 56278,
-      "title": "fix: strip credentials from diagnostic payload logs"
     },
     {
       "author": "EthanHunter1229",
@@ -7155,21 +7777,6 @@
       "title": "feat(nodes): add visionOS node app (Apple Vision Pro spatial peripheral)"
     },
     {
-      "author": "jaspmf",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "c470998b9d28d33f03c68c90e33e7508a24f2f35",
-      "isDraft": null,
-      "labels": [
-        "app: web-ui",
-        "gateway",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 56119,
-      "title": "Fix/webchat session isolation"
-    },
-    {
       "author": "mattclawcn",
       "closedAt": null,
       "createdAt": null,
@@ -7230,12 +7837,12 @@
       "author": "frankbuild",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2e6f9ca356cb19c3a07d4a3ead6382b454275f4b",
+      "headSha": "89083c27c1a137fb4d67e10f319a35f0a25df19b",
       "isDraft": null,
       "labels": [
         "gateway",
         "agents",
-        "size: L"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 56092,
@@ -7371,16 +7978,16 @@
       "author": "one27001",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "492f6dbd3419f95b7da39c8a3e9e1b2762425a85",
+      "headSha": "c9c411c9b32e0ced726d1653a3da76131a53d8a5",
       "isDraft": null,
       "labels": [
         "channel: telegram",
         "agents",
-        "size: L"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 56060,
-      "title": "fix(telegram): forum topic replies land in root chat + enable ACP child thread spawn"
+      "title": "fix(telegram): forum topic replies route to root chat + ACP spawn fails from forum topics"
     },
     {
       "author": "Protocol-zero-0",
@@ -7457,20 +8064,6 @@
       "author": "bde1",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "79f3aee487dc4303a867b3e31940ec58f9dac9d8",
-      "isDraft": null,
-      "labels": [
-        "channel: voice-call",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 56025,
-      "title": "fix(voice-call): read telnyx transcription_data fields"
-    },
-    {
-      "author": "bde1",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "4192f259c6dad405b493e35321f6b3f4a21ad33d",
       "isDraft": null,
       "labels": [
@@ -7480,6 +8073,20 @@
       "mergedAt": null,
       "number": 56026,
       "title": "fix(plugins): fall back to npm on clawhub request failures"
+    },
+    {
+      "author": "bde1",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "79f3aee487dc4303a867b3e31940ec58f9dac9d8",
+      "isDraft": null,
+      "labels": [
+        "channel: voice-call",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56025,
+      "title": "fix(voice-call): read telnyx transcription_data fields"
     },
     {
       "author": "samibs",
@@ -7529,21 +8136,6 @@
       "title": "feat(i18n): add Simplified Chinese (zh-CN) localization"
     },
     {
-      "author": "jacobtomlinson",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "6f11b7bd799aae0e8ed3abf690a03e12a9fb7e1c",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "maintainer",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 56016,
-      "title": "Agents: pin apply-patch workspace mutations"
-    },
-    {
       "author": "jlapenna",
       "closedAt": null,
       "createdAt": null,
@@ -7586,7 +8178,7 @@
       "author": "tiagonix",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "d9283bb69995c8160fc8213d8b98b29cc986a27f",
+      "headSha": "40da89ed705911b1effee7c95a8e78361748eef2",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -7801,20 +8393,6 @@
       "mergedAt": null,
       "number": 55959,
       "title": "perf: cache sessions.list results and short-circuit unchanged responses"
-    },
-    {
-      "author": "joelnishanth",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "c0e6dcf21a748d7fae44fc107d16b32f9c826266",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 55958,
-      "title": "fix(hooks): default hooks.internal.enabled to true so bundled hooks load on fresh installs"
     },
     {
       "author": "altaywtf",
@@ -8654,7 +9232,7 @@
       "author": "sbezludny",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4b5f5d7927b6f2c7b482e6a1411847552a6468dd",
+      "headSha": "24b580f9e5020640568b65b439520a35c03cd0b4",
       "isDraft": null,
       "labels": [
         "docs",
@@ -8726,20 +9304,6 @@
       "author": "RichardCao",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "44e6709fc7d93bd122fd0328da090edfa359beb8",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 55724,
-      "title": "fix(gateway): enforce owner-only tools in invoke API"
-    },
-    {
-      "author": "RichardCao",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "328181702f33d427e0ee070a183e5b71138156fd",
       "isDraft": null,
       "labels": [
@@ -8749,6 +9313,20 @@
       "mergedAt": null,
       "number": 55723,
       "title": "fix(agents): preserve ACP requester agent overrides"
+    },
+    {
+      "author": "RichardCao",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "44e6709fc7d93bd122fd0328da090edfa359beb8",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 55724,
+      "title": "fix(gateway): enforce owner-only tools in invoke API"
     },
     {
       "author": "Lidang-Jiang",
@@ -9595,22 +10173,6 @@
       "title": "docs: fix README typo and add pnpm/Corepack tip"
     },
     {
-      "author": "Syysean",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "9f0971417e4711795f01d42f7ae4f6a8933af25e",
-      "isDraft": null,
-      "labels": [
-        "app: web-ui",
-        "gateway",
-        "agents",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 55513,
-      "title": "fix(gateway): prevent OOM and socket hang up via Claim Check pattern for large attachments [media://inbound/<id> contract]"
-    },
-    {
       "author": "Huangting-xy",
       "closedAt": null,
       "createdAt": null,
@@ -10085,21 +10647,6 @@
       "mergedAt": null,
       "number": 55336,
       "title": "fix(config): migrate removed telegram groupMentionsOnly key"
-    },
-    {
-      "author": "Bluetegu",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "2fcc6c643ed7ea9989d290dfa80d48ef5f6a8aa0",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "channel: whatsapp-web",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 55328,
-      "title": "feat(whatsapp): add systemPrompt support for accounts and groups "
     },
     {
       "author": "mkpvishnu",
@@ -10914,11 +11461,11 @@
       "author": "brunolorente",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f28463362755b007e435b55e4dc9f3ed6dcc3970",
+      "headSha": "48fac5dea759bca78a488a04d32161925029c3dc",
       "isDraft": null,
       "labels": [
         "agents",
-        "size: M"
+        "size: L"
       ],
       "mergedAt": null,
       "number": 55043,
@@ -11772,7 +12319,7 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2b5741b21cc92977f4394ad08bd93928be546a68",
+      "headSha": "e831b798730c27c629792d5d7c41eed319fd52ca",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -12074,7 +12621,7 @@
       "author": "oracle-community-creator",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "b9a4dfd8537f5ea5d16bac871142ae4d742de3af",
+      "headSha": "ac761ffbf139f214aaa81dd018e35605e3f70962",
       "isDraft": null,
       "labels": [
         "docs",
@@ -12102,20 +12649,6 @@
       "author": "CyberSpencer",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "23e36522eaba01c4f8e6f6f4f65168bd30f8396c",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 54765,
-      "title": "sessions: fix durable restore after recovery"
-    },
-    {
-      "author": "CyberSpencer",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "51380f1a94e0a44a8851ba62ce9645a8b017cb16",
       "isDraft": null,
       "labels": [
@@ -12125,6 +12658,20 @@
       "mergedAt": null,
       "number": 54764,
       "title": "sessions: recover orphaned subagent cleanup"
+    },
+    {
+      "author": "CyberSpencer",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "23e36522eaba01c4f8e6f6f4f65168bd30f8396c",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 54765,
+      "title": "sessions: fix durable restore after recovery"
     },
     {
       "author": "Joyce0615",
@@ -12470,11 +13017,11 @@
       "author": "giulio-leone",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "f6feaba2cf1518d77598e60d44195132be9e67a4",
+      "headSha": "73136c523bdd2c965da0fbcebe2f0df7fbdcd997",
       "isDraft": null,
       "labels": [
         "commands",
-        "size: L"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 54653,
@@ -12497,7 +13044,7 @@
       "author": "giulio-leone",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "3073aa71c3c48b09818c42368e15f9472246ec94",
+      "headSha": "590dfcddc936ab79dc8da48ec9ce2364e72a0e8e",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -12816,6 +13363,19 @@
       "mergedAt": null,
       "number": 54574,
       "title": "feat: add dangerouslyAllowHostNetwork escape hatch for sandbox Docker networking"
+    },
+    {
+      "author": "maneiybrar-sudo",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4e3c4348d1403ac13d1b0c165105aa1a7b765cc5",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 54573,
+      "title": "Change plan from 'starter' to 'free' in render.yaml"
     },
     {
       "author": "emoubarak",
@@ -13583,19 +14143,6 @@
       "author": "13323232dong",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "24a447b679485b54afff4ade4332d6424549f11d",
-      "isDraft": null,
-      "labels": [
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 54361,
-      "title": "fix(skills): add canvas frontmatter"
-    },
-    {
-      "author": "13323232dong",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "74062b9b5f6c9b7a59c6a5399bd5f4ec586f8c2c",
       "isDraft": null,
       "labels": [
@@ -13604,6 +14151,19 @@
       "mergedAt": null,
       "number": 54360,
       "title": "fix(skills): remove unsupported gh-issues frontmatter"
+    },
+    {
+      "author": "13323232dong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "24a447b679485b54afff4ade4332d6424549f11d",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 54361,
+      "title": "fix(skills): add canvas frontmatter"
     },
     {
       "author": "FMLS",
@@ -14600,18 +15160,18 @@
       "author": "nefainl",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "278b8f2cf70c1f0f79562e8f95300162ddc90980",
+      "headSha": "ddb7428e144651104b17f97001f093e44b59facc",
       "isDraft": null,
       "labels": [
         "docs",
         "app: macos",
         "app: web-ui",
         "gateway",
+        "extensions: memory-core",
         "cli",
         "scripts",
         "agents",
-        "size: XL",
-        "extensions: acpx"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 53983,
@@ -14828,17 +15388,17 @@
       "author": "nefainl",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "1f6931d80e2803feedc9b4ce414cc069c43041a1",
+      "headSha": "fe10fd5f31a4e4df510478e6315dd80c20eb5330",
       "isDraft": null,
       "labels": [
         "app: macos",
         "app: web-ui",
         "gateway",
+        "extensions: memory-core",
         "cli",
         "scripts",
         "agents",
-        "size: XL",
-        "extensions: acpx"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 53937,
@@ -14901,11 +15461,10 @@
       "author": "extrasmall0",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "e5368ce0520d0240e7f06df4f4f87f1b098839c0",
+      "headSha": "388d6f07c9fa6a5d1f55299c9465f16ced022ea8",
       "isDraft": null,
       "labels": [
         "app: web-ui",
-        "gateway",
         "size: XS"
       ],
       "mergedAt": null,
@@ -15148,14 +15707,14 @@
       "author": "ats3v",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "372988e732022598d7a8cf7bfe42acc8c2809c69",
+      "headSha": "fa190880c5ea4376320bf432128b55e43f8703c3",
       "isDraft": null,
       "labels": [
         "docs",
         "scripts",
         "commands",
         "agents",
-        "size: XL"
+        "size: L"
       ],
       "mergedAt": null,
       "number": 53805,
@@ -15365,7 +15924,7 @@
       "author": "Lanfei",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4c542b256dc48b75873a7a50af2602476a84b876",
+      "headSha": "5c224744b238a2611c080d4abc391d92b7f132db",
       "isDraft": null,
       "labels": [
         "agents",
@@ -16126,7 +16685,7 @@
       "author": "shenli",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5e99e9863ec477c3029048f118f8cd78c5706f6c",
+      "headSha": "fe2f63bcd8e017c47d47a01d4890c7ad0ba241ca",
       "isDraft": null,
       "labels": [
         "cli",
@@ -16460,6 +17019,19 @@
       "title": "fix(cron): allow cron-triggered heartbeat runs when heartbeat.every=\"0m\" (#46046)"
     },
     {
+      "author": "dennis-lynch",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ed540ea7235e87235b30586fc5497d1815ea5ddb",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 53441,
+      "title": "fix(synology-chat): handle HEAD probe and return 200 on webhook ACK"
+    },
+    {
       "author": "kotoyuuko",
       "closedAt": null,
       "createdAt": null,
@@ -16472,19 +17044,6 @@
       "mergedAt": null,
       "number": 53440,
       "title": "fix(memory-lancedb): resolve package.json path in bundled mode"
-    },
-    {
-      "author": "dennis-lynch",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ed540ea7235e87235b30586fc5497d1815ea5ddb",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 53441,
-      "title": "fix(synology-chat): handle HEAD probe and return 200 on webhook ACK"
     },
     {
       "author": "hun9008",
@@ -17447,17 +18006,17 @@
       "author": "nefainl",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "56e078cecfb23f75cd00f53780549ddbdcaff698",
+      "headSha": "4942ed24b760d44ae9687efd2197951539f27ccc",
       "isDraft": null,
       "labels": [
         "app: macos",
         "app: web-ui",
         "gateway",
+        "extensions: memory-core",
         "cli",
         "scripts",
         "agents",
-        "size: XL",
-        "extensions: acpx"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 53149,
@@ -19567,6 +20126,20 @@
       "title": "perf(discord): split runtime lazy ops"
     },
     {
+      "author": "p3nchan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cb552bff2d5dd92bb3c4bb10f94e328e97b43ac0",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 52357,
+      "title": "i18n(zh-TW): rewrite locale with Taiwan-standard terminology + full key parity"
+    },
+    {
       "author": "edubur",
       "closedAt": null,
       "createdAt": null,
@@ -19580,20 +20153,6 @@
       "mergedAt": null,
       "number": 52356,
       "title": "clarify persistent session target vs thread-bound session UX"
-    },
-    {
-      "author": "p3nchan",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "cb552bff2d5dd92bb3c4bb10f94e328e97b43ac0",
-      "isDraft": null,
-      "labels": [
-        "app: web-ui",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 52357,
-      "title": "i18n(zh-TW): rewrite locale with Taiwan-standard terminology + full key parity"
     },
     {
       "author": "scottyallen",
@@ -20010,7 +20569,7 @@
       "author": "byungsker",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "8aff158c58e375951e26bf9db940df32a9c64c09",
+      "headSha": "e0b7432df78da649eb88be613d043790f02dd7c1",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -21877,7 +22436,7 @@
       "author": "clawSean",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "6fc69c9b7db38883762b676f253a600e986761fe",
+      "headSha": "a189385d3991b7ed6edf19d16737608a3560fe59",
       "isDraft": null,
       "labels": [
         "agents",
@@ -22959,7 +23518,7 @@
       "author": "HeroSizy",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cca9953cf65d9c9169cb9021e66bc48cf263779e",
+      "headSha": "44f4041fe481de70d1bd3e0d331947090b473a3f",
       "isDraft": null,
       "labels": [
         "docs",
@@ -23772,7 +24331,7 @@
       "author": "BenediktSchackenberg",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a8681998e00efc49c46d4e65cabf5ed083c73e6a",
+      "headSha": "33f3428b34bb60595579b64c4751f5b76eed8451",
       "isDraft": null,
       "labels": [
         "agents",
@@ -25235,19 +25794,6 @@
       "title": "whatsapp: normalize BR ninth-digit variants"
     },
     {
-      "author": "zhangyongjie1997",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "337427a88bb646aa1507fa883efb00e3a0572266",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 50885,
-      "title": "process: fix Windows runExec garbled CJK output [AI-assisted]"
-    },
-    {
       "author": "RichardQidian",
       "closedAt": null,
       "createdAt": null,
@@ -25260,6 +25806,19 @@
       "mergedAt": null,
       "number": 50884,
       "title": "feat(feishu): add bot-refresh skill for identity refresh"
+    },
+    {
+      "author": "zhangyongjie1997",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "337427a88bb646aa1507fa883efb00e3a0572266",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 50885,
+      "title": "process: fix Windows runExec garbled CJK output [AI-assisted]"
     },
     {
       "author": "phucisstupid",
@@ -25481,7 +26040,7 @@
       "author": "Kaspre",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "bb51d89ab9b436a7be1631671a6334dd498ed661",
+      "headSha": "0a879b615e60a0410e632f57dc738ad8223477cd",
       "isDraft": null,
       "labels": [
         "gateway",
@@ -27280,7 +27839,7 @@
       "author": "extrasmall0",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "af470a4c811fb4ec4a14d5c16fee221557a87806",
+      "headSha": "203d7971c63b53a09a0cc9707a28f2206ff9bb11",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -28545,10 +29104,17 @@
       "author": "Drickon",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "40139f253c39bfef64c97a250781e2f380293887",
+      "headSha": "b6511180171d0ff581eb08f6cc6f8b17d59f3b72",
       "isDraft": null,
       "labels": [
-        "size: XS"
+        "docs",
+        "channel: line",
+        "channel: telegram",
+        "app: web-ui",
+        "gateway",
+        "commands",
+        "agents",
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 49996,
@@ -29263,21 +29829,6 @@
       "title": "Google: hardcode Gemini CLI OAuth client ID/secret"
     },
     {
-      "author": "clovericbot",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "3de863512522f9db6845271183f319299aa393be",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "stale",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 49807,
-      "title": "fix: exclude overloaded errors from auth profile cooldown escalation"
-    },
-    {
       "author": "xi7ang",
       "closedAt": null,
       "createdAt": null,
@@ -29309,20 +29860,6 @@
       "author": "wufunc",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "bd1b25ab81cc3115249a6ddeb64093c363d1c4f4",
-      "isDraft": null,
-      "labels": [
-        "app: web-ui",
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 49797,
-      "title": "fix: preserve raw WebUI model aliases"
-    },
-    {
-      "author": "wufunc",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "cde09ab1359278b6e56746652e85214be9e60ea1",
       "isDraft": null,
       "labels": [
@@ -29332,6 +29869,20 @@
       "mergedAt": null,
       "number": 49796,
       "title": "fix: preserve logical symlinked session paths"
+    },
+    {
+      "author": "wufunc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bd1b25ab81cc3115249a6ddeb64093c363d1c4f4",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 49797,
+      "title": "fix: preserve raw WebUI model aliases"
     },
     {
       "author": "ChroniCat",
@@ -30383,7 +30934,7 @@
       "author": "chembohuang",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "7b3efc3bed3deabfdf49edf2f097a04634759fa0",
+      "headSha": "6c81da3dd7295fba2ec72842e431230adf3b9bf1",
       "isDraft": null,
       "labels": [
         "app: web-ui",
@@ -30694,19 +31245,6 @@
       "author": "plabzzxx",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "3411f807249bc7197e945c01958165689df08963",
-      "isDraft": null,
-      "labels": [
-        "size: M"
-      ],
-      "mergedAt": null,
-      "number": 49409,
-      "title": "hooks: avoid LLM-blocking slug path on /new,/reset and use canonical daily memory file"
-    },
-    {
-      "author": "plabzzxx",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "9d28839ecac94389a4f6e0d2454ecf322500358b",
       "isDraft": null,
       "labels": [
@@ -30716,6 +31254,19 @@
       "mergedAt": null,
       "number": 49410,
       "title": "docs: clarify multi-account GPT OAuth profile rotation"
+    },
+    {
+      "author": "plabzzxx",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3411f807249bc7197e945c01958165689df08963",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 49409,
+      "title": "hooks: avoid LLM-blocking slug path on /new,/reset and use canonical daily memory file"
     },
     {
       "author": "y471823206",
@@ -31372,7 +31923,7 @@
       "author": "AlexD10S",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "500e4e2b68ce7f2d3391b99c05442824a86d6918",
+      "headSha": "0701b3ddc97155c6176b14e2518c4f8b528bc034",
       "isDraft": null,
       "labels": [
         "size: XL"
@@ -31417,7 +31968,7 @@
       "author": "D1m7asis",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "dda81ef537a3d8c107d40e59e3927bfa71f9b981",
+      "headSha": "4cac7fbcb6b100d10a1b006a1a5ef4034b8f7c6e",
       "isDraft": null,
       "labels": [
         "docs",
@@ -32988,20 +33539,6 @@
       "title": "fix: update test mocks for refactored plugin-sdk imports in Telegram native commands (#48707)"
     },
     {
-      "author": "zerone0x",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "71c6c921fd6de44125fb755380e4076ea12078e8",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 48792,
-      "title": "fix(tools): strip arg_value XML suffix from exec/read args"
-    },
-    {
       "author": "mekenthompson",
       "closedAt": null,
       "createdAt": null,
@@ -33014,6 +33551,20 @@
       "mergedAt": null,
       "number": 48791,
       "title": "fix(plugins): pin channel registry to prevent desync on runtime reload"
+    },
+    {
+      "author": "zerone0x",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "71c6c921fd6de44125fb755380e4076ea12078e8",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48792,
+      "title": "fix(tools): strip arg_value XML suffix from exec/read args"
     },
     {
       "author": "MarsDoge",
@@ -34068,11 +34619,17 @@
       "author": "Drickon",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c7f254e263e64eeaff2d461338d116ea18ddda33",
+      "headSha": "41f4ba4421143cd3e6fe5def2e8c67572c88f1df",
       "isDraft": null,
       "labels": [
+        "docs",
+        "channel: line",
+        "channel: telegram",
+        "app: web-ui",
+        "gateway",
+        "commands",
         "agents",
-        "size: S"
+        "size: XL"
       ],
       "mergedAt": null,
       "number": 48512,
@@ -34741,6 +35298,19 @@
       "author": "rodrigouroz",
       "closedAt": null,
       "createdAt": null,
+      "headSha": "55febda42a241f64b6e4d2ea9b2b7c78ff4cab37",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 48352,
+      "title": "CLI/status: break the session runtime import cycle"
+    },
+    {
+      "author": "rodrigouroz",
+      "closedAt": null,
+      "createdAt": null,
       "headSha": "9de4134ceaf0b3fe8407400f9c81bcbd4ae1005d",
       "isDraft": null,
       "labels": [
@@ -34750,19 +35320,6 @@
       "mergedAt": null,
       "number": 48353,
       "title": "CLI/status: bound Tailscale probes in status paths"
-    },
-    {
-      "author": "rodrigouroz",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "55febda42a241f64b6e4d2ea9b2b7c78ff4cab37",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 48352,
-      "title": "CLI/status: break the session runtime import cycle"
     },
     {
       "author": "xz0831",
@@ -35397,7 +35954,7 @@
       "author": "EthanHunter1229",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "4aee3ecdaefe55f18d584d4423bd1f1a20439d69",
+      "headSha": "8dc1c3f43c6a96a42ee6b7bbacefe4fb3883524e",
       "isDraft": null,
       "labels": [
         "channel: voice-call",
@@ -39956,7 +40513,7 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "0cc8a63fa80aad36aac11857329b3cf70561b349",
+      "headSha": "568f4681a6d86e13b5ce5182d2583b63ba51c52b",
       "isDraft": null,
       "labels": [
         "agents",
@@ -40918,7 +41475,7 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2cc8e70679b0ef3a43d5636984ddb4c118cfda14",
+      "headSha": "b647610c45d43fbf77777da4fbcfc78c851b87ef",
       "isDraft": null,
       "labels": [
         "size: XL"
@@ -41356,7 +41913,7 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "5d2d1aeb741eb06e04760cfac999407d926faaf9",
+      "headSha": "20112ceee15976ae8ed46b3e386f136f1b14aa6d",
       "isDraft": null,
       "labels": [
         "channel: bluebubbles",
@@ -43317,7 +43874,7 @@
       "author": "SwissArmyBud",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2c956455fb3c0452bc081346f7e96b2f0a3cf16e",
+      "headSha": "b7f416567a906627f12fdd8dd7b0301746a9bb58",
       "isDraft": null,
       "labels": [
         "docs",
@@ -44161,20 +44718,6 @@
       "title": "perf: replace structuredClone with JSON cloning in session store cache"
     },
     {
-      "author": "Lucenx9",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "510a4d2d4da68d78e29da1367fa018cba6820e78",
-      "isDraft": null,
-      "labels": [
-        "gateway",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 45437,
-      "title": "Gateway: restore loopback handshake timeout"
-    },
-    {
       "author": "Maverick7",
       "closedAt": null,
       "createdAt": null,
@@ -44386,19 +44929,6 @@
       "mergedAt": null,
       "number": 45380,
       "title": "Make env-prefixed npm scripts work on Windows"
-    },
-    {
-      "author": "Lucenx9",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "7bb0bb4978db11a74197e0962bf6c9b6fa084dc7",
-      "isDraft": null,
-      "labels": [
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 45375,
-      "title": "fix(routing): normalize Signal peer bindings for route matching"
     },
     {
       "author": "crustmyo",
@@ -46271,20 +46801,6 @@
       "title": "docs: add ClawCollect to community plugins [AI-assisted]"
     },
     {
-      "author": "Gitnapp",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "0da34a2da23ff3c1b409aaa48d24708c5b8a0e2b",
-      "isDraft": null,
-      "labels": [
-        "channel: feishu",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 44828,
-      "title": "fix(feishu): suppress NO_REPLY silent token before API send"
-    },
-    {
       "author": "tianxingleo",
       "closedAt": null,
       "createdAt": null,
@@ -46297,6 +46813,20 @@
       "mergedAt": null,
       "number": 44829,
       "title": "fix(feishu): avoid post text truncation when line ends with colon"
+    },
+    {
+      "author": "Gitnapp",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0da34a2da23ff3c1b409aaa48d24708c5b8a0e2b",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 44828,
+      "title": "fix(feishu): suppress NO_REPLY silent token before API send"
     },
     {
       "author": "a-alphayed",
@@ -48343,21 +48873,6 @@
       "title": "fix(i18n): call notify() in loadLocale to apply saved locale on page load"
     },
     {
-      "author": "mitchmcalister",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "4cf0a10dd580998f2e870b1e4481d77408a37edd",
-      "isDraft": null,
-      "labels": [
-        "commands",
-        "agents",
-        "size: L"
-      ],
-      "mergedAt": null,
-      "number": 44188,
-      "title": "fix(agents): unified fallback retry safety — images, partial execution, system context"
-    },
-    {
       "author": "ql-wade",
       "closedAt": null,
       "createdAt": null,
@@ -48398,20 +48913,6 @@
       "mergedAt": null,
       "number": 44178,
       "title": "feat: feishu-docx-comment"
-    },
-    {
-      "author": "chris-tscc",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "c1ee13545f9659100467a150d338109c979342db",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: XS"
-      ],
-      "mergedAt": null,
-      "number": 44175,
-      "title": "Feat/max session bytes compaction code."
     },
     {
       "author": "noursh26",
@@ -51352,21 +51853,6 @@
       "title": "feat(ui): add copy button for assistant messages"
     },
     {
-      "author": "NIK-TIGER-BILL",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ca7410c578fa287c515eb3f6885dcb0eb56319d8",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 43415,
-      "title": "feat: add GigaChat (Sber) provider"
-    },
-    {
       "author": "xingsy97",
       "closedAt": null,
       "createdAt": null,
@@ -53178,20 +53664,6 @@
       "title": "feat(feishu): extract option, options, form_value from card action callbacks"
     },
     {
-      "author": "tim-srp",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ddbefc87c44a5e80cba142ebc21ab79b2f5428da",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 42907,
-      "title": "feat(web-search): make Brave Search base URL configurable"
-    },
-    {
       "author": "LakshmanTurlapati",
       "closedAt": null,
       "createdAt": null,
@@ -53302,20 +53774,6 @@
       "mergedAt": null,
       "number": 42885,
       "title": "fix(whatsapp): trigger watchdog reconnect even when no messages received"
-    },
-    {
-      "author": "tim-srp",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ddbefc87c44a5e80cba142ebc21ab79b2f5428da",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 42882,
-      "title": "feat(web-search): make Brave Search base URL configurable"
     },
     {
       "author": "jiangwenwei818",
@@ -54580,11 +55038,12 @@
       "author": "trothe",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "a0e622c2e6a784a3cf8458d13b69fbdce75efeed",
+      "headSha": "dcf2ef34a28335d47bc140d4a342113af24064ae",
       "isDraft": null,
       "labels": [
         "channel: mattermost",
         "channel: whatsapp-web",
+        "cli",
         "scripts",
         "commands",
         "agents",
@@ -62563,22 +63022,6 @@
       "author": "SmithLabsLLC",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "367f8bcf59660029f6221e268f3253788b752f71",
-      "isDraft": null,
-      "labels": [
-        "docs",
-        "extensions: memory-core",
-        "agents",
-        "size: XL"
-      ],
-      "mergedAt": null,
-      "number": 40400,
-      "title": "fix(memory): harden durable memory writes"
-    },
-    {
-      "author": "SmithLabsLLC",
-      "closedAt": null,
-      "createdAt": null,
       "headSha": "7cf41fe5ba78adc8797f76a4836a965d87f296de",
       "isDraft": null,
       "labels": [
@@ -62592,6 +63035,22 @@
       "mergedAt": null,
       "number": 40401,
       "title": "fix(memory): keep group:memory read-only"
+    },
+    {
+      "author": "SmithLabsLLC",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "367f8bcf59660029f6221e268f3253788b752f71",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "extensions: memory-core",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 40400,
+      "title": "fix(memory): harden durable memory writes"
     },
     {
       "author": "xieyuanqing",
@@ -64663,7 +65122,7 @@
       "author": "byungsker",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "e7b52031374f7b5836c41b523024fadeb0bf75ce",
+      "headSha": "6e25e6a13963b0fa41faf34c79be60b182566a9f",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -67106,20 +67565,6 @@
       "title": "fix: handle array type in extractToolText for tool result display (Issue #38223)"
     },
     {
-      "author": "Lucenx9",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "765ab6aa912e4955c606aa61a59a536d6d822306",
-      "isDraft": null,
-      "labels": [
-        "channel: whatsapp-web",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 38861,
-      "title": "fix(whatsapp): resolve active listener lookup for non-default account names"
-    },
-    {
       "author": "Skystar9999",
       "closedAt": null,
       "createdAt": null,
@@ -68216,7 +68661,7 @@
       "author": "HollowMan6",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2b122ec1ec5e2c40615142c9314d9c03a46c28dc",
+      "headSha": "fd8ca9e954fbe264723c8c796a6f3c2b3a28849c",
       "isDraft": null,
       "labels": [
         "agents",
@@ -70814,7 +71259,7 @@
       "author": "joeykrug",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "6b0b170bf5e7d9384dd9a59f1bde2a32c4caaa84",
+      "headSha": "7cabe2c8df027fe70afecdb6c7354d0d7a809ae7",
       "isDraft": null,
       "labels": [
         "channel: googlechat",
@@ -71065,20 +71510,6 @@
       "mergedAt": null,
       "number": 36418,
       "title": "Zh cn localized links"
-    },
-    {
-      "author": "ArgadronRey",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "026d27c29626161d557ce7a1cef3789b4526bed5",
-      "isDraft": null,
-      "labels": [
-        "agents",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 36407,
-      "title": "fix(subagents): raise sessions_spawn gateway timeout budget (replacement for #29468)"
     },
     {
       "author": "ArgadronRey",
@@ -77237,7 +77668,7 @@
       "author": "afurm",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "dac390d5587cf647b8e01c6b3df79daccfc64318",
+      "headSha": "e163fb4d73c8f76bcc3401762fe31473ebd26166",
       "isDraft": null,
       "labels": [
         "size: XS"
@@ -81670,7 +82101,7 @@
       "author": "longbiaochen",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "36c361f26f6744491ae5d02db8838ec2eb24a7f0",
+      "headSha": "cd3dcbd7f0818b66211cf53770dcc539eb71587f",
       "isDraft": null,
       "labels": [
         "docs",
@@ -83018,12 +83449,12 @@
       "author": "nathan-deepmm",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "23e26c3962f1038de38fc21291c1567b96b3ee11",
+      "headSha": "0df84ae7d191f08e541d24efaba05dcc82178873",
       "isDraft": null,
       "labels": [
         "docs",
         "channel: discord",
-        "channel: telegram",
+        "gateway",
         "scripts",
         "commands",
         "agents",
@@ -86777,7 +87208,7 @@
       "author": "afurm",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "cb03c0f29830381ffeeacc7ebcfe1dc29e0727e0",
+      "headSha": "d2da2d3d5ace2e7cc82ae318a4580679fe634357",
       "isDraft": null,
       "labels": [
         "size: S"
@@ -90249,7 +90680,7 @@
       "author": "simonemacario",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "44a23502c51400a274b7a001ae0a703b0c680550",
+      "headSha": "73ec18181660e21f4b6bc76e7005c493f593ec94",
       "isDraft": null,
       "labels": [
         "agents",
@@ -90585,7 +91016,7 @@
       "author": "jeffaf",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "1a3286df9b9c88bf1cb0b11a608cfebcc0cefa19",
+      "headSha": "851f7b9e603f46896b1097d6b83a63ff991fba19",
       "isDraft": null,
       "labels": [
         "agents",
@@ -91054,21 +91485,6 @@
       "mergedAt": null,
       "number": 24007,
       "title": "fix(hooks): session-memory reads wrong file when .reset.* and new session coexist"
-    },
-    {
-      "author": "pdd-cli",
-      "closedAt": null,
-      "createdAt": null,
-      "headSha": "ad3a2c76d283ee2247ace9102dd2225cc963b9ac",
-      "isDraft": null,
-      "labels": [
-        "channel: discord",
-        "stale",
-        "size: S"
-      ],
-      "mergedAt": null,
-      "number": 24000,
-      "title": "feat(discord): route GUILD_MEMBER_ADD events to agents"
     },
     {
       "author": "ingyukoh",
@@ -93061,7 +93477,7 @@
       "author": "liyishuai",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "c05661e51d152e40d8cda93c9678b47ce338d4aa",
+      "headSha": "aa2aab000f231ca6b523861028c30b57177d48ec",
       "isDraft": null,
       "labels": [
         "docs",
@@ -93932,7 +94348,7 @@
       "author": "hmmhmmhm",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "2c6e914b76f91caa32cd351e213bbb987ac9ee82",
+      "headSha": "76d266e3c67fb175c01156445ebdef432d778054",
       "isDraft": null,
       "labels": [
         "docs",
