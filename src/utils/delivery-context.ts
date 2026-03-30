@@ -94,7 +94,6 @@ export function resolveConversationDeliveryTarget(params: {
   conversationId?: string | number;
   parentConversationId?: string | number;
 }): { to?: string; threadId?: string } {
-  const to = formatConversationTarget(params);
   const channel =
     typeof params.channel === "string"
       ? (normalizeMessageChannel(params.channel) ?? params.channel.trim())
@@ -111,15 +110,25 @@ export function resolveConversationDeliveryTarget(params: {
       : typeof params.parentConversationId === "string"
         ? params.parentConversationId.trim()
         : undefined;
-  if (
-    channel === "matrix" &&
-    to &&
-    conversationId &&
-    parentConversationId &&
-    parentConversationId !== conversationId
-  ) {
-    return { to, threadId: conversationId };
+  const isThreadChild =
+    conversationId && parentConversationId && parentConversationId !== conversationId;
+  if (channel && isThreadChild) {
+    if (
+      channel === "matrix" ||
+      channel === "slack" ||
+      channel === "mattermost" ||
+      channel === "telegram"
+    ) {
+      return {
+        to: formatConversationTarget({
+          channel,
+          conversationId: parentConversationId,
+        }),
+        threadId: conversationId,
+      };
+    }
   }
+  const to = formatConversationTarget(params);
   return { to };
 }
 
