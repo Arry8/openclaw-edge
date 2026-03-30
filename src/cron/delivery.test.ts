@@ -55,6 +55,22 @@ describe("resolveCronDeliveryPlan", () => {
     expect(plan.to).toBe("telegram:123");
   });
 
+  it("takes legacy code path and returns channel: 'last' when delivery is undefined (#56078)", () => {
+    // When delivery field is omitted (legacy/edge case), the function takes
+    // the legacy code path which returns channel: "last" as a fallback.
+    // Note: After the UI fix, new jobs created via UI send { mode: "none" }
+    // explicitly, which goes through the delivery branch and returns channel: undefined.
+    const plan = resolveCronDeliveryPlan(
+      makeJob({
+        delivery: undefined,
+        payload: { kind: "agentTurn", message: "generate report" },
+      }),
+    );
+    expect(plan.mode).toBe("none");
+    expect(plan.requested).toBe(false);
+    expect(plan.channel).toBe("last");
+  });
+
   it("resolves webhook mode without channel routing", () => {
     const plan = resolveCronDeliveryPlan(
       makeJob({
