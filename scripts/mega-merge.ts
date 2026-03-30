@@ -114,7 +114,10 @@ const SKIP_LIST = new Set<number>([
   36307, // missing `detail:` key in audit.ts object literal — syntax error
   48125, // mixed || and ?? without parens in feishu/card-action.ts
   51371, // transitively includes PR #56737 branch (navigation-guard.ts void|Promise<void> .catch() TS error)
+  55875, // unterminated regex in skill-scanner.ts (YARA scanner) — parse error
   56660, // duplicate observedSuspiciousSignatures declaration in config/io.ts
+  56737, // navigation-guard.ts: .catch() on void|Promise<void> — TS error
+  56840, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error
 ]);
 
 // Files that, if a PR touches only these, we skip (noise-only changes).

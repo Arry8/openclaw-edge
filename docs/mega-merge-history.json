@@ -140,6 +140,403 @@
           "src/agents/pi-embedded-runner/run.ts"
         ]
       }
+    },
+    {
+      "author": "jamie8johnson",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "97c43db82e036747053d519002e6951bda68b18b",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57015,
+      "title": "fix: sweep orphaned toolStartData entries to prevent memory leak",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "dfd618bbf754308ddfa65dd749183d3ef43a1be8"
+      }
+    },
+    {
+      "author": "suboss87",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f45db5bf004cb960b26cc4c10820154b49ffa9ae",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 56964,
+      "title": "fix(security): warn about insecure session.dmScope in multi-user setups",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "4648af47b8468799b0bddd13f68af61509e70f88"
+      }
+    },
+    {
+      "author": "liushuangls",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2298c9d92546f9327261631c3eb90808b7645056",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 56963,
+      "title": "fix(telegram): allow api.telegram.org through private-IP SSRF checks",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/telegram/src/bot/delivery.resolve-media-retry.test.ts",
+          "extensions/telegram/src/bot/delivery.resolve-media.ts"
+        ]
+      }
+    },
+    {
+      "author": "joe2643",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "54e4832dc112728c4e3cbb506577c58314ab3518",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 56863,
+      "title": "feat(whatsapp): native outbound @mentions and reply-target media injection",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "ed2ec443535a3dd019159a57337de7d7c33d05c0"
+      }
+    },
+    {
+      "author": "jigangz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b47f5e7074c690ece8febd5940914e0ae8dcd935",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 56840,
+      "title": "fix(discord): use listener-stripping disconnect in abort handler to prevent crash",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "053bd0f7e8046f5e1419ca2b3aadfc069c98b730"
+      }
+    },
+    {
+      "author": "pgondhi987",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a7845343f6654082916e83f02389ffa2a1047703",
+      "isDraft": null,
+      "labels": [
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 56737,
+      "title": "fix(browser): close SSRF bypass — request-time redirect guard and follow-up action gates",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "7bea9ca18e73ce042ee815ca544783cc18352f63"
+      }
+    },
+    {
+      "author": "oliviareid-svg",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9d3b231511c49bdb586fd974f74c00f1b961cd8e",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 56709,
+      "title": "fix(discord): prevent gateway crash on reconnect-exhausted from health-monitor restart",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/provider.lifecycle.test.ts",
+          "extensions/discord/src/monitor/provider.lifecycle.ts"
+        ]
+      }
+    },
+    {
+      "author": "iAbhi001",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "13dc6e3f0d68df0a7d35a9849d622b525c1e3bfc",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 56617,
+      "title": "fix(discord): prevent gateway crash and set reconnect attempts to 5",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "9769a67f4223fd3dafa44e8c47c9a9585c04dc14"
+      }
+    },
+    {
+      "author": "claygeo",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "21e4d1c447660f01d5570ff8965e0592b04943c5",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56506,
+      "title": "fix(security): strip provider API keys from exec tool child process env",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "ef693ba55391d54e21e8314753b3e9afb665937b"
+      }
+    },
+    {
+      "author": "claygeo",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "babd0104a1a893ac6ae8466826b2bb1d37d640bc",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56486,
+      "title": "fix(discord): prevent gateway crash on health-monitor stale-socket restart",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/provider.lifecycle.reconnect.ts",
+          "src/agents/pi-embedded-runner/run.ts",
+          "src/plugins/types.ts"
+        ]
+      }
+    },
+    {
+      "author": "dgians",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d5ecfd3460d77ae7d526df43489df88dc9ac2516",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56436,
+      "title": "fix(exec): skip length-only obfuscation flag when security=full; make threshold configurable",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "b62bc50186a2b780381f60ea7ed090282bc01456"
+      }
+    },
+    {
+      "author": "JuniperTheDev",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6ffd0e862d5eddfd101d7946e41ffe474712848f",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "gateway",
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 56318,
+      "title": "fix: security, memory safety, and performance hardening",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "packages/memory-host-sdk/src/host/memory-schema.ts"
+        ]
+      }
+    },
+    {
+      "author": "EthanHunter1229",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6a4aaac2f9edd99d513fa3ee4abc0bab20850b2d",
+      "isDraft": null,
+      "labels": [
+        "channel: voice-call",
+        "gateway",
+        "commands",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 56275,
+      "title": "fix(security): update fast-xml-parser to ^5.5.6",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "extensions/voice-call/src/webhook-security.ts",
+          "package.json",
+          "pnpm-lock.yaml",
+          "src/auto-reply/reply/commands-allowlist.ts",
+          "src/auto-reply/reply/commands-config.ts",
+          "src/auto-reply/reply/commands.test.ts",
+          "src/channels/plugins/config-writes.ts",
+          "src/channels/plugins/plugins-core.test.ts",
+          "src/gateway/server-methods/agents.ts",
+          "src/node-host/runner.ts"
+        ]
+      }
+    },
+    {
+      "author": "ninglinLiu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1baa082941452ac39d53731626c902aad6af813a",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 56256,
+      "title": "feat(security): add skill integrity verification with SHA-256 hashing",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "33533f1ea35891828152750817468f7e5c0738b5"
+      }
+    },
+    {
+      "author": "ninglinLiu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "553075deee2fd43a56156bec119f49a33ed49c7b",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 56255,
+      "title": "fix(security): extend audit to flag dmPolicy=open and session.dmScope=main",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts",
+          "src/security/audit.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "JasonOA888",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8952a54a1374567ed02c41e8a0432d821a1cbe5c",
+      "isDraft": null,
+      "labels": [
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 55875,
+      "title": "feat(security): add YARA-based skill security scanner",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "d616973437979ad20fbdf3b1aa70605e1903e901"
+      }
+    },
+    {
+      "author": "ayushozha",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bc81f9b30862f69e8ded054d8059a9fc348244c3",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 55736,
+      "title": "feat: security audit dmScope check + configurable circuit breaker",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.generated/config-baseline.jsonl"
+        ]
+      }
+    },
+    {
+      "author": "Lidang-Jiang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "78a906bfefa908c3706a7b6980c25e39b6c778f1",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 55726,
+      "title": "fix(security): include dmPolicy in exposure matrix audit",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "3dfb7b2f7c22fd7850b9b7ba51dc73aa1826735d"
+      }
+    },
+    {
+      "author": "ayushozha",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0c0c32999765770d4533cb157eb004a673c7fe1f",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 55670,
+      "title": "fix: discord OOM, OpenAI tool adjacency, subagent fallback, auth cache",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/command/attempt-execution.ts"
+        ]
+      }
     }
   ]
 }
