@@ -69,7 +69,7 @@ jobs:
           LIMIT="${{ github.event.inputs.limit || '0' }}"
           SKIP_BUILD="${{ github.event.inputs.skip_build || 'false' }}"
 
-          ARGS=(--resume --create-release --no-continuous-build --no-promote-main)
+          ARGS=(--resume --create-release --no-continuous-build)
 
           if [ "$LIMIT" != "0" ]; then
             ARGS+=(--limit "$LIMIT")
