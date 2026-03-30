@@ -233,5 +233,10 @@
     "number": 57579,
     "reason": "src/agents/tools/sessions-send-tool.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T22:27:29.525Z"
+  },
+  {
+    "number": 57755,
+    "reason": "src/agents/command/delivery.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:43:19.795Z"
   }
 ]

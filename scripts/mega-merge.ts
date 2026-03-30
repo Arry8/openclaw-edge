@@ -153,6 +153,7 @@ const SKIP_LIST = new Set<number>([
   36629, // sessions/store.ts + session-reaper.ts: TS error — auto-skipped
   36867, // config-paths.ts: changes Path type to PathSegment[] breaking commands-config.ts consumers — TS2322
   35344, // pi-embedded-subscribe.handlers.messages.ts: PARSE_ERROR invalid char — rolldown can't parse it
+  53961, // delivery.ts:319 TS2339 Property 'length' does not exist on type 'DeliveryOutcome'
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.
