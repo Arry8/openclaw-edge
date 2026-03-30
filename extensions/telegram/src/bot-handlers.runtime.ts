@@ -1625,6 +1625,7 @@ export const registerTelegramHandlers = ({
         ...(nativeCallbackCommand ? { commandSource: "native" as const } : {}),
         forceWasMentioned: true,
         messageIdOverride: callback.id,
+        callbackMessageId: callbackMessage.message_id,
       });
     } catch (err) {
       runtime.error?.(danger(`callback handler failed: ${String(err)}`));
