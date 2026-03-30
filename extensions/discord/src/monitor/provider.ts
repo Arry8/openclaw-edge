@@ -969,15 +969,21 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
           details,
         }),
     });
-    const claimsInfo = await refreshDiscordClaims({
-      cfg,
-      accountId: account.accountId,
-      botId: applicationId ?? botUserId ?? account.accountId,
-      guildEntries,
-    });
-    runtime.log?.(
-      `discord claims registered path=${DISCORD_CLAIMS_PATH} instance=${claimsInfo.instanceKey} bot=${claimsInfo.botId} channels=${claimsInfo.channelCount}`,
-    );
+    try {
+      const claimsInfo = await refreshDiscordClaims({
+        cfg,
+        accountId: account.accountId,
+        botId: applicationId ?? botUserId ?? account.accountId,
+        guildEntries,
+      });
+      runtime.log?.(
+        `discord claims registered path=${DISCORD_CLAIMS_PATH} instance=${claimsInfo.instanceKey} bot=${claimsInfo.botId} channels=${claimsInfo.channelCount}`,
+      );
+    } catch (error) {
+      runtime.error?.(
+        danger(`discord claims registration failed; continuing without shared ownership claims: ${String(error)}`),
+      );
+    }
     claimsRefreshTimer = setInterval(() => {
       refreshDiscordClaims({
         cfg,
