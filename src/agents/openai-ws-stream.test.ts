@@ -18,8 +18,10 @@ import {
   convertTools,
   createOpenAIWebSocketStreamFn,
   hasWsSession,
+  planTurnInput,
   releaseWsSession,
 } from "./openai-ws-stream.js";
+import { log } from "./pi-embedded-runner/logger.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock OpenAIWebSocketManager
@@ -901,6 +903,120 @@ describe("buildAssistantMessageFromResponse", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("planTurnInput", () => {
+  const replayModel = { input: ["text"] };
+
+  it("uses incremental tool result replay when a previous response id and new tool results exist", () => {
+    const context = {
+      systemPrompt: "You are helpful.",
+      messages: [
+        userMsg("Run ls"),
+        assistantMsg([], [{ id: "call_1|fc_1", name: "exec", args: { cmd: "ls" } }]),
+        toolResultMsg("call_1|fc_1", "file.txt"),
+      ] as Parameters<typeof convertMessagesToInputItems>[0],
+      tools: [],
+    };
+
+    const turnInput = planTurnInput({
+      context,
+      model: replayModel,
+      previousResponseId: "resp_prev",
+      lastContextLength: 2,
+    });
+
+    expect(turnInput.mode).toBe("incremental_tool_results");
+    expect(turnInput.previousResponseId).toBe("resp_prev");
+    expect(turnInput.inputItems).toEqual([
+      {
+        type: "function_call_output",
+        call_id: "call_1",
+        output: "file.txt",
+      },
+    ]);
+  });
+
+  it("restarts with full context when follow-up turns have no new tool results", () => {
+    const turn1Response = {
+      id: "resp_turn1_reasoning",
+      object: "response",
+      created_at: Date.now(),
+      status: "completed",
+      model: "gpt-5.2",
+      output: [
+        {
+          type: "reasoning",
+          id: "rs_turn1",
+          content: "Thinking before tool call",
+        },
+        {
+          type: "function_call",
+          id: "fc_turn1",
+          call_id: "call_turn1",
+          name: "exec",
+          arguments: '{"cmd":"ls"}',
+        },
+      ],
+      usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
+    } as ResponseObject;
+
+    const context = {
+      systemPrompt: "You are helpful.",
+      messages: [
+        userMsg("Run ls"),
+        buildAssistantMessageFromResponse(turn1Response, {
+          api: "openai-responses",
+          provider: "openai",
+          id: "gpt-5.2",
+        }),
+      ] as Parameters<typeof convertMessagesToInputItems>[0],
+      tools: [],
+    };
+
+    const turnInput = planTurnInput({
+      context,
+      model: replayModel,
+      previousResponseId: "resp_turn1_reasoning",
+      lastContextLength: context.messages.length,
+    });
+
+    expect(turnInput.mode).toBe("full_context_restart");
+    expect(turnInput.previousResponseId).toBeUndefined();
+    expect(turnInput.inputItems.map((item) => item.type)).toEqual([
+      "message",
+      "reasoning",
+      "function_call",
+    ]);
+    expect(turnInput.inputItems[1]).toMatchObject({ type: "reasoning", id: "rs_turn1" });
+    expect(turnInput.inputItems[2]).toMatchObject({
+      type: "function_call",
+      call_id: "call_turn1",
+      id: "fc_turn1",
+    });
+  });
+
+  it("uses full context on the initial turn", () => {
+    const context = {
+      systemPrompt: "You are helpful.",
+      messages: [userMsg("Hello!")] as Parameters<typeof convertMessagesToInputItems>[0],
+      tools: [],
+    };
+
+    const turnInput = planTurnInput({
+      context,
+      model: replayModel,
+      previousResponseId: null,
+      lastContextLength: 0,
+    });
+
+    expect(turnInput).toMatchObject({
+      mode: "full_context_initial",
+      inputItems: [{ type: "message", role: "user", content: "Hello!" }],
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 describe("createOpenAIWebSocketStreamFn", () => {
   const modelStub = {
     api: "openai-responses",
@@ -1471,6 +1587,72 @@ describe("createOpenAIWebSocketStreamFn", () => {
     expect(sent.max_output_tokens).toBe(0);
   });
 
+  it("forwards text verbosity to response.create text block", async () => {
+    const streamFn = createOpenAIWebSocketStreamFn("sk-test", "sess-text-verbosity");
+    const opts = { textVerbosity: "low" };
+    const stream = streamFn(
+      modelStub as Parameters<typeof streamFn>[0],
+      contextStub as Parameters<typeof streamFn>[1],
+      opts as unknown as Parameters<typeof streamFn>[2],
+    );
+    await new Promise<void>((resolve, reject) => {
+      queueMicrotask(async () => {
+        try {
+          await new Promise((r) => setImmediate(r));
+          MockManager.lastInstance!.simulateEvent({
+            type: "response.completed",
+            response: makeResponseObject("resp-text-verbosity", "Done"),
+          });
+          for await (const _ of await resolveStream(stream)) {
+            /* consume */
+          }
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    const sent = MockManager.lastInstance!.sentEvents[0] as Record<string, unknown>;
+    expect(sent.type).toBe("response.create");
+    expect(sent.text).toEqual({ verbosity: "low" });
+  });
+
+  it("warns and skips invalid text verbosity in the websocket path", async () => {
+    const warnSpy = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    try {
+      const streamFn = createOpenAIWebSocketStreamFn("sk-test", "sess-text-verbosity-invalid");
+      const opts = { textVerbosity: "loud" };
+      const stream = streamFn(
+        modelStub as Parameters<typeof streamFn>[0],
+        contextStub as Parameters<typeof streamFn>[1],
+        opts as unknown as Parameters<typeof streamFn>[2],
+      );
+      await new Promise<void>((resolve, reject) => {
+        queueMicrotask(async () => {
+          try {
+            await new Promise((r) => setImmediate(r));
+            MockManager.lastInstance!.simulateEvent({
+              type: "response.completed",
+              response: makeResponseObject("resp-text-verbosity-invalid", "Done"),
+            });
+            for await (const _ of await resolveStream(stream)) {
+              /* consume */
+            }
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      const sent = MockManager.lastInstance!.sentEvents[0] as Record<string, unknown>;
+      expect(sent.type).toBe("response.create");
+      expect(sent).not.toHaveProperty("text");
+      expect(warnSpy).toHaveBeenCalledWith("ignoring invalid OpenAI text verbosity param: loud");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("forwards reasoningEffort/reasoningSummary to response.create reasoning block", async () => {
     const streamFn = createOpenAIWebSocketStreamFn("sk-test", "sess-reason");
     const opts = { reasoningEffort: "high", reasoningSummary: "auto" };
@@ -1499,6 +1681,45 @@ describe("createOpenAIWebSocketStreamFn", () => {
     const sent = MockManager.lastInstance!.sentEvents[0] as Record<string, unknown>;
     expect(sent.type).toBe("response.create");
     expect(sent.reasoning).toEqual({ effort: "high", summary: "auto" });
+  });
+
+  it("applies onPayload mutations before sending response.create", async () => {
+    const streamFn = createOpenAIWebSocketStreamFn("sk-test", "sess-onpayload");
+    const stream = streamFn(
+      modelStub as Parameters<typeof streamFn>[0],
+      contextStub as Parameters<typeof streamFn>[1],
+      {
+        onPayload: (payload: unknown) => {
+          const request = payload as Record<string, unknown>;
+          request.reasoning = { effort: "none" };
+          request.text = { verbosity: "low" };
+          request.service_tier = "priority";
+          return undefined;
+        },
+      } as unknown as Parameters<typeof streamFn>[2],
+    );
+    await new Promise<void>((resolve, reject) => {
+      queueMicrotask(async () => {
+        try {
+          await new Promise((r) => setImmediate(r));
+          MockManager.lastInstance!.simulateEvent({
+            type: "response.completed",
+            response: makeResponseObject("resp-onpayload", "Done"),
+          });
+          for await (const _ of await resolveStream(stream)) {
+            /* consume */
+          }
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    const sent = MockManager.lastInstance!.sentEvents[0] as Record<string, unknown>;
+    expect(sent.type).toBe("response.create");
+    expect(sent.reasoning).toEqual({ effort: "none" });
+    expect(sent.text).toEqual({ verbosity: "low" });
+    expect(sent.service_tier).toBe("priority");
   });
 
   it("forwards topP and toolChoice to response.create", async () => {

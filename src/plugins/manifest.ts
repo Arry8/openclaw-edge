@@ -13,12 +13,17 @@ export type PluginManifestChannelConfig = {
   uiHints?: Record<string, PluginConfigUiHint>;
   label?: string;
   description?: string;
+  preferOver?: string[];
 };
 
 export type PluginManifest = {
   id: string;
   configSchema: Record<string, unknown>;
   enabledByDefault?: boolean;
+  /** Legacy plugin ids that should normalize to this plugin id. */
+  legacyPluginIds?: string[];
+  /** Provider ids that should auto-enable this plugin when referenced in auth/config/models. */
+  autoEnableWhenConfiguredProviders?: string[];
   kind?: PluginKind;
   channels?: string[];
   providers?: string[];
@@ -62,6 +67,8 @@ export type PluginManifestProviderAuthChoice = {
   /** Optional user-facing choice label/hint for grouped onboarding UI. */
   choiceLabel?: string;
   choiceHint?: string;
+  /** Legacy choice ids that should point users at this replacement choice. */
+  deprecatedChoiceIds?: string[];
   /** Optional grouping metadata for auth-choice pickers. */
   groupId?: string;
   groupLabel?: string;
@@ -131,27 +138,6 @@ function normalizeManifestContracts(value: unknown): PluginManifestContracts | u
   return Object.keys(contracts).length > 0 ? contracts : undefined;
 }
 
-function normalizeLegacyCapabilityContracts(
-  raw: Record<string, unknown>,
-): PluginManifestContracts | undefined {
-  return normalizeManifestContracts({
-    speechProviders: raw.speechProviders,
-    mediaUnderstandingProviders: raw.mediaUnderstandingProviders,
-    imageGenerationProviders: raw.imageGenerationProviders,
-  });
-}
-
-function mergeManifestContracts(
-  fallback: PluginManifestContracts | undefined,
-  primary: PluginManifestContracts | undefined,
-): PluginManifestContracts | undefined {
-  const merged = {
-    ...fallback,
-    ...primary,
-  } satisfies PluginManifestContracts;
-  return Object.keys(merged).length > 0 ? merged : undefined;
-}
-
 function normalizeProviderAuthChoices(
   value: unknown,
 ): PluginManifestProviderAuthChoice[] | undefined {
@@ -171,6 +157,7 @@ function normalizeProviderAuthChoices(
     }
     const choiceLabel = typeof entry.choiceLabel === "string" ? entry.choiceLabel.trim() : "";
     const choiceHint = typeof entry.choiceHint === "string" ? entry.choiceHint.trim() : "";
+    const deprecatedChoiceIds = normalizeStringList(entry.deprecatedChoiceIds);
     const groupId = typeof entry.groupId === "string" ? entry.groupId.trim() : "";
     const groupLabel = typeof entry.groupLabel === "string" ? entry.groupLabel.trim() : "";
     const groupHint = typeof entry.groupHint === "string" ? entry.groupHint.trim() : "";
@@ -189,6 +176,7 @@ function normalizeProviderAuthChoices(
       choiceId,
       ...(choiceLabel ? { choiceLabel } : {}),
       ...(choiceHint ? { choiceHint } : {}),
+      ...(deprecatedChoiceIds.length > 0 ? { deprecatedChoiceIds } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupLabel ? { groupLabel } : {}),
       ...(groupHint ? { groupHint } : {}),
@@ -223,11 +211,13 @@ function normalizeChannelConfigs(
       : undefined;
     const label = typeof rawEntry.label === "string" ? rawEntry.label.trim() : "";
     const description = typeof rawEntry.description === "string" ? rawEntry.description.trim() : "";
+    const preferOver = normalizeStringList(rawEntry.preferOver);
     normalized[channelId] = {
       schema,
       ...(uiHints ? { uiHints } : {}),
       ...(label ? { label } : {}),
       ...(description ? { description } : {}),
+      ...(preferOver.length > 0 ? { preferOver } : {}),
     };
   }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
@@ -294,6 +284,10 @@ export function loadPluginManifest(
 
   const kind = typeof raw.kind === "string" ? (raw.kind as PluginKind) : undefined;
   const enabledByDefault = raw.enabledByDefault === true;
+  const legacyPluginIds = normalizeStringList(raw.legacyPluginIds);
+  const autoEnableWhenConfiguredProviders = normalizeStringList(
+    raw.autoEnableWhenConfiguredProviders,
+  );
   const name = typeof raw.name === "string" ? raw.name.trim() : undefined;
   const description = typeof raw.description === "string" ? raw.description.trim() : undefined;
   const version = typeof raw.version === "string" ? raw.version.trim() : undefined;
@@ -303,10 +297,7 @@ export function loadPluginManifest(
   const providerAuthEnvVars = normalizeStringListRecord(raw.providerAuthEnvVars);
   const providerAuthChoices = normalizeProviderAuthChoices(raw.providerAuthChoices);
   const skills = normalizeStringList(raw.skills);
-  const contracts = mergeManifestContracts(
-    normalizeLegacyCapabilityContracts(raw),
-    normalizeManifestContracts(raw.contracts),
-  );
+  const contracts = normalizeManifestContracts(raw.contracts);
   const channelConfigs = normalizeChannelConfigs(raw.channelConfigs);
 
   let uiHints: Record<string, PluginConfigUiHint> | undefined;
@@ -320,6 +311,10 @@ export function loadPluginManifest(
       id,
       configSchema,
       ...(enabledByDefault ? { enabledByDefault } : {}),
+      ...(legacyPluginIds.length > 0 ? { legacyPluginIds } : {}),
+      ...(autoEnableWhenConfiguredProviders.length > 0
+        ? { autoEnableWhenConfiguredProviders }
+        : {}),
       kind,
       channels,
       providers,
@@ -348,12 +343,13 @@ export type PluginPackageChannel = {
   docsLabel?: string;
   blurb?: string;
   order?: number;
-  aliases?: string[];
-  preferOver?: string[];
+  aliases?: readonly string[];
+  preferOver?: readonly string[];
   systemImage?: string;
   selectionDocsPrefix?: string;
   selectionDocsOmitLabel?: boolean;
-  selectionExtras?: string[];
+  selectionExtras?: readonly string[];
+  markdownCapable?: boolean;
   showConfigured?: boolean;
   quickstartAllowFrom?: boolean;
   forceAccountBinding?: boolean;
