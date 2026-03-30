@@ -187,7 +187,6 @@ export const MessagesSchema = z
       .strict()
       .optional(),
     suppressToolErrors: z.boolean().optional(),
-    unscheduledReminderNote: z.boolean().optional(),
     tts: TtsConfigSchema,
   })
   .strict()
