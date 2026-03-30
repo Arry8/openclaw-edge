@@ -23,38 +23,201 @@ type ImageBlock = {
   alt?: string;
 };
 
+const MEDIA_FILENAME_WITH_UUID_RE =
+  /^(.+)---[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(\.[^./\\]+)?$/i;
+
+function normalizeImageDataUrl(data: string, mimeType?: string): string | null {
+  const trimmed = data.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  const normalizedMimeType = mimeType?.trim() || "image/png";
+  return `data:${normalizedMimeType};base64,${trimmed}`;
+}
+
+function extractImageUrlFromContentBlock(block: Record<string, unknown>): ImageBlock | null {
+  if (block.type === "image") {
+    const source = block.source as Record<string, unknown> | undefined;
+    if (source?.type === "base64" && typeof source.data === "string") {
+      const url = normalizeImageDataUrl(
+        source.data,
+        typeof source.media_type === "string" ? source.media_type : undefined,
+      );
+      return url ? { url } : null;
+    }
+    if (typeof block.url === "string" && block.url.trim()) {
+      return { url: block.url.trim() };
+    }
+    return null;
+  }
+
+  if (block.type === "image_url") {
+    const imageUrl = block.image_url;
+    if (typeof imageUrl === "string" && imageUrl.trim()) {
+      return { url: imageUrl.trim() };
+    }
+    if (
+      imageUrl &&
+      typeof imageUrl === "object" &&
+      typeof (imageUrl as { url?: unknown }).url === "string" &&
+      (imageUrl as { url: string }).url.trim()
+    ) {
+      return { url: (imageUrl as { url: string }).url.trim() };
+    }
+  }
+
+  return null;
+}
+
+function extractMediaPathBasename(mediaPath: string): string {
+  const trimmed = mediaPath.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const withoutQuery = trimmed.split(/[?#]/, 1)[0] ?? "";
+  const segments = withoutQuery.split(/[/\\]/);
+  return segments.at(-1)?.trim() ?? "";
+}
+
+function extractMediaPathAlt(mediaPath: string): string | undefined {
+  const basename = extractMediaPathBasename(mediaPath);
+  if (!basename) {
+    return undefined;
+  }
+  const match = basename.match(MEDIA_FILENAME_WITH_UUID_RE);
+  if (!match?.[1]) {
+    return basename;
+  }
+  return `${match[1]}${match[2] ?? ""}`;
+}
+
+function resolveHistoryMediaUrl(mediaPath: string): string | null {
+  const trimmed = mediaPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (
+    /^https?:\/\//i.test(trimmed) ||
+    /^blob:/i.test(trimmed) ||
+    /^data:image\//i.test(trimmed) ||
+    trimmed.startsWith("/media/") ||
+    trimmed.startsWith("media/")
+  ) {
+    return trimmed;
+  }
+  const mediaId = extractMediaPathBasename(trimmed);
+  return mediaId ? `media/${mediaId}` : null;
+}
+
+function extractImageUrlFromAttachment(attachment: Record<string, unknown>): ImageBlock | null {
+  const attachmentType =
+    typeof attachment.type === "string" ? attachment.type.trim().toLowerCase() : undefined;
+  const mimeType = typeof attachment.mimeType === "string" ? attachment.mimeType.trim() : undefined;
+  if (mimeType) {
+    if (!mimeType.toLowerCase().startsWith("image/")) {
+      return null;
+    }
+  } else if (attachmentType !== "image") {
+    return null;
+  }
+  if (typeof attachment.url === "string" && attachment.url.trim()) {
+    return {
+      url: attachment.url.trim(),
+      alt: typeof attachment.fileName === "string" ? attachment.fileName : undefined,
+    };
+  }
+  if (typeof attachment.content !== "string") {
+    return null;
+  }
+  const url = normalizeImageDataUrl(attachment.content, mimeType);
+  if (!url) {
+    return null;
+  }
+  return {
+    url,
+    alt: typeof attachment.fileName === "string" ? attachment.fileName : undefined,
+  };
+}
+
+function extractImageUrlsFromMediaPaths(message: Record<string, unknown>): ImageBlock[] {
+  const rawPaths = Array.isArray(message.MediaPaths)
+    ? message.MediaPaths
+    : typeof message.MediaPath === "string"
+      ? [message.MediaPath]
+      : [];
+  if (rawPaths.length === 0) {
+    return [];
+  }
+
+  const mediaPaths = rawPaths.filter((value): value is string => typeof value === "string");
+  if (mediaPaths.length === 0) {
+    return [];
+  }
+
+  const rawTypes =
+    Array.isArray(message.MediaTypes) && message.MediaTypes.length === mediaPaths.length
+      ? message.MediaTypes
+      : mediaPaths.length === 1 && typeof message.MediaType === "string"
+        ? [message.MediaType]
+        : [];
+
+  const imageTypes = rawTypes
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0);
+  if (imageTypes.length !== mediaPaths.length) {
+    return [];
+  }
+
+  return mediaPaths.flatMap((mediaPath, index) => {
+    if (!imageTypes[index]?.toLowerCase().startsWith("image/")) {
+      return [];
+    }
+    const url = resolveHistoryMediaUrl(mediaPath);
+    if (!url) {
+      return [];
+    }
+    return [{ url, alt: extractMediaPathAlt(mediaPath) }];
+  });
+}
+
 function extractImages(message: unknown): ImageBlock[] {
   const m = message as Record<string, unknown>;
   const content = m.content;
   const images: ImageBlock[] = [];
+  const seenUrls = new Set<string>();
+
+  const pushImage = (image: ImageBlock | null) => {
+    if (!image || seenUrls.has(image.url)) {
+      return;
+    }
+    seenUrls.add(image.url);
+    images.push(image);
+  };
 
   if (Array.isArray(content)) {
     for (const block of content) {
       if (typeof block !== "object" || block === null) {
         continue;
       }
-      const b = block as Record<string, unknown>;
-
-      if (b.type === "image") {
-        // Handle source object format (from sendChatMessage)
-        const source = b.source as Record<string, unknown> | undefined;
-        if (source?.type === "base64" && typeof source.data === "string") {
-          const data = source.data;
-          const mediaType = (source.media_type as string) || "image/png";
-          // If data is already a data URL, use it directly
-          const url = data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
-          images.push({ url });
-        } else if (typeof b.url === "string") {
-          images.push({ url: b.url });
-        }
-      } else if (b.type === "image_url") {
-        // OpenAI format
-        const imageUrl = b.image_url as Record<string, unknown> | undefined;
-        if (typeof imageUrl?.url === "string") {
-          images.push({ url: imageUrl.url });
-        }
-      }
+      pushImage(extractImageUrlFromContentBlock(block as Record<string, unknown>));
     }
+  }
+
+  const attachments = m.attachments;
+  if (Array.isArray(attachments)) {
+    for (const attachment of attachments) {
+      if (typeof attachment !== "object" || attachment === null) {
+        continue;
+      }
+      pushImage(extractImageUrlFromAttachment(attachment as Record<string, unknown>));
+    }
+  }
+
+  for (const image of extractImageUrlsFromMediaPaths(m)) {
+    pushImage(image);
   }
 
   return images;

@@ -15,7 +15,39 @@ function renderAssistantImage(url: string) {
   };
 }
 
+function renderUserHistoryImage() {
+  return {
+    role: "user",
+    content: [{ type: "text", text: "see image" }],
+    MediaPath: "/tmp/chat-send-image-a.png",
+    MediaPaths: ["/tmp/chat-send-image-a.png"],
+    MediaType: "image/png",
+    MediaTypes: ["image/png"],
+    timestamp: Date.now(),
+  };
+}
+
 describe("chat image open safety", () => {
+  it("keeps history-backed image attachments visible after the assistant reply lands", async () => {
+    const app = mountApp("/chat");
+    await app.updateComplete;
+
+    app.chatMessages = [
+      renderUserHistoryImage(),
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "done" }],
+        timestamp: Date.now() + 1,
+      },
+    ];
+    await app.updateComplete;
+
+    const image = app.querySelector<HTMLImageElement>(".chat-group.user .chat-message-image");
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe("media/chat-send-image-a.png");
+    expect(image?.getAttribute("alt")).toBe("chat-send-image-a.png");
+  });
+
   it("opens safe image URLs in a hardened new tab", async () => {
     const app = mountApp("/chat");
     await app.updateComplete;

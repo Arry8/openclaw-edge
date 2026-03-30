@@ -683,6 +683,98 @@ describe("chat view", () => {
     expect(senderLabels).not.toContain("You");
   });
 
+  it("renders persisted history media paths inline for user messages after chat reload", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "see image" }],
+              MediaPath: "/tmp/chat-send-image-a.png",
+              MediaPaths: ["/tmp/chat-send-image-a.png"],
+              MediaType: "image/png",
+              MediaTypes: ["image/png"],
+              timestamp: 1000,
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "got it" }],
+              timestamp: 1001,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const image = container.querySelector<HTMLImageElement>(".chat-group.user .chat-message-image");
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe("media/chat-send-image-a.png");
+    expect(image?.getAttribute("alt")).toBe("chat-send-image-a.png");
+  });
+
+  it("renders image-typed history attachments even when mimeType is missing", () => {
+    const container = document.createElement("div");
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "see image" }],
+              attachments: [
+                {
+                  type: "image",
+                  fileName: "dot.png",
+                  content: pngBase64,
+                },
+              ],
+              timestamp: 1000,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const image = container.querySelector<HTMLImageElement>(".chat-group.user .chat-message-image");
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe(`data:image/png;base64,${pngBase64}`);
+    expect(image?.getAttribute("alt")).toBe("dot.png");
+  });
+
+  it("does not render non-image history attachments when mimeType is missing", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "see file" }],
+              attachments: [
+                {
+                  type: "file",
+                  fileName: "notes.txt",
+                  url: "https://example.com/notes.txt",
+                },
+              ],
+              timestamp: 1000,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const image = container.querySelector(".chat-group.user .chat-message-image");
+    expect(image).toBeNull();
+  });
+
   it("keeps consecutive user messages from different senders in separate groups", () => {
     const container = document.createElement("div");
     render(
