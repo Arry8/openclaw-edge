@@ -37,8 +37,6 @@ const EMBEDDING_RETRY_MAX_DELAY_MS = 8000;
 const BATCH_FAILURE_LIMIT = 2;
 const EMBEDDING_QUERY_TIMEOUT_REMOTE_MS = 60_000;
 const EMBEDDING_QUERY_TIMEOUT_LOCAL_MS = 5 * 60_000;
-const EMBEDDING_BATCH_TIMEOUT_REMOTE_MS = 2 * 60_000;
-const EMBEDDING_BATCH_TIMEOUT_LOCAL_MS = 10 * 60_000;
 
 const TRANSIENT_NETWORK_CODES = new Set([
   "ECONNRESET",
@@ -232,7 +230,10 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
           `SELECT hash, embedding FROM ${EMBEDDING_CACHE_TABLE}\n` +
             ` WHERE provider = ? AND model = ? AND provider_key = ? AND hash IN (${placeholders})`,
         )
-        .all(...baseParams, ...batch) as Array<{ hash: string; embedding: string }>;
+        .all(...baseParams, ...batch) as Array<{
+        hash: string;
+        embedding: string;
+      }>;
       for (const row of rows) {
         out.set(row.hash, parseEmbedding(row.embedding));
       }
@@ -349,7 +350,12 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
     if (this.providerRuntime?.cacheKeyData) {
       return hashText(JSON.stringify(this.providerRuntime.cacheKeyData));
     }
-    return hashText(JSON.stringify({ provider: this.provider.id, model: this.provider.model }));
+    return hashText(
+      JSON.stringify({
+        provider: this.provider.id,
+        model: this.provider.model,
+      }),
+    );
   }
 
   private buildBatchDebug(source: MemorySource, chunks: MemoryChunk[]) {
@@ -517,10 +523,20 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
 
   private resolveEmbeddingTimeout(kind: "query" | "batch"): number {
     const isLocal = this.provider?.id === "local";
+
     if (kind === "query") {
       return isLocal ? EMBEDDING_QUERY_TIMEOUT_LOCAL_MS : EMBEDDING_QUERY_TIMEOUT_REMOTE_MS;
     }
-    return isLocal ? EMBEDDING_BATCH_TIMEOUT_LOCAL_MS : EMBEDDING_BATCH_TIMEOUT_REMOTE_MS;
+
+    // For batch embeddings, use configured timeout if available
+    if (this.batch.timeoutMs > 0) {
+      // Security: cap at 30 minutes to prevent unbounded resource exhaustion (CWE-400)
+      const MAX_BATCH_TIMEOUT_MS = 30 * 60_000;
+      return Math.min(this.batch.timeoutMs, MAX_BATCH_TIMEOUT_MS);
+    }
+
+    // Fallback to conservative defaults when not configured
+    return isLocal ? 10 * 60_000 : 2 * 60_000;
   }
 
   protected async embedQueryWithTimeout(text: string): Promise<number[]> {
@@ -528,7 +544,10 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
       throw new Error("Cannot embed query in FTS-only mode (no embedding provider)");
     }
     const timeoutMs = this.resolveEmbeddingTimeout("query");
-    log.debug("memory embeddings: query start", { provider: this.provider.id, timeoutMs });
+    log.debug("memory embeddings: query start", {
+      provider: this.provider.id,
+      timeoutMs,
+    });
     return await this.withTimeout(
       this.provider.embedQuery(text),
       timeoutMs,
