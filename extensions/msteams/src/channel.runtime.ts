@@ -3,6 +3,11 @@ import {
   listMSTeamsDirectoryPeersLive as listMSTeamsDirectoryPeersLiveImpl,
 } from "./directory-live.js";
 import {
+  addParticipantMSTeams as addParticipantMSTeamsImpl,
+  removeParticipantMSTeams as removeParticipantMSTeamsImpl,
+  renameGroupMSTeams as renameGroupMSTeamsImpl,
+} from "./graph-group-management.js";
+import {
   getMessageMSTeams as getMessageMSTeamsImpl,
   listPinsMSTeams as listPinsMSTeamsImpl,
   listReactionsMSTeams as listReactionsMSTeamsImpl,
@@ -21,6 +26,7 @@ import {
   sendMessageMSTeams as sendMessageMSTeamsImpl,
 } from "./send.js";
 export const msTeamsChannelRuntime = {
+  addParticipantMSTeams: addParticipantMSTeamsImpl,
   deleteMessageMSTeams: deleteMessageMSTeamsImpl,
   editMessageMSTeams: editMessageMSTeamsImpl,
   getMessageMSTeams: getMessageMSTeamsImpl,
@@ -28,6 +34,8 @@ export const msTeamsChannelRuntime = {
   listReactionsMSTeams: listReactionsMSTeamsImpl,
   pinMessageMSTeams: pinMessageMSTeamsImpl,
   reactMessageMSTeams: reactMessageMSTeamsImpl,
+  removeParticipantMSTeams: removeParticipantMSTeamsImpl,
+  renameGroupMSTeams: renameGroupMSTeamsImpl,
   searchMessagesMSTeams: searchMessagesMSTeamsImpl,
   unpinMessageMSTeams: unpinMessageMSTeamsImpl,
   unreactMessageMSTeams: unreactMessageMSTeamsImpl,

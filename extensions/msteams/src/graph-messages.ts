@@ -62,7 +62,7 @@ function stripTargetPrefix(raw: string): string {
  * actual `19:xxx@thread.*` chat ID that Graph API requires.
  * Conversation IDs and `teamId/channelId` pairs pass through unchanged.
  */
-async function resolveGraphConversationId(to: string): Promise<string> {
+export async function resolveGraphConversationId(to: string): Promise<string> {
   const trimmed = to.trim();
   const isUserTarget = /^user:/i.test(trimmed);
   const cleaned = stripTargetPrefix(trimmed);
@@ -97,7 +97,7 @@ async function resolveGraphConversationId(to: string): Promise<string> {
   );
 }
 
-function resolveConversationPath(to: string): {
+export function resolveConversationPath(to: string): {
   kind: "chat" | "channel";
   basePath: string;
   chatId?: string;
