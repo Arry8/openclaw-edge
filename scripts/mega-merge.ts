@@ -1495,11 +1495,12 @@ async function main() {
   }
 
   // ── Promote to main ───────────────────────────────────────────────────────
-  // Fast-forward main to mega/latest after a clean build.
+  // Force-push mega/latest to main after a clean build. Force is required
+  // because the GH Action may have pushed independently to main.
   // Skip if build was skipped, nothing merged, or --no-promote-main passed.
   if (PROMOTE_MAIN && !DRY_RUN && mergedCount > 0 && buildPassed) {
     log("\nPromoting mega/latest → main...");
-    const ff = run("git", ["push", "origin", `${baseBranch}:main`]);
+    const ff = run("git", ["push", "origin", `${baseBranch}:main`, "--force"]);
     if (ff.ok) {
       log("main promoted successfully.");
     } else {
