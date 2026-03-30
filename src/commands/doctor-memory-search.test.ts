@@ -1,6 +1,7 @@
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import type { checkQmdBinaryAvailability as checkQmdBinaryAvailabilityFn } from "../plugin-sdk/memory-core-host-engine-qmd.js";
 
 const note = vi.hoisted(() => vi.fn());
 const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "agent-default"));
@@ -8,7 +9,10 @@ const resolveAgentDir = vi.hoisted(() => vi.fn(() => "/tmp/agent-default"));
 const resolveMemorySearchConfig = vi.hoisted(() => vi.fn());
 const resolveApiKeyForProvider = vi.hoisted(() => vi.fn());
 const resolveActiveMemoryBackendConfig = vi.hoisted(() => vi.fn());
-const checkQmdBinaryAvailability = vi.hoisted(() => vi.fn(async () => ({ available: true })));
+type CheckQmdBinaryAvailability = typeof checkQmdBinaryAvailabilityFn;
+const checkQmdBinaryAvailability = vi.hoisted(() =>
+  vi.fn<CheckQmdBinaryAvailability>(async () => ({ available: true })),
+);
 
 vi.mock("../terminal/note.js", () => ({
   note,

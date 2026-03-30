@@ -1,5 +1,8 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
+import type { checkQmdBinaryAvailability as checkQmdBinaryAvailabilityFn } from "openclaw/plugin-sdk/memory-core-host-engine-qmd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+type CheckQmdBinaryAvailability = typeof checkQmdBinaryAvailabilityFn;
 
 function createManagerStatus(params: {
   backend: "qmd" | "builtin";
@@ -95,7 +98,9 @@ const fallbackManager = vi.hoisted(() => ({
 const fallbackSearch = fallbackManager.search;
 const mockMemoryIndexGet = vi.hoisted(() => vi.fn(async () => fallbackManager));
 const mockCloseAllMemoryIndexManagers = vi.hoisted(() => vi.fn(async () => {}));
-const checkQmdBinaryAvailability = vi.hoisted(() => vi.fn(async () => ({ available: true })));
+const checkQmdBinaryAvailability = vi.hoisted(() =>
+  vi.fn<CheckQmdBinaryAvailability>(async () => ({ available: true })),
+);
 
 vi.mock("./qmd-manager.js", () => ({
   QmdMemoryManager: {
