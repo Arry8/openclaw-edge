@@ -1,8 +1,14 @@
+import { createRequire } from "node:module";
+import path from "node:path";
+
 type CanvasModule = typeof import("@napi-rs/canvas");
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
+const require = createRequire(import.meta.url);
+
 let canvasModulePromise: Promise<CanvasModule> | null = null;
 let pdfJsModulePromise: Promise<PdfJsModule> | null = null;
+let pdfJsStandardFontDataUrl: string | null | undefined;
 
 async function loadCanvasModule(): Promise<CanvasModule> {
   if (!canvasModulePromise) {
@@ -28,6 +34,26 @@ async function loadPdfJsModule(): Promise<PdfJsModule> {
   return pdfJsModulePromise;
 }
 
+function resolvePdfJsStandardFontDataUrl(): string | undefined {
+  if (pdfJsStandardFontDataUrl !== undefined) {
+    return pdfJsStandardFontDataUrl ?? undefined;
+  }
+
+  try {
+    const pdfJsPackageJsonPath = require.resolve("pdfjs-dist/package.json");
+    const standardFontsDir = path.join(path.dirname(pdfJsPackageJsonPath), "standard_fonts");
+    // In Node, PDF.js concatenates this value with the font filename and passes the
+    // resulting plain string to `fs.readFile(...)`, so this must be a filesystem path.
+    const normalizedStandardFontsDir =
+      path.sep === "/" ? standardFontsDir : standardFontsDir.replaceAll(path.sep, "/");
+    pdfJsStandardFontDataUrl = `${normalizedStandardFontsDir}/`;
+  } catch {
+    pdfJsStandardFontDataUrl = null;
+  }
+
+  return pdfJsStandardFontDataUrl ?? undefined;
+}
+
 export type PdfExtractedImage = {
   type: "image";
   data: string;
@@ -49,7 +75,11 @@ export async function extractPdfContent(params: {
 }): Promise<PdfExtractedContent> {
   const { buffer, maxPages, maxPixels, minTextChars, pageNumbers, onImageExtractionError } = params;
   const { getDocument } = await loadPdfJsModule();
-  const pdf = await getDocument({ data: new Uint8Array(buffer), disableWorker: true }).promise;
+  const pdf = await getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+    standardFontDataUrl: resolvePdfJsStandardFontDataUrl(),
+  }).promise;
 
   const effectivePages: number[] = pageNumbers
     ? pageNumbers.filter((p) => p >= 1 && p <= pdf.numPages).slice(0, maxPages)
