@@ -13104,7 +13104,7 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
     },
     "gateway.http.endpoints.chatCompletions.images.urlAllowlist": {
       label: "OpenAI Chat Completions Image URL Allowlist",
-      help: "Optional hostname allowlist for `image_url` URL fetches; supports exact hosts and `*.example.com` wildcards. Empty or omitted lists mean no hostname allowlist restriction.",
+      help: "Optional hostname allowlist for `image_url` URL fetches; supports exact hosts and `*.example.com` wildcards. Omitted means no restriction; an explicit empty list denies all URL fetches.",
       tags: ["access", "network", "media"],
     },
     "gateway.http.endpoints.chatCompletions.images.allowedMimes": {
