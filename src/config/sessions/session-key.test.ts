@@ -73,4 +73,20 @@ describe("resolveSessionKey", () => {
       expect(resolveSessionKey("per-sender", ctx)).toBe("discord:direct:123456");
     });
   });
+
+  it("uses the provided default agent id for direct chats", () => {
+    const ctx = makeCtx({
+      From: "+15551234567",
+    });
+    expect(resolveSessionKey("per-sender", ctx, "main", "steward")).toBe("agent:steward:main");
+  });
+
+  it("uses the provided default agent id for group chats", () => {
+    const ctx = makeCtx({
+      From: "12345-678@g.us",
+    });
+    expect(resolveSessionKey("per-sender", ctx, "main", "steward")).toBe(
+      "agent:steward:whatsapp:group:12345-678@g.us",
+    );
+  });
 });

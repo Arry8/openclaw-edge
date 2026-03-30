@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   loadSessionStore: vi.fn(),
   resolveStorePath: vi.fn(),
   listAgentIds: vi.fn(),
+  resolveDefaultAgentId: vi.fn(),
 }));
 
 vi.mock("../../config/sessions.js", async () => {
@@ -20,6 +21,7 @@ vi.mock("../../config/sessions.js", async () => {
 
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: mocks.listAgentIds,
+  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
 }));
 
 let resolveSessionKeyForRequest: typeof import("./session.js").resolveSessionKeyForRequest;
@@ -54,6 +56,7 @@ describe("resolveSessionKeyForRequest", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listAgentIds.mockReturnValue(["main"]);
+    mocks.resolveDefaultAgentId.mockReturnValue("main");
   });
 
   const baseCfg: OpenClawConfig = {};
@@ -69,6 +72,33 @@ describe("resolveSessionKeyForRequest", () => {
       to: "+15551234567",
     });
     expect(result.sessionKey).toBe("agent:main:main");
+  });
+
+  it("uses the configured default agent store when --to derives a session key", async () => {
+    mocks.listAgentIds.mockReturnValue(["main", "steward"]);
+    mocks.resolveDefaultAgentId.mockReturnValue("steward");
+    mocks.resolveStorePath.mockImplementation(
+      (_store: string | undefined, opts?: { agentId?: string }) => {
+        if (opts?.agentId === "steward") {
+          return MYBOT_STORE_PATH;
+        }
+        return MAIN_STORE_PATH;
+      },
+    );
+    mockStoresByPath({
+      [MYBOT_STORE_PATH]: {
+        "agent:steward:main": { sessionId: "sess-steward", updatedAt: 0 },
+      },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      to: "+15551234567",
+    });
+
+    expect(result.sessionKey).toBe("agent:steward:main");
+    expect(result.storePath).toBe(MYBOT_STORE_PATH);
+    expect(result.sessionStore["agent:steward:main"]?.sessionId).toBe("sess-steward");
   });
 
   it("finds session by sessionId via reverse lookup in primary store", async () => {

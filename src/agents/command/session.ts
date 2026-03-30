@@ -21,7 +21,7 @@ import {
 } from "../../config/sessions.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
 import { resolvePreferredSessionKeyForSessionIdMatches } from "../../sessions/session-id-resolution.js";
-import { listAgentIds } from "../agent-scope.js";
+import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
 
 export type SessionResolution = {
@@ -51,21 +51,23 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionCfg = opts.cfg.session;
   const scope = sessionCfg?.scope ?? "per-sender";
   const mainKey = normalizeMainKey(sessionCfg?.mainKey);
+  const defaultAgentId = resolveDefaultAgentId(opts.cfg);
   const explicitSessionKey =
     opts.sessionKey?.trim() ||
     resolveExplicitAgentSessionKey({
       cfg: opts.cfg,
       agentId: opts.agentId,
     });
-  const storeAgentId = resolveAgentIdFromSessionKey(explicitSessionKey);
+
+  const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
+  let sessionKey: string | undefined =
+    explicitSessionKey ??
+    (ctx ? resolveSessionKey(scope, ctx, mainKey, defaultAgentId) : undefined);
+  const storeAgentId = resolveAgentIdFromSessionKey(sessionKey);
   const storePath = resolveStorePath(sessionCfg?.store, {
     agentId: storeAgentId,
   });
   const sessionStore = loadSessionStore(storePath);
-
-  const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
-  let sessionKey: string | undefined =
-    explicitSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
 
   // If a session id was provided, prefer to re-use its entry (by id) even when no key was derived.
   // When duplicates exist across agent stores, pick the same deterministic best match used by the

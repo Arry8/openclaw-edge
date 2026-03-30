@@ -1068,6 +1068,25 @@ describe("agentCommand", () => {
     });
   });
 
+  it("uses the configured default agent when deriving a session from --to", async () => {
+    await withTempHome(async (home) => {
+      const storePattern = path.join(home, "sessions", "{agentId}", "sessions.json");
+      const cfg = mockConfig(home, storePattern, undefined, undefined, [
+        { id: "main" },
+        { id: "steward", default: true },
+      ]);
+
+      const stewardStore = path.join(home, "sessions", "steward", "sessions.json");
+      const resolution = resolveSession({ cfg, to: "+1555" });
+
+      expect(resolution.sessionKey).toBe("agent:steward:main");
+      expect(resolution.storePath).toBe(stewardStore);
+      expect(resolveSessionAgentId({ sessionKey: resolution.sessionKey, config: cfg })).toBe(
+        "steward",
+      );
+    });
+  });
+
   it("rejects unknown agent overrides", async () => {
     await withTempHome(async (home) => {
       const store = path.join(home, "sessions.json");
