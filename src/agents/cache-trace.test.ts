@@ -29,6 +29,7 @@ describe("createCacheTrace", () => {
       writer: {
         filePath: "memory",
         write: (line) => lines.push(line),
+        drain: () => Promise.resolve(),
       },
     });
 
@@ -59,6 +60,7 @@ describe("createCacheTrace", () => {
       writer: {
         filePath: "memory",
         write: (line) => lines.push(line),
+        drain: () => Promise.resolve(),
       },
     });
 
@@ -85,6 +87,7 @@ describe("createCacheTrace", () => {
       writer: {
         filePath: "memory",
         write: (line) => lines.push(line),
+        drain: () => Promise.resolve(),
       },
     });
 
@@ -105,6 +108,7 @@ describe("createCacheTrace", () => {
       writer: {
         filePath: "memory",
         write: (line) => lines.push(line),
+        drain: () => Promise.resolve(),
       },
     });
 
@@ -211,6 +215,7 @@ describe("createCacheTrace", () => {
       writer: {
         filePath: "memory",
         write: (line) => lines.push(line),
+        drain: () => Promise.resolve(),
       },
     });
 
