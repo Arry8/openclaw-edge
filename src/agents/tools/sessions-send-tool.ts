@@ -266,8 +266,17 @@ export function createSessionsSendTool(opts?: {
         requesterChannel: opts?.agentChannel,
         targetSessionKey: displayKey,
       });
+      // [Refactored] Structured Metadata Injection (Non-polluting)
+      const metadata = {
+        from: opts?.agentSessionKey ?? "unknown",
+        channel: opts?.agentChannel ?? "internal",
+        traceId: crypto.randomUUID(),
+        version: "1.0",
+      };
+
       const sendParams = {
         message,
+        metadata,
         sessionKey: resolvedKey,
         idempotencyKey,
         deliver: false,
@@ -296,6 +305,7 @@ export function createSessionsSendTool(opts?: {
           requesterChannel,
           roundOneReply,
           waitRunId,
+          metadata, // Pass metadata to A2A flow
         });
       };
 
