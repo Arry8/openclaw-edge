@@ -504,6 +504,53 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   const scanResult = await collectSkillInstallScanWarnings(entry);
   const warnings = scanResult.warnings;
   const skillSource = (entry.skill as { sourceInfo?: { source?: string } }).sourceInfo?.source?.trim() || "unknown";
+
+  // Run before_install so external scanners can augment findings or block installs.
+  const hookRunner = getGlobalHookRunner();
+  if (hookRunner?.hasHooks("before_install")) {
+    try {
+      const { event, ctx } = createBeforeInstallHookPayload({
+        targetName: params.skillName,
+        targetType: "skill",
+        origin: skillSource,
+        sourcePath: path.resolve(entry.skill.baseDir),
+        sourcePathKind: "directory",
+        request: {
+          kind: "skill-install",
+          mode: "install",
+        },
+        builtinScan: scanResult.builtinScan,
+        skill: {
+          installId: params.installId,
+          ...(spec ? { installSpec: normalizeSkillInstallSpec(spec) } : {}),
+        },
+      });
+      const hookResult = await hookRunner.runBeforeInstall(event, ctx);
+      if (hookResult?.block) {
+        return {
+          ok: false,
+          message: hookResult.blockReason || "Installation blocked by plugin hook",
+          stdout: "",
+          stderr: "",
+          code: null,
+          warnings: warnings.length > 0 ? warnings.slice() : undefined,
+        };
+      }
+      if (hookResult?.findings) {
+        for (const finding of hookResult.findings) {
+          if (finding.severity === "critical") {
+            warnings.push(
+              `WARNING: Plugin scanner: ${finding.message} (${finding.file}:${finding.line})`,
+            );
+          } else if (finding.severity === "warn") {
+            warnings.push(`Plugin scanner: ${finding.message} (${finding.file}:${finding.line})`);
+          }
+        }
+      }
+    } catch {
+      // Hook errors are non-fatal — built-in scanner results still apply.
+    }
+  }
   // Warn when install is triggered from a non-bundled source.
   // Workspace/project/personal agent skills can contain attacker-controlled metadata.
   const trustedInstallSources = new Set(["openclaw-bundled", "openclaw-managed", "openclaw-extra"]);
