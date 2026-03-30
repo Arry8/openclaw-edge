@@ -1,6 +1,9 @@
 const MAX_DISCORD_TIMEOUT_MS = 2_147_483_647;
 
-export const DISCORD_DEFAULT_LISTENER_TIMEOUT_MS = 120_000;
+// 10 minutes: quiet gateways can churn reconnects on low-traffic bots when the
+// listener budget is too tight. OpenClaw previously capped this at 2 minutes (Carbon's
+// own default is ~30 s); raising to 10 minutes reduces false-positive recycle loops (see #45485).
+export const DISCORD_DEFAULT_LISTENER_TIMEOUT_MS = 600_000;
 export const DISCORD_DEFAULT_INBOUND_WORKER_TIMEOUT_MS = 30 * 60_000;
 
 function clampDiscordTimeoutMs(timeoutMs: number, minimumMs: number): number {
