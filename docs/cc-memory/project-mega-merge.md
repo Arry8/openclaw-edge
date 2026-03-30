@@ -177,7 +177,7 @@ kill -- -<PGID>   # kill the whole process group by PGID
 
 ## Important constraints
 
-- `mega/latest` never merges back to `main`
+- After a clean `pnpm build`, `main` is fast-forwarded to `mega/latest` automatically. Use `--no-promote-main` to skip.
 - The script is deterministic and LLM-free — broken PRs go to SKIP_LIST, never manually patched
 - Per-PR commits use `--no-verify` to skip tsgo/lint; `pnpm build` is the real quality gate
 - The GH Action does not use `--continuous-build` (background processes are killed when the CI step exits)
