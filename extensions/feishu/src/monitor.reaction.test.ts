@@ -80,6 +80,7 @@ async function resolveReactionWithLookup(params: {
     cfg,
     accountId: "default",
     event: params.event ?? makeReactionEvent(),
+    reactionActionType: "created",
     botOpenId: "ou_bot",
     fetchMessage: async () =>
       createFetchedReactionMessage(params.lookupChatId, params.lookupChatType),
@@ -92,6 +93,7 @@ async function resolveNonBotReaction(params?: { cfg?: ClawdbotConfig; uuid?: () 
     cfg: params?.cfg ?? cfg,
     accountId: "default",
     event: makeReactionEvent(),
+    reactionActionType: "created",
     botOpenId: "ou_bot",
     fetchMessage: async () => ({
       messageId: "om_msg1",
@@ -252,6 +254,7 @@ describe("resolveReactionSyntheticEvent", () => {
       cfg,
       accountId: "default",
       event,
+      reactionActionType: "created",
       botOpenId: "ou_bot",
     });
     expect(result).toBeNull();
@@ -263,6 +266,7 @@ describe("resolveReactionSyntheticEvent", () => {
       cfg,
       accountId: "default",
       event,
+      reactionActionType: "created",
       botOpenId: "ou_bot",
     });
     expect(result).toBeNull();
@@ -274,6 +278,7 @@ describe("resolveReactionSyntheticEvent", () => {
       cfg,
       accountId: "default",
       event,
+      reactionActionType: "created",
     });
     expect(result).toBeNull();
   });
@@ -290,6 +295,7 @@ describe("resolveReactionSyntheticEvent", () => {
       } as ClawdbotConfig,
       accountId: "default",
       event,
+      reactionActionType: "created",
       botOpenId: "ou_bot",
       fetchMessage: async () => ({
         messageId: "om_msg1",
@@ -319,7 +325,7 @@ describe("resolveReactionSyntheticEvent", () => {
       } as ClawdbotConfig,
       uuid: () => "fixed-uuid",
     });
-    expect(result?.message.message_id).toBe("om_msg1:reaction:THUMBSUP:fixed-uuid");
+    expect(result?.message.message_id).toBe("om_msg1:reaction:created:THUMBSUP:ou_user1");
   });
 
   it("drops unverified reactions when sender verification times out", async () => {
@@ -328,6 +334,7 @@ describe("resolveReactionSyntheticEvent", () => {
       cfg,
       accountId: "default",
       event,
+      reactionActionType: "created",
       botOpenId: "ou_bot",
       verificationTimeoutMs: 1,
       fetchMessage: async () =>
@@ -353,7 +360,7 @@ describe("resolveReactionSyntheticEvent", () => {
         sender_type: "user",
       },
       message: {
-        message_id: "om_msg1:reaction:THUMBSUP:fixed-uuid",
+        message_id: "om_msg1:reaction:created:THUMBSUP:ou_user1",
         chat_id: "oc_group_from_event",
         chat_type: "group",
         message_type: "text",
@@ -411,6 +418,7 @@ describe("resolveReactionSyntheticEvent", () => {
       cfg,
       accountId: "acct1",
       event,
+      reactionActionType: "created",
       botOpenId: "ou_bot",
       fetchMessage: async () => {
         throw new Error("boom");
