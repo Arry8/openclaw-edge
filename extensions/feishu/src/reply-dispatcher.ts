@@ -91,6 +91,8 @@ export type CreateFeishuReplyDispatcherParams = {
   /** Epoch ms when the inbound message was created. Used to suppress typing
    *  indicators on old/replayed messages after context compaction (#30418). */
   messageCreateTimeMs?: number;
+  /** Allowed roots for local media path reads (agent workspace, tmp, etc.). */
+  mediaLocalRoots?: readonly string[];
 };
 
 export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherParams) {
@@ -107,6 +109,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
     mentionTargets,
     accountId,
     identity,
+    mediaLocalRoots,
   } = params;
   const sendReplyToMessageId = skipReplyToInMessages ? undefined : replyToMessageId;
   const threadReplyMode = threadReply === true;
@@ -346,6 +349,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           cfg,
           to: chatId,
           mediaUrl,
+          mediaLocalRoots,
           replyToMessageId: sendReplyToMessageId,
           replyInThread: effectiveReplyInThread,
           accountId,
