@@ -7,6 +7,11 @@ import { readJsonBody } from "./hooks.js";
  * HTML pages, static assets, SSE streams). Headers that restrict framing or set a
  * Content-Security-Policy are intentionally omitted here because some handlers
  * (canvas host, A2UI) serve content that may be loaded inside frames.
+ *
+ * `Cache-Control: no-store` prevents intermediate proxies and browsers from
+ * caching potentially sensitive API responses (model outputs, auth failures,
+ * session data). Individual handlers may override this with a more permissive
+ * value when the response is safe to cache (e.g. static assets).
  */
 export function setDefaultSecurityHeaders(
   res: ServerResponse,
@@ -15,6 +20,7 @@ export function setDefaultSecurityHeaders(
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Cache-Control", "no-store");
   const strictTransportSecurity = opts?.strictTransportSecurity;
   if (typeof strictTransportSecurity === "string" && strictTransportSecurity.length > 0) {
     res.setHeader("Strict-Transport-Security", strictTransportSecurity);

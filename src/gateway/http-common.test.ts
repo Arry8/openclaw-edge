@@ -24,6 +24,12 @@ describe("setDefaultSecurityHeaders", () => {
     );
   });
 
+  it("sets Cache-Control to no-store", () => {
+    const { res, setHeader } = makeMockHttpResponse();
+    setDefaultSecurityHeaders(res);
+    expect(setHeader).toHaveBeenCalledWith("Cache-Control", "no-store");
+  });
+
   it("sets Strict-Transport-Security when provided", () => {
     const { res, setHeader } = makeMockHttpResponse();
     setDefaultSecurityHeaders(res, {
