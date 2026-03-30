@@ -20,6 +20,7 @@ let logFileSequence = 0;
 const MOCK_CLI_SCRIPT = String.raw`#!/usr/bin/env node
 const fs = require("node:fs");
 
+(async () => {
 const args = process.argv.slice(2);
 const logPath = process.env.MOCK_ACPX_LOG;
 const openclawShell = process.env.OPENCLAW_SHELL || "";
@@ -28,6 +29,12 @@ const writeLog = (entry) => {
   fs.appendFileSync(logPath, JSON.stringify(entry) + "\n");
 };
 const emitJson = (payload) => process.stdout.write(JSON.stringify(payload) + "\n");
+const flushAndExit = (code) => process.stdout.write("", () => process.exit(code));
+const emitJsonAndExit = (payload, code = 0) => {
+  emitJson(payload);
+  flushAndExit(code);
+};
+const emitTextAndExit = (text, code = 0) => process.stdout.write(text, () => process.exit(code));
 const emitUpdate = (sessionId, update) =>
   emitJson({
     jsonrpc: "2.0",
@@ -36,11 +43,11 @@ const emitUpdate = (sessionId, update) =>
   });
 
 if (args.includes("--version")) {
-  process.stdout.write("mock-acpx ${ACPX_PINNED_VERSION}\\n");
-  process.exit(0);
+  return emitTextAndExit("mock-acpx ${ACPX_PINNED_VERSION}\\n");
 }
 
 if (args.includes("--help")) {
+<<<<<<< HEAD
   if (process.env.MOCK_ACPX_HELP_SIGNAL) {
     process.kill(process.pid, process.env.MOCK_ACPX_HELP_SIGNAL);
   }
@@ -50,6 +57,9 @@ if (args.includes("--help")) {
   }
   process.stdout.write("mock-acpx help\\n");
   process.exit(0);
+=======
+  return emitTextAndExit("mock-acpx help\\n");
+>>>>>>> 626d537ada (fix(acpx): retain named sessions on queue owner unavailable)
 }
 
 const commandIndex = args.findIndex(
@@ -84,15 +94,14 @@ const setValue = command === "set" ? String(args[commandIndex + 2] || "") : "";
 if (command === "sessions" && args[commandIndex + 1] === "ensure") {
   writeLog({ kind: "ensure", agent, args, sessionName: ensureName });
   if (process.env.MOCK_ACPX_ENSURE_EXIT_1 === "1") {
-    emitJson({
+    return emitJsonAndExit({
       jsonrpc: "2.0",
       id: null,
       error: {
         code: -32603,
         message: "mock ensure failure",
       },
-    });
-    process.exit(1);
+    }, 1);
   }
   if (process.env.MOCK_ACPX_ENSURE_EMPTY === "1") {
     emitJson({ action: "session_ensured", name: ensureName });
@@ -106,7 +115,8 @@ if (command === "sessions" && args[commandIndex + 1] === "ensure") {
       created: true,
     });
   }
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 if (command === "sessions" && args[commandIndex + 1] === "new") {
@@ -123,7 +133,8 @@ if (command === "sessions" && args[commandIndex + 1] === "new") {
       created: true,
     });
   }
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 if (command === "config" && args[commandIndex + 1] === "show") {
@@ -149,26 +160,25 @@ if (command === "config" && args[commandIndex + 1] === "show") {
       project: false,
     },
   });
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 if (command === "cancel") {
   writeLog({ kind: "cancel", agent, args, sessionName: sessionFromOption });
-  emitJson({
+  return emitJsonAndExit({
     acpxSessionId: "sid-" + sessionFromOption,
     cancelled: true,
   });
-  process.exit(0);
 }
 
 if (command === "set-mode") {
   writeLog({ kind: "set-mode", agent, args, sessionName: sessionFromOption, mode: setModeValue });
-  emitJson({
+  return emitJsonAndExit({
     action: "mode_set",
     acpxSessionId: "sid-" + sessionFromOption,
     mode: setModeValue,
   });
-  process.exit(0);
 }
 
 if (command === "set") {
@@ -186,7 +196,8 @@ if (command === "set") {
     key: setKey,
     value: setValue,
   });
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 if (command === "status") {
@@ -205,18 +216,18 @@ if (command === "status") {
     pid: 4242,
     uptime: 120,
   });
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 if (command === "sessions" && args[commandIndex + 1] === "close") {
   writeLog({ kind: "close", agent, args, sessionName: closeName });
-  emitJson({
+  return emitJsonAndExit({
     action: "session_closed",
     acpxRecordId: "rec-" + closeName,
     acpxSessionId: "sid-" + closeName,
     name: closeName,
   });
-  process.exit(0);
 }
 
 if (command === "prompt") {
@@ -268,16 +279,16 @@ if (command === "prompt") {
   });
 
   if (stdinText.includes("trigger-error")) {
-    emitJson({
+    return emitJsonAndExit({
       type: "error",
       code: "-32000",
       message: "mock failure",
-    });
-    process.exit(1);
+    }, 1);
   }
 
   if (stdinText.includes("permission-denied")) {
-    process.exit(5);
+    flushAndExit(5);
+    return;
   }
 
   if (process.env.MOCK_ACPX_PROMPT_SIGNAL) {
@@ -298,7 +309,8 @@ if (command === "prompt") {
       content: { type: "text", text: " gamma" },
     });
     emitJson({ type: "done", stopReason: "end_turn" });
-    process.exit(0);
+    flushAndExit(0);
+    return;
   }
 
   if (stdinText.includes("double-done")) {
@@ -308,7 +320,8 @@ if (command === "prompt") {
     });
     emitJson({ type: "done", stopReason: "end_turn" });
     emitJson({ type: "done", stopReason: "end_turn" });
-    process.exit(0);
+    flushAndExit(0);
+    return;
   }
 
   emitUpdate(sessionFromOption, {
@@ -327,16 +340,17 @@ if (command === "prompt") {
     content: { type: "text", text: "echo:" + stdinText.trim() },
   });
   emitJson({ type: "done", stopReason: "end_turn" });
-  process.exit(0);
+  flushAndExit(0);
+  return;
 }
 
 writeLog({ kind: "unknown", args });
-emitJson({
+emitJsonAndExit({
   type: "error",
   code: "USAGE",
   message: "unknown command",
-});
-process.exit(2);
+}, 2);
+})();
 `;
 
 export async function createMockRuntimeFixture(params?: {
