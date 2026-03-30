@@ -1,12 +1,14 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { Command } from "commander";
-import { buildGatewayConnectionDetails } from "../gateway/call.js";
+import { buildGatewayConnectionDetails, resolveGatewayClientConnection } from "../gateway/call.js";
+import { GatewayClient } from "../gateway/client.js";
 import { parseLogLine } from "../logging/parse-log-line.js";
 import { formatTimestamp, isValidTimeZone } from "../logging/timestamps.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { clearActiveProgressLine } from "../terminal/progress-line.js";
 import { createSafeStreamWriter } from "../terminal/stream-writer.js";
 import { colorize, isRich, theme } from "../terminal/theme.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { formatCliCommand } from "./command-format.js";
 import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-rpc.js";
 
@@ -17,6 +19,10 @@ type LogsTailPayload = {
   lines?: string[];
   truncated?: boolean;
   reset?: boolean;
+};
+
+type LogsAppendedPayload = {
+  lines?: string[];
 };
 
 type LogsCliOptions = {
@@ -59,6 +65,269 @@ async function fetchLogs(
     throw new Error("Unexpected logs.tail response");
   }
   return payload as LogsTailPayload;
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function createAsyncQueue<T>() {
+  const values: T[] = [];
+  const waiters: Array<{
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (reason?: unknown) => void;
+  }> = [];
+  let failure: Error | null = null;
+
+  return {
+    push: (value: T) => {
+      if (failure) {
+        return;
+      }
+      const waiter = waiters.shift();
+      if (waiter) {
+        waiter.resolve(value);
+        return;
+      }
+      values.push(value);
+    },
+    fail: (err: Error) => {
+      if (failure) {
+        return;
+      }
+      failure = err;
+      for (const waiter of waiters.splice(0)) {
+        waiter.reject(err);
+      }
+    },
+    next: async () => {
+      if (values.length > 0) {
+        return values.shift() as T;
+      }
+      if (failure) {
+        throw failure;
+      }
+      return await new Promise<T>((resolve, reject) => {
+        waiters.push({ resolve, reject });
+      });
+    },
+  };
+}
+
+async function fetchLogsWithClient(
+  client: GatewayClient,
+  opts: LogsCliOptions,
+  cursor: number | undefined,
+): Promise<LogsTailPayload> {
+  const limit = parsePositiveInt(opts.limit, 200);
+  const maxBytes = parsePositiveInt(opts.maxBytes, 250_000);
+  const payload = await client.request("logs.tail", { cursor, limit, maxBytes });
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Unexpected logs.tail response");
+  }
+  return payload as LogsTailPayload;
+}
+
+async function createFollowLogsClient(opts: LogsCliOptions): Promise<{
+  client: GatewayClient;
+  methods: Set<string>;
+  waitUntilReady: () => Promise<void>;
+  subscribeToStream: (cursor: number | undefined) => Promise<LogsTailPayload>;
+  nextStreamPayload: () => Promise<LogsTailPayload>;
+}> {
+  const timeoutMs = parsePositiveInt(opts.timeout, 30_000);
+  const { clientOptions, connectionDetails } = await resolveGatewayClientConnection({
+    url: opts.url,
+    token: opts.token,
+    method: "logs.tail",
+    timeoutMs,
+    clientName: GATEWAY_CLIENT_NAMES.CLI,
+    mode: GATEWAY_CLIENT_MODES.CLI,
+  });
+
+  let connected = false;
+  let ready = createDeferred<void>();
+  let methods = new Set<string>();
+  const streamQueue = createAsyncQueue<LogsTailPayload>();
+
+  const resetReady = () => {
+    ready = createDeferred<void>();
+  };
+
+  const client = new GatewayClient({
+    ...clientOptions,
+    onHelloOk: (hello) => {
+      connected = true;
+      methods = new Set(Array.isArray(hello.features?.methods) ? hello.features.methods : []);
+      ready.resolve();
+    },
+    onConnectError: (err) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      ready.reject(error);
+      streamQueue.fail(error);
+    },
+    onEvent: (evt) => {
+      if (evt.event !== "logs.appended") {
+        return;
+      }
+      const payload = evt.payload as LogsAppendedPayload | undefined;
+      streamQueue.push({
+        lines: Array.isArray(payload?.lines) ? payload.lines : [],
+      });
+    },
+    onClose: () => {
+      connected = false;
+      resetReady();
+      streamQueue.fail(new Error("gateway log stream disconnected"));
+    },
+  });
+
+  const waitUntilReady = async () => {
+    if (connected) {
+      return;
+    }
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      await Promise.race([
+        ready.promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`gateway timeout after ${timeoutMs}ms\n${connectionDetails.message}`));
+          }, timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  };
+
+  client.start();
+  await waitUntilReady();
+
+  async function subscribeToStream(cursor: number | undefined): Promise<LogsTailPayload> {
+    const limit = parsePositiveInt(opts.limit, 200);
+    const maxBytes = parsePositiveInt(opts.maxBytes, 250_000);
+    const payload = await client.request("logs.subscribe", {
+      cursor,
+      limit,
+      maxBytes,
+    });
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Unexpected logs.subscribe response");
+    }
+    return payload as LogsTailPayload;
+  }
+
+  return {
+    client,
+    methods,
+    waitUntilReady,
+    subscribeToStream,
+    nextStreamPayload: async () => await streamQueue.next(),
+  };
+}
+
+function emitLogsPayload(params: {
+  payload: LogsTailPayload;
+  first: boolean;
+  jsonMode: boolean;
+  pretty: boolean;
+  rich: boolean;
+  localTime: boolean;
+  emitJsonLine: (payload: Record<string, unknown>, toStdErr?: boolean) => boolean;
+  logLine: (text: string) => boolean;
+  errorLine: (text: string) => boolean;
+}): boolean {
+  const { payload, first, jsonMode, pretty, rich, localTime, emitJsonLine, logLine, errorLine } =
+    params;
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  if (jsonMode) {
+    if (first) {
+      if (
+        !emitJsonLine({
+          type: "meta",
+          file: payload.file,
+          cursor: payload.cursor,
+          size: payload.size,
+        })
+      ) {
+        return false;
+      }
+    }
+    for (const line of lines) {
+      const parsed = parseLogLine(line);
+      if (parsed) {
+        if (!emitJsonLine({ type: "log", ...parsed })) {
+          return false;
+        }
+      } else {
+        if (!emitJsonLine({ type: "raw", raw: line })) {
+          return false;
+        }
+      }
+    }
+    if (payload.truncated) {
+      if (
+        !emitJsonLine({
+          type: "notice",
+          message: "Log tail truncated (increase --max-bytes).",
+        })
+      ) {
+        return false;
+      }
+    }
+    if (payload.reset) {
+      if (
+        !emitJsonLine({
+          type: "notice",
+          message: "Log cursor reset (file rotated).",
+        })
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (first && payload.file) {
+    const prefix = pretty ? colorize(rich, theme.muted, "Log file:") : "Log file:";
+    if (!logLine(`${prefix} ${payload.file}`)) {
+      return false;
+    }
+  }
+  for (const line of lines) {
+    if (
+      !logLine(
+        formatLogLine(line, {
+          pretty,
+          rich,
+          localTime,
+        }),
+      )
+    ) {
+      return false;
+    }
+  }
+  if (payload.truncated) {
+    if (!errorLine("Log tail truncated (increase --max-bytes).")) {
+      return false;
+    }
+  }
+  if (payload.reset) {
+    if (!errorLine("Log cursor reset (file rotated).")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function formatLogTimestamp(
@@ -219,105 +488,113 @@ export function registerLogsCli(program: Command) {
     const rich = isRich() && opts.color !== false;
     const localTime =
       Boolean(opts.localTime) || (!!process.env.TZ && isValidTimeZone(process.env.TZ));
+    const followClient = opts.follow ? await createFollowLogsClient(opts) : null;
+    const supportsStreamingFollow =
+      followClient &&
+      followClient.methods.has("logs.subscribe") &&
+      followClient.methods.has("logs.unsubscribe");
 
-    while (true) {
-      let payload: LogsTailPayload;
-      // Show progress spinner only on first fetch, not during follow polling
-      const showProgress = first && !opts.follow;
-      try {
-        payload = await fetchLogs(opts, cursor, showProgress);
-      } catch (err) {
-        emitGatewayError(err, opts, jsonMode ? "json" : "text", rich, emitJsonLine, errorLine);
-        process.exit(1);
-        return;
-      }
-      const lines = Array.isArray(payload.lines) ? payload.lines : [];
-      if (jsonMode) {
-        if (first) {
+    try {
+      if (supportsStreamingFollow) {
+        try {
+          const payload = await followClient.subscribeToStream(cursor);
           if (
-            !emitJsonLine({
-              type: "meta",
-              file: payload.file,
-              cursor: payload.cursor,
-              size: payload.size,
+            !emitLogsPayload({
+              payload,
+              first,
+              jsonMode,
+              pretty,
+              rich,
+              localTime,
+              emitJsonLine,
+              logLine,
+              errorLine,
             })
           ) {
             return;
           }
-        }
-        for (const line of lines) {
-          const parsed = parseLogLine(line);
-          if (parsed) {
-            if (!emitJsonLine({ type: "log", ...parsed })) {
-              return;
-            }
-          } else {
-            if (!emitJsonLine({ type: "raw", raw: line })) {
-              return;
-            }
-          }
-        }
-        if (payload.truncated) {
-          if (
-            !emitJsonLine({
-              type: "notice",
-              message: "Log tail truncated (increase --max-bytes).",
-            })
-          ) {
-            return;
-          }
-        }
-        if (payload.reset) {
-          if (
-            !emitJsonLine({
-              type: "notice",
-              message: "Log cursor reset (file rotated).",
-            })
-          ) {
-            return;
-          }
-        }
-      } else {
-        if (first && payload.file) {
-          const prefix = pretty ? colorize(rich, theme.muted, "Log file:") : "Log file:";
-          if (!logLine(`${prefix} ${payload.file}`)) {
-            return;
-          }
-        }
-        for (const line of lines) {
-          if (
-            !logLine(
-              formatLogLine(line, {
+          cursor =
+            typeof payload.cursor === "number" && Number.isFinite(payload.cursor)
+              ? payload.cursor
+              : cursor;
+          first = false;
+          while (true) {
+            const streamedPayload = await followClient.nextStreamPayload();
+            if (
+              !emitLogsPayload({
+                payload: streamedPayload,
+                first,
+                jsonMode,
                 pretty,
                 rich,
                 localTime,
-              }),
-            )
-          ) {
-            return;
+                emitJsonLine,
+                logLine,
+                errorLine,
+              })
+            ) {
+              return;
+            }
+            first = false;
           }
-        }
-        if (payload.truncated) {
-          if (!errorLine("Log tail truncated (increase --max-bytes).")) {
-            return;
-          }
-        }
-        if (payload.reset) {
-          if (!errorLine("Log cursor reset (file rotated).")) {
-            return;
-          }
+        } catch (err) {
+          emitGatewayError(err, opts, jsonMode ? "json" : "text", rich, emitJsonLine, errorLine);
+          process.exit(1);
+          return;
         }
       }
-      cursor =
-        typeof payload.cursor === "number" && Number.isFinite(payload.cursor)
-          ? payload.cursor
-          : cursor;
-      first = false;
 
-      if (!opts.follow) {
-        return;
+      while (true) {
+        let payload: LogsTailPayload;
+        // Show progress spinner only on first fetch, not during follow polling
+        const showProgress = first && !opts.follow;
+        try {
+          if (followClient) {
+            await followClient.waitUntilReady();
+            payload = await fetchLogsWithClient(followClient.client, opts, cursor);
+          } else {
+            payload = await fetchLogs(opts, cursor, showProgress);
+          }
+        } catch (err) {
+          emitGatewayError(err, opts, jsonMode ? "json" : "text", rich, emitJsonLine, errorLine);
+          process.exit(1);
+          return;
+        }
+        if (
+          !emitLogsPayload({
+            payload,
+            first,
+            jsonMode,
+            pretty,
+            rich,
+            localTime,
+            emitJsonLine,
+            logLine,
+            errorLine,
+          })
+        ) {
+          return;
+        }
+        cursor =
+          typeof payload.cursor === "number" && Number.isFinite(payload.cursor)
+            ? payload.cursor
+            : cursor;
+        first = false;
+
+        if (!opts.follow) {
+          return;
+        }
+        await delay(interval);
       }
-      await delay(interval);
+    } finally {
+      if (followClient) {
+        if (supportsStreamingFollow) {
+          await followClient.client.request("logs.unsubscribe").catch(() => {});
+        }
+        await followClient.client.stopAndWait().catch(() => {
+          followClient.client.stop();
+        });
+      }
     }
   });
 }
