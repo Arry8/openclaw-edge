@@ -145,8 +145,9 @@ export async function loadInternalHooks(
         );
         loadedCount++;
       } catch (err) {
-        log.error(
-          `Failed to load hook ${safeLogValue(entry.hook.name)}: ${safeLogValue(err instanceof Error ? err.message : String(err))}`,
+        const code = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
+        log.warn(
+          `Hook "${safeLogValue(entry.hook.name)}" failed to load: ${safeLogValue(entry.hook.handlerPath)} (${safeLogValue(code)}). Skipping.`,
         );
       }
     }
@@ -183,8 +184,8 @@ export async function loadInternalHooks(
       }
       const modulePathSafe = resolveExistingRealpath(modulePath);
       if (!modulePathSafe) {
-        log.error(
-          `Handler module path could not be resolved with realpath: ${safeLogValue(rawModule)}`,
+        log.warn(
+          `Hook "${safeLogValue(handlerConfig.event)}" failed to load: ${safeLogValue(rawModule)} (MODULE_NOT_FOUND). Skipping.`,
         );
         continue;
       }
@@ -234,8 +235,9 @@ export async function loadInternalHooks(
       );
       loadedCount++;
     } catch (err) {
-      log.error(
-        `Failed to load hook handler from ${safeLogValue(handlerConfig.module)}: ${safeLogValue(err instanceof Error ? err.message : String(err))}`,
+      const code = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
+      log.warn(
+        `Hook "${safeLogValue(handlerConfig.event)}" failed to load: ${safeLogValue(handlerConfig.module)} (${safeLogValue(code)}). Skipping.`,
       );
     }
   }
