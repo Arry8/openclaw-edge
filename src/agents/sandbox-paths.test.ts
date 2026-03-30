@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
-import { resolveSandboxedMediaSource } from "./sandbox-paths.js";
+import { resolveSandboxedMediaSource, resolveSandboxInputPath } from "./sandbox-paths.js";
 
 async function withSandboxRoot<T>(run: (sandboxDir: string) => Promise<T>) {
   const sandboxDir = await fs.mkdtemp(path.join(os.tmpdir(), "sandbox-media-"));
@@ -296,5 +296,33 @@ describe("resolveSandboxedMediaSource", () => {
     } finally {
       platformSpy.mockRestore();
     }
+  });
+});
+
+describe("resolveSandboxInputPath – Windows drive letter paths", () => {
+  it("treats a Windows drive-letter path as absolute and returns it unchanged", () => {
+    // On POSIX hosts, path.isAbsolute("C:\\Users\\...") returns false.
+    // The fix adds a WIN_DRIVE_LETTER_RE fallback so Windows paths are not
+    // incorrectly joined with the workspace root, preventing doubled paths
+    // like "C:\\workspace\\C:\\workspace\\file.md". See #54039.
+    // The path must be returned as-is — POSIX path.resolve would mangle it.
+    const result = resolveSandboxInputPath(
+      "C:\\Users\\Dan\\.openclaw\\workspace\\HEARTBEAT.md",
+      "/should/not/be/prepended",
+    );
+    expect(result).toBe("C:\\Users\\Dan\\.openclaw\\workspace\\HEARTBEAT.md");
+  });
+
+  it("treats a forward-slash Windows drive-letter path as absolute and returns it unchanged", () => {
+    const result = resolveSandboxInputPath(
+      "D:/Projects/workspace/README.md",
+      "/should/not/be/prepended",
+    );
+    expect(result).toBe("D:/Projects/workspace/README.md");
+  });
+
+  it("still resolves relative paths against cwd", () => {
+    const result = resolveSandboxInputPath("memory/notes.md", "/workspace");
+    expect(result).toBe(path.resolve("/workspace", "memory/notes.md"));
   });
 });
