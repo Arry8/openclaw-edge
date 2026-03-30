@@ -1,0 +1,81 @@
+# Authored by: cc (Claude Code) | 2026-03-30
+# mega-merge.yml — Scheduled integration of upstream openclaw PRs onto mega/latest.
+# Runs mega-merge.ts on mega/latest with continuous background builds.
+# Creates a GH release every 500 merged PRs and one final release at end.
+# Manual trigger available via workflow_dispatch with optional overrides.
+
+name: mega-merge
+
+on:
+  schedule:
+    - cron: "0 2 * * 2" # 02:00 UTC every Tuesday
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max PRs to attempt (0 = unlimited)"
+        required: false
+        default: "0"
+      release_interval:
+        description: "Create a GH release every N merged PRs (0 = only at end)"
+        required: false
+        default: "500"
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours — full run can take a while
+
+    steps:
+      - name: Checkout mega/latest
+        uses: actions/checkout@v4
+        with:
+          ref: mega/latest
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/openclaw/openclaw.git
+
+      - name: Configure git identity
+        run: |
+          git config user.name "mega-merge[bot]"
+          git config user.email "mega-merge[bot]@users.noreply.github.com"
+
+      - name: Run mega-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '0' }}"
+          RELEASE_INTERVAL="${{ github.event.inputs.release_interval || '500' }}"
+          LIMIT_ARGS=""
+          if [ "$LIMIT" != "0" ]; then
+            LIMIT_ARGS="--limit $LIMIT"
+          fi
+          bun scripts/mega-merge.ts \
+            --continuous-build \
+            --resume \
+            --create-release \
+            --release-interval "$RELEASE_INTERVAL" \
+            $LIMIT_ARGS
+
+      - name: Push mega/latest
+        run: git push origin mega/latest
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mega-merge-report-${{ github.run_id }}
+          path: |
+            docs/mega-merge-report.json
+            docs/mega-merge-changelog.md
+          if-no-files-found: ignore
