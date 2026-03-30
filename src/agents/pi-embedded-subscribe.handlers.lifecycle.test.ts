@@ -7,9 +7,16 @@ vi.mock("../infra/agent-events.js", () => ({
   emitAgentEvent: vi.fn(),
 }));
 
+vi.mock("../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => null,
+}));
+
 function createContext(
   lastAssistant: unknown,
-  overrides?: { onAgentEvent?: (event: unknown) => void },
+  overrides?: {
+    onAgentEvent?: (event: unknown) => void;
+    hookRunner?: EmbeddedPiSubscribeContext["hookRunner"];
+  },
 ): EmbeddedPiSubscribeContext {
   const onBlockReply = vi.fn();
   return {
@@ -20,6 +27,7 @@ function createContext(
       onAgentEvent: overrides?.onAgentEvent,
       onBlockReply,
     },
+    hookRunner: overrides?.hookRunner,
     state: {
       lastAssistant: lastAssistant as EmbeddedPiSubscribeContext["state"]["lastAssistant"],
       pendingCompactionRetry: 0,
@@ -43,7 +51,7 @@ function createContext(
 }
 
 describe("handleAgentEnd", () => {
-  it("logs the resolved error message when run ends with assistant error", () => {
+  it("logs the resolved error message when run ends with assistant error", async () => {
     const onAgentEvent = vi.fn();
     const ctx = createContext(
       {
@@ -55,7 +63,7 @@ describe("handleAgentEnd", () => {
       { onAgentEvent },
     );
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     const warn = vi.mocked(ctx.log.warn);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -77,7 +85,7 @@ describe("handleAgentEnd", () => {
     });
   });
 
-  it("attaches raw provider error metadata and includes model/provider in console output", () => {
+  it("attaches raw provider error metadata and includes model/provider in console output", async () => {
     const ctx = createContext({
       role: "assistant",
       stopReason: "error",
@@ -87,7 +95,7 @@ describe("handleAgentEnd", () => {
       content: [{ type: "text", text: "" }],
     });
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     const warn = vi.mocked(ctx.log.warn);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -103,7 +111,7 @@ describe("handleAgentEnd", () => {
     });
   });
 
-  it("sanitizes model and provider before writing consoleMessage", () => {
+  it("sanitizes model and provider before writing consoleMessage", async () => {
     const ctx = createContext({
       role: "assistant",
       stopReason: "error",
@@ -113,7 +121,7 @@ describe("handleAgentEnd", () => {
       content: [{ type: "text", text: "" }],
     });
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     const warn = vi.mocked(ctx.log.warn);
     const meta = warn.mock.calls[0]?.[1];
@@ -127,7 +135,7 @@ describe("handleAgentEnd", () => {
     expect(meta?.consoleMessage).not.toContain("\u001b");
   });
 
-  it("redacts logged error text before emitting lifecycle events", () => {
+  it("redacts logged error text before emitting lifecycle events", async () => {
     const onAgentEvent = vi.fn();
     const ctx = createContext(
       {
@@ -139,7 +147,7 @@ describe("handleAgentEnd", () => {
       { onAgentEvent },
     );
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     const warn = vi.mocked(ctx.log.warn);
     expect(warn.mock.calls[0]?.[1]).toMatchObject({
@@ -156,21 +164,21 @@ describe("handleAgentEnd", () => {
     });
   });
 
-  it("keeps non-error run-end logging on debug only", () => {
+  it("keeps non-error run-end logging on debug only", async () => {
     const ctx = createContext(undefined);
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     expect(ctx.log.warn).not.toHaveBeenCalled();
     expect(ctx.log.debug).toHaveBeenCalledWith("embedded run agent end: runId=run-1 isError=false");
   });
 
-  it("flushes orphaned tool media as a media-only block reply", () => {
+  it("flushes orphaned tool media as a media-only block reply", async () => {
     const ctx = createContext(undefined);
     ctx.state.pendingToolMediaUrls = ["/tmp/reply.opus"];
     ctx.state.pendingToolAudioAsVoice = true;
 
-    handleAgentEnd(ctx);
+    await handleAgentEnd(ctx);
 
     expect(ctx.emitBlockReply).toHaveBeenCalledWith({
       mediaUrls: ["/tmp/reply.opus"],
@@ -178,5 +186,98 @@ describe("handleAgentEnd", () => {
     });
     expect(ctx.state.pendingToolMediaUrls).toEqual([]);
     expect(ctx.state.pendingToolAudioAsVoice).toBe(false);
+  });
+
+  describe("agent_error hook", () => {
+    it("broadcasts hook replacement message instead of raw error", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "403: Key limit exceeded",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => ({ message: "⚠️ Me he quedado sin tokens" })),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: "⚠️ Me he quedado sin tokens",
+        },
+      });
+    });
+
+    it("broadcasts original error when hook returns no message", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "connection refused",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => undefined),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phase: "error",
+            error: expect.stringContaining("connection refused"),
+          }),
+        }),
+      );
+    });
+
+    it("broadcasts original error when hook throws", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "connection refused",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => {
+              throw new Error("hook failure");
+            }),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phase: "error",
+            error: expect.stringContaining("connection refused"),
+          }),
+        }),
+      );
+    });
   });
 });

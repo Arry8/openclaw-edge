@@ -57,7 +57,10 @@ export function createEmbeddedPiSessionEventHandler(ctx: EmbeddedPiSubscribeCont
         handleAutoCompactionEnd(ctx, evt as never);
         return;
       case "agent_end":
-        handleAgentEnd(ctx);
+        // Async handler — best-effort, non-blocking.
+        handleAgentEnd(ctx).catch((err) => {
+          ctx.log.debug(`agent_end handler failed: ${String(err)}`);
+        });
         return;
       default:
         return;
