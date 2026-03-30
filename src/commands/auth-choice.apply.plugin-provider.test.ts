@@ -106,7 +106,7 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
     applyAuthProfileConfig.mockImplementation((config) => config);
   });
 
-  it("does not override agent model when default model application is deferred (issue #24170)", async () => {
+  it("does not override agent model when inherited default exists (issue #24170)", async () => {
     const provider = buildProvider();
     resolvePluginProviders.mockReturnValue([provider]);
     resolveProviderPluginChoice.mockReturnValue({
@@ -117,15 +117,53 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
     const result = await applyAuthChoiceLoadedPluginProvider(
       buildParams({
         setDefaultModel: false,
+        config: {
+          agents: {
+            defaults: {
+              model: "claude-3.5-sonnet",
+            },
+          },
+        },
       }),
     );
 
-    // When setDefaultModel is false, agent should inherit from agents.defaults.model
-    // instead of baking in the provider's defaultModel. See issue #24170.
+    // When setDefaultModel is false and inherited default exists,
+    // agent should inherit from agents.defaults.model instead of
+    // baking in the provider's defaultModel. See issue #24170.
     expect(result).toEqual({
-      config: {},
+      config: {
+        agents: {
+          defaults: {
+            model: "claude-3.5-sonnet",
+          },
+        },
+      },
     });
     expect(result?.agentModelOverride).toBeUndefined();
+    expect(runProviderModelSelectedHook).not.toHaveBeenCalled();
+  });
+
+  it("returns agentModelOverride when no inherited default exists", async () => {
+    const provider = buildProvider();
+    resolvePluginProviders.mockReturnValue([provider]);
+    resolveProviderPluginChoice.mockReturnValue({
+      provider,
+      method: provider.auth[0],
+    });
+
+    const result = await applyAuthChoiceLoadedPluginProvider(
+      buildParams({
+        setDefaultModel: false,
+        config: {},
+      }),
+    );
+
+    // When no inherited default model exists, we must return the provider's
+    // default as agentModelOverride to avoid creating an agent with no model.
+    expect(result).toEqual({
+      config: {},
+      agentModelOverride: "ollama/qwen3:4b",
+    });
     expect(runProviderModelSelectedHook).not.toHaveBeenCalled();
   });
 
