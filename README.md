@@ -12,7 +12,7 @@ Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html)
 
 ## What it produces
 
-The `mega/latest` branch starts from a fixed upstream release tag and has every clean-merging open PR applied on top. It is not rebased as new upstream releases ship — the goal is to exhaust the full PR queue against a stable base. Updated daily via GitHub Actions.
+The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging open PR applied on top. It is not rebased as new upstream releases ship — the goal is to exhaust the full PR queue against a stable base. Updated daily via GitHub Actions.
 
 - **Phase 1**: all ~6,600 open PRs (`state=open`)
 - **Phase 2**: all ~16,900 closed-but-not-merged PRs (`state=closed`, `merged_at=null`)
@@ -27,7 +27,7 @@ The `mega/latest` branch starts from a fixed upstream release tag and has every 
 ## How it works
 
 ```
-upstream release tag (e.g. v2026.3.28)
+upstream release tag v2026.3.28 (fixed base)
         │
         ▼
   fetch all open PR refs  ──►  sort by priority tier
