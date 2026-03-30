@@ -329,6 +329,19 @@ export function resolveFeishuRuntimeAccount(
  */
 export function listEnabledFeishuAccounts(cfg: ClawdbotConfig): ResolvedFeishuAccount[] {
   return listFeishuAccountIds(cfg)
-    .map((accountId) => resolveFeishuAccount({ cfg, accountId }))
-    .filter((account) => account.enabled && account.configured);
+    .map((accountId) => {
+      try {
+        return resolveFeishuAccount({ cfg, accountId });
+      } catch (err) {
+        console.warn(
+          `feishu: skipping account "${accountId}": ${err instanceof Error ? err.message : String(err)}`,
+          err,
+        );
+        return null;
+      }
+    })
+    .filter(
+      (account): account is ResolvedFeishuAccount =>
+        account !== null && account.enabled && account.configured,
+    );
 }
