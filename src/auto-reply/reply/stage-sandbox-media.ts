@@ -43,7 +43,14 @@ export async function stageSandboxMedia(params: {
   const remoteMediaCacheDir = ctx.MediaRemoteHost
     ? path.join(CONFIG_DIR, "media", "remote-cache", sessionKey)
     : null;
-  const effectiveWorkspaceDir = sandbox?.workspaceDir ?? remoteMediaCacheDir;
+  // When sandbox is off but a workspace dir is provided and workspaceOnly is enabled,
+  // stage media there so that workspaceOnly restrictions don't block native image
+  // injection and tool access. Skip for workspaceOnly: false — absolute paths work fine.
+  const workspaceFallbackDir =
+    !sandbox && !remoteMediaCacheDir && workspaceDir && cfg.tools?.fs?.workspaceOnly
+      ? workspaceDir
+      : null;
+  const effectiveWorkspaceDir = sandbox?.workspaceDir ?? remoteMediaCacheDir ?? workspaceFallbackDir;
   if (!effectiveWorkspaceDir) {
     return;
   }
@@ -74,7 +81,8 @@ export async function stageSandboxMedia(params: {
     if (!fileName) {
       continue;
     }
-    const relativeDest = sandbox ? path.join("media", "inbound", fileName) : fileName;
+    const useSubdir = Boolean(sandbox) || Boolean(workspaceFallbackDir);
+    const relativeDest = useSubdir ? path.join("media", "inbound", fileName) : fileName;
     const dest = path.join(effectiveWorkspaceDir, relativeDest);
 
     try {
@@ -105,8 +113,11 @@ export async function stageSandboxMedia(params: {
       continue;
     }
 
-    // For sandbox use relative path, for remote cache use absolute path
-    const stagedPath = sandbox ? path.posix.join("media", "inbound", fileName) : dest;
+    // For sandbox or workspace fallback use relative path, for remote cache use absolute path
+    const stagedPath =
+      sandbox || workspaceFallbackDir
+        ? path.posix.join("media", "inbound", fileName)
+        : dest;
     staged.set(source, stagedPath);
   }
 
