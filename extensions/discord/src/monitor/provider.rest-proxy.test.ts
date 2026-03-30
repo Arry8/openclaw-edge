@@ -39,8 +39,9 @@ describe("resolveDiscordRestFetch", () => {
     undiciFetchMock.mockClear().mockResolvedValue(new Response("ok", { status: 200 }));
     proxyAgentSpy.mockClear();
     const fetcher = resolveDiscordRestFetch("http://proxy.test:8080", runtime);
+    expect(fetcher).toBeDefined();
 
-    await fetcher("https://discord.com/api/v10/oauth2/applications/@me");
+    await fetcher!("https://discord.com/api/v10/oauth2/applications/@me");
 
     expect(proxyAgentSpy).toHaveBeenCalledWith("http://proxy.test:8080");
     expect(undiciFetchMock).toHaveBeenCalledWith(
@@ -51,6 +52,17 @@ describe("resolveDiscordRestFetch", () => {
     );
     expect(runtime.log).toHaveBeenCalledWith("discord: rest proxy enabled");
     expect(runtime.error).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when no proxy URL is configured", () => {
+    const runtime = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    } as const;
+    expect(resolveDiscordRestFetch(undefined, runtime)).toBeUndefined();
+    expect(resolveDiscordRestFetch("", runtime)).toBeUndefined();
+    expect(resolveDiscordRestFetch("  ", runtime)).toBeUndefined();
   });
 
   it("falls back to global fetch when proxy URL is invalid", async () => {

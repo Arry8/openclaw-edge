@@ -6,10 +6,10 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 export function resolveDiscordRestFetch(
   proxyUrl: string | undefined,
   runtime: RuntimeEnv,
-): typeof fetch {
+): typeof fetch | undefined {
   const proxy = proxyUrl?.trim();
   if (!proxy) {
-    return fetch;
+    return undefined;
   }
   try {
     const agent = new ProxyAgent(proxy);

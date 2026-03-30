@@ -83,6 +83,7 @@ export function createDiscordMonitorClient(params: {
   createGatewaySupervisor: typeof createDiscordGatewaySupervisor;
   createAutoPresenceController: typeof createDiscordAutoPresenceController;
   isDisallowedIntentsError: (err: unknown) => boolean;
+  restFetch?: typeof fetch;
 }) {
   let autoPresenceController: DiscordAutoPresenceController | null = null;
   const clientPlugins: Plugin[] = [
@@ -115,6 +116,7 @@ export function createDiscordMonitorClient(params: {
       token: params.token,
       autoDeploy: false,
       eventQueue: eventQueueOpts,
+      ...(params.restFetch ? { requestOptions: { fetch: params.restFetch } } : {}),
     },
     {
       commands: params.commands,
