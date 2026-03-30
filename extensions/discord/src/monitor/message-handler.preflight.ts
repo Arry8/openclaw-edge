@@ -256,22 +256,8 @@ export async function preflightDiscordMessage(
 
   const pluralkitConfig = params.discordConfig?.pluralkit;
   const webhookId = resolveDiscordWebhookId(message);
-  const shouldCheckPluralKit = Boolean(pluralkitConfig?.enabled) && !webhookId;
   let pluralkitInfo: Awaited<ReturnType<typeof fetchPluralKitMessageInfo>> = null;
-  if (shouldCheckPluralKit) {
-    try {
-      pluralkitInfo = await fetchPluralKitMessageInfo({
-        messageId: message.id,
-        config: pluralkitConfig,
-      });
-      if (isPreflightAborted(params.abortSignal)) {
-        return null;
-      }
-    } catch (err) {
-      logVerbose(`discord: pluralkit lookup failed for ${message.id}: ${String(err)}`);
-    }
-  }
-  const sender = resolveDiscordSenderIdentity({
+  let sender = resolveDiscordSenderIdentity({
     author,
     member: params.data.member,
     pluralkitInfo,
@@ -481,6 +467,26 @@ export async function preflightDiscordMessage(
     logVerbose(`discord: drop bound-thread webhook echo message ${message.id}`);
     return null;
   }
+
+  if (pluralkitConfig?.enabled) {
+    try {
+      pluralkitInfo = await fetchPluralKitMessageInfo({
+        messageId: message.id,
+        config: pluralkitConfig,
+      });
+      if (isPreflightAborted(params.abortSignal)) {
+        return null;
+      }
+      sender = resolveDiscordSenderIdentity({
+        author,
+        member: params.data.member,
+        pluralkitInfo,
+      });
+    } catch (err) {
+      logVerbose(`discord: pluralkit lookup failed for ${message.id}: ${String(err)}`);
+    }
+  }
+
   const boundSessionKey = conversationRuntime.isPluginOwnedSessionBindingRecord(threadBinding)
     ? ""
     : threadBinding?.targetSessionKey?.trim();
@@ -921,6 +927,7 @@ export async function preflightDiscordMessage(
     messageChannelId,
     author,
     sender,
+    canonicalMessageId: pluralkitInfo?.original?.trim() || undefined,
     channelInfo,
     channelName,
     isGuildMessage,
