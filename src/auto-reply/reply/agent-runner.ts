@@ -156,15 +156,12 @@ export async function runReplyAgent(params: {
     originatingChannel: sessionCtx.OriginatingChannel,
     provider: sessionCtx.Surface ?? sessionCtx.Provider,
   }) as OriginatingChannelType | undefined;
-  // Prefer pre-resolved replyToMode (includes per-channel overrides) over re-resolving from account config.
-  const replyToMode =
-    sessionCtx.ReplyToMode ??
-    resolveReplyToMode(
-      followupRun.run.config,
-      replyToChannel,
-      sessionCtx.AccountId,
-      sessionCtx.ChatType,
-    );
+  const replyToMode = resolveReplyToMode(
+    followupRun.run.config,
+    replyToChannel,
+    sessionCtx.AccountId,
+    sessionCtx.ChatType,
+  );
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   const cfg = followupRun.run.config;
   const normalizeReplyMediaPaths = createReplyMediaPathNormalizer({
