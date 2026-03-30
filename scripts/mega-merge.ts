@@ -215,6 +215,21 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Kill orphaned tsgo/tsgolint processes left by interrupted builds.
+function killOrphanedTsgo(): void {
+  const result = run("pgrep", ["-f", "tsgo|tsgolint"]);
+  if (!result.ok || !result.stdout) return;
+  const self = process.pid;
+  const toKill = result.stdout
+    .split("\n")
+    .map((p) => p.trim())
+    .filter((p) => p && parseInt(p, 10) !== self);
+  if (toKill.length > 0) {
+    warn(`Found ${toKill.length} orphaned tsgo/tsgolint process(es) — killing: ${toKill.join(", ")}`);
+    run("kill", toKill);
+  }
+}
+
 // ── Continuous build manager ─────────────────────────────────────────────────
 
 // Manages a background pnpm build running in a git worktree that is kept at the
@@ -754,27 +769,7 @@ function appendToHistory(entry: ReportEntry): void {
 async function main() {
   const startMs = Date.now();
 
-  // ── Kill orphaned tsgo/tsgolint processes ────────────────────────────────
-  // Prior interrupted builds leave tsgo grandchildren running with no parent.
-  // They consume significant CPU/RAM; kill them before starting a new run.
-  {
-    const orphanResult = run("pgrep", ["-f", "tsgo|tsgolint"]);
-    if (orphanResult.ok && orphanResult.stdout) {
-      const pids = orphanResult.stdout
-        .split("\n")
-        .map((p) => p.trim())
-        .filter(Boolean);
-      // Exclude our own process
-      const self = process.pid;
-      const toKill = pids.filter((p) => parseInt(p, 10) !== self);
-      if (toKill.length > 0) {
-        warn(
-          `Found ${toKill.length} orphaned tsgo/tsgolint process(es) — killing: ${toKill.join(", ")}`,
-        );
-        run("kill", toKill);
-      }
-    }
-  }
+  killOrphanedTsgo();
 
   // Verify we're in a git repo and the upstream remote exists
   const remoteCheck = run("git", ["remote", "get-url", UPSTREAM]);
@@ -1204,6 +1199,9 @@ async function main() {
     const tag = `mega/${tagTs}`;
     createGhRelease({ tag, runDate, baseCommit, mergedEntries });
   }
+
+  // Clean up any tsgo/tsgolint processes spawned during the build steps.
+  killOrphanedTsgo();
 }
 
 main().catch((err) => {
