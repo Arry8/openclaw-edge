@@ -352,6 +352,7 @@ export const ToolsWebXSearchSchema = z
   .object({
     enabled: z.boolean().optional(),
     apiKey: SecretInputSchema.optional().register(sensitive),
+    baseUrl: z.string().optional(),
     model: z.string().optional(),
     inlineCitations: z.boolean().optional(),
     maxTurns: z.number().int().optional(),
