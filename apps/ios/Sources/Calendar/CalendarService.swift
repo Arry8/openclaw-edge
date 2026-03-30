@@ -3,10 +3,45 @@ import Foundation
 import OpenClawKit
 
 final class CalendarService: CalendarServicing {
+    private final class PermissionRequestBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Bool, Never>?
+        private var hasResumed = false
+
+        func install(_ continuation: CheckedContinuation<Bool, Never>) {
+            self.lock.lock()
+            if self.hasResumed {
+                self.lock.unlock()
+                continuation.resume(returning: false)
+                return
+            }
+            self.continuation = continuation
+            self.lock.unlock()
+        }
+
+        func resume(_ value: Bool) {
+            self.lock.lock()
+            guard !self.hasResumed else {
+                self.lock.unlock()
+                return
+            }
+            self.hasResumed = true
+            let continuation = self.continuation
+            self.continuation = nil
+            self.lock.unlock()
+            continuation?.resume(returning: value)
+        }
+    }
+
     func events(params: OpenClawCalendarEventsParams) async throws -> OpenClawCalendarEventsPayload {
         let store = EKEventStore()
         let status = EKEventStore.authorizationStatus(for: .event)
-        let authorized = EventKitAuthorization.allowsRead(status: status)
+        let authorized: Bool
+        if status == .notDetermined || status == .writeOnly {
+            authorized = await Self.requestEventAccess(store: store)
+        } else {
+            authorized = EventKitAuthorization.allowsRead(status: status)
+        }
         guard authorized else {
             throw NSError(domain: "Calendar", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "CALENDAR_PERMISSION_REQUIRED: grant Calendar permission",
@@ -39,7 +74,12 @@ final class CalendarService: CalendarServicing {
     func add(params: OpenClawCalendarAddParams) async throws -> OpenClawCalendarAddPayload {
         let store = EKEventStore()
         let status = EKEventStore.authorizationStatus(for: .event)
-        let authorized = EventKitAuthorization.allowsWrite(status: status)
+        let authorized: Bool
+        if status == .notDetermined {
+            authorized = await Self.requestWriteOnlyEventAccess(store: store)
+        } else {
+            authorized = EventKitAuthorization.allowsWrite(status: status)
+        }
         guard authorized else {
             throw NSError(domain: "Calendar", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "CALENDAR_PERMISSION_REQUIRED: grant Calendar permission",
@@ -95,6 +135,69 @@ final class CalendarService: CalendarServicing {
         return OpenClawCalendarAddPayload(event: payload)
     }
 
+    private static func requestEventAccess(store: EKEventStore) async -> Bool {
+        await self.awaitPermissionRequest { completion in
+            if #available(iOS 17.0, *) {
+                store.requestFullAccessToEvents { granted, _ in
+                    completion(granted)
+                }
+            } else {
+                store.requestAccess(to: .event) { granted, _ in
+                    completion(granted)
+                }
+            }
+        }
+    }
+
+    private static func requestWriteOnlyEventAccess(store: EKEventStore) async -> Bool {
+        await self.awaitPermissionRequest { completion in
+            if #available(iOS 17.0, *) {
+                store.requestWriteOnlyAccessToEvents { granted, _ in
+                    completion(granted)
+                }
+            } else {
+                store.requestAccess(to: .event) { granted, _ in
+                    completion(granted)
+                }
+            }
+        }
+    }
+
+    private static func awaitPermissionRequest(
+        _ start: @escaping (@Sendable @escaping (Bool) -> Void) -> Void) async -> Bool
+    {
+        let box = PermissionRequestBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                box.install(continuation)
+                start { granted in
+                    box.resume(granted)
+                }
+            }
+        } onCancel: {
+            box.resume(false)
+        }
+    }
+
+#if DEBUG
+extension CalendarService {
+    final class _TestPermissionRequestBox: @unchecked Sendable {
+        private let box = PermissionRequestBox()
+
+        func resume(_ value: Bool) {
+            self.box.resume(value)
+        }
+
+        func installAndAwait() async -> Bool {
+            await withCheckedContinuation { continuation in
+                self.box.install(continuation)
+            }
+        }
+    }
+}
+#endif
+
+extension CalendarService {
     private static func resolveCalendar(
         store: EKEventStore,
         calendarId: String?,

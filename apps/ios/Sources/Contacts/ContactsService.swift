@@ -103,8 +103,7 @@ final class ContactsService: ContactsServicing {
         case .authorized, .limited:
             return true
         case .notDetermined:
-            // Don’t prompt during node.invoke; the caller should instruct the user to grant permission.
-            // Prompts block the invoke and lead to timeouts in headless flows.
+            // Avoid prompting during node.invoke; headless/unattended flows should fail fast.
             return false
         case .restricted, .denied:
             return false
