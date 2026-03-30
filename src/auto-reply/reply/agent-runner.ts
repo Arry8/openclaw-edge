@@ -377,7 +377,9 @@ export async function runReplyAgent(params: {
       if (resolved) {
         transcriptCandidates.add(resolved);
       }
-      transcriptCandidates.add(resolveSessionTranscriptPath(prevSessionId, agentId));
+      transcriptCandidates.add(
+        resolveSessionTranscriptPath(prevSessionId, agentId, sessionCtx.MessageThreadId),
+      );
       for (const candidate of transcriptCandidates) {
         try {
           fs.unlinkSync(candidate);
