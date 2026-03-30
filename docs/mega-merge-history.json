@@ -2621,6 +2621,2095 @@
         "status": "merged",
         "commitSha": "fa67bce14cc43d77c1abff152d485891c431fda3"
       }
+    },
+    {
+      "author": "androidshu",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ca577ddbddc7f2a29259cbd7e207b0faf1e0e92d",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 42698,
+      "title": "fix(bonjour): suppress ciao IPv4 address-change assertion crash",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/bonjour-ciao.test.ts",
+          "src/infra/bonjour-ciao.ts"
+        ]
+      }
+    },
+    {
+      "author": "zhuowater",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "dc8c1526dff7f4ae520db56efe15f1e39496efde",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 42675,
+      "title": "fix(discord): throw error when fetchUser(@me) fails to prevent security bypass",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/discord/monitor/provider.ts"
+        ]
+      }
+    },
+    {
+      "author": "kenpkz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ffd2deff683a7e163eb564d2da69ec520431bf97",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 42207,
+      "title": "security: default tools.fs.workspaceOnly to true, add sensitive path denylist",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-tools.read.ts"
+        ]
+      }
+    },
+    {
+      "author": "Haohao-end",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fafc1904f9b289bdf203674dba84bcfdfdde270b",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 42163,
+      "title": "fix(skills): bound watcher recursion to reduce FD exhaustion risk",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/skills/refresh.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "ProjectAILiberation",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1b17453ba683ed8577550aac1e9c3ab51df90e8b",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "docker",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 42043,
+      "title": "docs(docker): add security hardening examples for gateway container",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/install/docker.md"
+        ]
+      }
+    },
+    {
+      "author": "jackal092927",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f8d02f8ae633a5b627a6e24222ca1d2c7644e08a",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 41350,
+      "title": "fix(security): detect Gemini/Grok/Kimi env-var web search keys in audit",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts"
+        ]
+      }
+    },
+    {
+      "author": "solosage1",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fe342159bd59817997384d5947be80d9c8bc61d6",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 41332,
+      "title": "fix: GGML crash on shutdown, cooldown probe bypass, startup stagger",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-fallback.probe.test.ts",
+          "src/agents/model-fallback.ts",
+          "src/agents/pi-embedded-error-observation.test.ts",
+          "src/cron/service/timer.ts",
+          "src/runtime.ts"
+        ]
+      }
+    },
+    {
+      "author": "sheeki03",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a1f27999aab99fbd44477be85530fff54a83e919",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 41320,
+      "title": "Security: add tirith pre-exec command scanning",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".secrets.baseline",
+          "src/agents/bash-tools.exec-host-gateway.ts",
+          "src/agents/bash-tools.exec-host-node.ts",
+          "src/agents/bash-tools.exec.approval-id.test.ts",
+          "src/config/types.tools.ts"
+        ]
+      }
+    },
+    {
+      "author": "Alexlee9898",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4b27db670e11eda9f71b6c406a220decdad783a3",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 41204,
+      "title": "fix(security): harden against resource exhaustion and command injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/skills-install.ts",
+          "src/agents/subagent-registry.ts"
+        ]
+      }
+    },
+    {
+      "author": "feiyumj",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "864a290e8c6b5a7cf3a592dfda3c2c9890aa445b",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 41134,
+      "title": "fix(browser): expose RFC2544 SSRF config",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".secrets.baseline"
+        ]
+      }
+    },
+    {
+      "author": "Mateljan1",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9e05690e850b1fb4aa090e3cf63cc1b1227b05ee",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 41012,
+      "title": "fix: hotfix batch -- config schema, ACP sessions, duplicate tool IDs, redaction crash, usage streaming",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-compat.test.ts",
+          "src/agents/model-compat.ts",
+          "src/agents/pi-embedded-runner.sanitize-session-history.test.ts",
+          "src/agents/pi-embedded-runner/run/attempt.test.ts",
+          "src/agents/pi-embedded-runner/run/attempt.ts",
+          "src/agents/tool-call-id.test.ts",
+          "src/agents/tool-call-id.ts",
+          "src/agents/transcript-policy.ts",
+          "src/config/redact-snapshot.test.ts",
+          "src/gateway/sessions-patch.ts"
+        ]
+      }
+    },
+    {
+      "author": "skippies-io",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5ccac112335b91e9dc18a1c685e69fb7c324005a",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 40949,
+      "title": "Fix: Telegram sendPayload oversized message crash",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/channels/plugins/outbound/telegram.test.ts",
+          "src/channels/plugins/outbound/telegram.ts"
+        ]
+      }
+    },
+    {
+      "author": "sahancava",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c2e7b3127d2417bec360b0c28b1498d336ed26bb",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 40464,
+      "title": "fix(config): serialize async config writes to prevent data loss on startup",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/io.runtime-snapshot-write.test.ts",
+          "src/config/io.ts"
+        ]
+      }
+    },
+    {
+      "author": "johnzilla",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a25b040c57121e35a709230348bebf9d59316816",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 40135,
+      "title": "Add DNS domain blocklist to SSRF guard",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/net/ssrf.ts"
+        ]
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4827bb1310d57a35cb9b65e517ed90596bfd163c",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 40076,
+      "title": "feat: implement append tool to solve Write tool data loss issue",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/memory-core/src/memory/manager.ts",
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "randyjtw",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "960a422ec73eb610e90b91a47a25dc0833b5a0e1",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 40067,
+      "title": "fix(gateway): do not crash on Playwright dialog race unhandled rejection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.fatal-detection.test.ts",
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "liangruochong44-ui",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0508a6e0d6e3e699882c526e132f1d10fe6a3bdf",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 40058,
+      "title": "feat: Add append tool to solve Write tool data loss issue",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.ts",
+          "src/memory/embeddings-ollama.ts"
+        ]
+      }
+    },
+    {
+      "author": "JackDKobe",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d3722837b6dcc5f76b192fa9b1c369dd9e4596c7",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 40050,
+      "title": "fix(security): improve random number generation and error handling",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/session-slug.ts"
+        ]
+      }
+    },
+    {
+      "author": "wdshin",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b856d6a0c047236555cd1c3951c4cf18240369c4",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 39899,
+      "title": "fix: auto-reset session on surrogate encoding error to prevent infinite loop",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/agent-runner-execution.ts"
+        ]
+      }
+    },
+    {
+      "author": "stevojarvisai-star",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "62f51d34a32d73cfcf2493f79af75008e72d422d",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 39870,
+      "title": "docs(security): add Security Model Explained — addresses TypeScript/IronClaw narrative",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/security/README.md"
+        ]
+      }
+    },
+    {
+      "author": "Jimmy-xuzimo",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8d3865c7b0ab2ee3067feec865d0d77e27901000",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39713,
+      "title": "fix(gateway): strip inbound metadata from chat history API (security fix)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/dispatch-from-config.ts",
+          "src/auto-reply/reply/route-reply.test.ts",
+          "src/auto-reply/reply/route-reply.ts",
+          "src/config/config.secrets-schema.test.ts",
+          "src/gateway/server-methods/chat.ts",
+          "src/tui/tui-event-handlers.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "nashborges",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "45501017f90f43a42bd1581d1c2933be3d9c9a7a",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 39231,
+      "title": "feat(agents): add opt-in CaMeL prompt injection defense",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/models-config.merge.test.ts",
+          "src/agents/pi-embedded-runner/run.ts",
+          "src/agents/pi-embedded-runner/run/attempt.ts",
+          "src/agents/pi-embedded-runner/run/params.ts",
+          "src/agents/pi-embedded-runner/run/types.ts",
+          "src/agents/pi-tools.before-tool-call.ts",
+          "src/config/zod-schema.agent-runtime.ts",
+          "src/infra/exec-approval-forwarder.ts"
+        ]
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1587b4279a3be1ce7ff63821f25d8dae78b38da2",
+      "isDraft": null,
+      "labels": [
+        "channel: bluebubbles",
+        "channel: discord",
+        "channel: googlechat",
+        "channel: imessage",
+        "channel: mattermost",
+        "channel: nextcloud-talk",
+        "channel: signal",
+        "channel: slack",
+        "channel: telegram",
+        "channel: whatsapp-web",
+        "channel: zalo",
+        "channel: zalouser",
+        "maintainer",
+        "channel: feishu",
+        "channel: irc",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39065,
+      "title": "Security: add configurable unpaired DM responses",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/bluebubbles/src/monitor-processing.ts",
+          "extensions/discord/src/monitor/agent-components.ts",
+          "extensions/discord/src/monitor/message-handler.preflight.ts",
+          "extensions/feishu/src/bot.ts",
+          "extensions/googlechat/src/monitor-access.ts",
+          "extensions/imessage/src/monitor/monitor-provider.ts",
+          "extensions/irc/src/inbound.ts",
+          "extensions/line/src/bot-handlers.ts",
+          "extensions/line/src/types.ts",
+          "extensions/mattermost/src/mattermost/monitor.ts",
+          "extensions/nextcloud-talk/src/inbound.ts",
+          "extensions/signal/src/monitor/access-policy.ts",
+          "extensions/signal/src/monitor/event-handler.types.ts",
+          "extensions/slack/src/monitor/context.ts",
+          "extensions/slack/src/monitor/dm-auth.ts",
+          "extensions/telegram/src/dm-access.ts",
+          "extensions/whatsapp/src/accounts.ts",
+          "extensions/whatsapp/src/inbound/access-control.ts",
+          "extensions/zalo/src/monitor.ts",
+          "extensions/zalouser/src/monitor.ts",
+          "src/config/schema.help.ts",
+          "src/config/schema.labels.ts",
+          "src/discord/monitor/native-command.ts",
+          "src/pairing/pairing-challenge.test.ts",
+          "src/pairing/pairing-messages.test.ts",
+          "src/pairing/pairing-messages.ts",
+          "src/telegram/bot-message-context.ts",
+          "src/telegram/bot-message.ts"
+        ]
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9761a71a5a985cf8890f3787e26868b3315b40f8",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 39059,
+      "title": "Security: harden gateway timeouts and auth store sealing",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "src/agents/auth-profiles.store.save.test.ts",
+          "src/agents/auth-profiles/store.ts",
+          "src/agents/model-auth.profiles.test.ts",
+          "src/config/sessions/transcript.ts",
+          "src/gateway/client.test.ts",
+          "src/gateway/client.ts"
+        ]
+      }
+    },
+    {
+      "author": "cflev",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "73e833ff81622ac4e77cf63d675c642ddb059941",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 38807,
+      "title": "Fix Google Chat crash by removing nolyfill/domexception override",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "package.json"
+        ]
+      }
+    },
+    {
+      "author": "p697",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "16a4f23afda79e989dbb960ae88f7a24beb320c7",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 38459,
+      "title": "Fix gateway crash loop on wrapped fetch-failed errors",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.test.ts",
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "bidaiAI",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b8b54694dccd620f1ef01fb11237fe1bdf8d96f7",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 38416,
+      "title": "feat(security): Implement Westworld-style Cognitive Filter against Context Poisoning",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-tool-definition-adapter.ts"
+        ]
+      }
+    },
+    {
+      "author": "unixmixon",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bf9c75ef814797fe13e37395783179713d412ed8",
+      "isDraft": null,
+      "labels": [
+        "channel: nextcloud-talk",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 38386,
+      "title": "nextcloud-talk: add allowPrivateNetwork for SSRF-safe private host access",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/nextcloud-talk/src/channel.startup.test.ts",
+          "extensions/nextcloud-talk/src/onboarding.ts",
+          "extensions/nextcloud-talk/src/send.test.ts",
+          "extensions/nextcloud-talk/src/send.ts"
+        ]
+      }
+    },
+    {
+      "author": "bertonhan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b023da1cfc6b9ced4886088ee018ff4b91708217",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 36967,
+      "title": "Fix/feishu allowlist markdown envelope security",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/commands-allowlist.ts",
+          "src/config/types.hooks.ts",
+          "src/config/zod-schema.hooks.ts",
+          "src/utils/message-channel.test.ts",
+          "src/utils/message-channel.ts"
+        ]
+      }
+    },
+    {
+      "author": "manusjs",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "13a5d3137c73a3065d4eb1607e1f3f4cab4305da",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 36253,
+      "title": "feat(config): add agents.defaults.systemPromptFile for operator system prompt injection",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/get-reply-run.ts"
+        ]
+      }
+    },
+    {
+      "author": "ethanperezz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d92939c7a76961bfd9721410ea4060ab996e19e9",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35535,
+      "title": "fix: add missing web search providers to security audit key check",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.ts"
+        ]
+      }
+    },
+    {
+      "author": "dragonforce2010",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b5ae7a6e740477e8daa3a9d19acf424399b73398",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 35527,
+      "title": "feat(queue): persistent command queue with SQLite backend and crash recovery",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "pnpm-lock.yaml",
+          "src/agents/pi-embedded-runner.e2e.test.ts",
+          "src/agents/pi-embedded-runner/compact.ts",
+          "src/agents/pi-embedded-runner/run.overflow-compaction.mocks.shared.ts",
+          "src/agents/pi-embedded-runner/run.ts",
+          "src/config/types.openclaw.ts",
+          "src/process/command-queue.test.ts",
+          "src/process/command-queue.ts"
+        ]
+      }
+    },
+    {
+      "author": "jiangfeng2066",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "33228285d0d705d2ab7a46dfb9129f64ac24ad56",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: feishu",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 35213,
+      "title": "security: fix critical vulnerabilities identified in audit",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/providers/deepseek.md",
+          "extensions/browser/src/browser/pw-tools-core.interactions.ts",
+          "extensions/feishu/src/send.ts"
+        ]
+      }
+    },
+    {
+      "author": "ruypang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "99dacf94a48a62fa5247016297dcafa327ae6a58",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35054,
+      "title": "chore(security): bump hono + @hono/node-server (pnpm-audit-prod)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "package.json",
+          "pnpm-lock.yaml"
+        ]
+      }
+    },
+    {
+      "author": "benediktjohannes",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8f9ce05fbf8b5cb354e92d0882c9e802c90ab62c",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34954,
+      "title": "[Security]: Fix potential security risk allowing the attacker to inject malicious instructions in src/security/external-contents.ts",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/external-content.test.ts",
+          "src/security/external-content.ts"
+        ]
+      }
+    },
+    {
+      "author": "Alexlee9898",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "20539680a978a6adbce5693024daa506eec3179a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34796,
+      "title": "fix(security): resolve C-1 memory leak and H-2 origin validation bypass",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/origin-check.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "suhaangandharva7-lab",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cc532ca3cec563273e9e72853a039e13043b15f8",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "cli",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 34463,
+      "title": "[Feature] Added Private UPC Feature for Enhanced Security",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-tools.before-tool-call.ts",
+          "src/cli/program/command-registry.ts",
+          "src/gateway/protocol/schema.ts",
+          "src/gateway/server-methods.ts",
+          "src/gateway/server-methods/types.ts",
+          "src/gateway/server.impl.ts"
+        ]
+      }
+    },
+    {
+      "author": "TianT1209",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a4d15e28c38498bb0825552a843d15a4ea50ddff",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 34313,
+      "title": "Fix(security): add input validation to prevent unsafe code execution in evaluateViaPlaywright",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/browser/src/browser/pw-evaluate-validation.test.ts",
+          "extensions/browser/src/browser/pw-evaluate-validation.ts",
+          "extensions/browser/src/browser/pw-tools-core.evaluate-blocks-unsafe.test.ts",
+          "extensions/browser/src/browser/pw-tools-core.interactions.ts"
+        ]
+      }
+    },
+    {
+      "author": "xialonglee",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "91623db91311b12602d936b5fac0deb0e7ade307",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34244,
+      "title": "fix(doctor): iterate all channel accounts in security warnings",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/doctor-security.ts"
+        ]
+      }
+    },
+    {
+      "author": "juppytt",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bd542fbebc60455bc60db2a90a4c645d49ac5842",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 34205,
+      "title": "feat(plugins): add result-modifying hooks for tools (before_tool_call injection + tool_result_before_model)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-tools.before-tool-call.ts",
+          "src/plugins/hooks.ts",
+          "src/plugins/types.ts"
+        ]
+      }
+    },
+    {
+      "author": "rickstonerz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "474afb0016c8d430bdc67998de83a8c69a3cbb8c",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 33819,
+      "title": "fix(gateway): production security hardening — trusted-proxy auth, shared-secret, nginx rDNS + .lan internal routing for multi-node swarm",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/auth.ts"
+        ]
+      }
+    },
+    {
+      "author": "Mariana-Codebase",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "927ee586ed3b4890116c4c16f8cd43b6d13a136c",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 33728,
+      "title": "fix(security): remove relay query-token authentication",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "assets/chrome-extension/background-utils.js",
+          "assets/chrome-extension/background.js",
+          "src/browser/chrome-extension-background-utils.test.ts",
+          "src/browser/extension-relay.test.ts",
+          "src/browser/extension-relay.ts"
+        ]
+      }
+    },
+    {
+      "author": "Rohail-Suii",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6108d1a53b15d28dcfffb32e11f3b5fc7f2fec95",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "commands",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 33422,
+      "title": "Security hardening: operator safety guardrails (opt-in, backwards-compatible)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-fallback.ts",
+          "src/commands/doctor.ts",
+          "src/config/types.gateway.ts",
+          "src/config/zod-schema.ts",
+          "src/gateway/server.impl.ts",
+          "src/process/command-queue.ts"
+        ]
+      }
+    },
+    {
+      "author": "BlueBirdBack",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ffb1807647d47da53f366c2e1a6e6defb7a3c82d",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 32586,
+      "title": "fix(runtime): include day of week in system prompt date/time injection (#9899)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/system-prompt.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "let5sne",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "21b74f7bdd2de32b92ee293f8a3ee0b9c0d7b73e",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 31592,
+      "title": "security: scan SKILL.md and HEARTBEAT.md for injection patterns (#17 + #21)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/skills/workspace.ts",
+          "src/commands/doctor.ts",
+          "src/infra/heartbeat-runner.ts"
+        ]
+      }
+    },
+    {
+      "author": "let5sne",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "896ff1e4a97c19bac01ca95747b30d78e8f1d5c2",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 30758,
+      "title": "security: detect injection patterns in memory files before indexing",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/memory-core/src/memory/manager-sync-ops.ts"
+        ]
+      }
+    },
+    {
+      "author": "hectorpala",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af9ec41dcdd7af3632c2dd38254a44597a747d6b",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "docker",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 30306,
+      "title": "security: harden Docker builds, CI, and deploy config",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/docker-release.yml",
+          "Dockerfile",
+          "extensions/whatsapp/src/auto-reply/deliver-reply.ts",
+          "extensions/whatsapp/src/auto-reply/monitor/process-message.ts",
+          "src/auto-reply/reply/inbound-meta.ts",
+          "src/config/types.agents.ts",
+          "src/config/zod-schema.agent-runtime.ts"
+        ]
+      }
+    },
+    {
+      "author": "agentkopen2000-byte",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ae3f72da6fef904db664600d715e6dafa430e57e",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "gateway",
+        "stale",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 30160,
+      "title": "security: drop WhatsApp fromMe messages (parity with iMessage)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/whatsapp/src/inbound/access-control.ts",
+          "src/gateway/server-startup.ts"
+        ]
+      }
+    },
+    {
+      "author": "prontoclaw-dev",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "663f00a99c46e17f9523f96934b6e3c0ce940350",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 29743,
+      "title": "fix: prevent crash on undefined totalTokens",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/shared/subagents-format.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "seojoonkim",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ed4cd7d866aaebd6f9d32122404eddab703f0cb6",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 29494,
+      "title": "feat(security): add markdown-based skill safety scanner for SKILL.md files",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/skill-scanner.ts"
+        ]
+      }
+    },
+    {
+      "author": "pcoterecollective",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "96c5dd11e4290fa879944d12b508636212865871",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "extensions: lobster",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 28696,
+      "title": "security: Instruction Boundary Enforcement Layer (IBEL)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/lobster/src/lobster-tool.test.ts",
+          "src/agents/pi-tools.before-tool-call.ts",
+          "src/agents/tools/common.ts",
+          "src/gateway/server.impl.ts",
+          "src/plugins/registry.ts",
+          "src/plugins/types.ts"
+        ]
+      }
+    },
+    {
+      "author": "tianxiao1430-jpg",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2033e88be5bf1efee9de77c7454aa35b94c230e6",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 28281,
+      "title": "fix: override basic-ftp and fast-xml-parser to fix security vulnerabilities",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "package.json",
+          "pnpm-lock.yaml"
+        ]
+      }
+    },
+    {
+      "author": "explainanalyze",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3c5f46091c351d543b3b3f418f5da1105602d90e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 28258,
+      "title": "fix: crash recovery for Anthropic thinking blocks (#25194)",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/run/attempt.ts"
+        ]
+      }
+    },
+    {
+      "author": "BUGKillerKing",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "fc3b58cf9f0f2effbf1d7a3d06f612b04c5408c9",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "cli",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 28247,
+      "title": "fix(gateway): fail fast on port-in-use to prevent systemd crash loop",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/gateway-cli/run.option-collisions.test.ts",
+          "src/cli/gateway-cli/run.ts",
+          "src/daemon/systemd-unit.ts"
+        ]
+      }
+    },
+    {
+      "author": "kollaikal-rupesh",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5ec6b1afb373c339b017bb595b0e5cbbc9222f08",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 28063,
+      "title": "Fix fallback chain crash when registry entry has no api field",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/model.ts"
+        ]
+      }
+    },
+    {
+      "author": "navingate",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "94dbb850a089ec0bb7e6d7ff4880f2396f46f2af",
+      "isDraft": null,
+      "labels": [
+        "channel: nostr",
+        "app: macos",
+        "gateway",
+        "cli",
+        "scripts",
+        "commands",
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 27855,
+      "title": "Agents: Safety against Jailbreaking and Prompt Injection Attacks using a Guard Model",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/nostr/src/config-schema.ts",
+          "pnpm-lock.yaml",
+          "src/agents/cli-runner.reliability.test.ts",
+          "src/agents/cli-runner.ts",
+          "src/agents/pi-embedded-runner/run.ts",
+          "src/agents/pi-embedded-subscribe.handlers.messages.ts",
+          "src/commands/agent.ts",
+          "src/commands/configure.wizard.test.ts",
+          "src/gateway/openai-http.ts",
+          "src/gateway/openresponses-http.ts",
+          "src/plugins/discovery.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "henrikrexed",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a046732c58f474805c0e9f71fd6b8a348830c253",
+      "isDraft": null,
+      "labels": [
+        "extensions: diagnostics-otel",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 27743,
+      "title": "feat(diagnostics-otel): add security span enrichment with 4 detection…",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/diagnostics-otel/src/service.ts"
+        ]
+      }
+    },
+    {
+      "author": "cfregly",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7a999302c690d6be7bf31d1e48691a7655ade062",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 27643,
+      "title": "security(gateway): scaffold gateway.abuse config surface",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/types.gateway.ts",
+          "src/config/zod-schema.ts"
+        ]
+      }
+    },
+    {
+      "author": "white-rm",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c4217f361dcf60a3ba61700ca37597a4203a2b85",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 27581,
+      "title": "fix(discord): add SSRF policy for Discord CDN to unblock Clash TUN fake-ip",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/message-utils.ts",
+          "src/discord/monitor/message-utils.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "efe-arv",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3fefbecf3482a72a54e3fc9deea5ebc76bcf3e90",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 27454,
+      "title": "fix(telegram): prevent crash loop on oversized file attachments",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "3cfff2442597d687f607efbc41642822569c5c18"
+      }
+    },
+    {
+      "author": "stone-jin",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1c3706a34f88d12325ac96b4fe5071d85edd6a53",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 27359,
+      "title": "fix(bonjour): suppress ciao IPv4 address-change assertion crash",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/bonjour-ciao.test.ts",
+          "src/infra/bonjour-ciao.ts"
+        ]
+      }
+    },
+    {
+      "author": "snowshadow",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c9181a347150e1cd290055fc021650ff2f1a6087",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "gateway",
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 27216,
+      "title": "discord: pass SSRF policy to attachment downloads",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/message-handler.process.ts",
+          "extensions/discord/src/monitor/message-utils.ts",
+          "src/gateway/server-methods/agents-mutate.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "AaronL725",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "f58391283462c07df2b4c8cb909305eb368a944b",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 27043,
+      "title": "docs(subagents): fix workspace bootstrap injection list",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/start/onboarding.md",
+          "docs/tools/subagents.md"
+        ]
+      }
+    },
+    {
+      "author": "snazar-faberlens",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bb83434614d97b5af75a575800e61fb8a90a1190",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 26780,
+      "title": "Skill/1password security hardening",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "e37ffa45b5eb1196891e07f0668f700dc72cc768"
+      }
+    },
+    {
+      "author": "leodavidsoto",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7ec363d4248487ec1fec2442e920c84ac4197e6c",
+      "isDraft": null,
+      "labels": [
+        "channel: whatsapp-web",
+        "gateway",
+        "scripts",
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 26769,
+      "title": "security: HTTP headers, rate limiting, CORS, console.log cleanup",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".oxlintrc.json",
+          "extensions/whatsapp/src/login.ts",
+          "extensions/whatsapp/src/session.ts",
+          "src/config/types.gateway.ts",
+          "src/gateway/http-common.ts",
+          "src/gateway/server-http.ts",
+          "src/infra/retry-policy.ts",
+          "src/infra/tailscale.ts"
+        ]
+      }
+    },
+    {
+      "author": "sftwrstef",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "48342cba9d98b5f7fb972d31a9a2e083b49f2bf8",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 26700,
+      "title": "fix(security): strip leaked external untrusted-content wrappers from user-facing replies",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-helpers/errors.ts"
+        ]
+      }
+    },
+    {
+      "author": "makew0rld",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b62058aeee6a3a4181070dd2dcaea05f1b8e427b",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 25573,
+      "title": "fix(net): respect HTTP proxy env vars in web_fetch SSRF dispatcher",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/net/ssrf.ts"
+        ]
+      }
+    },
+    {
+      "author": "jeffaf",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1a3286df9b9c88bf1cb0b11a608cfebcc0cefa19",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 24958,
+      "title": "feat(security): RubberBand - static command pattern detection for exec pipeline",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/bash-tools.exec.ts"
+        ]
+      }
+    },
+    {
+      "author": "ihsanmokhlisse",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "99c9c31592a5f8fbd811cddff361543903497a0e",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 24533,
+      "title": "CI: harden software supply chain security",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/docker-release.yml"
+        ]
+      }
+    },
+    {
+      "author": "lewiswigmore",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "952a5694797097158fccb072bd701c195b0ee652",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 23596,
+      "title": "fix(msteams): add SSRF validation to file consent upload URL",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/msteams/src/file-consent.ts"
+        ]
+      }
+    },
+    {
+      "author": "ihsanmokhlisse",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "71122a8f9210605dc120878d28edafcd9af65352",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 23175,
+      "title": "feat(security): runtime safety — transcript retention, tool call budget, token reuse detection",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "d11f655aab4cd1ff5d0bff15af23de006a7b7342"
+      }
+    },
+    {
+      "author": "ihsanmokhlisse",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c754c84c977032d7cfe2199965bdde70a2a92c49",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 23174,
+      "title": "feat(security): credential leak prevention — exfiltration patterns, outbound scanning, transcript scrubbing",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "db3f72630f6c582808a603846a256990a85065a6"
+      }
+    },
+    {
+      "author": "ihsanmokhlisse",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "300aca07ec7a5232e605b0f385511f8fdf716f83",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 23165,
+      "title": "fix(security): detect plaintext credentials in security audit",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/security/audit-extra.sync.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "nabbilkhan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "02c99eaf7980ea7707d3d9d1baa60425339b16dc",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "stale",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 21588,
+      "title": "fix(security): decouple external hook trust from session key format",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/isolated-agent/run.ts",
+          "src/gateway/server.hooks.e2e.test.ts",
+          "src/gateway/server/hooks.ts"
+        ]
+      }
+    },
+    {
+      "author": "dinakars777",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "05f35a2af8c0780b739fe00426805e7b8c547e7a",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 21140,
+      "title": "test(security): add regression test for claude-opus-4-6 audit",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "a269e63bf15a20da42c10e64c91fe4a594d0b7b5"
+      }
+    },
+    {
+      "author": "richvincent",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "5b510c24ea8b100fb01ee2272cd37908f6c29103",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "commands",
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 21055,
+      "title": "security(cli): gate systemPromptReport behind --debug flag",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/commands/agent/delivery.ts",
+          "src/commands/agent/types.ts"
+        ]
+      }
+    },
+    {
+      "author": "richvincent",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "efdf02b5fcd30aa8ebaa4ecbdb80403ff1eeb980",
+      "isDraft": null,
+      "labels": [
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 21053,
+      "title": "security(infra): OS keychain storage for device private keys",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/device-identity.ts"
+        ]
+      }
+    },
+    {
+      "author": "richvincent",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1dcbb9f295fba1216e64e6314dee9199c2472a13",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "stale",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 21051,
+      "title": "security(gateway): audit logging + model allowlist enforcement",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/config/paths.ts",
+          "src/gateway/server-methods/config.ts"
+        ]
+      }
+    },
+    {
+      "author": "orlyjamie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a54bba6ee0c7f8d2faae07c2c9873f6d018e919b",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 20177,
+      "title": "fix(security): block command substitution in unquoted heredoc bodies",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/exec-approvals.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "aether-ai-agent",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3b285efc9b18e1f928a4c6a95e4ac5dcb7c9d34f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 19756,
+      "title": "fix(security): OC-101 refresh token rotation enforcement — Aether AI Agent",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/providers/qwen-portal-oauth.ts"
+        ]
+      }
+    },
+    {
+      "author": "aether-ai-agent",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2f5a03081af32c231190dc63b4c0df5bdc3eab4c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "gateway",
+        "stale",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 19755,
+      "title": "fix(security): OC-32 enforce content size limit in agents.files.set to prevent disk exhaustion DoS",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/server-methods/agents.ts"
+        ]
+      }
+    },
+    {
+      "author": "smartprogrammer93",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "545eb27bc44cd9a79ff9bac6f5c80bc29a8f703d",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "agents",
+        "stale",
+        "size: L"
+      ],
+      "mergedAt": null,
+      "number": 19042,
+      "title": "Security: add URL allowlist for web_search and web_fetch",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "docs/.generated/config-baseline.json",
+          "docs/.generated/config-baseline.jsonl",
+          "src/config/zod-schema.agent-runtime.ts",
+          "src/infra/net/ssrf.ts"
+        ]
+      }
+    },
+    {
+      "author": "orlyjamie",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2c61fb69c1cca5ea46136fe71ade96efba1a2e45",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "app: web-ui",
+        "gateway",
+        "cli",
+        "security",
+        "agents",
+        "maintainer",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 18196,
+      "title": "feat(security): add client-side skill security enforcement",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "docs/cli/skills.md",
+          "docs/tools/creating-skills.md",
+          "src/agents/pi-tools.before-tool-call.ts",
+          "src/agents/skills-status.ts",
+          "src/agents/skills/workspace.ts",
+          "src/agents/tool-policy-shared.ts",
+          "src/cli/skills-cli.format.ts",
+          "src/security/skill-scanner.ts",
+          "ui/src/ui/app-view-state.ts",
+          "ui/src/ui/controllers/logs.ts",
+          "ui/src/ui/views/agents-panels-tools-skills.ts",
+          "ui/src/ui/views/skills-shared.ts",
+          "ui/src/ui/views/skills.ts"
+        ]
+      }
+    },
+    {
+      "author": "aronchick",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "46cd41bde0b6bba075f9ceeac4d76081cc505fe0",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "stale",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 17702,
+      "title": "feat: crash-loop detection and last-known-good config rollback",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "5d99f9580613c8cde24d7f7327dc4f73c4db37d5"
+      }
+    },
+    {
+      "author": "akoscz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3d1ad89da83737f5a4a9b990e4d9acbc5940c518",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "gateway",
+        "agents",
+        "stale",
+        "size: XL"
+      ],
+      "mergedAt": null,
+      "number": 12296,
+      "title": "security: persistence-only secret redaction for session transcripts",
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "bb2a9c9bc2f9d1bef14c1151ed62b0a1607e6d99"
+      }
+    },
+    {
+      "author": "sfo2001",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e5658fd4026c4c0143701e167caec1c7975686df",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 5649,
+      "title": "fix(security): harden file permissions and header merging",
+      "tier": 1,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/json-file.ts"
+        ]
+      }
+    },
+    {
+      "author": "nimbleenigma",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "c3c4437ac1ba8e0a37ab329ddfffa7815100b591",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 57741,
+      "title": "fix(agents): accept canonical edits[] in wrapped edit tool",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "cc28ba7aa0d800b3e541e86a08deb9645c3b0149"
+      }
+    },
+    {
+      "author": "w-sss",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7576e77711b052918a58a8551248be73d463dc6e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 57740,
+      "title": "fix(agents): resolve transcript tool call ID mode for proxy providers (openrouter+mistral)",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          ".gitignore"
+        ]
+      }
+    },
+    {
+      "author": "samzong",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9a77c51cf9e336a0ccfd0c433266532bfeec408d",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57739,
+      "title": "fix(subagents): correct duration display showing 5-6x inflated runtime",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "53446fbb2ac9f18df31e267570a66f564a514673"
+      }
+    },
+    {
+      "author": "Vitalcheffe",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "516628e1c2e04c963f08f162833122096a2d95e8",
+      "isDraft": null,
+      "labels": [
+        "channel: telegram",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 57737,
+      "title": "fix(telegram): increase polling stall threshold from 90s to 300s",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "70dc600bbac47b5030df27c09d2cab9f52a30e3c"
+      }
     }
   ]
 }
