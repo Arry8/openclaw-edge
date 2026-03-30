@@ -883,6 +883,41 @@ describe("runDiscordGatewayLifecycle", () => {
     await expect(runDiscordGatewayLifecycle(lifecycleParams)).resolves.toBeUndefined();
   });
 
+  it("strips socket close/error listeners on abort so stale-socket close does not crash", async () => {
+    const { runDiscordGatewayLifecycle } = await import("./provider.lifecycle.js");
+    const socket = Object.assign(new EventEmitter(), {
+      terminate: vi.fn(),
+    });
+    const { emitter, gateway } = createGatewayHarness({ ws: socket });
+    gateway.isConnected = true;
+    getDiscordGatewayEmitterMock.mockReturnValueOnce(emitter);
+
+    // Simulate Carbon's internal close/error listeners on the WebSocket.
+    const carbonCloseListener = vi.fn();
+    const carbonErrorListener = vi.fn();
+    socket.on("close", carbonCloseListener);
+    socket.on("error", carbonErrorListener);
+
+    const abortController = new AbortController();
+    const { lifecycleParams, runtimeError } = createLifecycleHarness({ gateway });
+    lifecycleParams.abortSignal = abortController.signal;
+
+    const lifecyclePromise = runDiscordGatewayLifecycle(lifecycleParams);
+    abortController.abort();
+    await expect(lifecyclePromise).resolves.toBeUndefined();
+
+    // After abort, Carbon's close/error listeners should have been removed.
+    // A no-op error listener is kept to prevent uncaught exceptions.
+    expect(socket.listenerCount("close")).toBe(0);
+    expect(socket.listenerCount("error")).toBe(1); // no-op safety listener
+
+    // Simulate a late stale-socket close arriving after the lifecycle ended.
+    // This must not throw (previously caused "Uncaught exception: Max
+    // reconnect attempts (0)").
+    expect(() => socket.emit("close", 1005, "")).not.toThrow();
+    expect(carbonCloseListener).not.toHaveBeenCalled();
+  });
+
   it("does not push connected: true when abortSignal is already aborted", async () => {
     const { runDiscordGatewayLifecycle } = await import("./provider.lifecycle.js");
     const emitter = new EventEmitter();
