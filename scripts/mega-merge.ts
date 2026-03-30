@@ -221,13 +221,14 @@ function warn(msg: string) {
 function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; input?: string } = {},
+  opts: { cwd?: string; input?: string; timeoutMs?: number } = {},
 ): { ok: boolean; stdout: string; stderr: string } {
   const result = spawnSync(cmd, args, {
     cwd: opts.cwd ?? REPO_DIR,
     input: opts.input,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
+    timeout: opts.timeoutMs,
   });
   return {
     ok: result.status === 0,
@@ -767,7 +768,8 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
   // Build refspecs: refs/pull/<n>/head:tmp/pr-<n>
   const refspecs = numbers.map((n) => `refs/pull/${n}/head:tmp/pr-${n}`);
 
-  const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs]);
+  const FETCH_TIMEOUT_MS = 30_000; // 30s — kills stalled connections
+  const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs], { timeoutMs: FETCH_TIMEOUT_MS });
 
   if (r.ok) {
     for (const n of numbers) {
@@ -778,7 +780,7 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
 
   // Batch failed — try each individually to identify bad refs
   for (const n of numbers) {
-    const single = run("git", ["fetch", "--no-tags", UPSTREAM, `refs/pull/${n}/head:tmp/pr-${n}`]);
+    const single = run("git", ["fetch", "--no-tags", UPSTREAM, `refs/pull/${n}/head:tmp/pr-${n}`], { timeoutMs: FETCH_TIMEOUT_MS });
     results.set(n, single.ok);
   }
   return results;
