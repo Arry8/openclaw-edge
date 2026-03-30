@@ -94,6 +94,7 @@ export type FeishuToolsConfig = {
   chat?: boolean;
   wiki?: boolean;
   drive?: boolean;
+  bitable?: boolean;
   perm?: boolean;
   scopes?: boolean;
 };
