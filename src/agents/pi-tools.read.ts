@@ -10,6 +10,7 @@ import {
   writeFileWithinRoot,
 } from "../infra/fs-safe.js";
 import { trySafeFileURLToPath } from "../infra/local-file-access.js";
+import { isAbortError } from "../infra/unhandled-rejections.js";
 import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
@@ -313,7 +314,11 @@ async function executeReadWithAdaptivePaging(params: {
   const hasExplicitLimit =
     typeof userLimit === "number" && Number.isFinite(userLimit) && userLimit > 0;
   if (hasExplicitLimit) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
+    try {
+      return await params.base.execute(params.toolCallId, params.args, params.signal);
+    } catch (error) {
+      return handleOffsetOutOfRangeError(error, params);
+    }
   }
 
   const offsetRaw = params.args.offset;
@@ -329,7 +334,17 @@ async function executeReadWithAdaptivePaging(params: {
 
   for (let page = 0; page < MAX_ADAPTIVE_READ_PAGES; page += 1) {
     const pageArgs = { ...params.args, offset: nextOffset };
-    const pageResult = await params.base.execute(params.toolCallId, pageArgs, params.signal);
+    let pageResult: AgentToolResult<unknown>;
+    try {
+      pageResult = await params.base.execute(params.toolCallId, pageArgs, params.signal);
+    } catch (error) {
+      if (firstResult) {
+        // Already have some content from earlier pages — return what we have
+        // with a diagnostic note about the failed page.
+        return handleOffsetOutOfRangeError(error, params, firstResult, aggregatedText);
+      }
+      return handleOffsetOutOfRangeError(error, params);
+    }
     firstResult ??= pageResult;
 
     const rawText = getToolResultText(pageResult);
@@ -370,7 +385,11 @@ async function executeReadWithAdaptivePaging(params: {
   }
 
   if (!firstResult) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
+    try {
+      return await params.base.execute(params.toolCallId, params.args, params.signal);
+    } catch (error) {
+      return handleOffsetOutOfRangeError(error, params);
+    }
   }
 
   let finalText = aggregatedText;
@@ -378,6 +397,80 @@ async function executeReadWithAdaptivePaging(params: {
     finalText += `\n\n[Read output capped at ${formatBytes(params.maxBytes)} for this call. Use offset=${continuationOffset} to continue.]`;
   }
   return withToolResultText(firstResult, finalText);
+}
+
+/**
+ * When a read-tool call fails due to an out-of-range offset, fall back to
+ * reading from the beginning of the file (offset=1) and return a diagnostic
+ * note instead of aborting the run.
+ *
+ * Non-offset errors are re-thrown so callers still see genuine failures.
+ */
+async function handleOffsetOutOfRangeError(
+  error: unknown,
+  params: {
+    base: AnyAgentTool;
+    toolCallId: string;
+    args: Record<string, unknown>;
+    signal?: AbortSignal;
+  },
+  existingResult?: AgentToolResult<unknown>,
+  existingText?: string,
+): Promise<AgentToolResult<unknown>> {
+  const message = error instanceof Error ? error.message : String(error);
+  // Intentionally narrow: only matches messages that explicitly reference an
+  // offset/range/line parameter being out of bounds. Avoids false positives
+  // from unrelated errors that happen to contain words like "line" or "range".
+  const isOffsetError =
+    /\b(?:offset|line)\s+\d+\s+(?:is\s+)?(?:out\s+of\s+(?:range|bounds?)|beyond|exceeds?)|invalid\s+(?:offset|range)\b|out.of.(?:range|bounds?)\s+(?:offset|line)/i.test(
+      message,
+    );
+  if (!isOffsetError) {
+    throw error;
+  }
+
+  const requestedOffset = params.args.offset;
+
+  // If we already have partial content from earlier pages, return it with a
+  // note indicating that the remaining range could not be read — do not
+  // misleadingly say "Showing from line 1".
+  if (existingResult && existingText) {
+    const partialNote = `[Note: Could not continue reading beyond the content shown (requested offset ${String(requestedOffset)} is out of range).]`;
+    return withToolResultText(existingResult, `${existingText}\n\n${partialNote}`);
+  }
+
+  const diagnosticNote = `[Note: Requested offset ${String(requestedOffset)} is out of range. Showing from line 1 instead.]`;
+
+  // Retry from the beginning of the file.
+  try {
+    const fallbackArgs = { ...params.args, offset: 1 };
+    const fallbackResult = await params.base.execute(
+      params.toolCallId,
+      fallbackArgs,
+      params.signal,
+    );
+    const fallbackText = getToolResultText(fallbackResult);
+    if (typeof fallbackText === "string") {
+      return withToolResultText(fallbackResult, `${diagnosticNote}\n\n${fallbackText}`);
+    }
+    return fallbackResult;
+  } catch (fallbackError) {
+    // Re-throw AbortError so the runner can unwind the session as aborted rather
+    // than silently continuing with a fabricated success result.
+    if (isAbortError(fallbackError)) {
+      throw fallbackError;
+    }
+    // Fallback also failed (non-abort) — return a diagnostic-only result so the run continues.
+    return {
+      content: [
+        {
+          type: "text",
+          text: `${diagnosticNote}\n\nFailed to read file.`,
+        },
+      ],
+      details: undefined,
+    };
+  }
 }
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
