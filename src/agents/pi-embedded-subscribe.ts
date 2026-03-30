@@ -636,7 +636,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
 
   const noteLastAssistant = (msg: AgentMessage) => {
     if (msg?.role === "assistant") {
-      state.lastAssistantMessage = msg;
+      state.lastAssistant = msg;
     }
   };
 

@@ -190,7 +190,6 @@ export function handleMessageStart(
   evt: AgentEvent & { message: AgentMessage },
 ) {
   const msg = evt.message;
-
   if (msg?.role !== "assistant" || isTranscriptOnlyOpenClawAssistantMessage(msg)) {
     return;
   }
@@ -200,18 +199,8 @@ export function handleMessageStart(
   // Start-of-message is a safer reset point than message_end: some providers
   // may deliver late text_end updates after message_end, which would otherwise
   // re-trigger block replies.
-  // FIX: tolerate providers emitting message_start without message_stop
-  if (ctx.state.deltaBuffer || ctx.state.lastStreamedAssistant !== undefined) {
-    const lastMsg = ctx.state.lastAssistantMessage;
-    if (lastMsg) {
-      handleMessageEnd(ctx, {
-        ...evt,
-        message: lastMsg,
-      });
-    }
-  }
-
-  ctx.resetAssistantMessageState(ctx.state.assistantTexts.length); // Use assistant message_start as the earliest "writing" signal for typing.
+  ctx.resetAssistantMessageState(ctx.state.assistantTexts.length);
+  // Use assistant message_start as the earliest "writing" signal for typing.
   void ctx.params.onAssistantMessageStart?.();
 }
 
@@ -410,10 +399,6 @@ export function handleMessageEnd(
   const assistantMessage = msg;
   ctx.noteLastAssistant(assistantMessage);
   ctx.recordAssistantUsage((assistantMessage as { usage?: unknown }).usage);
-
-  if (!ctx.state.deltaBuffer && ctx.state.lastStreamedAssistant === undefined) {
-    return;
-  }
   if (ctx.state.deterministicApprovalPromptSent) {
     return;
   }
