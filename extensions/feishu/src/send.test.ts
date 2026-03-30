@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClawdbotConfig } from "../runtime-api.js";
-import {
-  buildMarkdownCard,
-  buildStructuredCard,
-  editMessageFeishu,
-  getMessageFeishu,
-  listFeishuThreadMessages,
-  resolveFeishuCardTemplate,
-} from "./send.js";
+import { buildMarkdownCard } from "./send.js";
 
 const {
   mockConvertMarkdownTables,
