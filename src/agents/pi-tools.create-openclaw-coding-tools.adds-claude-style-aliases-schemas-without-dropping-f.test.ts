@@ -116,4 +116,68 @@ describe("createOpenClawCodingTools", () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("accepts canonical edits arrays through the wrapped edit tool path", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-canonical-edit-"));
+    try {
+      const filePath = path.join(tmpDir, "canonical-edit.js");
+      await fs.writeFile(filePath, "const value = 'old';\n", "utf8");
+
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { editTool } = expectReadWriteEditTools(tools);
+
+      await editTool.execute("tool-canonical-edit", {
+        path: "canonical-edit.js",
+        edits: [{ oldText: "old", newText: "new" }],
+      });
+
+      const edited = await fs.readFile(filePath, "utf8");
+      expect(edited).toBe("const value = 'new';\n");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("still rejects malformed legacy single-edit input missing newText", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-legacy-edit-invalid-"));
+    try {
+      const filePath = path.join(tmpDir, "legacy-invalid.js");
+      await fs.writeFile(filePath, "const value = 'old';\n", "utf8");
+
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { editTool } = expectReadWriteEditTools(tools);
+
+      await expect(
+        editTool.execute("tool-legacy-edit-invalid", {
+          path: "legacy-invalid.js",
+          oldText: "old",
+        }),
+      ).rejects.toThrow(/newText|oldText/i);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+
+  it("still rejects blank legacy oldText values", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-legacy-edit-blank-"));
+    try {
+      const filePath = path.join(tmpDir, "legacy-blank.js");
+      await fs.writeFile(filePath, "const value = 'old';\n", "utf8");
+
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { editTool } = expectReadWriteEditTools(tools);
+
+      await expect(
+        editTool.execute("tool-legacy-edit-blank", {
+          path: "legacy-blank.js",
+          oldText: "   ",
+          newText: "new",
+        }),
+      ).rejects.toThrow(/oldText|edits/i);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
 });
