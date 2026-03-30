@@ -1213,6 +1213,7 @@ export async function startGatewayServer(
     const healthCheckDisabled = healthCheckMinutes === 0;
     const staleEventThresholdMinutes = cfgAtStart.gateway?.channelStaleEventThresholdMinutes;
     const maxRestartsPerHour = cfgAtStart.gateway?.channelMaxRestartsPerHour;
+    const channelHealthRestartMode = cfgAtStart.gateway?.channelHealthRestartMode;
     channelHealthMonitor = healthCheckDisabled
       ? null
       : startChannelHealthMonitor({
@@ -1222,6 +1223,9 @@ export async function startGatewayServer(
             staleEventThresholdMs: staleEventThresholdMinutes * 60_000,
           }),
           ...(maxRestartsPerHour != null && { maxRestartsPerHour }),
+          ...(channelHealthRestartMode != null && {
+            defaultRestartMode: channelHealthRestartMode,
+          }),
         });
 
     if (!minimalTestGateway) {
@@ -1496,6 +1500,7 @@ export async function startGatewayServer(
               checkIntervalMs: number;
               staleEventThresholdMs?: number;
               maxRestartsPerHour?: number;
+              defaultRestartMode?: import("../config/types.channels.js").ChannelHealthRestartMode;
             }) =>
               startChannelHealthMonitor({
                 channelManager,
@@ -1505,6 +1510,9 @@ export async function startGatewayServer(
                 }),
                 ...(opts.maxRestartsPerHour != null && {
                   maxRestartsPerHour: opts.maxRestartsPerHour,
+                }),
+                ...(opts.defaultRestartMode != null && {
+                  defaultRestartMode: opts.defaultRestartMode,
                 }),
               }),
           });
