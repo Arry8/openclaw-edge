@@ -1,0 +1,36 @@
+{
+  "entries": [
+    {
+      "number": 57603,
+      "title": "fix(discord): treat reconnect-exhausted as clean stop to prevent gateway crash",
+      "author": "unknown",
+      "headSha": "3ed35c438a",
+      "isDraft": false,
+      "createdAt": "2026-03-30T10:34:37.309550Z",
+      "closedAt": null,
+      "mergedAt": null,
+      "labels": [],
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "3ed35c438a"
+      }
+    },
+    {
+      "number": 57624,
+      "title": "fix(telegram): allow RFC 2544 benchmark IPs in media download SSRF policy (#57452)",
+      "author": "unknown",
+      "headSha": "e23578bd64",
+      "isDraft": false,
+      "createdAt": "2026-03-30T10:34:37.311345Z",
+      "closedAt": null,
+      "mergedAt": null,
+      "labels": [],
+      "tier": 1,
+      "result": {
+        "status": "merged",
+        "commitSha": "e23578bd64"
+      }
+    }
+  ]
+}
