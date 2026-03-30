@@ -81,7 +81,9 @@ export function inferLegacyName(job: {
 
 export function normalizePayloadToSystemText(payload: CronPayload) {
   if (payload.kind === "systemEvent") {
-    return payload.text.trim();
+    // Accept legacy persisted systemEvent payloads that still use `message`.
+    const raw = payload as { text?: string; message?: string };
+    return (raw.text ?? raw.message ?? "").trim();
   }
   return payload.message.trim();
 }

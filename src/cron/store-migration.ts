@@ -10,6 +10,7 @@ type CronStoreIssueKey =
   | "legacyScheduleString"
   | "legacyScheduleCron"
   | "legacyPayloadKind"
+  | "legacySystemEventMessage"
   | "legacyPayloadProvider"
   | "legacyTopLevelPayloadFields"
   | "legacyTopLevelDeliveryFields"
@@ -305,6 +306,20 @@ export function normalizeStoredCronJobs(
           payloadRecord.kind = "systemEvent";
           mutated = true;
           trackIssue("legacyPayloadKind");
+        }
+      }
+      if (payloadRecord.kind === "systemEvent") {
+        const text = typeof payloadRecord.text === "string" ? payloadRecord.text.trim() : "";
+        const legacyMessage =
+          typeof payloadRecord.message === "string" ? payloadRecord.message.trim() : "";
+        if (!text && legacyMessage) {
+          payloadRecord.text = legacyMessage;
+          mutated = true;
+          trackIssue("legacySystemEventMessage");
+        }
+        if ("message" in payloadRecord) {
+          delete payloadRecord.message;
+          mutated = true;
         }
       }
       if (payloadRecord.kind === "agentTurn" && copyTopLevelAgentTurnFields(raw, payloadRecord)) {
