@@ -1,7 +1,7 @@
 import { codingTools, createReadTool, readTool } from "@mariozechner/pi-coding-agent";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ModelCompatConfig } from "../config/types.models.js";
-import type { TextRepetitionGuardConfig, ToolLoopDetectionConfig } from "../config/types.tools.js";
+import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runtime-policy.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
@@ -46,12 +46,6 @@ import {
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
-import { isXaiProvider } from "./schema/clean-for-xai.js";
-import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
-import {
-  type ResolvedTextRepetitionGuardConfig,
-  resolveConfig as resolveTextRepetitionDefaults,
-} from "./text-repetition-guard.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
 import {
   applyToolPolicyPipeline,
@@ -195,20 +189,6 @@ export function resolveToolLoopDetectionConfig(params: {
       ...agent.detectors,
     },
   };
-}
-
-export function resolveTextRepetitionGuardConfig(params: {
-  cfg?: OpenClawConfig;
-  agentId?: string;
-}): ResolvedTextRepetitionGuardConfig {
-  const global = params.cfg?.tools?.textRepetitionGuard;
-  const agent =
-    params.agentId && params.cfg
-      ? resolveAgentConfig(params.cfg, params.agentId)?.tools?.textRepetitionGuard
-      : undefined;
-
-  const merged = agent && global ? { ...global, ...agent } : (agent ?? global);
-  return resolveTextRepetitionDefaults(merged);
 }
 
 export const __testing = {
