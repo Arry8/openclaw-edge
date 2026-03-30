@@ -153,6 +153,15 @@ describe("resolveEventSessionKey", () => {
     expect(resolveEventSessionKey("agent:einstein:cron:job-1")).toBe("agent:einstein:main");
   });
 
+  it("respects custom mainKey for cron session remapping", () => {
+    expect(resolveEventSessionKey("agent:main:cron:backup:run:abc123", "captain")).toBe(
+      "agent:main:captain",
+    );
+    expect(resolveEventSessionKey("agent:einstein:cron:job-1", "captain")).toBe(
+      "agent:einstein:captain",
+    );
+  });
+
   it("passes through non-cron session keys unchanged", () => {
     expect(resolveEventSessionKey("agent:main:main")).toBe("agent:main:main");
     expect(resolveEventSessionKey("agent:main:discord:direct:user1")).toBe(

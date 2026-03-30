@@ -582,7 +582,7 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       }
 
       enqueueSystemEvent(text, {
-        sessionKey: resolveEventSessionKey(sessionKey),
+        sessionKey: resolveEventSessionKey(sessionKey, cfg.session?.mainKey),
         contextKey: runId ? `exec:${runId}` : "exec",
       });
       // Scope wakes only for canonical agent sessions. Synthetic node-* fallback

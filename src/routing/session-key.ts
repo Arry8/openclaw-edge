@@ -58,16 +58,12 @@ export function scopedHeartbeatWakeOptions<T extends object>(
 /**
  * Resolve the event-enqueue session key. For cron sessions, remap to the
  * agent's main session key so heartbeat can find the events.
- *
- * Note: uses the default main key ("main"). Setups with a custom
- * session.mainKey are not supported for cron event remapping — callers
- * in this path do not have config access.
  */
-export function resolveEventSessionKey(sessionKey: string): string {
+export function resolveEventSessionKey(sessionKey: string, mainKey?: string): string {
   if (isCronSessionKey(sessionKey)) {
     const parsed = parseAgentSessionKey(sessionKey);
     if (parsed) {
-      return buildAgentMainSessionKey({ agentId: parsed.agentId });
+      return buildAgentMainSessionKey({ agentId: parsed.agentId, mainKey });
     }
   }
   return sessionKey;
