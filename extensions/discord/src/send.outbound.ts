@@ -16,7 +16,6 @@ import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
 import { convertMarkdownTables } from "openclaw/plugin-sdk/text-runtime";
 import { loadWebMediaRaw } from "openclaw/plugin-sdk/web-media";
 import { resolveDiscordAccount } from "./accounts.js";
-import { cachedProxyFetch } from "./client.js";
 import { rewriteDiscordKnownMentions } from "./mentions.js";
 import {
   buildDiscordMessagePayload,
@@ -330,7 +329,6 @@ type DiscordWebhookSendOpts = {
   username?: string;
   avatarUrl?: string;
   wait?: boolean;
-  proxyFetch?: typeof fetch;
 };
 
 function resolveWebhookExecutionUrl(params: {
@@ -365,21 +363,7 @@ export async function sendWebhookMessageDiscord(
   const replyTo = typeof opts.replyTo === "string" ? opts.replyTo.trim() : "";
   const messageReference = replyTo ? { message_id: replyTo, fail_if_not_exists: false } : undefined;
 
-  let resolvedProxyFetch = opts.proxyFetch;
-  if (!resolvedProxyFetch) {
-    try {
-      const cfg = opts.cfg ?? loadConfig();
-      const account = resolveDiscordAccount({ cfg, accountId: opts.accountId });
-      const proxyUrl = account.config.proxy?.trim();
-      if (proxyUrl) {
-        resolvedProxyFetch = cachedProxyFetch(proxyUrl);
-      }
-    } catch {
-      // Best-effort proxy resolution; fall back to bare fetch.
-    }
-  }
-  const fetchImpl = resolvedProxyFetch ?? fetch;
-  const response = await fetchImpl(
+  const response = await fetch(
     resolveWebhookExecutionUrl({
       webhookId,
       webhookToken,
