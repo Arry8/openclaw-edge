@@ -403,6 +403,129 @@ describe("GatewayClient close handling", () => {
   });
 });
 
+describe("GatewayClient reconnect behavior", () => {
+  beforeEach(() => {
+    wsInstances.length = 0;
+  });
+
+  it("suppresses transient pre-hello 1000 closes while reconnect succeeds", async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const onHelloOk = vi.fn();
+    const onConnectError = vi.fn();
+    const client = new GatewayClient({
+      url: "ws://127.0.0.1:18789",
+      onClose,
+      onHelloOk,
+      onConnectError,
+    });
+
+    try {
+      client.start();
+      const ws1 = getLatestWs();
+      ws1.emitOpen();
+      ws1.emitMessage(
+        JSON.stringify({
+          type: "event",
+          event: "connect.challenge",
+          payload: { nonce: "nonce-1" },
+        }),
+      );
+
+      // Close before hello-ok (connect response) arrives.
+      ws1.emitClose(1000, "");
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(wsInstances.length).toBe(2);
+
+      const ws2 = getLatestWs();
+      ws2.emitOpen();
+      ws2.emitMessage(
+        JSON.stringify({
+          type: "event",
+          event: "connect.challenge",
+          payload: { nonce: "nonce-2" },
+        }),
+      );
+
+      const rawConnectRequest = ws2.sent.find((frame) => frame.includes('"method":"connect"'));
+      expect(rawConnectRequest).toBeTruthy();
+
+      const pendingIds = Array.from(
+        ((client as unknown as { pending: Map<string, unknown> }).pending ?? new Map()).keys(),
+      );
+      expect(pendingIds.length).toBeGreaterThan(0);
+      const connectId = pendingIds[0];
+      expect(typeof connectId).toBe("string");
+      expect(connectId.length).toBeGreaterThan(0);
+
+      ws2.emitMessage(
+        JSON.stringify({
+          type: "res",
+          id: connectId,
+          ok: true,
+          payload: {},
+        }),
+      );
+
+      expect((client as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0);
+
+      for (let i = 0; i < 5; i += 1) {
+        await Promise.resolve();
+      }
+      expect(onConnectError).not.toHaveBeenCalled();
+      expect(onHelloOk).toHaveBeenCalled();
+
+      expect(onClose).not.toHaveBeenCalledWith(1000, "");
+    } finally {
+      client.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("emits a failure signal after repeated pre-hello 1000 closes", async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const onConnectError = vi.fn();
+    const client = new GatewayClient({
+      url: "ws://127.0.0.1:18789",
+      onClose,
+      onConnectError,
+    });
+
+    try {
+      (client as unknown as { backoffMs: number }).backoffMs = 1;
+      client.start();
+
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const ws = getLatestWs();
+        ws.emitOpen();
+        ws.emitMessage(
+          JSON.stringify({
+            type: "event",
+            event: "connect.challenge",
+            payload: { nonce: `nonce-${attempt}` },
+          }),
+        );
+        ws.emitClose(1000, "");
+
+        // Allow the reconnect timer to schedule the next socket.
+        await vi.advanceTimersByTimeAsync(30_000);
+      }
+
+      for (let i = 0; i < 5; i += 1) {
+        await Promise.resolve();
+      }
+
+      expect(onConnectError).toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledWith(1000, "");
+    } finally {
+      client.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("GatewayClient connect auth payload", () => {
   beforeEach(() => {
     wsInstances.length = 0;
