@@ -21,6 +21,29 @@ export const __setMaxChatHistoryMessagesBytesForTest = (value?: number) => {
     maxChatHistoryMessagesBytes = value;
   }
 };
+// This budget applies after the Gateway has already accepted a socket but before the client
+// finishes auth. CLI probes intentionally use smaller end-to-end budgets (for example
+// `openclaw gateway probe --timeout` defaults to 3000ms) so status checks fail fast even
+// though the server allows a little more time for real clients to complete the handshake.
+export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
+export const MAX_HANDSHAKE_TIMEOUT_MS = 120_000;
+
+const parseHandshakeTimeoutOverride = (value?: string) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return Math.min(parsed, MAX_HANDSHAKE_TIMEOUT_MS);
+};
+
+export const getHandshakeTimeoutMs = () => {
+  // User-facing env var works everywhere; test-only override applies only under Vitest
+  // and only when the production override is unset or empty.
+  const envValue =
+    process.env.OPENCLAW_HANDSHAKE_TIMEOUT_MS ||
+    (process.env.VITEST ? process.env.OPENCLAW_TEST_HANDSHAKE_TIMEOUT_MS : undefined);
+  return parseHandshakeTimeoutOverride(envValue) ?? DEFAULT_HANDSHAKE_TIMEOUT_MS;
+};
 export const TICK_INTERVAL_MS = 30_000;
 export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
 export const DEDUPE_TTL_MS = 5 * 60_000;
