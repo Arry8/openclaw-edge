@@ -175,7 +175,7 @@ async function scanSessionFiles(agentId: string): Promise<SourceScan> {
   try {
     const entries = await fs.readdir(sessionsDir, { withFileTypes: true });
     const totalFiles = entries.filter(
-      (entry) => entry.isFile() && entry.name.endsWith(".jsonl"),
+      (entry) => entry.isFile() && entry.name.includes(".jsonl"),
     ).length;
     return { source: "sessions", totalFiles, issues };
   } catch (err) {
