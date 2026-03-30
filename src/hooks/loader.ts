@@ -65,8 +65,12 @@ export async function loadInternalHooks(
     bundledHooksDir?: string;
   },
 ): Promise<number> {
-  // Check if hooks are enabled
-  if (!cfg.hooks?.internal?.enabled) {
+  // Check if hooks are explicitly disabled.
+  // When `enabled` is undefined (default), allow loading so that bundled
+  // hooks (source: "openclaw-bundled") can be discovered — their per-hook
+  // policy already defaults them to "default-on".  Only block when the
+  // user has explicitly set `hooks.internal.enabled` to `false`.
+  if (cfg.hooks?.internal?.enabled === false) {
     return 0;
   }
 
@@ -153,7 +157,7 @@ export async function loadInternalHooks(
   }
 
   // 2. Load legacy config handlers (backwards compatibility)
-  const handlers = cfg.hooks.internal.handlers ?? [];
+  const handlers = cfg.hooks?.internal?.handlers ?? [];
   for (const handlerConfig of handlers) {
     try {
       // Legacy handler paths: keep them workspace-relative.

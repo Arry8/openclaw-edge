@@ -121,20 +121,50 @@ describe("loader", () => {
       expect(getRegisteredEventKeys()).not.toContain("command:new");
     };
 
-    it("should return 0 when hooks are disabled or missing", async () => {
-      for (const cfg of [
-        {
-          hooks: {
-            internal: {
-              enabled: false,
-            },
+    it("should return 0 when hooks are explicitly disabled", async () => {
+      const cfg: OpenClawConfig = {
+        hooks: {
+          internal: {
+            enabled: false,
           },
-        } satisfies OpenClawConfig,
-        {} satisfies OpenClawConfig,
-      ]) {
-        const count = await loadInternalHooks(cfg, tmpDir);
-        expect(count).toBe(0);
-      }
+        },
+      };
+      const count = await loadInternalHooks(cfg, tmpDir);
+      expect(count).toBe(0);
+    });
+
+    it("should return 0 when config is empty and no hooks are discoverable", async () => {
+      // An empty config no longer means hooks are disabled — it means
+      // "proceed to discovery".  This test verifies that the loader
+      // returns 0 when there are simply no hooks to find (the bundled
+      // dir env var is pointed at a non-existent path in beforeEach).
+      const cfg: OpenClawConfig = {};
+      const count = await loadInternalHooks(cfg, tmpDir);
+      expect(count).toBe(0);
+    });
+
+    it("loads bundled hooks when hooks.internal.enabled is undefined (#55929)", async () => {
+      // Regression: when enabled is undefined (not explicitly set), bundled hooks
+      // with defaultEnableMode "default-on" should still load.  The old guard
+      // `if (!cfg.hooks?.internal?.enabled)` treated undefined as falsy and
+      // skipped ALL hooks, including bundled ones.
+      const bundledDir = path.join(tmpDir, "bundled-hooks");
+      await writeDiscoveredHook({
+        sourceDir: bundledDir,
+        hookName: "session-memory",
+        handlerCode:
+          'export default async function(event) { event.messages.push("bundled-loaded"); }\n',
+      });
+
+      // No `enabled` field at all — simulates fresh install default
+      const cfg: OpenClawConfig = {};
+
+      const count = await loadInternalHooks(cfg, tmpDir, { bundledHooksDir: bundledDir });
+      expect(count).toBe(1);
+
+      const event = createInternalHookEvent("command", "new", "test-session");
+      await triggerInternalHook(event);
+      expect(event.messages).toContain("bundled-loaded");
     });
 
     it("should load a handler from a module", async () => {
