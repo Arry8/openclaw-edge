@@ -50,7 +50,20 @@ export function resolveMirroredTranscriptText(params: {
   text?: string;
   mediaUrls?: string[];
 }): string | null {
+  const text = params.text ?? "";
+  const trimmed = text.trim();
   const mediaUrls = params.mediaUrls?.filter((url) => url && url.trim()) ?? [];
+
+  // When adapter transcript text is present (e.g. component labels), use it as
+  // the primary text and append media filenames as supplementary context.
+  if (trimmed && mediaUrls.length > 0) {
+    const names = mediaUrls
+      .map((url) => extractFileNameFromMediaUrl(url))
+      .filter((name): name is string => Boolean(name && name.trim()));
+    const mediaSuffix = names.length > 0 ? names.join(", ") : "media";
+    return `${trimmed}\n${mediaSuffix}`;
+  }
+
   if (mediaUrls.length > 0) {
     const names = mediaUrls
       .map((url) => extractFileNameFromMediaUrl(url))
@@ -61,8 +74,6 @@ export function resolveMirroredTranscriptText(params: {
     return "media";
   }
 
-  const text = params.text ?? "";
-  const trimmed = text.trim();
   return trimmed ? trimmed : null;
 }
 
