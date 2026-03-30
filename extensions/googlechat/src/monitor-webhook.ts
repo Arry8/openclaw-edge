@@ -143,6 +143,11 @@ export function createGoogleChatWebhookRequestHandler(params: {
                 audience: target.audience,
                 expectedAddOnPrincipal: target.account.config.appPrincipal,
               });
+              if (!verification.ok) {
+                target.runtime.warn?.(
+                  `[${target.account.accountId}] Google Chat auth rejected: ${verification.reason ?? "unknown reason"}`,
+                );
+              }
               return verification.ok;
             },
           });
@@ -178,6 +183,11 @@ export function createGoogleChatWebhookRequestHandler(params: {
                 audience: target.audience,
                 expectedAddOnPrincipal: target.account.config.appPrincipal,
               });
+              if (!verification.ok) {
+                target.runtime.warn?.(
+                  `[${target.account.accountId}] Google Chat add-on auth rejected: ${verification.reason ?? "unknown reason"}`,
+                );
+              }
               return verification.ok;
             },
           });
