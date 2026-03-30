@@ -245,20 +245,112 @@ export default definePluginEntry({
 
 Common registration methods:
 
-| Method                               | What it registers    |
-| ------------------------------------ | -------------------- |
-| `registerProvider`                   | Model provider (LLM) |
-| `registerChannel`                    | Chat channel         |
-| `registerTool`                       | Agent tool           |
-| `registerHook` / `on(...)`           | Lifecycle hooks      |
-| `registerSpeechProvider`             | Text-to-speech / STT |
-| `registerMediaUnderstandingProvider` | Image/audio analysis |
-| `registerImageGenerationProvider`    | Image generation     |
-| `registerWebSearchProvider`          | Web search           |
-| `registerHttpRoute`                  | HTTP endpoint        |
-| `registerCommand` / `registerCli`    | CLI commands         |
-| `registerContextEngine`              | Context engine       |
-| `registerService`                    | Background service   |
+| Method                               | What it registers       |
+| ------------------------------------ | ----------------------- |
+| `registerProvider`                   | Model provider (LLM)    |
+| `registerChannel`                    | Chat channel            |
+| `registerTool`                       | Agent tool              |
+| `registerHook`                       | Command / gateway hooks |
+| `on(...)`                            | Agent lifecycle hooks   |
+| `registerSpeechProvider`             | Text-to-speech / STT    |
+| `registerMediaUnderstandingProvider` | Image/audio analysis    |
+| `registerImageGenerationProvider`    | Image generation        |
+| `registerWebSearchProvider`          | Web search              |
+| `registerHttpRoute`                  | HTTP endpoint           |
+| `registerCommand` / `registerCli`    | CLI commands            |
+| `registerContextEngine`              | Context engine          |
+| `registerService`                    | Background service      |
+
+## Hook systems
+
+Plugins can register two types of hooks:
+
+### Internal Hooks (command and gateway events)
+
+Use `api.registerHook()` for command, gateway, message, and agent events.
+Requires `hooks.internal.enabled: true` in your config, and a `name` option to identify the hook:
+
+```typescript
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+
+export default definePluginEntry({
+  id: "my-plugin",
+  name: "My Plugin",
+  register(api) {
+    api.registerHook(
+      "command:new",
+      async () => {
+        // Triggered when user issues /new command
+        api.logger.info("New session started");
+      },
+      { name: "my-plugin.command-new" },
+    );
+  },
+});
+```
+
+Common internal hook events: `command:new`, `command:reset`, `command:stop`,
+`message:received`, `message:sent`, `agent:bootstrap`, `gateway:startup`
+
+Config prerequisite:
+
+```json5
+{
+  hooks: { internal: { enabled: true } },
+}
+```
+
+### Plugin Lifecycle Hooks (agent and tool events)
+
+Use `api.on()` for typed agent lifecycle and tool execution events:
+
+```typescript
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+
+export default definePluginEntry({
+  id: "my-plugin",
+  name: "My Plugin",
+  register(api) {
+    // Tool execution hook
+    api.on("after_tool_call", async (event, ctx) => {
+      api.logger.info(`Tool called: ${event.toolName}`);
+      api.logger.info(`Duration: ${event.durationMs}ms`);
+    });
+
+    // Prompt injection hook
+    // Note: requires plugins.entries.<id>.hooks.allowPromptInjection to be true (default)
+    api.on("before_prompt_build", async (event, ctx) => {
+      return {
+        prependContext: "Additional context for this turn",
+      };
+    });
+  },
+});
+```
+
+Common lifecycle hooks:
+
+- `before_tool_call` / `after_tool_call` — tool execution
+- `before_prompt_build` — inject context before agent runs
+- `message_received` / `message_sent` — message events
+- `session_start` / `session_end` — session lifecycle
+- `before_compaction` / `after_compaction` — memory compaction
+- `gateway_start` / `gateway_stop` — gateway startup and shutdown
+
+### Common mistake
+
+```typescript
+// ❌ Wrong: using registerHook for lifecycle events
+api.registerHook("after_tool_call", handler, { name: "my-plugin.after-tool" });
+
+// ✅ Correct: use api.on() for lifecycle events
+api.on("after_tool_call", async (event, ctx) => {
+  // event contains tool execution details
+  // ctx contains agent/session context
+});
+```
+
+**Important**: Lifecycle hooks like `before_tool_call`, `after_tool_call`, and `before_prompt_build` must use `api.on()`, not `api.registerHook()`.
 
 Hook guard behavior for typed lifecycle hooks:
 
