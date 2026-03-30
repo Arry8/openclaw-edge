@@ -2,9 +2,9 @@
 
 # openclaw-edge
 
-**The integration build of [openclaw](https://github.com/openclaw/openclaw) — every open upstream PR merged onto the latest release.**
+**The integration build of [openclaw](https://github.com/openclaw/openclaw) — every open upstream PR merged onto a release tag.**
 
-Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html): instead of waiting months for the upstream team to triage ~6,600 open pull requests, `openclaw-edge` merges everything that applies cleanly onto the latest release tag and ships a build.
+Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html): instead of waiting months for the upstream team to triage ~6,600 open pull requests, `openclaw-edge` merges everything that applies cleanly onto a fixed upstream release tag and ships a build.
 
 > No one else is doing this for openclaw. This repo is first.
 
@@ -12,7 +12,7 @@ Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html)
 
 ## What it produces
 
-The `mega/latest` branch starts from the most recent upstream release tag and has every clean-merging open PR applied on top. Updated nightly via GitHub Actions.
+The `mega/latest` branch starts from a fixed upstream release tag and has every clean-merging open PR applied on top. It is not rebased as new upstream releases ship — the goal is to exhaust the full PR queue against a stable base. Updated daily via GitHub Actions.
 
 - **Phase 1**: all ~6,600 open PRs (`state=open`)
 - **Phase 2**: all ~16,900 closed-but-not-merged PRs (`state=closed`, `merged_at=null`)
@@ -193,9 +193,9 @@ To add a PR: edit `SKIP_LIST`, revert its merge commit with `git revert -m 1 <sh
 
 ---
 
-## Nightly automation
+## Automation
 
-GitHub Actions runs every Tuesday at 02:00 UTC. On success, merged commits are pushed to `mega/latest`, `main` is fast-forwarded, and a pre-release tagged `mega/YYYY-MM-DD-HHMM` is created.
+GitHub Actions runs daily at 08:00 UTC. Each run processes as many PRs as possible within the 60-minute job timeout (~250 PRs/run). On success, `mega/latest` and `main` are updated and a pre-release tagged `mega/YYYY-MM-DD-HHMM` is created. `main` is force-pushed so it always reflects `mega/latest`.
 
 See [`.github/workflows/mega-merge.yml`](.github/workflows/mega-merge.yml).
 
