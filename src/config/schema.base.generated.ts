@@ -154,6 +154,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
                 minimum: 0,
                 maximum: 9007199254740991,
               },
+              includeContent: {
+                type: "boolean",
+              },
             },
             additionalProperties: false,
           },
@@ -11951,6 +11954,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
       label: "OpenTelemetry Flush Interval (ms)",
       help: "Interval in milliseconds for periodic telemetry flush from buffers to the collector. Increase to reduce export chatter, or lower for faster visibility during active incident response.",
       tags: ["observability", "performance"],
+    },
+    "diagnostics.otel.includeContent": {
+      label: "Include Message Content in OTEL Spans",
+      help: "Include message content (input prompts and output responses) in OTEL trace spans. Required for Langfuse evaluators. Sends actual text to your OTEL backend — ensure your backend's data policies allow this. Default: false.",
+      tags: ["observability"],
     },
     "diagnostics.cacheTrace.enabled": {
       label: "Cache Trace Enabled",

@@ -191,6 +191,8 @@ export type DiagnosticsOtelConfig = {
   sampleRate?: number;
   /** Metric export interval (ms). */
   flushIntervalMs?: number;
+  /** Include message content (input/output text) in OTEL spans. Default: false. */
+  includeContent?: boolean;
 };
 
 export type DiagnosticsCacheTraceConfig = {
