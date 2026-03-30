@@ -933,11 +933,24 @@ final class NodeAppModel {
             }
             let json = try await self.screen.eval(javaScript: """
             (() => {
-              const host = globalThis.openclawA2UI;
-              if (!host) return JSON.stringify({ ok: false, error: "missing openclawA2UI" });
-              return JSON.stringify(host.reset());
+              try {
+                const host = globalThis.openclawA2UI;
+                if (!host) return JSON.stringify({ ok: false, error: "missing openclawA2UI" });
+                return JSON.stringify(host.reset());
+              } catch (e) {
+                return JSON.stringify({ ok: false, error: String(e?.message ?? e) });
+              }
             })()
             """)
+            if let hostError = Self.extractA2UIHostError(from: json) {
+                return BridgeInvokeResponse(
+                    id: req.id,
+                    ok: false,
+                    payloadJSON: json,
+                    error: OpenClawNodeError(
+                        code: .unavailable,
+                        message: "A2UI_HOST_APPLY_FAILED: \(hostError)"))
+            }
             return BridgeInvokeResponse(id: req.id, ok: true, payloadJSON: json)
 
         case OpenClawCanvasA2UICommand.push.rawValue, OpenClawCanvasA2UICommand.pushJSONL.rawValue:
@@ -989,6 +1002,15 @@ final class NodeAppModel {
             })()
             """
             let resultJSON = try await self.screen.eval(javaScript: js)
+            if let hostError = Self.extractA2UIHostError(from: resultJSON) {
+                return BridgeInvokeResponse(
+                    id: req.id,
+                    ok: false,
+                    payloadJSON: resultJSON,
+                    error: OpenClawNodeError(
+                        code: .unavailable,
+                        message: "A2UI_HOST_APPLY_FAILED: \(hostError)"))
+            }
             return BridgeInvokeResponse(id: req.id, ok: true, payloadJSON: resultJSON)
         default:
             return BridgeInvokeResponse(
@@ -996,6 +1018,18 @@ final class NodeAppModel {
                 ok: false,
                 error: OpenClawNodeError(code: .invalidRequest, message: "INVALID_REQUEST: unknown command"))
         }
+    }
+
+    private static func extractA2UIHostError(from resultJSON: String) -> String? {
+        guard let data = resultJSON.data(using: .utf8) else { return nil }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let ok = obj["ok"] as? Bool, ok == false {
+            if let error = obj["error"] as? String, error.isEmpty == false {
+                return error
+            }
+            return "host returned ok=false"
+        }
+        return nil
     }
 
     private func handleCameraInvoke(_ req: BridgeInvokeRequest) async throws -> BridgeInvokeResponse {
@@ -3045,6 +3079,10 @@ extension NodeAppModel {
 
     static func _test_currentDeepLinkKey() -> String {
         self.expectedDeepLinkKey()
+    }
+
+    static func _test_extractA2UIHostError(from resultJSON: String) -> String? {
+        self.extractA2UIHostError(from: resultJSON)
     }
 }
 #endif
