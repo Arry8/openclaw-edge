@@ -1112,11 +1112,24 @@ async function main() {
 
   // ── Batch-fetch all refs before starting merges ───────────────────────────
   // Fetching in bulk is much faster than one-at-a-time.
-  log(`\nFetching ${toProcess.length} PR refs in batches of ${FETCH_BATCH}...`);
+  // Skip PRs whose tmp/pr-N ref already exists locally — avoids unnecessary
+  // network round-trips on restarts (git gc retains refs/objects).
+  const existingRefs = new Set(
+    run("git", ["show-ref"]).stdout
+      .split("\n")
+      .map((l) => l.split(" ")[1])
+      .filter((r) => r?.startsWith("tmp/pr-"))
+      .map((r) => parseInt(r.replace("tmp/pr-", ""), 10)),
+  );
+  const toFetch = toProcess.filter((p) => !existingRefs.has(p.number));
+  const alreadyLocal = toProcess.length - toFetch.length;
+  if (alreadyLocal > 0) log(`Skipping ${alreadyLocal} refs already local; fetching ${toFetch.length}.`);
+  for (const p of toProcess) { if (existingRefs.has(p.number)) fetchSuccess.set(p.number, true); }
 
-  const fetchSuccess = new Map<number, boolean>();
-  for (let i = 0; i < toProcess.length; i += FETCH_BATCH) {
-    const batch = toProcess.slice(i, i + FETCH_BATCH);
+  log(`\nFetching ${toFetch.length} PR refs in batches of ${FETCH_BATCH}...`);
+
+  for (let i = 0; i < toFetch.length; i += FETCH_BATCH) {
+    const batch = toFetch.slice(i, i + FETCH_BATCH);
     const batchNums = batch.map((p) => p.number);
     const results = fetchBatch(batchNums);
     for (const [n, ok] of results) {
@@ -1125,10 +1138,10 @@ async function main() {
 
     const fetchedCount = [...fetchSuccess.values()].filter(Boolean).length;
     process.stdout.write(
-      `\r  fetched ${fetchedCount}/${Math.min(i + FETCH_BATCH, toProcess.length)}...`,
+      `\r  fetched ${fetchedCount}/${Math.min(i + FETCH_BATCH, toFetch.length)}...`,
     );
 
-    if (i + FETCH_BATCH < toProcess.length) {
+    if (i + FETCH_BATCH < toFetch.length) {
       await sleep(FETCH_DELAY_MS);
     }
   }
