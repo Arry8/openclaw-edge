@@ -70,7 +70,11 @@ export async function runSessionsSendA2AFlow(params: {
       : null;
     const targetDisplayTarget =
       resolveAnnounceTargetFromKey(params.displayKey) ??
-      resolveAnnounceTargetFromKey(params.targetSessionKey);
+      resolveAnnounceTargetFromKey(params.targetSessionKey) ??
+      (await resolveAnnounceTarget({
+        sessionKey: params.targetSessionKey,
+        displayKey: params.displayKey,
+      }));
     const targetDisplayChannel = targetDisplayTarget?.channel ?? "unknown";
 
     if (
