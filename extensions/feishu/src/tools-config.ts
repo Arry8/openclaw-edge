@@ -13,6 +13,7 @@ export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
   bitable: true,
   perm: false,
   scopes: true,
+  reaction: true,
 };
 
 /**

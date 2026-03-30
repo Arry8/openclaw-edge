@@ -5,6 +5,7 @@ import { registerFeishuChatTools } from "./src/chat.js";
 import { registerFeishuDocTools } from "./src/docx.js";
 import { registerFeishuDriveTools } from "./src/drive.js";
 import { registerFeishuPermTools } from "./src/perm.js";
+import { registerFeishuReactionTools } from "./src/reaction-tool.js";
 import { setFeishuRuntime } from "./src/runtime.js";
 import { registerFeishuSubagentHooks } from "./src/subagent-hooks.js";
 import { registerFeishuWikiTools } from "./src/wiki.js";
@@ -75,5 +76,6 @@ export default defineChannelPluginEntry({
     registerFeishuDriveTools(api);
     registerFeishuPermTools(api);
     registerFeishuBitableTools(api);
+    registerFeishuReactionTools(api);
   },
 });

@@ -97,6 +97,7 @@ export type FeishuToolsConfig = {
   bitable?: boolean;
   perm?: boolean;
   scopes?: boolean;
+  reaction?: boolean;
 };
 
 export type DynamicAgentCreationConfig = {
