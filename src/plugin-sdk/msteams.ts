@@ -70,6 +70,8 @@ export type {
   MSTeamsConfig,
   MSTeamsReplyStyle,
   MSTeamsTeamConfig,
+  MSTeamsVoiceConfig,
+  MSTeamsVoicePermissionMode,
 } from "../config/types.js";
 export {
   hasConfiguredSecretInput,
