@@ -32,6 +32,7 @@ export function startGatewayMaintenanceTimers(params: {
   chatRunBuffers: Map<string, string>;
   chatDeltaSentAt: Map<string, number>;
   chatDeltaLastBroadcastLen: Map<string, number>;
+  chatSegmentOffsets: Map<string, number>;
   removeChatRun: (
     sessionId: string,
     clientRunId: string,
@@ -113,6 +114,7 @@ export function startGatewayMaintenanceTimers(params: {
           chatRunBuffers: params.chatRunBuffers,
           chatDeltaSentAt: params.chatDeltaSentAt,
           chatDeltaLastBroadcastLen: params.chatDeltaLastBroadcastLen,
+          chatSegmentOffsets: params.chatSegmentOffsets,
           chatAbortedRuns: params.chatRunState.abortedRuns,
           removeChatRun: params.removeChatRun,
           agentRunSeq: params.agentRunSeq,
@@ -132,6 +134,7 @@ export function startGatewayMaintenanceTimers(params: {
       params.chatRunBuffers.delete(runId);
       params.chatDeltaSentAt.delete(runId);
       params.chatDeltaLastBroadcastLen.delete(runId);
+      params.chatSegmentOffsets.delete(runId);
     }
 
     // Sweep stale buffers for runs that were never explicitly aborted.
@@ -150,6 +153,24 @@ export function startGatewayMaintenanceTimers(params: {
       params.chatRunBuffers.delete(runId);
       params.chatDeltaSentAt.delete(runId);
       params.chatDeltaLastBroadcastLen.delete(runId);
+      params.chatSegmentOffsets.delete(runId);
+    }
+
+    // Sweep orphaned segmentOffsets entries for runs that recorded a tool-start
+    // offset but never emitted an assistant delta (so chatDeltaSentAt has no
+    // entry) and whose abort controller is already gone.  Without this, a crash
+    // between tool-start and first delta would leak the offset indefinitely.
+    for (const runId of params.chatSegmentOffsets.keys()) {
+      if (params.chatAbortControllers.has(runId)) {
+        continue;
+      }
+      if (params.chatDeltaSentAt.has(runId)) {
+        continue;
+      }
+      if (params.chatRunState.abortedRuns.has(runId)) {
+        continue;
+      }
+      params.chatSegmentOffsets.delete(runId);
     }
   }, 60_000);
 

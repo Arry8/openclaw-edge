@@ -207,6 +207,14 @@ export type ChatRunState = {
   /** Length of text at the time of the last broadcast, used to avoid duplicate flushes. */
   deltaLastBroadcastLen: Map<string, number>;
   abortedRuns: Map<string, number>;
+  /**
+   * Tracks text offset per run for segmented streaming. When a tool-start
+   * event fires, the current buffer length is recorded so subsequent delta
+   * broadcasts only contain text produced *after* the tool boundary. This
+   * prevents the UI from displaying accumulated pre-tool text in each new
+   * streaming segment.
+   */
+  segmentOffsets: Map<string, number>;
   clear: () => void;
 };
 
@@ -216,6 +224,7 @@ export function createChatRunState(): ChatRunState {
   const deltaSentAt = new Map<string, number>();
   const deltaLastBroadcastLen = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
+  const segmentOffsets = new Map<string, number>();
 
   const clear = () => {
     registry.clear();
@@ -223,6 +232,7 @@ export function createChatRunState(): ChatRunState {
     deltaSentAt.clear();
     deltaLastBroadcastLen.clear();
     abortedRuns.clear();
+    segmentOffsets.clear();
   };
 
   return {
@@ -231,6 +241,7 @@ export function createChatRunState(): ChatRunState {
     deltaSentAt,
     deltaLastBroadcastLen,
     abortedRuns,
+    segmentOffsets,
     clear,
   };
 }
@@ -569,6 +580,12 @@ export function createAgentEventHandler({
     }
     chatRunState.deltaSentAt.set(clientRunId, now);
     chatRunState.deltaLastBroadcastLen.set(clientRunId, mergedText.length);
+    // All subscribers receive monotonic full-snapshot text so non-segment-aware
+    // clients (TUI, ACP) can replace the current assistant text without losing
+    // pre-tool content.  Segment-aware clients (Web Chat UI) use the optional
+    // segmentOffset hint to render only the post-tool portion in the active
+    // streaming segment, avoiding visual duplication of already-committed text.
+    const segmentOffset = chatRunState.segmentOffsets.get(clientRunId) ?? 0;
     const payload = {
       runId: clientRunId,
       sessionKey,
@@ -578,6 +595,7 @@ export function createAgentEventHandler({
         role: "assistant",
         content: [{ type: "text", text: mergedText }],
         timestamp: now,
+        ...(segmentOffset > 0 && { segmentOffset }),
       },
     };
     broadcast("chat", payload, { dropIfSlow: true });
@@ -626,19 +644,23 @@ export function createAgentEventHandler({
     }
 
     const now = Date.now();
-    const flushPayload = {
+    const rawBuffer = chatRunState.buffers.get(clientRunId) ?? "";
+    const segmentOffset = chatRunState.segmentOffsets.get(clientRunId) ?? 0;
+    const payload = {
       runId: clientRunId,
       sessionKey,
       seq,
       state: "delta" as const,
       message: {
         role: "assistant",
-        content: [{ type: "text", text }],
+        content: [{ type: "text", text: rawBuffer }],
         timestamp: now,
+        ...(segmentOffset > 0 && { segmentOffset }),
       },
     };
-    broadcast("chat", flushPayload, { dropIfSlow: true });
-    nodeSendToSession(sessionKey, "chat", flushPayload);
+    // All subscribers receive monotonic full-snapshot text (see emitChatDelta).
+    broadcast("chat", payload, { dropIfSlow: true });
+    nodeSendToSession(sessionKey, "chat", payload);
     chatRunState.deltaLastBroadcastLen.set(clientRunId, text.length);
     chatRunState.deltaSentAt.set(clientRunId, now);
   };
@@ -661,6 +683,7 @@ export function createAgentEventHandler({
     chatRunState.deltaLastBroadcastLen.delete(clientRunId);
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
+    chatRunState.segmentOffsets.delete(clientRunId);
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
@@ -763,6 +786,13 @@ export function createAgentEventHandler({
       // render complete pre-tool text above tool cards (not truncated by delta throttle).
       if (toolPhase === "start" && isControlUiVisible && sessionKey && !isAborted) {
         flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq);
+        // Record the current buffer length as the segment offset.  Delta
+        // payloads include this as an optional `segmentOffset` hint so
+        // segment-aware clients (Web Chat UI) can render only the post-tool
+        // portion, while non-segment-aware clients ignore it and use the
+        // full-snapshot text as-is.
+        const currentBuffer = chatRunState.buffers.get(clientRunId) ?? "";
+        chatRunState.segmentOffsets.set(clientRunId, currentBuffer.length);
       }
       // Always broadcast tool events to registered WS recipients with
       // tool-events capability, regardless of verboseLevel. The verbose
@@ -845,6 +875,7 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
+        chatRunState.segmentOffsets.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
         }
