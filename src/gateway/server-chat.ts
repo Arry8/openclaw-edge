@@ -79,6 +79,15 @@ function normalizeHeartbeatChatFinalText(params: {
   return { suppress: false, text: stripped.text };
 }
 
+function isSuppressedControlReplyText(text: string): boolean {
+  const normalized = text.trim();
+  return (
+    isSilentReplyText(normalized, SILENT_REPLY_TOKEN) ||
+    normalized === "ANNOUNCE_SKIP" ||
+    normalized === "REPLY_SKIP"
+  );
+}
+
 function isSilentReplyLeadFragment(text: string): boolean {
   const normalized = text.trim().toUpperCase();
   if (!normalized) {
@@ -564,7 +573,7 @@ export function createAgentEventHandler({
       return;
     }
     chatRunState.buffers.set(clientRunId, mergedText);
-    if (isSilentReplyText(mergedText, SILENT_REPLY_TOKEN)) {
+    if (isSuppressedControlReplyText(mergedText)) {
       return;
     }
     if (isSilentReplyLeadFragment(mergedText)) {
@@ -613,7 +622,7 @@ export function createAgentEventHandler({
     });
     const text = normalizedHeartbeatText.text.trim();
     const shouldSuppressSilent =
-      normalizedHeartbeatText.suppress || isSilentReplyText(text, SILENT_REPLY_TOKEN);
+      normalizedHeartbeatText.suppress || isSuppressedControlReplyText(text);
     return { text, shouldSuppressSilent };
   };
 
