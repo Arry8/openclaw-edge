@@ -29,6 +29,8 @@
 //   --aggressive-filter   For closed PRs: also skip stale, wip, duplicate-labelled
 //   --changelog <path>    Append a human-readable batch summary to this markdown file
 //                         (default: docs/mega-merge-changelog.md)
+//   --release-interval <n> Create a GitHub release every N successful merges
+//                         (default: 0 = only at the end when --create-release is set).
 //   --continuous-build    Run pnpm build continuously in a background git worktree
 //                         throughout the merge loop (non-blocking). Stops the loop if
 //                         any background build fails. When set, --build-interval is
@@ -160,6 +162,7 @@ const RUN_TEST = boolFlag("--test");
 const AGGRESSIVE_FILTER = boolFlag("--aggressive-filter");
 const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-changelog.md"));
 const CREATE_RELEASE = boolFlag("--create-release");
+const RELEASE_INTERVAL = parseInt(flag("--release-interval", "0"), 10); // 0 = disabled
 const CONTINUOUS_BUILD = boolFlag("--continuous-build");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -926,6 +929,27 @@ async function main() {
         process.exit(1);
       }
       log(`Interval build passed.`);
+    }
+
+    // Interval release: snapshot progress as a GitHub pre-release every N merges.
+    if (
+      CREATE_RELEASE &&
+      !DRY_RUN &&
+      RELEASE_INTERVAL > 0 &&
+      result.status === "merged" &&
+      mergedCount % RELEASE_INTERVAL === 0
+    ) {
+      process.stdout.write("\n");
+      const snapSha = run("git", ["rev-parse", "HEAD"]).stdout;
+      const snapDate = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const snapEntries = entries.filter((e) => e.result.status === "merged");
+      const tagTs = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+      createGhRelease({
+        tag: `mega/${tagTs}`,
+        runDate: snapDate,
+        baseCommit: snapSha,
+        mergedEntries: snapEntries,
+      });
     }
   }
   process.stdout.write("\n");
