@@ -195,6 +195,9 @@ describe("Feishu Card Action Handler", () => {
         to: "chat:chat1",
         accountId: "main",
         card: expect.objectContaining({
+          config: expect.objectContaining({
+            enable_forward: true,
+          }),
           header: expect.objectContaining({
             title: expect.objectContaining({ content: "Confirm action" }),
           }),
