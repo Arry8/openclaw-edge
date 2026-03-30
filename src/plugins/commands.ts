@@ -226,6 +226,7 @@ export async function executePluginCommand(params: {
   accountId?: PluginCommandContext["accountId"];
   messageThreadId?: PluginCommandContext["messageThreadId"];
   threadParentId?: PluginCommandContext["threadParentId"];
+  sessionKey?: string;
 }): Promise<PluginCommandResult> {
   const { command, args, senderId, channel, isAuthorizedSender, commandBody, config } = params;
 
@@ -263,6 +264,7 @@ export async function executePluginCommand(params: {
     accountId: params.accountId,
     messageThreadId: params.messageThreadId,
     threadParentId: params.threadParentId,
+    sessionKey: params.sessionKey,
     requestConversationBinding: async (bindingParams) => {
       if (!command.pluginRoot || !bindingConversation) {
         return {

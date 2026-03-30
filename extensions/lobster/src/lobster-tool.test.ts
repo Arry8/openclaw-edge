@@ -62,6 +62,13 @@ function fakeApi(overrides: Partial<OpenClawPluginApi> = {}): OpenClawPluginApi 
     registerMemoryEmbeddingProvider() {},
     on() {},
     resolvePath: (p) => p,
+    sessions: {
+      getEntry() {
+        return undefined;
+      },
+      async updateEntry() {},
+      async init() {},
+    },
     ...overrides,
   };
 }

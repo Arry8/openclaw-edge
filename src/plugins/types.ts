@@ -21,6 +21,7 @@ import type {
   ChannelStructuredComponents,
 } from "../channels/plugins/types.js";
 import type { OpenClawConfig } from "../config/config.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import type {
   CliBackendConfig,
   ModelProviderAuthMode,
@@ -1323,6 +1324,8 @@ export type PluginCommandContext = {
   ) => Promise<PluginConversationBindingRequestResult>;
   detachConversationBinding: () => Promise<{ removed: boolean }>;
   getCurrentConversationBinding: () => Promise<PluginConversationBinding | null>;
+  /** Session key for the current session (e.g., "agent:main:main") */
+  sessionKey?: string;
 };
 
 export type PluginConversationBindingRequestParams = {
@@ -1773,6 +1776,15 @@ export type OpenClawPluginApi = {
     adapter: import("./memory-embedding-providers.js").MemoryEmbeddingProviderAdapter,
   ) => void;
   resolvePath: (input: string) => string;
+  /** Session store access for plugins that need to read or swap session entries. */
+  sessions: {
+    /** Read the session entry for a given session key. */
+    getEntry(key: string): SessionEntry | undefined;
+    /** Atomically update fields on a session entry (e.g., swap sessionId). */
+    updateEntry(key: string, patch: Partial<SessionEntry>): Promise<void>;
+    /** Pre-load session modules (call during plugin init if you need sync getEntry). */
+    init(): Promise<void>;
+  };
   /** Register a lifecycle hook handler */
   on: <K extends PluginHookName>(
     hookName: K,

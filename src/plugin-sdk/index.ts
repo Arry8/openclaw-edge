@@ -60,6 +60,7 @@ export type {
   SubagentRunResult,
 } from "../plugins/runtime/types.js";
 export type { OpenClawConfig } from "../config/config.js";
+export type { SessionEntry } from "../config/sessions/types.js";
 /** @deprecated Use OpenClawConfig instead */
 export type { OpenClawConfig as ClawdbotConfig } from "../config/config.js";
 export type { CliBackendConfig } from "../config/types.js";
