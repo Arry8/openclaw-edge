@@ -273,7 +273,11 @@ importers:
 
   extensions/brave: {}
 
-  extensions/browser: {}
+  extensions/browser:
+    dependencies:
+      local-browser-bridge:
+        specifier: git+https://github.com/mindsurf0176-ui/local-browser-bridge.git#2d172d131f15b166d8403c68807a35fe9d8d8471
+        version: https://codeload.github.com/mindsurf0176-ui/local-browser-bridge/tar.gz/2d172d131f15b166d8403c68807a35fe9d8d8471
 
   extensions/byteplus: {}
 
@@ -5025,6 +5029,11 @@ packages:
 
   lit@3.3.2:
     resolution: {integrity: sha512-NF9zbsP79l4ao2SNrH3NkfmFgN/hBYSQo90saIVI1o5GpjAdCPVstVzO1MrLOakHoEhYkrtRjPK6Ob521aoYWQ==}
+
+  local-browser-bridge@https://codeload.github.com/mindsurf0176-ui/local-browser-bridge/tar.gz/2d172d131f15b166d8403c68807a35fe9d8d8471:
+    resolution: {tarball: https://codeload.github.com/mindsurf0176-ui/local-browser-bridge/tar.gz/2d172d131f15b166d8403c68807a35fe9d8d8471}
+    version: 0.1.0
+    hasBin: true
 
   lodash.camelcase@4.3.0:
     resolution: {integrity: sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA==}
@@ -11679,6 +11688,8 @@ snapshots:
       '@lit/reactive-element': 2.1.2
       lit-element: 4.2.2
       lit-html: 3.3.2
+
+  local-browser-bridge@https://codeload.github.com/mindsurf0176-ui/local-browser-bridge/tar.gz/2d172d131f15b166d8403c68807a35fe9d8d8471: {}
 
   lodash.camelcase@4.3.0: {}
 
