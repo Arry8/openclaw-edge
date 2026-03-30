@@ -49,6 +49,10 @@ export type ResolvedBrowserProfile = {
   color: string;
   driver: "openclaw" | "existing-session";
   attachOnly: boolean;
+  /** Per-profile headless override. undefined = use global setting. */
+  headless: boolean | undefined;
+  /** Per-profile executable path override. undefined = use global executablePath setting. */
+  executablePath: string | undefined;
 };
 
 function normalizeHexColor(raw: string | undefined) {
@@ -334,6 +338,8 @@ export function resolveProfile(
       color: profile.color,
       driver,
       attachOnly: true,
+      headless: undefined,
+      executablePath: undefined,
     };
   }
 
@@ -357,7 +363,17 @@ export function resolveProfile(
     color: profile.color,
     driver,
     attachOnly: profile.attachOnly ?? resolved.attachOnly,
+    headless: profile.headless,
+    executablePath: profile.executablePath?.trim() || undefined,
   };
+}
+
+/** Returns the effective headless setting for a profile, applying per-profile override over the global setting. */
+export function effectiveHeadless(
+  profile: ResolvedBrowserProfile,
+  resolved: ResolvedBrowserConfig,
+): boolean {
+  return profile.headless !== undefined ? profile.headless : resolved.headless;
 }
 
 export function shouldStartLocalBrowserServer(_resolved: ResolvedBrowserConfig) {

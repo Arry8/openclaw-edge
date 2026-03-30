@@ -35,6 +35,8 @@ function localOpenClawProfile(): Parameters<typeof createProfileResetOps>[0]["pr
     color: "#f60",
     driver: "openclaw",
     attachOnly: false,
+    headless: undefined,
+    executablePath: undefined,
   };
 }
 
