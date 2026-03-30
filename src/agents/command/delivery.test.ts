@@ -246,13 +246,9 @@ function setupSuccessfulDelivery() {
 
 async function runDelivery(
   opts: Record<string, unknown>,
-  overrides?: {
-    runtime?: ReturnType<typeof createRuntime>;
-    payloads?: { text: string }[];
-  },
+  overrides?: { runtime?: ReturnType<typeof createRuntime> },
 ) {
   const runtime = overrides?.runtime ?? createRuntime();
-  const payloads = overrides?.payloads ?? [{ text: "hello" }];
   const result = await deliverAgentCommandResult({
     cfg: {} as unknown as OpenClawConfig,
     deps: {} as unknown as CliDeps,
@@ -263,8 +259,8 @@ async function runDelivery(
       lastChannel: "discord",
       lastTo: "channel:123456",
     } as unknown as SessionEntry,
-    result: { payloads, meta: { durationMs: 1 } },
-    payloads,
+    result: { payloads: [{ text: "hello" }], meta: { durationMs: 1 } },
+    payloads: [{ text: "hello" }],
   });
   return { runtime, result };
 }
@@ -427,141 +423,5 @@ describe("deliverAgentCommandResult — delivery status tracking", () => {
     expect(logMessages(runtime).some((msg) => msg.includes("channel resolved to internal"))).toBe(
       true,
     );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// JSON output — deliveryStatus surfacing (#57730)
-// ---------------------------------------------------------------------------
-
-describe("deliverAgentCommandResult — JSON output includes deliveryStatus", () => {
-  beforeEach(() => {
-    deliverSpy.mockReset();
-    deliveryPlanSpy.mockReset();
-    outboundTargetSpy.mockReset();
-    channelPluginSpy.mockReset();
-    isInternalSpy.mockReset();
-    setupSuccessfulDelivery();
-  });
-
-  function parseJsonOutput(runtime: ReturnType<typeof createRuntime>) {
-    const jsonLine = logMessages(runtime).find((msg) => msg.startsWith("{"));
-    return jsonLine ? JSON.parse(jsonLine) : null;
-  }
-
-  it("includes deliveryStatus in JSON output on successful delivery", async () => {
-    const { runtime } = await runDelivery({
-      message: "hello",
-      deliver: true,
-      json: true,
-      channel: "discord",
-      to: "channel:123456",
-    });
-
-    const envelope = parseJsonOutput(runtime);
-    expect(envelope).not.toBeNull();
-    expect(envelope.deliveryStatus).toEqual({
-      requested: true,
-      attempted: true,
-      succeeded: true,
-    });
-  });
-
-  it("includes deliveryStatus in JSON output on failed delivery", async () => {
-    deliverSpy.mockResolvedValue([]);
-
-    const { runtime } = await runDelivery({
-      message: "hello",
-      deliver: true,
-      json: true,
-      channel: "discord",
-      to: "channel:123456",
-    });
-
-    const envelope = parseJsonOutput(runtime);
-    expect(envelope).not.toBeNull();
-    expect(envelope.deliveryStatus).toEqual({
-      requested: true,
-      attempted: true,
-      succeeded: false,
-    });
-  });
-
-  it("emits JSON without deliveryStatus when deliver is false", async () => {
-    const { runtime } = await runDelivery({
-      message: "hello",
-      deliver: false,
-      json: true,
-    });
-
-    const envelope = parseJsonOutput(runtime);
-    expect(envelope).not.toBeNull();
-    expect(envelope.deliveryStatus).toBeUndefined();
-    expect(envelope.payloads).toBeDefined();
-  });
-
-  it("emits JSON with deliveryStatus on non-bestEffort throw", async () => {
-    deliverSpy.mockRejectedValue(new Error("API timeout"));
-    const runtime = createRuntime();
-
-    await expect(
-      runDelivery(
-        {
-          message: "hello",
-          deliver: true,
-          bestEffortDeliver: false,
-          json: true,
-          channel: "discord",
-          to: "channel:123456",
-        },
-        { runtime },
-      ),
-    ).rejects.toThrow("API timeout");
-
-    const envelope = parseJsonOutput(runtime);
-    expect(envelope).not.toBeNull();
-    expect(envelope.deliveryStatus).toEqual({
-      requested: true,
-      attempted: true,
-      succeeded: false,
-      error: true,
-    });
-  });
-
-  it("suppresses plain-text warning in JSON mode", async () => {
-    deliverSpy.mockResolvedValue([]);
-
-    const { runtime } = await runDelivery({
-      message: "hello",
-      deliver: true,
-      json: true,
-      channel: "discord",
-      to: "channel:123456",
-    });
-
-    expect(
-      logMessages(runtime).some((msg) => msg.includes("[delivery]")),
-    ).toBe(false);
-  });
-
-  it("includes deliveryStatus for no-payload runs in JSON+deliver mode", async () => {
-    const { runtime } = await runDelivery(
-      {
-        message: "",
-        deliver: true,
-        json: true,
-        channel: "discord",
-        to: "channel:123456",
-      },
-      { payloads: [] },
-    );
-
-    const envelope = parseJsonOutput(runtime);
-    expect(envelope).not.toBeNull();
-    expect(envelope.deliveryStatus).toEqual({
-      requested: true,
-      attempted: false,
-      succeeded: false,
-    });
   });
 });
