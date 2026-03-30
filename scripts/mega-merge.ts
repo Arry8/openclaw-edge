@@ -152,6 +152,7 @@ const SKIP_LIST = new Set<number>([
   54344, // commands-config.ts: TS2322 Path type — auto-skipped, cascades from #36867
   36629, // sessions/store.ts + session-reaper.ts: TS error — auto-skipped
   36867, // config-paths.ts: changes Path type to PathSegment[] breaking commands-config.ts consumers — TS2322
+  35344, // pi-embedded-subscribe.handlers.messages.ts: PARSE_ERROR invalid char — rolldown can't parse it
 ]);
 
 // Runtime set populated at startup from docs/mega-merge-autoskip.json.
@@ -849,8 +850,8 @@ function extractFailingFiles(buildOutput: string): string[] {
   const seen = new Set<string>();
   // tsc style: word chars, dots, slashes, hyphens followed by .ts or .js then ( digit
   const tscRe = /([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?)\(\d/g;
-  // rolldown style: [.../file.ts:line:col]
-  const rolldownRe = /\[([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?):\d/g;
+  // rolldown style: [ src/file.ts:line:col ] (╭─[ ... ] box format has a space after [)
+  const rolldownRe = /\[\s*([\w./@-]+(?:\/[\w./@-]+)*\.[tj]sx?):\d/g;
   for (const re of [tscRe, rolldownRe]) {
     let m: RegExpExecArray | null;
     while ((m = re.exec(buildOutput)) !== null) {

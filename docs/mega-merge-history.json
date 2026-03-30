@@ -47041,6 +47041,819 @@
         "status": "merged",
         "commitSha": "7cf2f443b76e3e78dc55bba9a74ed6119e43fbe1"
       }
+    },
+    {
+      "author": "lisitan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6db72ab350269cc0e2658bc9b86f7c2ba1378116",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 35500,
+      "title": "fix(agents): recalculate contextTokens when model changes",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/reply/directive-handling.persist.ts",
+          "src/sessions/model-overrides.test.ts",
+          "src/sessions/model-overrides.ts"
+        ]
+      }
+    },
+    {
+      "author": "trip-null",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "652245370e703c2d5cdd5b3887f1241b4b16f651",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "cli",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35488,
+      "title": "fix(control-ui): force-refresh agent files",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/daemon-cli/lifecycle.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "195440",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "cfc5eb3af516292cf504362914805a528dca173f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35486,
+      "title": "fix(compaction): skip LLM API call when no real conversation messages exist",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/compact.ts"
+        ]
+      }
+    },
+    {
+      "author": "ethanperezz",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0aed3a78100c038bd705fbee322c68d3b5051bf5",
+      "isDraft": null,
+      "labels": [],
+      "mergedAt": null,
+      "number": 35469,
+      "title": "fix(cron): apply responsePrefix to direct delivery payloads",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/isolated-agent/delivery-dispatch.ts"
+        ]
+      }
+    },
+    {
+      "author": "jmzlx",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d634f19b25c7a6075a5b546272cf8967b9d7bece",
+      "isDraft": null,
+      "labels": [
+        "extensions: llm-task",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35463,
+      "title": "fix(llm-task): add explicit type to input/schema params for llama.cpp compat",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "4f9f08d095135e0118d6e3d510d63f49dff575c4"
+      }
+    },
+    {
+      "author": "lisitan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "247a31328ee66131167f3c72fb17bf5773eb76fe",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "extensions: llm-task",
+        "commands",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35450,
+      "title": "fix(llm-task): add type field to input/schema params for llama.cpp compatibility",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/llm-task/src/llm-task-tool.ts",
+          "setup-podman.sh",
+          "src/agents/pi-embedded-block-chunker.test.ts",
+          "src/agents/pi-embedded-block-chunker.ts"
+        ]
+      }
+    },
+    {
+      "author": "lisitan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "ada613374e8db4f6cdcd6608f5fe8d4156a1c69c",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "commands",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35438,
+      "title": "fix(control-ui): reload active file content on refresh",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "setup-podman.sh",
+          "src/agents/pi-embedded-block-chunker.test.ts",
+          "src/agents/pi-embedded-block-chunker.ts"
+        ]
+      }
+    },
+    {
+      "author": "codyrivers83",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3006317338f33d5add240e3a866062acf26ce65a",
+      "isDraft": null,
+      "labels": [],
+      "mergedAt": null,
+      "number": 35435,
+      "title": "fix(canvas-host): add missing MIME types for CSS and common web assets",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/media/mime.ts"
+        ]
+      }
+    },
+    {
+      "author": "JasonOA888",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "8fe1914d638fcce712103b409400db26ee46501a",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35392,
+      "title": "fix(agents): support Ollama thinking field for reasoning models",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/ollama-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "lisitan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e697dc1fa2f96ab7f562bbcbf9c7865c0c85a2d4",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35344,
+      "title": "fix(agents): add cross-turn separator in deltaBuffer for blockStreaming",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "cfff4e75147e5b2a89e84a02138f2b218db66213"
+      }
+    },
+    {
+      "author": "lisitan",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b60cd26764f7127ed4401aa0058f78610a757b1b",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35329,
+      "title": "fix(skills): coerce skill name to string to prevent TypeError",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "77dec629323ae3a45784eaf60c3b35a88bf56835"
+      }
+    },
+    {
+      "author": "paiap",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "af15c20cfc556dd6d85295e4e5f8fe8327b236a3",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35313,
+      "title": "fix(i18n): add missing zh-CN translations for cron UI",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/i18n/locales/zh-CN.ts"
+        ]
+      }
+    },
+    {
+      "author": "Hua688",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "7a068a1aafdbe623b91531576f13f9a0ae753dd0",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35291,
+      "title": "fix(auth-profiles): sync runtime snapshot and rotate profiles on /new",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "c97f180f1f28868e8b03401cd77e715a05872ea7"
+      }
+    },
+    {
+      "author": "jyoudan1996",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2de1325ab71347643b1c43dde5fba60439dac125",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35279,
+      "title": "fix(cron): 修复备份顺序问题，确保备份修改前的旧内容",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/store.ts"
+        ]
+      }
+    },
+    {
+      "author": "haroldfabla2-hue",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "312b532dec7805e94195086b5b0b94c191b60133",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35259,
+      "title": "fix(skills): handle numeric skill names in bundled-context",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/skills/bundled-context.ts"
+        ]
+      }
+    },
+    {
+      "author": "JerryGanst",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "3c0b9d3af036896120d013c483dc1d148286bb94",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 35199,
+      "title": "fix(deps): upgrade tar to ^7.5.10 to fix Hardlink Path Traversal vulnerability",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "pnpm-lock.yaml"
+        ]
+      }
+    },
+    {
+      "author": "manusjs",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4c0da820d36f7387c0f12fb24b7359ae4c09f7b2",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35141,
+      "title": "fix(agents): guard against null content entries in openai-ws-stream",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/openai-ws-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "manusjs",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "791695152550dde22c25d257cbf4c353006e53c5",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35138,
+      "title": "fix(skill-creator): reject empty name and description in quick_validate.py",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "31e43b72880c238f2cbb872a7a55de591eb074fa"
+      }
+    },
+    {
+      "author": "zhuowater",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1643a4471b1b9439ca2690e6aa06088c0fb7af40",
+      "isDraft": null,
+      "labels": [
+        "channel: googlechat",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35117,
+      "title": "fix(googlechat): accept Workspace Add-on JWT issuers in project-number auth path",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "c062e05cc6d81c0aed25f925f62e66404b09ad02"
+      }
+    },
+    {
+      "author": "navendugoyal19",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a3feaeeec30106089a4a88f0989f38950b941359",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 35116,
+      "title": "fix(ui): prevent webchat message disappearance on loadChatHistory race condition",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/auto-reply/inbound.test.ts",
+          "src/auto-reply/reply/dispatch-from-config.ts",
+          "src/auto-reply/reply/inbound-dedupe.ts",
+          "ui/src/ui/app-gateway.node.test.ts",
+          "ui/src/ui/app-gateway.ts",
+          "ui/src/ui/controllers/chat.ts",
+          "ui/src/ui/gateway.ts"
+        ]
+      }
+    },
+    {
+      "author": "iml885203",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "786d785e4cc6518ebdb5a633b140ef712013dcdf",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 35102,
+      "title": "fix(skill-creator): harden quick_validate.py name/description checks",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "skills/skill-creator/scripts/quick_validate.py"
+        ]
+      }
+    },
+    {
+      "author": "HOYALIM",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6990c815fb9c6966e71393bcaeaec236778f8bca",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34981,
+      "title": "fix(ollama): support thinking field in native stream and response",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/ollama-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "tylerbittner",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "9aeb7c2d07a97c621dbfa85d5d87750ebb1d9b13",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34962,
+      "title": "fix(macOS): enable undo/redo in webchat composer text input",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "0ab5b46f42eda73650c081f1c9ffafead90360e1"
+      }
+    },
+    {
+      "author": "Jah-yee",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "a106b08c9a0e02c3e51950351424511fc5b726fe",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "commands",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34957,
+      "title": "fix(onboard): default local tools profile to coding",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "fa7531c109c13be219ad45605accd59c54f53cf8"
+      }
+    },
+    {
+      "author": "koushikxd",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "074c2b11f40672768e5a773fce10c11ab7799458",
+      "isDraft": null,
+      "labels": [
+        "app: macos",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34947,
+      "title": "fix(macOS): fatal access conflict in overlay present() crashes app on launch when talk mode enabled",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "apps/macos/Sources/OpenClaw/NotifyOverlay.swift",
+          "apps/macos/Sources/OpenClaw/OverlayPanelFactory.swift",
+          "apps/macos/Sources/OpenClaw/TalkOverlay.swift",
+          "apps/macos/Sources/OpenClaw/VoiceWakeOverlayController+Window.swift"
+        ]
+      }
+    },
+    {
+      "author": "littleben",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "0291904a6f7537332fe68300e8394ced115fe5a2",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34933,
+      "title": "fix(ui): set selected attribute on option elements to fix model select initial value",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "ui/src/ui/views/agents-utils.ts"
+        ]
+      }
+    },
+    {
+      "author": "littleben",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "2f03c65ff69f54d196b6cf660a15cf3ebd4abb85",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34932,
+      "title": "fix(infra): classify SQLITE_CANTOPEN and related codes as transient errors",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/unhandled-rejections.ts"
+        ]
+      }
+    },
+    {
+      "author": "littleben",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e9f3fdd11330b87b76fc832af1aa6b9cefe1b6d8",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34930,
+      "title": "fix(ollama): use message.thinking field for native API stream reader",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/ollama-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "quanshequ12-star",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "1ba3c985bcc954d5d4372495e6b3eff1d486b1c1",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34890,
+      "title": "fix(ports): suppress lsof errors when ss fallback succeeds",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/ports.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "quanshequ12-star",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "e0ee95140b4212d21f8f1018ce60cde411d34d81",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34888,
+      "title": "fix(gateway): use provided env for restart probe auth",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/daemon-cli/restart-health.test.ts",
+          "src/cli/daemon-cli/restart-health.ts"
+        ]
+      }
+    },
+    {
+      "author": "leo919cc",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "6f13c651292e95667280e862f4b7a94c73e14326",
+      "isDraft": null,
+      "labels": [
+        "channel: discord",
+        "size: M"
+      ],
+      "mergedAt": null,
+      "number": 34879,
+      "title": "fix(discord): requireMention regression — guild messages misclassified as DMs",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/discord/src/monitor/message-handler.preflight.ts",
+          "src/discord/monitor/message-handler.preflight.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "zhangjunmengyang",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "bcd7584f0da49cca6ed247c96eeb064f3ae9ec71",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34864,
+      "title": "fix(browser): improve browser control disabled/error hints",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/browser/src/browser/client-fetch.error-hints.test.ts",
+          "extensions/browser/src/browser/client-fetch.ts"
+        ]
+      }
+    },
+    {
+      "author": "tankcdr",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4c8afc64cc258ebc247a7bfc7d8eaaf0878e8d24",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34860,
+      "title": "fix(anthropic): inject OAuth beta headers without explicit beta config",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/auth-profiles/usage.test.ts",
+          "src/agents/auth-profiles/usage.ts",
+          "src/agents/pi-embedded-runner/extra-params.ts",
+          "src/agents/pi-embedded-runner/run.ts"
+        ]
+      }
+    },
+    {
+      "author": "yinfangchen",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4730010c0ca2aa5bd01a1beb08be214e4e1f8917",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34824,
+      "title": "fix(sanitize): strip leaked XML tool tags and template delimiters (#34156)",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/tools/sessions-helpers.ts"
+        ]
+      }
+    },
+    {
+      "author": "yinfangchen",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "4853b70bda73ed7205b1c61a0d44cf8c7b508e43",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34823,
+      "title": "fix(typing): suppress typing indicator for NO_REPLY runs (#33951)",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "7d138613a83f16bd82bbbb0f029b1de127187ed7"
+      }
+    },
+    {
+      "author": "yinfangchen",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "b55424891e91879514857a5546c24676ead56aa9",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": null,
+      "number": 34822,
+      "title": "fix(cron): manual run no longer shifts 'every' schedule anchor (#33940)",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/service/jobs.ts"
+        ]
+      }
+    },
+    {
+      "author": "scoutthetrailrunner",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d7a2c0f81dc8db39188bc282fe7f8c6bf773e746",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34773,
+      "title": "fix(whatsapp): default dmPolicy to allowlist, auto-add owner to allowFrom",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/whatsapp/src/setup-surface.ts",
+          "src/commands/onboard-channels.ts"
+        ]
+      }
+    },
+    {
+      "author": "Daily-AC",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "72a9ac22e343a46ac0a7e80f77a8f3cb597990f1",
+      "isDraft": null,
+      "labels": [
+        "channel: feishu",
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34736,
+      "title": "fix(feishu): parse interactive card content in quoted messages and merge_forward",
+      "tier": 2,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/feishu/src/bot.ts",
+          "extensions/feishu/src/send.ts"
+        ]
+      }
+    },
+    {
+      "author": "ninjaa",
+      "closedAt": null,
+      "createdAt": null,
+      "headSha": "d6eba6ad551df7fa1a18b87440b3e9fe6e7fd2dc",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": null,
+      "number": 34733,
+      "title": "fix(tokens): catch pre-underscore prefix in silent reply detection",
+      "tier": 2,
+      "result": {
+        "status": "merged",
+        "commitSha": "c24cbff077f73445064855b51e689fc692214d09"
+      }
     }
   ]
 }
