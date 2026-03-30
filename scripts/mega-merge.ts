@@ -1118,8 +1118,8 @@ async function main() {
     run("git", ["show-ref"]).stdout
       .split("\n")
       .map((l) => l.split(" ")[1])
-      .filter((r) => r?.startsWith("tmp/pr-"))
-      .map((r) => parseInt(r.replace("tmp/pr-", ""), 10)),
+      .filter((r) => r?.startsWith("refs/heads/tmp/pr-"))
+      .map((r) => parseInt(r.replace("refs/heads/tmp/pr-", ""), 10)),
   );
   const toFetch = toProcess.filter((p) => !existingRefs.has(p.number));
   const alreadyLocal = toProcess.length - toFetch.length;
