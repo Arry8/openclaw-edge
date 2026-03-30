@@ -5,6 +5,7 @@ import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js
 import { stopGmailWatcher } from "../hooks/gmail-watcher.js";
 import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
+import { SUBSYSTEM_STOP_TIMEOUT_MS, raceTimeout } from "./shutdown-timeout.js";
 
 export function createGatewayCloseHandler(params: {
   bonjourStop: (() => Promise<void>) | null;
@@ -34,8 +35,10 @@ export function createGatewayCloseHandler(params: {
   wss: WebSocketServer;
   httpServer: HttpServer;
   httpServers?: HttpServer[];
+  log?: { warn: (obj: Record<string, unknown>, msg: string) => void };
 }) {
   return async (opts?: { reason?: string; restartExpectedMs?: number | null }) => {
+    const log = params.log;
     try {
       const reasonRaw = typeof opts?.reason === "string" ? opts.reason.trim() : "";
       const reason = reasonRaw || "gateway stopping";
@@ -45,35 +48,60 @@ export function createGatewayCloseHandler(params: {
           : null;
       if (params.bonjourStop) {
         try {
-          await params.bonjourStop();
+          await raceTimeout(params.bonjourStop(), SUBSYSTEM_STOP_TIMEOUT_MS, "bonjour", log);
         } catch {
           /* ignore */
         }
       }
       if (params.tailscaleCleanup) {
-        await params.tailscaleCleanup();
+        await raceTimeout(
+          params.tailscaleCleanup().catch(() => {}),
+          SUBSYSTEM_STOP_TIMEOUT_MS,
+          "tailscale",
+          log,
+        );
       }
       if (params.canvasHost) {
         try {
-          await params.canvasHost.close();
+          await raceTimeout(
+            params.canvasHost.close(),
+            SUBSYSTEM_STOP_TIMEOUT_MS,
+            "canvasHost",
+            log,
+          );
         } catch {
           /* ignore */
         }
       }
       if (params.canvasHostServer) {
         try {
-          await params.canvasHostServer.close();
+          await raceTimeout(
+            params.canvasHostServer.close(),
+            SUBSYSTEM_STOP_TIMEOUT_MS,
+            "canvasHostServer",
+            log,
+          );
         } catch {
           /* ignore */
         }
       }
       for (const plugin of listChannelPlugins()) {
-        await params.stopChannel(plugin.id);
+        await raceTimeout(
+          params.stopChannel(plugin.id).catch(() => {}),
+          SUBSYSTEM_STOP_TIMEOUT_MS,
+          `channel:${plugin.id}`,
+          log,
+        );
       }
       if (params.pluginServices) {
-        await params.pluginServices.stop().catch(() => {});
+        await raceTimeout(
+          params.pluginServices.stop().catch(() => {}),
+          SUBSYSTEM_STOP_TIMEOUT_MS,
+          "pluginServices",
+          log,
+        );
       }
-      await stopGmailWatcher();
+      await raceTimeout(stopGmailWatcher(), SUBSYSTEM_STOP_TIMEOUT_MS, "gmailWatcher", log);
       params.cron.stop();
       params.heartbeatRunner.stop();
       try {
@@ -137,8 +165,18 @@ export function createGatewayCloseHandler(params: {
         }
       }
       params.clients.clear();
-      await params.configReloader.stop().catch(() => {});
-      await new Promise<void>((resolve) => params.wss.close(() => resolve()));
+      await raceTimeout(
+        params.configReloader.stop().catch(() => {}),
+        SUBSYSTEM_STOP_TIMEOUT_MS,
+        "configReloader",
+        log,
+      );
+      await raceTimeout(
+        new Promise<void>((resolve) => params.wss.close(() => resolve())),
+        SUBSYSTEM_STOP_TIMEOUT_MS,
+        "wss",
+        log,
+      );
       const servers =
         params.httpServers && params.httpServers.length > 0
           ? params.httpServers
@@ -150,8 +188,13 @@ export function createGatewayCloseHandler(params: {
         if (typeof httpServer.closeIdleConnections === "function") {
           httpServer.closeIdleConnections();
         }
-        await new Promise<void>((resolve, reject) =>
-          httpServer.close((err) => (err ? reject(err) : resolve())),
+        await raceTimeout(
+          new Promise<void>((resolve, reject) =>
+            httpServer.close((err) => (err ? reject(err) : resolve())),
+          ).catch(() => {}),
+          SUBSYSTEM_STOP_TIMEOUT_MS,
+          "httpServer",
+          log,
         );
       }
     } finally {
