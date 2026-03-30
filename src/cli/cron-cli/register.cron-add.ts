@@ -1,4 +1,6 @@
 import type { Command } from "commander";
+import { resolveAgentIdByWorkspacePath } from "../../agents/agent-scope.js";
+import { loadConfig } from "../../config/config.js";
 import type { CronJob } from "../../cron/types.js";
 import { sanitizeAgentId } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -13,6 +15,15 @@ import {
   printCronList,
   warnIfCronSchedulerDisabled,
 } from "./shared.js";
+
+function inferCronAgentIdFromWorkspace(): string | undefined {
+  try {
+    const cfg = loadConfig();
+    return resolveAgentIdByWorkspacePath(cfg, process.cwd());
+  } catch {
+    return undefined;
+  }
+}
 
 export function registerCronStatusCommand(cron: Command) {
   addGatewayClientOptions(
@@ -120,7 +131,7 @@ export function registerCronAddCommand(cron: Command) {
           const agentId =
             typeof opts.agent === "string" && opts.agent.trim()
               ? sanitizeAgentId(opts.agent.trim())
-              : undefined;
+              : inferCronAgentIdFromWorkspace();
 
           const hasAnnounce = Boolean(opts.announce) || opts.deliver === true;
           const hasNoDeliver = opts.deliver === false;

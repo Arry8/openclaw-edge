@@ -17,6 +17,8 @@ const defaultGatewayMock = async (
   return { ok: true, params };
 };
 const callGatewayFromCli = vi.fn(defaultGatewayMock);
+const loadConfigMock = vi.hoisted(() => vi.fn(() => ({})));
+const resolveAgentIdByWorkspacePathMock = vi.hoisted(() => vi.fn(() => undefined));
 
 vi.mock("./gateway-rpc.js", async () => {
   const actual = await vi.importActual<typeof import("./gateway-rpc.js")>("./gateway-rpc.js");
@@ -24,6 +26,25 @@ vi.mock("./gateway-rpc.js", async () => {
     ...actual,
     callGatewayFromCli: (method: string, opts: unknown, params?: unknown, extra?: unknown) =>
       callGatewayFromCli(method, opts, params, extra as number | undefined),
+  };
+});
+
+vi.mock("../config/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../config/config.js")>("../config/config.js");
+  return {
+    ...actual,
+    loadConfig: () => loadConfigMock(),
+  };
+});
+
+vi.mock("../agents/agent-scope.js", async () => {
+  const actual = await vi.importActual<typeof import("../agents/agent-scope.js")>(
+    "../agents/agent-scope.js",
+  );
+  return {
+    ...actual,
+    resolveAgentIdByWorkspacePath: (...args: Parameters<typeof actual.resolveAgentIdByWorkspacePath>) =>
+      resolveAgentIdByWorkspacePathMock(...args),
   };
 });
 
@@ -72,6 +93,8 @@ function buildProgram() {
 function resetGatewayMock() {
   callGatewayFromCli.mockClear();
   callGatewayFromCli.mockImplementation(defaultGatewayMock);
+  loadConfigMock.mockReset().mockReturnValue({});
+  resolveAgentIdByWorkspacePathMock.mockReset().mockReturnValue(undefined);
   resetRuntimeCapture();
 }
 
@@ -412,6 +435,28 @@ describe("cron cli", () => {
     const addCall = callGatewayFromCli.mock.calls.find((call) => call[0] === "cron.add");
     const params = addCall?.[2] as { agentId?: string };
     expect(params?.agentId).toBe("ops");
+  });
+
+  it("infers agent id from current workspace when --agent is omitted", async () => {
+    resolveAgentIdByWorkspacePathMock.mockReturnValue("sales");
+
+    await runCronCommand([
+      "cron",
+      "add",
+      "--name",
+      "Inferred agent",
+      "--cron",
+      "* * * * *",
+      "--session",
+      "isolated",
+      "--message",
+      "hi",
+    ]);
+
+    const addCall = callGatewayFromCli.mock.calls.find((call) => call[0] === "cron.add");
+    const params = addCall?.[2] as { agentId?: string };
+    expect(params?.agentId).toBe("sales");
+    expect(resolveAgentIdByWorkspacePathMock).toHaveBeenCalledTimes(1);
   });
 
   it("sets lightContext on cron add when --light-context is passed", async () => {
