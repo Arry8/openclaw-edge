@@ -1,6 +1,7 @@
 import { isRestartEnabled } from "../../config/commands.js";
 import { readBestEffortConfig, resolveGatewayPort } from "../../config/config.js";
 import { resolveGatewayService } from "../../daemon/service.js";
+import { resolveGatewayProbeAuthSafeWithSecretInputs } from "../../gateway/probe-auth.js";
 import { probeGateway } from "../../gateway/probe.js";
 import {
   findVerifiedGatewayListenerPidsOnPortSync,
@@ -41,6 +42,26 @@ async function resolveGatewayLifecyclePort(service = resolveGatewayService()) {
 
   const portFromArgs = parsePortFromArgs(command?.programArguments);
   return portFromArgs ?? resolveGatewayPort(await readBestEffortConfig(), mergedEnv);
+}
+
+async function resolveGatewayRestartProbeAuth() {
+  const fallbackAuth = {
+    token: process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || undefined,
+    password: process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() || undefined,
+  };
+  const cfg = await readBestEffortConfig().catch(() => undefined);
+  if (!cfg) {
+    return fallbackAuth;
+  }
+  const { auth } = await resolveGatewayProbeAuthSafeWithSecretInputs({
+    cfg,
+    mode: cfg.gateway?.mode === "remote" ? "remote" : "local",
+    env: process.env,
+  });
+  return {
+    token: auth.token ?? fallbackAuth.token,
+    password: auth.password ?? fallbackAuth.password,
+  };
 }
 
 function resolveGatewayPortFallback(): Promise<number> {
@@ -199,11 +220,13 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
         ]);
       }
 
+      const probeAuth = await resolveGatewayRestartProbeAuth();
       let health = await waitForGatewayHealthyRestart({
         service,
         port: restartPort,
         attempts: POST_RESTART_HEALTH_ATTEMPTS,
         delayMs: POST_RESTART_HEALTH_DELAY_MS,
+        probeAuth,
         includeUnknownListenersAsStale: process.platform === "win32",
       });
 
@@ -225,6 +248,7 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
           port: restartPort,
           attempts: POST_RESTART_HEALTH_ATTEMPTS,
           delayMs: POST_RESTART_HEALTH_DELAY_MS,
+          probeAuth,
           includeUnknownListenersAsStale: process.platform === "win32",
         });
       }
