@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { loadConfig } from "../config/config.js";
 import {
   DEFAULT_EXEC_APPROVAL_TIMEOUT_MS,
   type ExecHost,
@@ -322,7 +323,9 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
   const summary = output
     ? `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel}) :: ${output}`
     : `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel})`;
-  enqueueSystemEvent(summary, { sessionKey: resolveEventSessionKey(sessionKey) });
+  enqueueSystemEvent(summary, {
+    sessionKey: resolveEventSessionKey(sessionKey, loadConfig().session?.mainKey),
+  });
   requestHeartbeatNow(
     scopedHeartbeatWakeOptions(sessionKey, { reason: `exec:${session.id}:exit` }),
   );
@@ -385,7 +388,7 @@ export function emitExecSystemEvent(
     return;
   }
   enqueueSystemEvent(text, {
-    sessionKey: resolveEventSessionKey(sessionKey),
+    sessionKey: resolveEventSessionKey(sessionKey, loadConfig().session?.mainKey),
     contextKey: opts.contextKey,
   });
   requestHeartbeatNow(scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event" }));
