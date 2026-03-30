@@ -16,6 +16,39 @@ describe("session cost usage", () => {
   const withStateDir = async <T>(stateDir: string, fn: () => Promise<T>): Promise<T> =>
     await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, fn);
 
+  it("parses OpenRouter flat usage.cost number as total cost", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-cost-openrouter-"));
+    const sessionsDir = path.join(root, "agents", "main", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const sessionFile = path.join(sessionsDir, "sess-openrouter.jsonl");
+
+    await fs.writeFile(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "message",
+          timestamp: new Date().toISOString(),
+          message: {
+            role: "assistant",
+            provider: "openrouter",
+            model: "anthropic/claude-3.5-sonnet",
+            usage: {
+              input: 100,
+              output: 50,
+              totalTokens: 150,
+              cost: 0.0045,
+            },
+          },
+        }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const logs = await loadSessionLogs({ sessionFile });
+    expect(logs).toHaveLength(1);
+    expect(logs?.[0]?.cost).toBeCloseTo(0.0045, 10);
+  });
+
   it("aggregates daily totals with log cost and pricing fallback", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-cost-"));
     const sessionsDir = path.join(root, "agents", "main", "sessions");
