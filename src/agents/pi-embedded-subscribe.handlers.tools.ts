@@ -22,6 +22,7 @@ import {
   extractToolResultText,
   filterToolResultMediaUrls,
   isToolResultError,
+  isWarningOnlyToolResult,
   sanitizeToolResult,
 } from "./pi-embedded-subscribe.tools.js";
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
@@ -541,7 +542,7 @@ export async function handleToolExecutionEnd(
   const runId = ctx.params.runId;
   const isError = Boolean(evt.isError);
   const result = evt.result;
-  const isToolError = isError || isToolResultError(result);
+  const isToolError = (isError || isToolResultError(result)) && !isWarningOnlyToolResult(result);
   const sanitizedResult = sanitizeToolResult(result);
   const toolStartKey = buildToolStartKey(runId, toolCallId);
   const startData = toolStartData.get(toolStartKey);

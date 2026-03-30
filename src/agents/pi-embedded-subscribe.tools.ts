@@ -84,6 +84,18 @@ function extractErrorField(value: unknown): string | undefined {
   return normalizeToolErrorText(status);
 }
 
+export function isWarningOnlyToolResult(result: unknown): boolean {
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+  const record = result as Record<string, unknown>;
+  const warning = readErrorCandidate(record.warning);
+  if (!warning) {
+    return false;
+  }
+  return !extractErrorField(record.details) && !extractErrorField(record);
+}
+
 export function sanitizeToolResult(result: unknown): unknown {
   if (!result || typeof result !== "object") {
     return result;
