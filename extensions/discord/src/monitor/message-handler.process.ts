@@ -862,7 +862,15 @@ export async function processDiscordMessage(
           (typeof discordConfig?.blockStreaming === "boolean"
             ? !discordConfig.blockStreaming
             : undefined),
-        onPartialReply: draftStream ? (payload) => updateDraftFromPartial(payload.text) : undefined,
+        onPartialReply: draftStream
+          ? (payload) => {
+              // Skip reasoning/commentary payloads in partial stream updates.
+              if (payload.isReasoning) {
+                return;
+              }
+              updateDraftFromPartial(payload.text);
+            }
+          : undefined,
         onAssistantMessageStart: draftStream
           ? () => {
               if (shouldSplitPreviewMessages && hasStreamedMessage) {
