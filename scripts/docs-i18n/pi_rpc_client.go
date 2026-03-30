@@ -88,16 +88,27 @@ func startDocsPiClient(ctx context.Context, options docsPiClientOptions) (*docsP
 		return nil, err
 	}
 	process.Env = append(os.Environ(), fmt.Sprintf("PI_CODING_AGENT_DIR=%s", agentDir))
+
+	// FIX: pipes are acquired sequentially -- if a later pipe call or
+	// Start() fails, earlier pipes must be closed to avoid leaking file
+	// descriptors. Close acquired pipes on each failure path below.
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return nil, err
 	}
 	stdout, err := process.StdoutPipe()
 	if err != nil {
+		// stdin was acquired but stdout failed -- close stdin to prevent
+		// leaking the pipe file descriptor.
+		_ = stdin.Close()
 		return nil, err
 	}
 	stderr, err := process.StderrPipe()
 	if err != nil {
+		// stdin and stdout were acquired but stderr failed -- close both
+		// to prevent leaking their pipe file descriptors.
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, err
 	}
 
@@ -109,6 +120,12 @@ func startDocsPiClient(ctx context.Context, options docsPiClientOptions) (*docsP
 	}
 
 	if err := process.Start(); err != nil {
+		// All three pipes were acquired but the process failed to start.
+		// Close stdin (the only caller-owned WriteCloser) to release its
+		// FD. Go's Start() error path calls closeDescriptors internally,
+		// which releases the stdout/stderr read ends, so no additional
+		// cleanup is needed for those here.
+		_ = stdin.Close()
 		return nil, err
 	}
 
