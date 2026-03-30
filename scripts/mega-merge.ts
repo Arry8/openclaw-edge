@@ -116,8 +116,10 @@ const SKIP_LIST = new Set<number>([
   51371, // transitively includes PR #56737 branch (navigation-guard.ts void|Promise<void> .catch() TS error)
   55875, // unterminated regex in skill-scanner.ts (YARA scanner) — parse error
   56660, // duplicate observedSuspiciousSignatures declaration in config/io.ts
+  56617, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error
   56737, // navigation-guard.ts: .catch() on void|Promise<void> — TS error
-  56840, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error
+  56840, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error (same pattern as #56617)
+  51722, // sandbox/browser.ts:94 duplicate object property — TS1117
 ]);
 
 // Files that, if a PR touches only these, we skip (noise-only changes).
