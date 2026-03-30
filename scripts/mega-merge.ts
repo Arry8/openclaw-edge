@@ -31,6 +31,10 @@
 //                         (default: docs/mega-merge-changelog.md)
 //   --release-interval <n> Create a GitHub release every N successful merges
 //                         (default: 0 = only at the end when --create-release is set).
+//   --cache-prs           Cache the PR list to docs/mega-merge-pr-cache.json and reuse
+//                         it on subsequent runs within --cache-ttl minutes. Useful for
+//                         local catchup loops where the API is hit on every restart.
+//   --cache-ttl <n>       Cache TTL in minutes (default: 60). Ignored without --cache-prs.
 //   --continuous-build    Run pnpm build continuously in a background git worktree
 //                         throughout the merge loop (non-blocking). Stops the loop if
 //                         any background build fails. When set, --build-interval is
@@ -164,6 +168,9 @@ const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-ch
 const CREATE_RELEASE = boolFlag("--create-release");
 const RELEASE_INTERVAL = parseInt(flag("--release-interval", "0"), 10); // 0 = disabled
 const CONTINUOUS_BUILD = boolFlag("--continuous-build");
+const CACHE_PRS = boolFlag("--cache-prs");
+const CACHE_TTL_MS = parseInt(flag("--cache-ttl", "60"), 10) * 60_000;
+const PR_CACHE_PATH = resolve(REPO_DIR, "docs/mega-merge-pr-cache.json");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -493,6 +500,46 @@ async function fetchAllOpenPrs(): Promise<PrRecord[]> {
   return all;
 }
 
+// ── PR list cache ─────────────────────────────────────────────────────────────
+
+// Load cached PR list if it exists and is within TTL, otherwise fetch and save.
+async function fetchAllOpenPrsCached(): Promise<PrRecord[]> {
+  if (CACHE_PRS && existsSync(PR_CACHE_PATH)) {
+    try {
+      const cached = JSON.parse(readFileSync(PR_CACHE_PATH, "utf8")) as {
+        fetchedAt: number;
+        prs: PrRecord[];
+      };
+      const ageMs = Date.now() - cached.fetchedAt;
+      if (ageMs < CACHE_TTL_MS) {
+        const ageMins = Math.round(ageMs / 60_000);
+        log(
+          `Using cached PR list (${cached.prs.length} PRs, ${ageMins}m old). Pass --no-cache-prs to force refresh.`,
+        );
+        return cached.prs;
+      }
+      log(
+        `PR cache expired (${Math.round(ageMs / 60_000)}m old, TTL ${Math.round(CACHE_TTL_MS / 60_000)}m) — refetching.`,
+      );
+    } catch {
+      warn("Could not parse PR cache; refetching.");
+    }
+  }
+
+  const prs = await fetchAllOpenPrs();
+
+  if (CACHE_PRS) {
+    try {
+      writeFileSync(PR_CACHE_PATH, JSON.stringify({ fetchedAt: Date.now(), prs }, null, 2));
+      log(`PR list cached to ${PR_CACHE_PATH}`);
+    } catch {
+      warn("Could not write PR cache.");
+    }
+  }
+
+  return prs;
+}
+
 // ── PR filtering ──────────────────────────────────────────────────────────────
 
 // Stale noise patterns only applied under --aggressive-filter for closed PRs
@@ -790,8 +837,8 @@ async function main() {
     log("DRY RUN — git tree will not be modified.");
   }
 
-  // Fetch all open PRs
-  const rawPrs = await fetchAllOpenPrs();
+  // Fetch all open PRs (from cache if --cache-prs and within TTL)
+  const rawPrs = await fetchAllOpenPrsCached();
 
   // Sort + deduplicate
   const sorted = deduplicateBySha(sortPrs(rawPrs));
