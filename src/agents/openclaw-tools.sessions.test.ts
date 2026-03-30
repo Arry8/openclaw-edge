@@ -920,8 +920,10 @@ describe("sessions tools", () => {
         return { runId, status: "accepted", acceptedAt: 3000 + agentCallCount };
       }
       if (request.method === "agent.wait") {
-        lastWaitedRunId = request.params?.runId;
-        return { runId: request.params?.runId ?? "run-1", status: "ok" };
+        const runId =
+          typeof request.params?.runId === "string" ? request.params.runId : undefined;
+        lastWaitedRunId = runId;
+        return { runId: runId ?? "run-1", status: "ok" };
       }
       if (request.method === "chat.history") {
         const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
@@ -951,9 +953,11 @@ describe("sessions tools", () => {
       }
       if (request.method === "send") {
         sendParams = {
-          to: request.params?.to,
-          channel: request.params?.channel,
-          message: request.params?.message,
+          to: typeof request.params?.to === "string" ? request.params.to : undefined,
+          channel:
+            typeof request.params?.channel === "string" ? request.params.channel : undefined,
+          message:
+            typeof request.params?.message === "string" ? request.params.message : undefined,
         };
         return { messageId: "m-announce" };
       }
