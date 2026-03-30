@@ -60,6 +60,7 @@ async function initSchemaRegistry(
 let producer: ReturnType<InstanceType<typeof Kafka>["producer"]> | null = null;
 let serializer: Serializer | null = null;
 let startupPromise: Promise<void> | null = null;
+let shuttingDown = false;
 const inflight = new Set<Promise<unknown>>();
 
 export default definePluginEntry({
@@ -115,14 +116,21 @@ export default definePluginEntry({
     });
 
     api.on("gateway_stop", async () => {
-      // Wait for any in-progress startup before shutting down
+      // Block new publishes immediately
+      shuttingDown = true;
+
       if (startupPromise) {
         await startupPromise.catch(() => {});
         startupPromise = null;
       }
       if (!producer) return;
       try {
-        await Promise.allSettled([...inflight]);
+        // Drain until no more in-flight — hooks may still fire
+        // concurrently during shutdown, but shuttingDown gate
+        // prevents new sends from being added.
+        while (inflight.size > 0) {
+          await Promise.allSettled([...inflight]);
+        }
         await producer.flush({ timeout: 10_000 });
         await producer.disconnect();
         api.logger.info("kafka-producer: disconnected");
@@ -131,12 +139,13 @@ export default definePluginEntry({
       }
       producer = null;
       serializer = null;
+      shuttingDown = false;
     });
 
     for (const hookName of HOOKS) {
       api.on(hookName, (event: unknown, ctx: unknown) => {
         const p = producer;
-        if (!p) return;
+        if (!p || shuttingDown) return;
 
         const c = (ctx ?? {}) as Record<string, unknown>;
         const sessionKey = (c.sessionKey as string) || null;
