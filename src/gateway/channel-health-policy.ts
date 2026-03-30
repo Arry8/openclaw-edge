@@ -11,6 +11,7 @@ export type ChannelHealthSnapshot = {
   lastRunActivityAt?: number | null;
   lastEventAt?: number | null;
   lastStartAt?: number | null;
+  lastConnectedAt?: number | null;
   reconnectAttempts?: number;
   mode?: string;
 };
@@ -104,10 +105,29 @@ export function evaluateChannelHealth(
       return { healthy: false, reason: "stuck" };
     }
   }
-  if (snapshot.lastStartAt != null) {
-    const upDuration = policy.now - snapshot.lastStartAt;
+  const hasConnectedField = Object.prototype.hasOwnProperty.call(snapshot, "connected");
+  const lastConnectedAt =
+    typeof snapshot.lastConnectedAt === "number" && Number.isFinite(snapshot.lastConnectedAt)
+      ? snapshot.lastConnectedAt
+      : null;
+
+  if (lastStartAt != null) {
+    const upDuration = policy.now - lastStartAt;
     if (upDuration < policy.channelConnectGraceMs) {
       return { healthy: true, reason: "startup-connect-grace" };
+    }
+
+    // Some channels explicitly track `connected`, but during startup we can see
+    // patch-merged snapshots where `running=true` is set for a new lifecycle
+    // while `connected` (or related timestamps) are stale/undefined. Treat
+    // this as unhealthy once we are past the startup grace window.
+    if (hasConnectedField) {
+      if (snapshot.connected !== true) {
+        return { healthy: false, reason: "disconnected" };
+      }
+      if (lastConnectedAt != null && lastConnectedAt < lastStartAt) {
+        return { healthy: false, reason: "disconnected" };
+      }
     }
   }
   if (snapshot.connected === false) {
