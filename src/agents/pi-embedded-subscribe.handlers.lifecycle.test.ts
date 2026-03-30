@@ -21,7 +21,8 @@ function createContext(
       onBlockReply,
     },
     state: {
-      lastAssistant: lastAssistant as EmbeddedPiSubscribeContext["state"]["lastAssistant"],
+      lastAssistantMessage:
+        lastAssistant as EmbeddedPiSubscribeContext["state"]["lastAssistantMessage"],
       pendingCompactionRetry: 0,
       pendingToolMediaUrls: [],
       pendingToolAudioAsVoice: false,

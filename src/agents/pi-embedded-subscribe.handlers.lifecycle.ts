@@ -35,7 +35,7 @@ export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
 }
 
 export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
-  const lastAssistant = ctx.state.lastAssistant;
+  const lastAssistant = ctx.state.lastAssistantMessage;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
 
   if (isError && lastAssistant) {

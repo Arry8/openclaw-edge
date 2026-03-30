@@ -55,6 +55,7 @@ export type EmbeddedPiSubscribeState = {
   lastBlockReplyText?: string;
   reasoningStreamOpen: boolean;
   assistantMessageIndex: number;
+  lastAssistantMessage?: AgentMessage;
   lastAssistantTextMessageIndex: number;
   lastAssistantTextNormalized?: string;
   lastAssistantTextTrimmed?: string;
@@ -80,7 +81,6 @@ export type EmbeddedPiSubscribeState = {
   pendingToolMediaUrls: string[];
   pendingToolAudioAsVoice: boolean;
   deterministicApprovalPromptSent: boolean;
-  lastAssistant?: AgentMessage;
 };
 
 export type EmbeddedPiSubscribeContext = {
