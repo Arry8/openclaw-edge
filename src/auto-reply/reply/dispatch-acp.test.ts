@@ -107,6 +107,8 @@ async function runDispatch(params: {
   cfg?: OpenClawConfig;
   dispatcher?: ReplyDispatcher;
   shouldRouteToOriginating?: boolean;
+  originatingChannel?: string;
+  originatingTo?: string;
   onReplyStart?: () => void;
   ctxOverrides?: Record<string, unknown>;
   sessionKeyOverride?: string;
@@ -126,7 +128,10 @@ async function runDispatch(params: {
     inboundAudio: false,
     shouldRouteToOriginating: params.shouldRouteToOriginating ?? false,
     ...(params.shouldRouteToOriginating
-      ? { originatingChannel: "telegram", originatingTo: "telegram:thread-1" }
+      ? {
+          originatingChannel: params.originatingChannel ?? "telegram",
+          originatingTo: params.originatingTo ?? "telegram:thread-1",
+        }
       : {}),
     shouldSendToolSummaries: true,
     bypassForCommand: false,
@@ -199,13 +204,15 @@ function queueTtsReplies(...replies: MockTtsReply[]) {
   }
 }
 
-async function runRoutedAcpTextTurn(text: string) {
+async function runRoutedAcpTextTurn(text: string, originatingChannel = "telegram") {
   mockRoutedTextTurn(text);
   const { dispatcher } = createDispatcher();
   const result = await runDispatch({
     bodyForAgent: "run acp",
     dispatcher,
     shouldRouteToOriginating: true,
+    originatingChannel,
+    originatingTo: `${originatingChannel}:thread-1`,
   });
   return { result };
 }
@@ -820,6 +827,23 @@ describe("tryDispatchAcpReply", () => {
     expect(result?.counts.block).toBe(1);
     expect(result?.counts.final).toBe(0);
     expect(routeMocks.routeReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not deliver final fallback text when routed discord block text was already visible", async () => {
+    setReadyAcpResolution();
+    ttsMocks.resolveTtsConfig.mockReturnValue({ mode: "final" });
+    queueTtsReplies({ text: "CODEX_OK" }, {} as ReturnType<typeof ttsMocks.maybeApplyTtsToPayload>);
+    const { result } = await runRoutedAcpTextTurn("CODEX_OK", "discord");
+
+    expect(result?.counts.block).toBe(1);
+    expect(result?.counts.final).toBe(0);
+    expect(routeMocks.routeReply).toHaveBeenCalledTimes(1);
+    expect(routeMocks.routeReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "discord",
+        to: "discord:thread-1",
+      }),
+    );
   });
 
   it("does not deliver final fallback text when direct block text was already visible", async () => {
