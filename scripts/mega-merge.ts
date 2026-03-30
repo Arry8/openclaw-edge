@@ -160,6 +160,7 @@ const HISTORY_PATH = resolve(REPO_DIR, "docs/mega-merge-history.json");
 const FETCH_BATCH = parseInt(flag("--fetch-batch", "50"), 10);
 const FETCH_DELAY_MS = parseInt(flag("--fetch-delay-ms", "200"), 10);
 const NO_COMMIT = boolFlag("--no-commit");
+const PROMOTE_MAIN = !process.argv.includes("--no-promote-main"); // fast-forward main to mega/latest after clean build
 const BUILD_INTERVAL = parseInt(flag("--build-interval", "0"), 10); // 0 = disabled
 const SKIP_BUILD = boolFlag("--skip-build");
 const RUN_TEST = boolFlag("--test");
@@ -1198,6 +1199,19 @@ async function main() {
     const tagTs = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
     const tag = `mega/${tagTs}`;
     createGhRelease({ tag, runDate, baseCommit, mergedEntries });
+  }
+
+  // ── Promote to main ───────────────────────────────────────────────────────
+  // Fast-forward main to mega/latest after a clean build.
+  // Skip if build was skipped, nothing merged, or --no-promote-main passed.
+  if (PROMOTE_MAIN && !DRY_RUN && mergedCount > 0 && buildPassed) {
+    log("\nPromoting mega/latest → main...");
+    const ff = run("git", ["push", "origin", `${baseBranch}:main`]);
+    if (ff.ok) {
+      log("main promoted successfully.");
+    } else {
+      warn(`Failed to promote main: ${ff.stderr}. Push mega/latest manually when ready.`);
+    }
   }
 
   // Clean up any tsgo/tsgolint processes spawned during the build steps.
