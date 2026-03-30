@@ -77,6 +77,7 @@ import {
 } from "./provider.startup.js";
 import { resolveDiscordRestFetch } from "./rest-fetch.js";
 import { formatDiscordStartupStatusMessage } from "./startup-status.js";
+import { DISCORD_CLAIMS_PATH, refreshDiscordClaims } from "./instance-claims.js";
 import type { DiscordMonitorStatusSink } from "./status.js";
 import { formatThreadBindingDurationLabel } from "./thread-bindings.messages.js";
 
@@ -790,6 +791,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
   let lifecycleStarted = false;
   let gatewaySupervisor: ReturnType<typeof createDiscordGatewaySupervisor> | undefined;
   let deactivateMessageHandler: (() => void) | undefined;
+  let claimsRefreshTimer: ReturnType<typeof setInterval> | undefined;
   let autoPresenceController: ReturnType<
     typeof createDiscordMonitorClient
   >["autoPresenceController"] = null;
@@ -967,6 +969,24 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
           details,
         }),
     });
+    const claimsInfo = await refreshDiscordClaims({
+      cfg,
+      accountId: account.accountId,
+      botId: applicationId ?? botUserId ?? account.accountId,
+      guildEntries,
+    });
+    runtime.log?.(
+      `discord claims registered path=${DISCORD_CLAIMS_PATH} instance=${claimsInfo.instanceKey} bot=${claimsInfo.botId} channels=${claimsInfo.channelCount}`,
+    );
+    claimsRefreshTimer = setInterval(() => {
+      refreshDiscordClaims({
+        cfg,
+        accountId: account.accountId,
+        botId: applicationId ?? botUserId ?? account.accountId,
+        guildEntries,
+      }).catch((error) => runtime.error?.(danger(`discord claims refresh failed: ${String(error)}`)));
+    }, 30_000);
+    claimsRefreshTimer.unref?.();
     let voiceManager: DiscordVoiceManager | null = null;
 
     if (nativeDisabledExplicit) {
@@ -1084,6 +1104,10 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
       gatewaySupervisor,
     });
   } finally {
+    if (claimsRefreshTimer) {
+      clearInterval(claimsRefreshTimer);
+      claimsRefreshTimer = undefined;
+    }
     deactivateMessageHandler?.();
     autoPresenceController?.stop();
     opts.setStatus?.({ connected: false });
