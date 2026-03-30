@@ -1003,6 +1003,7 @@ export async function handleFeishuMessage(params: {
         if (agentId === activeAgentId) {
           // Active agent: real Feishu dispatcher (responds on Feishu)
           const identity = resolveAgentOutboundIdentity(cfg, agentId);
+          const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, agentId);
           const { dispatcher, replyOptions, markDispatchIdle } = createFeishuReplyDispatcher({
             cfg,
             agentId,
@@ -1016,6 +1017,7 @@ export async function handleFeishuMessage(params: {
             mentionTargets: ctx.mentionTargets,
             accountId: account.accountId,
             identity,
+            mediaLocalRoots,
             messageCreateTimeMs,
             mediaLocalRoots: getAgentScopedMediaLocalRoots(cfg, agentId),
           });
@@ -1106,6 +1108,7 @@ export async function handleFeishuMessage(params: {
       );
 
       const identity = resolveAgentOutboundIdentity(cfg, route.agentId);
+      const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, route.agentId);
       const { dispatcher, replyOptions, markDispatchIdle } = createFeishuReplyDispatcher({
         cfg,
         agentId: route.agentId,
@@ -1119,6 +1122,7 @@ export async function handleFeishuMessage(params: {
         mentionTargets: ctx.mentionTargets,
         accountId: account.accountId,
         identity,
+        mediaLocalRoots,
         messageCreateTimeMs,
         mediaLocalRoots: getAgentScopedMediaLocalRoots(cfg, route.agentId),
       });
