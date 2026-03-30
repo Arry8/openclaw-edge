@@ -315,36 +315,10 @@ export async function downloadMessageResourceFeishu(params: {
   }
   const { client } = createConfiguredFeishuMediaClient({ cfg, accountId });
 
-  let response: unknown;
-  try {
-    response = await client.im.messageResource.get({
-      path: { message_id: messageId, file_key: normalizedFileKey },
-      params: { type },
-    });
-  } catch (err) {
-    // iOS Feishu sends videos from the photo library as message_type "file"
-    // instead of "video". The messageResource API returns 502 for longer
-    // videos when called with type=file; retry with type=media which matches
-    // the download path used for direct video sends.
-    const httpStatus = (err as { response?: { status?: number } })?.response?.status;
-    if (type === "file" && httpStatus === 502) {
-      console.warn(
-        `feishu: download with type=file returned 502, retrying with type=media (message=${messageId})`,
-      );
-      try {
-        response = await client.im.messageResource.get({
-          path: { message_id: messageId, file_key: normalizedFileKey },
-          params: { type: "media" },
-        });
-      } catch {
-        // Retry also failed — throw the original 502 error so callers see
-        // the root cause rather than a potentially confusing secondary error.
-        throw err;
-      }
-    } else {
-      throw err;
-    }
-  }
+  const response = await client.im.messageResource.get({
+    path: { message_id: messageId, file_key: normalizedFileKey },
+    params: { type },
+  });
 
   const buffer = await readFeishuResponseBuffer({
     response,
