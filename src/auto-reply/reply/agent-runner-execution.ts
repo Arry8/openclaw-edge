@@ -207,6 +207,7 @@ export async function runAgentTurnWithFallback(params: {
   let fallbackAttempts: RuntimeFallbackAttempt[] = [];
   let didResetAfterCompactionFailure = false;
   let didRetryTransientHttpError = false;
+  let didRetryGatewayDrainingError = false;
   let bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
     params.getActiveSessionEntry()?.systemPromptReport,
   );
@@ -798,6 +799,24 @@ export async function runAgentTurnWithFallback(params: {
             },
           };
         }
+        continue;
+      }
+
+      // Auto-retry on GatewayDrainingError — this is always transient
+      // (gateway is restarting and will be back in seconds). (#55412)
+      const isGatewayDraining =
+        !didRetryGatewayDrainingError &&
+        (message.includes("Gateway is draining") ||
+          (err instanceof Error && err.name === "GatewayDrainingError"));
+      if (isGatewayDraining) {
+        didRetryGatewayDrainingError = true;
+        const GATEWAY_DRAINING_RETRY_DELAY_MS = 15_000;
+        defaultRuntime.error(
+          `Gateway draining during agent run. Waiting ${GATEWAY_DRAINING_RETRY_DELAY_MS}ms for restart, then retrying.`,
+        );
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, GATEWAY_DRAINING_RETRY_DELAY_MS);
+        });
         continue;
       }
 
