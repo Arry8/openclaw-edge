@@ -68,6 +68,11 @@ export async function installGatewayDaemonNonInteractive(params: {
     runtime: daemonRuntimeRaw,
     warn: (message) => runtime.log(message),
   });
+  // Ensure linger is enabled before installing the service so the systemd user
+  // instance is running on headless servers (no desktop session). Without linger,
+  // `systemctl --user enable` fails with "Unit file does not exist" because the
+  // user systemd manager is not reachable.
+  await ensureSystemdUserLingerNonInteractive({ runtime });
   try {
     await service.install({
       env: process.env,
@@ -81,6 +86,5 @@ export async function installGatewayDaemonNonInteractive(params: {
     runtime.log(gatewayInstallErrorHint());
     return { installed: false };
   }
-  await ensureSystemdUserLingerNonInteractive({ runtime });
   return { installed: true };
 }
