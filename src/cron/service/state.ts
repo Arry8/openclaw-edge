@@ -84,7 +84,6 @@ export type CronServiceDeps = {
     job: CronJob;
     message: string;
     abortSignal?: AbortSignal;
-    deadlineAtMs?: number;
   }) => Promise<
     {
       summary?: string;
