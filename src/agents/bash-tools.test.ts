@@ -488,6 +488,266 @@ describe("exec tool backgrounding", () => {
   });
 });
 
+describe("exec /approve guard", () => {
+  // === MUST BLOCK: direct /approve invocations ===
+
+  it("rejects /approve commands to prevent infinite approval loop", async () => {
+    await expect(executeExecCommand(execTool, "/approve abc123 allow-always")).rejects.toThrow(
+      "/approve is a chat slash command, not a shell command",
+    );
+  });
+
+  it("rejects /approve with leading whitespace", async () => {
+    await expect(executeExecCommand(execTool, "  /approve abc123 allow-once")).rejects.toThrow(
+      "/approve is a chat slash command, not a shell command",
+    );
+  });
+
+  it("rejects bare /approve with no arguments", async () => {
+    await expect(executeExecCommand(execTool, "/approve")).rejects.toThrow(
+      "/approve is a chat slash command, not a shell command",
+    );
+  });
+
+  it("rejects case-insensitive variants like /APPROVE", async () => {
+    await expect(
+      executeExecCommand(execTool, "/APPROVE abc123 allow-once"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve@botname foreign-mention syntax", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve@mybot abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with full UUID id", async () => {
+    await expect(
+      executeExecCommand(
+        execTool,
+        "/approve a1b2c3d4-e5f6-7890-abcd-ef1234567890 allow-once",
+      ),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with deny decision", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 deny"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with reject alias", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 reject"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with block alias", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 block"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with short alias 'once'", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 once"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with short alias 'always'", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with allowonce alias", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 allowonce"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST BLOCK: /approve on different lines ===
+
+  it("rejects /approve as the first line in a multiline command", async () => {
+    await expect(
+      executeExecCommand(execTool, "/approve abc123 allow-always\necho done"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve preceded by leading blank lines", async () => {
+    await expect(
+      executeExecCommand(execTool, "\n\n/approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after a comment line", async () => {
+    await expect(
+      executeExecCommand(execTool, "# note\n/approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after an executable line", async () => {
+    await expect(
+      executeExecCommand(execTool, "true\n/approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST BLOCK: /approve after shell operators ===
+
+  it("rejects /approve after && separator", async () => {
+    await expect(
+      executeExecCommand(execTool, "true && /approve abc123 allow-once"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after ; separator", async () => {
+    await expect(
+      executeExecCommand(execTool, "echo ok; /approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after || separator", async () => {
+    await expect(
+      executeExecCommand(execTool, "false || /approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after | pipe", async () => {
+    await expect(
+      executeExecCommand(execTool, "echo x | /approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after & background operator", async () => {
+    await expect(
+      executeExecCommand(execTool, "true & /approve abc123 allow-once"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST BLOCK: /approve with shell prefixes ===
+
+  it("rejects /approve inside subshell parens", async () => {
+    await expect(
+      executeExecCommand(execTool, "( /approve abc123 allow-once )"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after shell keyword 'then'", async () => {
+    await expect(
+      executeExecCommand(execTool, "if true; then /approve abc123 allow-once; fi"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with env-var prefix", async () => {
+    await expect(
+      executeExecCommand(execTool, "FOO=1 /approve abc123 allow-once"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve with quoted env-var prefix containing spaces", async () => {
+    await expect(
+      executeExecCommand(execTool, 'FOO="a b" /approve abc123 allow-once'),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST BLOCK: /approve via indirect execution ===
+
+  it("rejects /approve inside eval", async () => {
+    await expect(
+      executeExecCommand(execTool, 'eval "/approve abc123 allow-always"'),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve inside bash -c", async () => {
+    await expect(
+      executeExecCommand(execTool, 'bash -c "/approve abc123 allow-always"'),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST BLOCK: heredoc/comment edge cases ===
+
+  it("rejects /approve after inline comment with # <<EOF", async () => {
+    // `echo ok # <<EOF` is NOT a heredoc; the next line /approve must be caught.
+    await expect(
+      executeExecCommand(execTool, "echo ok # <<EOF\n/approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after whole-line comment with # <<EOF", async () => {
+    await expect(
+      executeExecCommand(execTool, "# <<EOF\n/approve abc123 allow-always"),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  it("rejects /approve after quoted <<EOF that is not a real heredoc", async () => {
+    await expect(
+      executeExecCommand(execTool, 'echo " <<EOF"\n/approve abc123 allow-always'),
+    ).rejects.toThrow("/approve is a chat slash command, not a shell command");
+  });
+
+  // === MUST ALLOW: legitimate commands ===
+
+  it("does not reject echo /approve (argument, not command)", async () => {
+    const result = await executeExecCommand(execTool, shellEcho("/approve test"));
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject bare /approve as argument to echo", async () => {
+    const result = await executeExecCommand(execTool, "echo /approve");
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject /approve inside heredoc with tab-stripped delimiter", async () => {
+    const result = await executeExecCommand(
+      execTool,
+      "cat <<-EOF\n\t/approve abc123 allow-always\nEOF",
+    );
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject grep /approve in a file", async () => {
+    const result = await executeExecCommand(execTool, "grep /approve /dev/null");
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject /approve inside heredoc data", async () => {
+    const result = await executeExecCommand(
+      execTool,
+      "cat <<'EOF'\n/approve abc123 allow-always\nEOF",
+    );
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject /approve inside heredoc with surrounding commands", async () => {
+    const result = await executeExecCommand(
+      execTool,
+      "echo start\ncat <<'DELIM'\n/approve abc123 allow-always\nDELIM\necho end",
+    );
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject /approve inside heredoc with double-quoted delimiter", async () => {
+    const result = await executeExecCommand(
+      execTool,
+      'cat <<"EOF"\n/approve abc123 allow-always\nEOF',
+    );
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject /approve inside heredoc with hyphenated delimiter", async () => {
+    const result = await executeExecCommand(
+      execTool,
+      "cat <<'END-DATA'\n/approve abc123 allow-always\nEND-DATA",
+    );
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+
+  it("does not reject normal commands", async () => {
+    const result = await executeExecCommand(execTool, "ls -la");
+    expect(readTextContent(result.content)).toBeDefined();
+  });
+});
+
 describe("exec exit codes", () => {
   useCapturedEnv([...SHELL_ENV_KEYS], applyDefaultShellEnv);
 

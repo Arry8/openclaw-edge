@@ -52,6 +52,126 @@ export type {
   ExecToolDefaults,
   ExecToolDetails,
 } from "./bash-tools.exec-types.js";
+/**
+ * Matches the `/approve <id> <decision>` pattern used by the approval system.
+ * Case-insensitive, supports optional @mention suffix.
+ *
+ * - `id` is either a short hex slug (`[a-f0-9]{1,}`) or a full UUID
+ *   (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), so we match `[a-f0-9-]+`.
+ * - `decision` covers every alias accepted by the slash-command parser in
+ *   `commands-approve.ts`: allow-once, allow-always, deny, reject, block,
+ *   once, always, allow, allowonce, allowalways.
+ */
+const APPROVE_FULL_RE =
+  /\/approve(?:@[^\s]*)?\s+[a-f0-9-]+\s+(?:allow-?(?:once|always)|allowonce|allowalways|deny|reject|block|once|always|allow)(?=[\s;)"'`}|&]|$)/i;
+
+/**
+ * Matches a bare `/approve` at a command-start position (beginning of line
+ * or after a shell separator) with no arguments or only whitespace after it.
+ *
+ * The `(?:^|[;|&(])` anchor ensures we don't match `/approve` when it
+ * appears as an argument to another command (e.g. `echo /approve`).
+ */
+const APPROVE_BARE_RE = /(?:^|[;|&(])\s*\/approve(?:@[^\s]*)?\s*$/im;
+
+/**
+ * Strip inline comments from a shell line, respecting single and double
+ * quotes. `echo ok # <<EOF` → `echo ok ` (the `# <<EOF` is a comment).
+ */
+function stripInlineComment(line: string): string {
+  let result = "";
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+    } else if (ch === "#" && !inSingle && !inDouble) {
+      return result;
+    }
+    result += ch;
+  }
+  return result;
+}
+
+/**
+ * Detect a heredoc opening on a line. Returns the delimiter word or null.
+ * Supports: `<<EOF`, `<<'EOF'`, `<<"EOF"`, `<<-EOF`, `<<-'EOF-1'`.
+ *
+ * To avoid false positives:
+ * - Inline comments are stripped first (`echo ok # <<EOF` → no heredoc).
+ * - `<<` inside quoted strings is ignored (`echo " <<EOF"` → no heredoc).
+ */
+function detectHeredocDelimiter(line: string): string | null {
+  // Strip inline comments so `echo ok # <<EOF` is not a heredoc.
+  const commentFree = stripInlineComment(line);
+  const m = commentFree.match(/(?:^|\s)(<<-?\s*['"]?([\w-]+)['"]?)/);
+  if (!m) return null;
+  // Verify `<<` is not inside a quoted string.
+  const matchIndex = (m.index ?? 0) + (/^\s/.test(m[0]) ? 1 : 0);
+  const before = commentFree.substring(0, matchIndex);
+  let inSingle = false;
+  let inDouble = false;
+  for (const ch of before) {
+    if (ch === "'" && !inDouble) inSingle = !inSingle;
+    if (ch === '"' && !inSingle) inDouble = !inDouble;
+  }
+  if (inSingle || inDouble) return null;
+  return m[2];
+}
+
+/**
+ * Check whether a shell command contains an `/approve` invocation.
+ *
+ * This is a **best-effort defence layer** (layer 3 of 3). The primary fixes
+ * are in the system prompt (layer 1) and the approval-pending tool output
+ * (layer 2).
+ *
+ * **Design rationale**: instead of trying to parse shell syntax (which is
+ * impossible to do perfectly with regex), this function:
+ *
+ * 1. Strips heredoc bodies — they are data, not executable commands.
+ * 2. Strips inline comments — they are not executed.
+ * 3. Matches the specific `/approve <id> <decision>` pattern (covering all
+ *    decision aliases from `commands-approve.ts` and UUID-format ids) or a
+ *    bare `/approve` at a command-start position in the remaining text.
+ *
+ * This catches every realistic attack vector (direct call, after `&&`/`;`/`|`,
+ * inside subshells, after env assignments, inside `eval`/`bash -c`, etc.)
+ * without needing to split on shell operators or strip shell prefixes.
+ *
+ * The only false-positive risk is `/approve <hash> allow-once` appearing as
+ * a literal argument (e.g. `echo "/approve abc allow-always"`), but the
+ * approval hash is a random hex string that will never appear in normal
+ * echo/grep arguments.
+ */
+export function containsApproveCommand(command: string): boolean {
+  const lines = command.split("\n");
+  const executableLines: string[] = [];
+  let heredocDelimiter: string | null = null;
+
+  for (const line of lines) {
+    // If inside a heredoc body, skip until the closing delimiter.
+    if (heredocDelimiter !== null) {
+      if (line.trim() === heredocDelimiter) {
+        heredocDelimiter = null;
+      }
+      continue;
+    }
+    // Detect heredoc start on this line.
+    const delim = detectHeredocDelimiter(line);
+    if (delim) {
+      heredocDelimiter = delim;
+    }
+    // Strip inline comments and collect the executable portion.
+    executableLines.push(stripInlineComment(line));
+  }
+
+  const executableText = executableLines.join("\n");
+  return APPROVE_FULL_RE.test(executableText) || APPROVE_BARE_RE.test(executableText);
+}
 
 function buildExecForegroundResult(params: {
   outcome: ExecProcessOutcome;
@@ -249,6 +369,22 @@ export function createExecTool(
 
       if (!params.command) {
         throw new Error("Provide a command to start.");
+      }
+
+      // Guard: /approve is a slash command for the chat input, not a shell command.
+      // Executing it via exec triggers a new approval-pending, causing an infinite loop.
+      // See: https://github.com/openclaw/openclaw/issues/57432
+      //
+      // All executable lines are checked. Heredoc/here-string bodies are skipped
+      // so that `/approve` literals inside data blocks do not false-positive.
+      // Flag: i (case-insensitive) matches /APPROVE, /Approve, etc. aligned with
+      //       the slash-command parser in commands-approve.ts.
+      // The optional @mention group covers `/approve@botname ...` foreign-mention syntax.
+      if (containsApproveCommand(params.command)) {
+        throw new Error(
+          "/approve is a chat slash command, not a shell command. " +
+            "Show the /approve command to the user as a chat message instead of executing it via exec.",
+        );
       }
 
       const maxOutput = DEFAULT_MAX_OUTPUT;
