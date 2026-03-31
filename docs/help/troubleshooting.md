@@ -34,6 +34,11 @@ Good output in one line:
 - `openclaw channels status --probe` → channels report `connected` or `ready`.
 - `openclaw logs --follow` → steady activity, no repeating fatal errors.
 
+## LLM provider errors (429, 5xx, timeouts, retries)
+
+If you see repeated 429, 500/502/503, or timeout errors from an LLM provider, go to
+[/gateway/troubleshooting#llm-provider-errors-429-5xx-timeouts-retries](/gateway/troubleshooting#llm-provider-errors-429-5xx-timeouts-retries).
+
 ## Anthropic long context 429
 
 If you see:

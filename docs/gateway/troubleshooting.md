@@ -29,6 +29,51 @@ Expected healthy signals:
 - `openclaw doctor` reports no blocking config/service issues.
 - `openclaw channels status --probe` shows connected/ready channels.
 
+## LLM provider errors (429, 5xx, timeouts, retries)
+
+Transient LLM errors are common in production. The three most frequent root causes are:
+
+- **Rate-limit saturation** — the API key has exhausted its requests-per-minute or tokens-per-minute quota.
+- **Partial provider outage** — the LLM provider is degraded; retries hit the same unhealthy backend.
+- **Retry storms** — aggressive client retries amplify a brief quota spike into sustained throttling.
+
+A 429 does not always mean you need a different provider. A 5xx does not always mean the provider is down.
+Before changing architecture, run the lightweight diagnostic below.
+
+### Diagnostic steps
+
+```bash
+openclaw logs --follow
+openclaw models status
+openclaw config get agents.defaults.models
+openclaw config get agents.defaults.retries
+```
+
+Look for:
+
+- Repeated `429` lines with a `retry-after` header value — indicates active rate limiting.
+- `5xx` errors clustering on a short window — likely a transient backend outage rather than a config problem.
+- Log lines with rapid retry sequences (e.g. `attempt 1`, `attempt 2` within seconds) — indicates a retry storm building.
+- A single model targeted for all traffic — spreading load across fallback models can reduce per-key quota pressure.
+
+### Optional: zero-setup CLI diagnostic
+
+`npx ai-doctor` is an optional CLI tool that can identify whether the observed errors are caused by
+rate limiting, a provider outage, or a retry loop, and suggests concrete next steps.
+It requires no installation beyond Node.js:
+
+```bash
+npx ai-doctor
+```
+
+This is one option for a fast second opinion; the `openclaw logs` and `openclaw models status`
+commands above are sufficient on their own.
+
+Related:
+
+- [/providers/models](/providers/models)
+- [/reference/token-use](/reference/token-use)
+
 ## Anthropic 429 extra usage required for long context
 
 Use this when logs/errors include:
