@@ -600,8 +600,8 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     ]);
     const toolFailureSection = formatToolFailuresSection(toolFailures);
 
-    // Model resolution: ctx.model is undefined in compact.ts workflow (extensionRunner.initialize() is never called).
-    // Fall back to runtime.model which is explicitly passed when building extension paths.
+    // Model resolution: prefer runtime.model for compact workflow (passed explicitly via runtime).
+    // Fall back to ctx.model for non-compact paths where extensionRunner.initialize() populates it.
     const runtime = getCompactionSafeguardRuntime(ctx.sessionManager);
     const customInstructions = resolveCompactionInstructions(
       eventInstructions,
@@ -612,7 +612,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
       identifierInstructions: runtime?.identifierInstructions,
     };
     const identifierPolicy = runtime?.identifierPolicy ?? "strict";
-    const model = ctx.model ?? runtime?.model;
+    const model = runtime?.model ?? ctx.model;
     if (!model) {
       // Log warning once per session when both models are missing (diagnostic for future issues).
       // Use a WeakSet to track which session managers have already logged the warning.
