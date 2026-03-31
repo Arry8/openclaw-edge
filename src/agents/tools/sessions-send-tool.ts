@@ -23,6 +23,7 @@ import {
 } from "./sessions-helpers.js";
 import { appendCommsLog } from "./sessions-send-comms-log.js";
 import { buildAgentToAgentMessageContext, resolvePingPongTurns } from "./sessions-send-helpers.js";
+import { hasPeers, tryPeerRelay } from "./sessions-send-peer.js";
 import { runSessionsSendA2AFlow } from "./sessions-send-tool.a2a.js";
 
 const SessionsSendToolSchema = Type.Object({
@@ -186,6 +187,24 @@ export function createSessionsSendTool(opts?: {
               error: "Session not visible from this sandboxed agent session.",
             });
           }
+
+          // Peer relay fallback: try configured peer gateways before giving up.
+          if (hasPeers(cfg)) {
+            const timeoutSeconds =
+              typeof params.timeoutSeconds === "number" && Number.isFinite(params.timeoutSeconds)
+                ? Math.max(0, Math.floor(params.timeoutSeconds))
+                : 30;
+            const peerResult = await tryPeerRelay({
+              cfg,
+              resolveParams,
+              message,
+              timeoutMs: timeoutSeconds * 1000,
+            });
+            if (peerResult) {
+              return peerResult;
+            }
+          }
+
           return jsonResult({
             runId: crypto.randomUUID(),
             status: "error",
@@ -201,6 +220,24 @@ export function createSessionsSendTool(opts?: {
               error: "Session not visible from this sandboxed agent session.",
             });
           }
+
+          // Peer relay fallback: try configured peer gateways before giving up.
+          if (hasPeers(cfg)) {
+            const timeoutSeconds =
+              typeof params.timeoutSeconds === "number" && Number.isFinite(params.timeoutSeconds)
+                ? Math.max(0, Math.floor(params.timeoutSeconds))
+                : 30;
+            const peerResult = await tryPeerRelay({
+              cfg,
+              resolveParams,
+              message,
+              timeoutMs: timeoutSeconds * 1000,
+            });
+            if (peerResult) {
+              return peerResult;
+            }
+          }
+
           return jsonResult({
             runId: crypto.randomUUID(),
             status: "error",
@@ -225,6 +262,24 @@ export function createSessionsSendTool(opts?: {
         restrictToSpawned,
       });
       if (!resolvedSession.ok) {
+        // Peer relay fallback: try configured peer gateways before giving up.
+        if (!restrictToSpawned && hasPeers(cfg)) {
+          const timeoutSeconds =
+            typeof params.timeoutSeconds === "number" && Number.isFinite(params.timeoutSeconds)
+              ? Math.max(0, Math.floor(params.timeoutSeconds))
+              : 30;
+          const peerResult = await tryPeerRelay({
+            cfg,
+            resolveParams: { key: sessionKey },
+            message,
+            timeoutMs: timeoutSeconds * 1000,
+            displayKey: sessionKey,
+          });
+          if (peerResult) {
+            return peerResult;
+          }
+        }
+
         return jsonResult({
           runId: crypto.randomUUID(),
           status: resolvedSession.status,
