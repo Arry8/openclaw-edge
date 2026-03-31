@@ -238,5 +238,140 @@
     "number": 57755,
     "reason": "src/agents/command/delivery.ts (auto-skip attempt 1)",
     "revertedAt": "2026-03-30T22:43:19.795Z"
+  },
+  {
+    "number": 57853,
+    "reason": "src/agents/pi-embedded-subscribe.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:50:51.530Z"
+  },
+  {
+    "number": 56468,
+    "reason": "src/config/io.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T22:59:57.374Z"
+  },
+  {
+    "number": 56438,
+    "reason": "src/gateway/method-scopes.ts (auto-skip attempt 2)",
+    "revertedAt": "2026-03-30T23:00:46.996Z"
+  },
+  {
+    "number": 53973,
+    "reason": "src/plugin-sdk/msteams-fix.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T23:33:13.181Z"
+  },
+  {
+    "number": 53730,
+    "reason": "src/agents/btw.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T23:35:59.795Z"
+  },
+  {
+    "number": 52287,
+    "reason": "src/agents/pi-embedded-runner/run.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-30T23:47:18.997Z"
+  },
+  {
+    "number": 50629,
+    "reason": "extensions/browser/src/browser/control-auth.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:01:47.394Z"
+  },
+  {
+    "number": 50392,
+    "reason": "src/auto-reply/reply/bash-command.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:06:33.356Z"
+  },
+  {
+    "number": 50596,
+    "reason": "extensions/utopia/src/channel.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:06:33.472Z"
+  },
+  {
+    "number": 49854,
+    "reason": "src/auto-reply/reply/normalize-reply.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:16:25.285Z"
+  },
+  {
+    "number": 49357,
+    "reason": "src/agents/usage.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:22:10.580Z"
+  },
+  {
+    "number": 48132,
+    "reason": "extensions/browser/src/browser/pw-session.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:31:58.902Z"
+  },
+  {
+    "number": 46083,
+    "reason": "extensions/discord/src/send.shared.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:42:33.066Z"
+  },
+  {
+    "number": 45348,
+    "reason": "extensions/memory-core/src/memory/search-manager.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:45:59.956Z"
+  },
+  {
+    "number": 44170,
+    "reason": "src/config/schema.labels.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T00:57:08.952Z"
+  },
+  {
+    "number": 43819,
+    "reason": "src/agents/tools/discord-tool.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:01:09.609Z"
+  },
+  {
+    "number": 43600,
+    "reason": "src/agents/bash-tools.exec-host-shared.ts (auto-skip attempt 2)",
+    "revertedAt": "2026-03-31T01:02:06.121Z"
+  },
+  {
+    "number": 41858,
+    "reason": "extensions/memory-core/src/memory/manager-sync-ops.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:16:58.610Z"
+  },
+  {
+    "number": 42126,
+    "reason": "extensions/openclaw-workflow/workflow-loader.js (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:16:58.726Z"
+  },
+  {
+    "number": 41192,
+    "reason": "src/gateway/server-startup-kv-cache.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:19:08.149Z"
+  },
+  {
+    "number": 41254,
+    "reason": "src/infra/heartbeat-runner.ts (auto-skip attempt 2)",
+    "revertedAt": "2026-03-31T01:19:56.128Z"
+  },
+  {
+    "number": 40273,
+    "reason": "src/agents/acp-spawn.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:25:38.522Z"
+  },
+  {
+    "number": 39353,
+    "reason": "src/agents/session-transcript-repair.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:35:57.400Z"
+  },
+  {
+    "number": 38506,
+    "reason": "src/auto-reply/commands-registry.data.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:39:28.006Z"
+  },
+  {
+    "number": 33897,
+    "reason": "src/auto-reply/reply/commands-core.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T01:54:40.760Z"
+  },
+  {
+    "number": 32475,
+    "reason": "src/agents/pi-tools.read.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T02:02:35.894Z"
+  },
+  {
+    "number": 28391,
+    "reason": "src/auto-reply/reply/commands-context-report.ts (auto-skip attempt 1)",
+    "revertedAt": "2026-03-31T02:13:21.361Z"
   }
 ]
