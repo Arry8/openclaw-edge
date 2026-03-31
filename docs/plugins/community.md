@@ -19,6 +19,10 @@ openclaw plugins install <package-name>
 
 OpenClaw checks ClawHub first and falls back to npm automatically.
 
+- **Cognee Memory** — Cognee memory plugin with automatic recall before agent runs and auto-indexing of workspace memory files
+  npm: `@cognee/cognee-openclaw`
+  repo: `https://github.com/hande-k/cognee-integrations`
+  install: `openclaw plugins install @cognee/cognee-openclaw`
 ## Listed plugins
 
 ### AIFBA Amazon Listing Analyzer for OpenClaw
