@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
+import { resolveConfigPathCandidate } from "../config/paths.js";
 import {
   appendFileWithinRoot,
   SafeOpenError,
@@ -1102,12 +1103,27 @@ function createSandboxEditOperations(params: SandboxToolParams) {
   } as const;
 }
 
+/**
+ * Check if a path is a protected config file that agents should not modify directly.
+ * This prevents agents from corrupting the OpenClaw configuration.
+ */
+function isProtectedConfigPath(absolutePath: string): boolean {
+  const resolved = path.resolve(absolutePath);
+  const configPath = resolveConfigPathCandidate();
+  return resolved === configPath;
+}
+
+const PROTECTED_CONFIG_ERROR =
+  "Cannot modify OpenClaw config file directly. Use openclaw CLI commands to update configuration.";
+
 async function writeHostFile(absolutePath: string, content: string) {
   const resolved = path.resolve(absolutePath);
+  if (isProtectedConfigPath(resolved)) {
+    throw new Error(PROTECTED_CONFIG_ERROR);
+  }
   await fs.mkdir(path.dirname(resolved), { recursive: true });
   await fs.writeFile(resolved, content, "utf-8");
 }
-
 function createHostWriteOperations(root: string, options?: { workspaceOnly?: boolean }) {
   const workspaceOnly = options?.workspaceOnly ?? false;
 
@@ -1132,6 +1148,9 @@ function createHostWriteOperations(root: string, options?: { workspaceOnly?: boo
     },
     writeFile: async (absolutePath: string, content: string) => {
       const relative = toRelativeWorkspacePath(root, absolutePath);
+      if (isProtectedConfigPath(absolutePath)) {
+        throw new Error(PROTECTED_CONFIG_ERROR);
+      }
       await writeFileWithinRoot({
         rootDir: root,
         relativePath: relative,
@@ -1173,6 +1192,9 @@ function createHostEditOperations(root: string, options?: { workspaceOnly?: bool
     },
     writeFile: async (absolutePath: string, content: string) => {
       const relative = toRelativeWorkspacePath(root, absolutePath);
+      if (isProtectedConfigPath(absolutePath)) {
+        throw new Error(PROTECTED_CONFIG_ERROR);
+      }
       await writeFileWithinRoot({
         rootDir: root,
         relativePath: relative,
