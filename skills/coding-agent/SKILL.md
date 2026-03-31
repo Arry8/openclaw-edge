@@ -471,7 +471,14 @@ process action:log sessionId:XXX
 
 # 4. Create PRs after fixes
 cd /tmp/issue-78 && git push -u origin fix/issue-78
-gh pr create --repo user/repo --head fix/issue-78 --title "fix: ..." --body "..."
+cat > /tmp/pr-body.md << 'EOF'
+## Summary
+- what changed
+
+## Testing
+- how it was tested
+EOF
+gh pr create --repo user/repo --head fix/issue-78 --title "fix: ..." --body-file /tmp/pr-body.md
 
 # 5. Cleanup
 git worktree remove /tmp/issue-78
@@ -596,6 +603,18 @@ Directory structure (created automatically by `context-snapshot.sh`):
 9. **NEVER checkout branches in ~/Projects/openclaw/** - that's the LIVE OpenClaw instance!
 10. **Multi-agent: test roles before batch runs** - verify your Explorer/Reviewer/Worker configs work on a single file before unleashing a CSV batch across the whole repo
 11. **Multi-agent: read-only for exploration** - always use `disk-full-read-access` (no write) for explorer/reviewer roles. Only workers should write.
+
+10. **PR bodies must use `--body-file`** - Passing a multiline string to `gh pr create --body "..."` produces literal `\n` characters in the PR body on GitHub. Always write the body to a temp file and use `--body-file`:
+    ```bash
+    cat > /tmp/pr-body.md << 'EOF'
+    ## Summary
+    - what changed and why
+
+    ## Testing
+    - how it was tested
+    EOF
+    gh pr create --title "..." --body-file /tmp/pr-body.md --base dev
+    ```
 
 ---
 
