@@ -25,6 +25,11 @@ export function buildQualifiedChatModelValue(model: string, provider?: string | 
   if (!trimmedModel) {
     return "";
   }
+  // Preserve already-qualified model refs (provider/model) as-is.
+  // This avoids prepending an unrelated/default provider.
+  if (trimmedModel.includes("/")) {
+    return trimmedModel;
+  }
   const trimmedProvider = provider?.trim();
   // Skip prefixing when the model id already starts with the provider
   // (e.g. provider="openrouter", id="openrouter/hunter-alpha")
