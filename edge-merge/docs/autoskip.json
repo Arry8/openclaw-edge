@@ -1,377 +1,99 @@
 [
-  {
-    "number": 28690,
-    "reason": "src/agents/skills/workspace.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:12:14.325Z"
-  },
-  {
-    "number": 29426,
-    "reason": "src/security/skill-scanner.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:12:14.411Z"
-  },
-  {
-    "number": 57602,
-    "reason": "src/auto-reply/reply/block-reply-pipeline.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:28:26.593Z"
-  },
-  {
-    "number": 56646,
-    "reason": "extensions/slack/src/monitor/provider.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:39:13.243Z"
-  },
-  {
-    "number": 55706,
-    "reason": "src/config/io.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:48:30.363Z"
-  },
-  {
-    "number": 55582,
-    "reason": "extensions/discord/src/client.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:50:41.374Z"
-  },
-  {
-    "number": 55619,
-    "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:50:41.461Z"
-  },
-  {
-    "number": 54343,
-    "reason": "src/auto-reply/reply/commands-session-abort.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T15:59:04.993Z"
-  },
-  {
-    "number": 53642,
-    "reason": "src/plugins/runtime.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T16:04:17.605Z"
-  },
-  {
-    "number": 52764,
-    "reason": "src/plugins/runtime.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T16:09:41.146Z"
-  },
-  {
-    "number": 52365,
-    "reason": "src/cron/service/timer.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T16:12:06.104Z"
-  },
-  {
-    "number": 51445,
-    "reason": "extensions/feishu/src/bot-sender-name.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T16:20:39.912Z"
-  },
-  {
-    "number": 51547,
-    "reason": "src/process/exec.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T16:20:39.998Z"
-  },
-  {
-    "number": 50164,
-    "reason": "extensions/feishu/src/media.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:11:46.715Z"
-  },
-  {
-    "number": 49082,
-    "reason": "extensions/feishu/src/bot.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:17:17.136Z"
-  },
-  {
-    "number": 47663,
-    "reason": "src/auto-reply/reply/agent-runner.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:24:17.537Z"
-  },
-  {
-    "number": 46940,
-    "reason": "src/channels/plugins/types.adapters.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:28:14.281Z"
-  },
-  {
-    "number": 46472,
-    "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:30:37.407Z"
-  },
-  {
-    "number": 44215,
-    "reason": "src/config/schema.labels.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T17:38:09.026Z"
-  },
-  {
-    "number": 46936,
-    "reason": "src/agents/model-selection.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:25:55.987Z"
-  },
-  {
-    "number": 37949,
-    "reason": "extensions/browser/src/browser/config.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:45:01.820Z"
-  },
-  {
-    "number": 37129,
-    "reason": "src/media/web-media.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:45:01.894Z"
-  },
-  {
-    "number": 35507,
-    "reason": "src/agents/tools/message-tool.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:47:38.063Z"
-  },
-  {
-    "number": 54344,
-    "reason": "src/auto-reply/reply/commands-config.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:47:38.141Z"
-  },
-  {
-    "number": 36629,
-    "reason": "src/config/sessions/store.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:47:38.219Z"
-  },
-  {
-    "number": 34234,
-    "reason": "extensions/whatsapp/src/auto-reply/monitor/on-message.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T20:58:35.749Z"
-  },
-  {
-    "number": 29768,
-    "reason": "src/infra/outbound/channel-selection.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:07:50.447Z"
-  },
-  {
-    "number": 28971,
-    "reason": "src/agents/pi-embedded-runner/run/attempt.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:10:20.023Z"
-  },
-  {
-    "number": 57309,
-    "reason": "extensions/slack/src/monitor/message-handler/prepare.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:25:40.954Z"
-  },
-  {
-    "number": 55037,
-    "reason": "src/auto-reply/reply/get-reply.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:36:25.500Z"
-  },
-  {
-    "number": 57090,
-    "reason": "extensions/kafka-producer/index.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:36:25.588Z"
-  },
-  {
-    "number": 48156,
-    "reason": "src/agents/context-books.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:46:07.750Z"
-  },
-  {
-    "number": 52742,
-    "reason": "extensions/ofoxai/index.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:46:07.842Z"
-  },
-  {
-    "number": 46178,
-    "reason": "src/agents/pi-settings.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:48:48.042Z"
-  },
-  {
-    "number": 46660,
-    "reason": "src/agents/tools/sessions-send-tool.a2a.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:48:48.122Z"
-  },
-  {
-    "number": 47252,
-    "reason": "extensions/kakao/index.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:48:48.201Z"
-  },
-  {
-    "number": 47302,
-    "reason": "src/commands/doctor-check-config.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:48:48.284Z"
-  },
-  {
-    "number": 45613,
-    "reason": "src/agents/pi-embedded-runner/anthropic-stream-wrappers.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:51:30.649Z"
-  },
-  {
-    "number": 43317,
-    "reason": "src/agents/sandbox/types.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:54:19.038Z"
-  },
-  {
-    "number": 42967,
-    "reason": "src/agents/tools/tts-tool.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:57:11.745Z"
-  },
-  {
-    "number": 41421,
-    "reason": "src/commands/agents.commands.view-system-prompt.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T21:59:30.997Z"
-  },
-  {
-    "number": 39961,
-    "reason": "src/agents/pi-tools.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:04:04.164Z"
-  },
-  {
-    "number": 30845,
-    "reason": "extensions/feishu/src/send.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:17:50.712Z"
-  },
-  {
-    "number": 36784,
-    "reason": "extensions/email/src/channel.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:17:50.804Z"
-  },
-  {
-    "number": 25445,
-    "reason": "extensions/telegram/src/bot-handlers.runtime.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:22:47.135Z"
-  },
-  {
-    "number": 57518,
-    "reason": "extensions/browser/src/browser/local-browser-bridge-relay-attach-ux.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:27:29.389Z"
-  },
-  {
-    "number": 57579,
-    "reason": "src/agents/tools/sessions-send-tool.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:27:29.525Z"
-  },
-  {
-    "number": 57755,
-    "reason": "src/agents/command/delivery.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:43:19.795Z"
-  },
-  {
-    "number": 57853,
-    "reason": "src/agents/pi-embedded-subscribe.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:50:51.530Z"
-  },
-  {
-    "number": 56468,
-    "reason": "src/config/io.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T22:59:57.374Z"
-  },
-  {
-    "number": 56438,
-    "reason": "src/gateway/method-scopes.ts (auto-skip attempt 2)",
-    "revertedAt": "2026-03-30T23:00:46.996Z"
-  },
-  {
-    "number": 53973,
-    "reason": "src/plugin-sdk/msteams-fix.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T23:33:13.181Z"
-  },
-  {
-    "number": 53730,
-    "reason": "src/agents/btw.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T23:35:59.795Z"
-  },
-  {
-    "number": 52287,
-    "reason": "src/agents/pi-embedded-runner/run.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-30T23:47:18.997Z"
-  },
-  {
-    "number": 50629,
-    "reason": "extensions/browser/src/browser/control-auth.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:01:47.394Z"
-  },
-  {
-    "number": 50392,
-    "reason": "src/auto-reply/reply/bash-command.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:06:33.356Z"
-  },
-  {
-    "number": 50596,
-    "reason": "extensions/utopia/src/channel.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:06:33.472Z"
-  },
-  {
-    "number": 49854,
-    "reason": "src/auto-reply/reply/normalize-reply.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:16:25.285Z"
-  },
-  {
-    "number": 49357,
-    "reason": "src/agents/usage.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:22:10.580Z"
-  },
-  {
-    "number": 48132,
-    "reason": "extensions/browser/src/browser/pw-session.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:31:58.902Z"
-  },
-  {
-    "number": 46083,
-    "reason": "extensions/discord/src/send.shared.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:42:33.066Z"
-  },
-  {
-    "number": 45348,
-    "reason": "extensions/memory-core/src/memory/search-manager.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:45:59.956Z"
-  },
-  {
-    "number": 44170,
-    "reason": "src/config/schema.labels.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T00:57:08.952Z"
-  },
-  {
-    "number": 43819,
-    "reason": "src/agents/tools/discord-tool.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:01:09.609Z"
-  },
-  {
-    "number": 43600,
-    "reason": "src/agents/bash-tools.exec-host-shared.ts (auto-skip attempt 2)",
-    "revertedAt": "2026-03-31T01:02:06.121Z"
-  },
-  {
-    "number": 41858,
-    "reason": "extensions/memory-core/src/memory/manager-sync-ops.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:16:58.610Z"
-  },
-  {
-    "number": 42126,
-    "reason": "extensions/openclaw-workflow/workflow-loader.js (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:16:58.726Z"
-  },
-  {
-    "number": 41192,
-    "reason": "src/gateway/server-startup-kv-cache.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:19:08.149Z"
-  },
-  {
-    "number": 41254,
-    "reason": "src/infra/heartbeat-runner.ts (auto-skip attempt 2)",
-    "revertedAt": "2026-03-31T01:19:56.128Z"
-  },
-  {
-    "number": 40273,
-    "reason": "src/agents/acp-spawn.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:25:38.522Z"
-  },
-  {
-    "number": 39353,
-    "reason": "src/agents/session-transcript-repair.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:35:57.400Z"
-  },
-  {
-    "number": 38506,
-    "reason": "src/auto-reply/commands-registry.data.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:39:28.006Z"
-  },
-  {
-    "number": 33897,
-    "reason": "src/auto-reply/reply/commands-core.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T01:54:40.760Z"
-  },
-  {
-    "number": 32475,
-    "reason": "src/agents/pi-tools.read.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T02:02:35.894Z"
-  },
-  {
-    "number": 28391,
-    "reason": "src/auto-reply/reply/commands-context-report.ts (auto-skip attempt 1)",
-    "revertedAt": "2026-03-31T02:13:21.361Z"
-  }
+  { "number": 12296, "reason": "session-tool-result-guard.ts: removed getRawSessionAppendMessage + sessionKey — breaks transcript-rewrite.ts consumers", "source": "manual" },
+  { "number": 29181, "reason": "broken shim imports (../signal, ../telegram) removed by #45967", "source": "manual" },
+  { "number": 35344, "reason": "pi-embedded-subscribe.handlers.messages.ts: PARSE_ERROR invalid char — rolldown can't parse it", "source": "manual" },
+  { "number": 36307, "reason": "missing `detail:` key in audit.ts object literal — syntax error", "source": "manual" },
+  { "number": 36867, "reason": "config-paths.ts: changes Path type to PathSegment[] breaking commands-config.ts consumers — TS2322", "source": "manual" },
+  { "number": 39338, "reason": "types.models.ts: adds audio/video to input schema but ModelInputType in model-catalog.ts lacks them — TS2322", "source": "manual" },
+  { "number": 40490, "reason": "bot-message-context.session.ts: imports ../media/store.js which doesn't exist — UNRESOLVED_IMPORT", "source": "manual" },
+  { "number": 40597, "reason": "cron/service/timer.ts: Logger.trace() doesn't exist — TS2339", "source": "manual" },
+  { "number": 45782, "reason": "fs-safe.ts + pairing-store.ts TS errors in error handling", "source": "manual" },
+  { "number": 47225, "reason": "stream-payload-utils.ts TS error in toolsOverride field", "source": "manual" },
+  { "number": 48125, "reason": "mixed || and ?? without parens in feishu/card-action.ts", "source": "manual" },
+  { "number": 48303, "reason": "model-selection.ts: TS2322 — cascades from #39338 type gap", "source": "manual" },
+  { "number": 48821, "reason": "model-selection.ts: TS2322 — cascades from #39338 type gap", "source": "manual" },
+  { "number": 51371, "reason": "transitively includes PR #56737 branch (navigation-guard.ts void|Promise<void> .catch() TS error)", "source": "manual" },
+  { "number": 51580, "reason": "model-selection.ts: TS2322 — cascades from #39338 type gap", "source": "manual" },
+  { "number": 51722, "reason": "sandbox/browser.ts:94 duplicate object property — TS1117", "source": "manual" },
+  { "number": 53961, "reason": "delivery.ts:319 TS2339 Property 'length' does not exist on type 'DeliveryOutcome'", "source": "manual" },
+  { "number": 55875, "reason": "unterminated regex in skill-scanner.ts (YARA scanner) — parse error", "source": "manual" },
+  { "number": 56617, "reason": "gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error", "source": "manual" },
+  { "number": 56660, "reason": "duplicate observedSuspiciousSignatures declaration in config/io.ts", "source": "manual" },
+  { "number": 56737, "reason": "navigation-guard.ts: .catch() on void|Promise<void> — TS error", "source": "manual" },
+  { "number": 56840, "reason": "gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error (same pattern as #56617)", "source": "manual" },
+  { "number": 28690, "reason": "src/agents/skills/workspace.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:12:14.325Z" },
+  { "number": 29426, "reason": "src/security/skill-scanner.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:12:14.411Z" },
+  { "number": 57602, "reason": "src/auto-reply/reply/block-reply-pipeline.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:28:26.503Z" },
+  { "number": 56646, "reason": "extensions/slack/src/monitor/provider.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:39:13.203Z" },
+  { "number": 55706, "reason": "src/config/io.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:48:30.370Z" },
+  { "number": 55582, "reason": "extensions/discord/src/client.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:50:41.461Z" },
+  { "number": 55619, "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:50:41.461Z" },
+  { "number": 54343, "reason": "src/auto-reply/reply/commands-session-abort.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T15:59:04.993Z" },
+  { "number": 53642, "reason": "src/plugins/runtime.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T16:04:17.397Z" },
+  { "number": 52764, "reason": "src/plugins/runtime.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T16:09:41.614Z" },
+  { "number": 52365, "reason": "src/cron/service/timer.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T16:12:06.106Z" },
+  { "number": 51445, "reason": "extensions/feishu/src/bot-sender-name.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T16:20:39.998Z" },
+  { "number": 51547, "reason": "src/process/exec.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T16:20:39.998Z" },
+  { "number": 50164, "reason": "extensions/feishu/src/media.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:11:46.710Z" },
+  { "number": 49082, "reason": "extensions/feishu/src/bot.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:17:17.217Z" },
+  { "number": 47663, "reason": "src/auto-reply/reply/agent-runner.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:24:17.317Z" },
+  { "number": 46940, "reason": "src/channels/plugins/types.adapters.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:28:14.214Z" },
+  { "number": 46472, "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:30:37.537Z" },
+  { "number": 44215, "reason": "src/config/schema.labels.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T17:38:09.009Z" },
+  { "number": 46936, "reason": "src/agents/model-selection.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:25:55.987Z" },
+  { "number": 37949, "reason": "extensions/browser/src/browser/config.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:45:01.894Z" },
+  { "number": 37129, "reason": "src/media/web-media.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:45:01.894Z" },
+  { "number": 35507, "reason": "src/agents/tools/message-tool.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:47:38.141Z" },
+  { "number": 54344, "reason": "src/auto-reply/reply/commands-config.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:47:38.141Z" },
+  { "number": 36629, "reason": "src/config/sessions/store.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:47:38.219Z" },
+  { "number": 34234, "reason": "extensions/whatsapp/src/auto-reply/monitor/on-message.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T20:58:35.749Z" },
+  { "number": 29768, "reason": "src/infra/outbound/channel-selection.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:07:50.850Z" },
+  { "number": 28971, "reason": "src/agents/pi-embedded-runner/run/attempt.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:10:20.320Z" },
+  { "number": 57309, "reason": "extensions/slack/src/monitor/message-handler/prepare.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:25:40.588Z" },
+  { "number": 55037, "reason": "src/auto-reply/reply/get-reply.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:36:25.525Z" },
+  { "number": 57090, "reason": "extensions/kafka-producer/index.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:36:25.588Z" },
+  { "number": 48156, "reason": "src/agents/context-books.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:46:07.750Z" },
+  { "number": 52742, "reason": "extensions/ofoxai/index.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:46:07.842Z" },
+  { "number": 46178, "reason": "src/agents/pi-settings.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:48:48.042Z" },
+  { "number": 46660, "reason": "src/agents/tools/sessions-send-tool.a2a.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:48:48.122Z" },
+  { "number": 47252, "reason": "extensions/kakao/index.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:48:48.201Z" },
+  { "number": 47302, "reason": "src/commands/doctor-check-config.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:48:48.284Z" },
+  { "number": 45613, "reason": "src/agents/pi-embedded-runner/anthropic-stream-wrappers.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:51:30.649Z" },
+  { "number": 43317, "reason": "src/agents/sandbox/types.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:54:19.038Z" },
+  { "number": 42967, "reason": "src/agents/tools/tts-tool.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:57:11.743Z" },
+  { "number": 41421, "reason": "src/commands/agents.commands.view-system-prompt.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T21:59:30.997Z" },
+  { "number": 39961, "reason": "src/agents/pi-tools.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:04:04.004Z" },
+  { "number": 30845, "reason": "extensions/feishu/src/send.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:17:50.804Z" },
+  { "number": 36784, "reason": "extensions/email/src/channel.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:17:50.804Z" },
+  { "number": 25445, "reason": "extensions/telegram/src/bot-handlers.runtime.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:22:47.135Z" },
+  { "number": 57518, "reason": "extensions/browser/src/browser/local-browser-bridge-relay-attach-ux.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:27:29.525Z" },
+  { "number": 57579, "reason": "src/agents/tools/sessions-send-tool.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:27:29.525Z" },
+  { "number": 57755, "reason": "src/agents/command/delivery.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:43:19.795Z" },
+  { "number": 57853, "reason": "src/agents/pi-embedded-subscribe.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:50:51.530Z" },
+  { "number": 56468, "reason": "src/config/io.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T22:59:57.374Z" },
+  { "number": 56438, "reason": "src/gateway/method-scopes.ts (auto-skip attempt 2)", "source": "auto", "revertedAt": "2026-03-30T23:00:46.996Z" },
+  { "number": 53973, "reason": "src/plugin-sdk/msteams-fix.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T23:33:13.213Z" },
+  { "number": 53730, "reason": "src/agents/btw.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T23:35:59.795Z" },
+  { "number": 52287, "reason": "src/agents/pi-embedded-runner/run.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-30T23:47:18.997Z" },
+  { "number": 50629, "reason": "extensions/browser/src/browser/control-auth.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:01:47.394Z" },
+  { "number": 50392, "reason": "src/auto-reply/reply/bash-command.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:06:33.472Z" },
+  { "number": 50596, "reason": "extensions/utopia/src/channel.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:06:33.472Z" },
+  { "number": 49854, "reason": "src/auto-reply/reply/normalize-reply.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:16:25.285Z" },
+  { "number": 49357, "reason": "src/agents/usage.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:22:10.570Z" },
+  { "number": 48132, "reason": "extensions/browser/src/browser/pw-session.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:31:58.902Z" },
+  { "number": 46083, "reason": "extensions/discord/src/send.shared.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:42:33.066Z" },
+  { "number": 45348, "reason": "extensions/memory-core/src/memory/search-manager.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:45:59.956Z" },
+  { "number": 44170, "reason": "src/config/schema.labels.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T00:57:08.092Z" },
+  { "number": 43819, "reason": "src/agents/tools/discord-tool.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:01:09.609Z" },
+  { "number": 43600, "reason": "src/agents/bash-tools.exec-host-shared.ts (auto-skip attempt 2)", "source": "auto", "revertedAt": "2026-03-31T01:02:06.121Z" },
+  { "number": 41858, "reason": "extensions/memory-core/src/memory/manager-sync-ops.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:16:58.726Z" },
+  { "number": 42126, "reason": "extensions/openclaw-workflow/workflow-loader.js (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:16:58.726Z" },
+  { "number": 41192, "reason": "src/gateway/server-startup-kv-cache.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:19:08.149Z" },
+  { "number": 41254, "reason": "src/infra/heartbeat-runner.ts (auto-skip attempt 2)", "source": "auto", "revertedAt": "2026-03-31T01:19:56.122Z" },
+  { "number": 40273, "reason": "src/agents/acp-spawn.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:25:38.522Z" },
+  { "number": 39353, "reason": "src/agents/session-transcript-repair.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:35:57.430Z" },
+  { "number": 38506, "reason": "src/auto-reply/commands-registry.data.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:39:28.008Z" },
+  { "number": 33897, "reason": "src/auto-reply/reply/commands-core.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T01:54:40.750Z" },
+  { "number": 32475, "reason": "src/agents/pi-tools.read.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T02:02:35.610Z" },
+  { "number": 28391, "reason": "src/auto-reply/reply/commands-context-report.ts (auto-skip attempt 1)", "source": "auto", "revertedAt": "2026-03-31T02:13:21.321Z" }
 ]

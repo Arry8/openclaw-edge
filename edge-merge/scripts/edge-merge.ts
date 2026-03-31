@@ -125,40 +125,11 @@ type Report = {
 
 const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// PRs whose changes we never want to apply regardless of merge cleanliness.
-// Add PR numbers here when they cause build failures after the fact.
-const SKIP_LIST = new Set<number>([
-  29181, // brings in broken shim imports (../signal, ../telegram) removed by #45967
-  36307, // missing `detail:` key in audit.ts object literal — syntax error
-  48125, // mixed || and ?? without parens in feishu/card-action.ts
-  51371, // transitively includes PR #56737 branch (navigation-guard.ts void|Promise<void> .catch() TS error)
-  55875, // unterminated regex in skill-scanner.ts (YARA scanner) — parse error
-  56660, // duplicate observedSuspiciousSignatures declaration in config/io.ts
-  56617, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error
-  56737, // navigation-guard.ts: .catch() on void|Promise<void> — TS error
-  56840, // gateway-plugin.ts: override handleReconnectionAttempt not in base GatewayPlugin — TS error (same pattern as #56617)
-  51722, // sandbox/browser.ts:94 duplicate object property — TS1117
-  45782, // fs-safe.ts + pairing-store.ts TS errors in error handling
-  47225, // stream-payload-utils.ts TS error in toolsOverride field
-  12296, // session-tool-result-guard.ts: removed getRawSessionAppendMessage + sessionKey — breaks transcript-rewrite.ts consumers
-  40490, // bot-message-context.session.ts: imports ../media/store.js which doesn't exist — UNRESOLVED_IMPORT
-  40597, // cron/service/timer.ts: Logger.trace() doesn't exist — TS2339
-  39338, // types.models.ts: adds "audio"/"video" to input schema but ModelInputType in model-catalog.ts lacks them — TS2322
-  46936, // model-selection.ts: TS2322 type mismatch — auto-skipped, keeping in SKIP_LIST
-  48303, // model-selection.ts: TS2322 — cascades from #39338 type gap
-  48821, // model-selection.ts: TS2322 — cascades from #39338 type gap
-  51580, // model-selection.ts: TS2322 — cascades from #39338 type gap
-  35507, // message-tool.ts: TS error — auto-skipped
-  54344, // commands-config.ts: TS2322 Path type — auto-skipped, cascades from #36867
-  36629, // sessions/store.ts + session-reaper.ts: TS error — auto-skipped
-  36867, // config-paths.ts: changes Path type to PathSegment[] breaking commands-config.ts consumers — TS2322
-  35344, // pi-embedded-subscribe.handlers.messages.ts: PARSE_ERROR invalid char — rolldown can't parse it
-  53961, // delivery.ts:319 TS2339 Property 'length' does not exist on type 'DeliveryOutcome'
-]);
-
-// Runtime set populated at startup from edge-merge/docs/autoskip.json.
-// Do NOT modify SKIP_LIST — auto-skips go here only.
-const AUTO_SKIP_SET = new Set<number>();
+// PRs to skip — loaded at startup from edge-merge/docs/autoskip.json.
+// Includes both manually added entries (source: "manual") and auto-reverted
+// entries written by --auto-skip-on-build-failure (source: "auto").
+// To permanently skip a PR, append to autoskip.json with source: "manual".
+const SKIP_SET = new Set<number>();
 
 // Files that, if a PR touches only these, we skip (noise-only changes).
 const _SKIP_ONLY_PATHS = [
@@ -625,11 +596,8 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
   if (pr.isDraft) {
     return { skip: true, reason: "draft" };
   }
-  if (SKIP_LIST.has(pr.number)) {
-    return { skip: true, reason: "in SKIP_LIST" };
-  }
-  if (AUTO_SKIP_SET.has(pr.number)) {
-    return { skip: true, reason: "in auto-skip list" };
+  if (SKIP_SET.has(pr.number)) {
+    return { skip: true, reason: "in skip list" };
   }
 
   // For closed PRs: always skip ones that were actually merged (commits already in base)
@@ -832,7 +800,8 @@ function appendToHistory(entry: ReportEntry): void {
 type AutoSkipEntry = {
   number: number;
   reason: string;
-  revertedAt: string;
+  source: "manual" | "auto";
+  revertedAt?: string;
 };
 
 // Load previously auto-skipped PR numbers from disk (returns empty array if missing/invalid).
@@ -923,7 +892,7 @@ async function autoSkipAndRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const files = extractFailingFiles(buildOutput);
     if (files.length === 0) {
-      const msg = "Auto-skip: could not extract any failing file paths from build output. Add the offending PR to SKIP_LIST manually and rerun with --resume.";
+      const msg = `Auto-skip: could not extract any failing file paths from build output. Add the offending PR to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.`;
       process.stderr.write(`[edge-merge] ${msg}\n`);
       await notifyNtfy("edge-merge: manual intervention required", msg);
       return false;
@@ -970,7 +939,7 @@ async function autoSkipAndRetry(
         return false;
       }
       const reason = `${culpritFiles[0]} (auto-skip attempt ${attempt})`;
-      appendAutoSkip({ number: prNumber, reason, revertedAt: new Date().toISOString() });
+      appendAutoSkip({ number: prNumber, reason, source: "auto", revertedAt: new Date().toISOString() });
       log(`Auto-skip: PR #${prNumber} reverted and recorded in ${AUTOSKIP_PATH}`);
     }
 
@@ -1094,15 +1063,17 @@ async function main() {
   // Load already-processed set for resume
   const previouslyProcessed = loadPreviouslyProcessed();
 
-  // Populate AUTO_SKIP_SET from edge-merge/docs/autoskip.json so previously
-  // auto-reverted PRs are not re-merged on subsequent runs.
+  // Populate SKIP_SET from edge-merge/docs/autoskip.json (includes both
+  // manual entries and auto-reverted entries from --auto-skip-on-build-failure).
   {
-    const autoSkips = loadAutoSkips();
-    for (const e of autoSkips) {
-      AUTO_SKIP_SET.add(e.number);
+    const skips = loadAutoSkips();
+    for (const e of skips) {
+      SKIP_SET.add(e.number);
     }
-    if (autoSkips.length > 0) {
-      log(`Auto-skip: loaded ${autoSkips.length} previously auto-skipped PR(s) from ${AUTOSKIP_PATH}`);
+    const manual = skips.filter((e) => e.source === "manual").length;
+    const auto = skips.filter((e) => e.source === "auto").length;
+    if (skips.length > 0) {
+      log(`Skip list: loaded ${skips.length} entries from ${AUTOSKIP_PATH} (${manual} manual, ${auto} auto)`);
     }
   }
 
@@ -1237,7 +1208,7 @@ async function main() {
       process.stdout.write("\n");
       process.stderr.write(
         `[edge-merge] Stopping merge loop: background build failed at ${cb.failedAtSha?.slice(0, 12)}.\n` +
-          `  Add the offending PR to SKIP_LIST and rerun with --resume.\n`,
+          `  Add the offending PR to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.\n`,
       );
       break;
     }
@@ -1310,11 +1281,11 @@ async function main() {
           }
           // Build fixed — continue merge loop
         } else {
-          const intervalFailMsg = `Interval build FAILED after PR #${pr.number} (merge #${mergedCount}). Add #${pr.number} to SKIP_LIST and rerun with --resume.`;
+          const intervalFailMsg = `Interval build FAILED after PR #${pr.number} (merge #${mergedCount}). Add #${pr.number} to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.`;
           await notifyNtfy("edge-merge: manual intervention required", intervalFailMsg);
           process.stderr.write(
             `[edge-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
-              `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n` +
+              `  Last merged PR is the likely culprit. Add #${pr.number} to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.\n` +
               `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
           );
           // Write partial report before exiting so --resume can continue from here
@@ -1493,12 +1464,12 @@ async function main() {
         log("Build passed.");
         buildPassed = true;
       } catch {
-        const finalFailMsg = `Final build FAILED on branch ${baseBranch}. Use --auto-skip-on-build-failure or add offending PR to SKIP_LIST and rerun with --resume.`;
+        const finalFailMsg = `Final build FAILED on branch ${baseBranch}. Use --auto-skip-on-build-failure or add offending PR to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.`;
         await notifyNtfy("edge-merge: manual intervention required", finalFailMsg);
         process.stderr.write(
           `[edge-merge] Final build FAILED.\n` +
             `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
-            `  add its number to SKIP_LIST, then rerun with --resume.\n` +
+            `  add it to ${AUTOSKIP_PATH} with source:"manual", then rerun with --resume.\n` +
             `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
         );
         // Write changelog and exit — don't create a release on a failed build
