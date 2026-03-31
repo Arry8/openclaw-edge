@@ -725,6 +725,7 @@ export function attachGatewayWsMessageHandler(params: {
           authOk,
           authMethod,
         });
+        const tailscaleAuthOk = authOk && authMethod === "tailscale";
         const skipPairing =
           shouldSkipBackendSelfPairing({
             connectParams,
@@ -737,6 +738,7 @@ export function attachGatewayWsMessageHandler(params: {
             controlUiAuthPolicy,
             role,
             trustedProxyAuthOk,
+            tailscaleAuthOk,
             resolvedAuth.mode,
           );
         if (device && devicePublicKey && !skipPairing) {

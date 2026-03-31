@@ -225,6 +225,9 @@ describe("ws connect policy", () => {
     expect(shouldSkipControlUiPairing(bypass, "node", false)).toBe(false);
     expect(shouldSkipControlUiPairing(strict, "operator", false)).toBe(false);
     expect(shouldSkipControlUiPairing(strict, "operator", true)).toBe(true);
+    // Tailscale identity auth skips pairing regardless of policy
+    expect(shouldSkipControlUiPairing(strict, "operator", false, false, true)).toBe(true);
+    expect(shouldSkipControlUiPairing(bypass, "operator", false, false, true)).toBe(true);
   });
 
   test("auth.mode=none skips pairing for operator control-ui only", () => {
@@ -239,14 +242,16 @@ describe("ws connect policy", () => {
       deviceRaw: null,
     });
     // Control UI + operator + auth.mode=none: skip pairing (the fix for #42931)
-    expect(shouldSkipControlUiPairing(controlUi, "operator", false, "none")).toBe(true);
+    expect(shouldSkipControlUiPairing(controlUi, "operator", false, false, "none")).toBe(true);
     // Control UI + node role + auth.mode=none: still require pairing
-    expect(shouldSkipControlUiPairing(controlUi, "node", false, "none")).toBe(false);
+    expect(shouldSkipControlUiPairing(controlUi, "node", false, false, "none")).toBe(false);
     // Non-Control-UI + operator + auth.mode=none: still require pairing
     // (prevents #43478 regression where ALL clients bypassed pairing)
-    expect(shouldSkipControlUiPairing(nonControlUi, "operator", false, "none")).toBe(false);
+    expect(shouldSkipControlUiPairing(nonControlUi, "operator", false, false, "none")).toBe(false);
     // Control UI + operator + auth.mode=shared-key: no change
-    expect(shouldSkipControlUiPairing(controlUi, "operator", false, "shared-key")).toBe(false);
+    expect(shouldSkipControlUiPairing(controlUi, "operator", false, false, "shared-key")).toBe(
+      false,
+    );
     // Control UI + operator + no authMode: no change
     expect(shouldSkipControlUiPairing(controlUi, "operator", false)).toBe(false);
   });
