@@ -50,7 +50,7 @@ PRs with the same HEAD SHA are deduplicated (only one is processed).
 | Flag | Default | Description |
 |---|---|---|
 | `--dry-run` | off | Fetch and sort PRs, print what would be done — no git changes at all. |
-| `--resume` | off | Skip PRs already recorded in `edge-merge/docs/history.json`. Use this on all restarts to avoid reprocessing. |
+| `--resume` | off | Skip PRs already recorded in `edge-merge/docs/history.json`. Use this on all restarts to avoid reprocessing. PRs with a `conflict` or `fetch-failed` history result are automatically retried if the author has pushed a new commit (head SHA changed). `merged` entries are never retried. |
 | `--no-commit` | off | Stage successful merges but do not commit them. Useful for manual inspection of what a PR actually changes. |
 
 ### Fetch tuning
@@ -112,7 +112,7 @@ bun edge-merge/scripts/edge-merge.ts \
 - `--build-interval 10` — builds every 10 merges (~14 min overhead per 1000 PRs vs. 114 min at interval=1)
 - `--auto-skip-on-build-failure` — bad PRs are reverted automatically; run continues unattended
 - `--cache-prs` — API fetch is skipped on restarts within 2 hours
-- `--resume` — always include on restarts to skip already-processed PRs
+- `--resume` — always include on restarts to skip already-processed PRs; automatically retries previously-conflicted PRs if the author pushed a new commit
 
 ---
 

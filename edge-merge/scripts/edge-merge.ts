@@ -677,24 +677,30 @@ function isAlreadyApplied(headSha: string): boolean {
 
 // ── Resume support ─────────────────────────────────────────────────────────────
 
-function loadPreviouslyProcessed(): Set<number> {
+type HistoryEntry = { number: number; headSha: string; result: { status: string } };
+
+// Returns a map of prNumber → { headSha, status } for all previously processed PRs.
+// Used by --resume to skip already-processed PRs, with SHA-change detection for retries.
+function loadPreviouslyProcessed(): Map<number, { headSha: string; status: string }> {
   if (!RESUME) {
-    return new Set();
+    return new Map();
   }
   // Load from cumulative history (all runs) so --resume always skips everything
   // processed across all prior batches, not just the last one.
   const path = existsSync(HISTORY_PATH) ? HISTORY_PATH : REPORT_PATH;
   if (!existsSync(path)) {
-    return new Set();
+    return new Map();
   }
   try {
-    const prev = JSON.parse(readFileSync(path, "utf8")) as { entries: { number: number }[] };
-    const processed = new Set(prev.entries.map((e) => e.number));
-    log(`Resume: skipping ${processed.size} already-processed PRs from history.`);
+    const prev = JSON.parse(readFileSync(path, "utf8")) as { entries: HistoryEntry[] };
+    const processed = new Map(
+      prev.entries.map((e) => [e.number, { headSha: e.headSha ?? "", status: e.result?.status ?? "" }]),
+    );
+    log(`Resume: ${processed.size} PRs in history.`);
     return processed;
   } catch {
     warn("Could not parse history for resume; starting fresh.");
-    return new Set();
+    return new Map();
   }
 }
 
@@ -1090,13 +1096,27 @@ async function main() {
   }
 
   // Decide which to attempt
+  let shaRetryCount = 0;
   const candidates = sorted.filter((pr) => {
-    if (previouslyProcessed.has(pr.number)) {
+    const prev = previouslyProcessed.get(pr.number);
+    if (prev) {
+      // merged → never retry; the commit is already in the tree
+      if (prev.status === "merged") return false;
+      // conflict or fetch-failed → retry if the author pushed a new SHA
+      if (prev.status === "conflict" || prev.status === "fetch-failed") {
+        if (prev.headSha && prev.headSha === pr.headSha) return false;
+        shaRetryCount++;
+        return true;
+      }
+      // anything else (skipped, already-applied) → skip
       return false;
     }
     const s = shouldSkip(pr);
     return !s.skip;
   });
+  if (shaRetryCount > 0) {
+    log(`Resume: ${shaRetryCount} previously-conflicted PR(s) eligible for retry (author pushed new SHA).`);
+  }
 
   const limit = Math.min(candidates.length, isFinite(LIMIT) ? LIMIT : candidates.length);
   log(

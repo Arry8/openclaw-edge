@@ -83,9 +83,12 @@ upstream release tag v2026.3.28 (fixed base)
         │
         ▼
   for each PR:
+    --resume check: skip if merged; retry if conflict+new SHA; skip otherwise
+        │
+        ▼
     git merge --no-commit --no-ff
     ├── clean    →  commit (--no-verify)  →  continue
-    └── conflict →  abort  →  log         →  continue
+    └── conflict →  abort  →  log SHA     →  continue (retry next run if author pushes)
         │
         ▼
   every 10 merges: pnpm build (bundler + tsc)
