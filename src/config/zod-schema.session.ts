@@ -197,6 +197,7 @@ export const MessagesSchema = z
     suppressToolErrors: z.boolean().optional(),
     suppressApiErrors: z.boolean().optional(),
     tts: TtsConfigSchema,
+    mediaLocalRoots: z.array(z.string().min(1).startsWith("/")).optional(),
   })
   .strict()
   .optional();
