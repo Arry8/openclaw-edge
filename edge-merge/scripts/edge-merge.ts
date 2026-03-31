@@ -123,7 +123,7 @@ type Report = {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 // PRs to skip — loaded at startup from edge-merge/docs/autoskip.json.
 // Includes both manually added entries (source: "manual") and auto-reverted
