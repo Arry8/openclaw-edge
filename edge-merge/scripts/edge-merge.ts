@@ -999,7 +999,11 @@ async function main() {
       const result = run("git", ["commit", "--no-verify", "-m", "chore(edge-merge): update history and changelog"]);
       if (result.ok) {
         log("Auto-committed history/changelog leftover from previous run.");
+      } else {
+        warn(`Auto-commit failed: ${result.stderr || result.stdout}`);
       }
+    } else if (dirtyTracked.length > 0) {
+      warn(`Dirty files not auto-committable: ${dirtyFiles.join(", ")}`);
     }
   }
 
