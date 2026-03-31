@@ -4,91 +4,52 @@
 
 **The integration build of [openclaw](https://github.com/openclaw/openclaw) — every open upstream PR merged onto a release tag.**
 
-Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html): instead of waiting months for the upstream team to triage ~6,600 open pull requests, `openclaw-edge` merges everything that applies cleanly onto a fixed upstream release tag and ships a build.
-
-> No one else is doing this for openclaw. This repo is first.
+Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html): instead of waiting months for the upstream team to triage ~6,600 open pull requests, `openclaw-edge` merges everything that applies cleanly onto a fixed upstream release tag and ships a daily build.
 
 ---
 
-## What it produces
+## Disclaimer
 
-The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging open PR applied on top. It is not rebased as new upstream releases ship — the goal is to exhaust the full PR queue against a stable base. Updated daily via GitHub Actions.
+`openclaw-edge` is not affiliated with the openclaw project or team. It is an independent integration experiment.
+
+- **No stability guarantees.** This build includes unreviewed, untriaged PRs. It may break at any time.
+- **Not for production use** without understanding what you are running (see Security below).
+- The upstream source of truth is [openclaw/openclaw](https://github.com/openclaw/openclaw). All original work belongs to its authors.
+
+---
+
+## Security
+
+**PRs merged here have not been code-reviewed or security-audited.** The only gate is that the build and type-check pass (`pnpm build` includes `tsc`). A PR that compiles cleanly can still contain malicious or broken logic.
+
+**Specific risks:**
+- A PR could exfiltrate API keys, session tokens, or conversation data to a third-party host
+- A PR could introduce logic bugs, data corruption, or silent failures
+- PRs are merged in priority-tier order (security/crash fixes first) but tier assignment is based on PR labels — not verified
+
+**Mitigations in place:**
+- Build and type-check must pass before any release is created
+- PRs that break the build are automatically reverted and recorded
+- A permanent skip list blocks known bad PRs
+- PRs with git conflicts are skipped entirely (first writer wins)
+
+**Recommendations for self-hosters:**
+- Run inside Docker with `--restart unless-stopped` and no extra capabilities
+- Do not expose the gateway port publicly without `OPENCLAW_GATEWAY_TOKEN` set
+- Consider running behind a reverse proxy with TLS
+
+---
+
+## What's in this build
+
+The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging open PR applied on top. Updated daily via GitHub Actions.
 
 - **Phase 1**: all ~6,600 open PRs (`state=open`)
 - **Phase 2**: all ~16,900 closed-but-not-merged PRs (`state=closed`, `merged_at=null`)
-- Conflicts are skipped automatically; first writer wins on hot files
-- Build and type-check validated (`pnpm build` includes `tsc`) before releasing
-- Full merge history in `docs/mega-merge-history.json`
-- Changelog in `docs/mega-merge-changelog.md`
-- Release assets attached to each GH release
+- Typical outcome: **65–75%** of PRs merge cleanly; the rest conflict and are skipped
+- Every release includes a full changelog grouped by tier (Security/Crash → Fixes → Features → Other)
 
----
-
-## Using this build
-
-Two ways to run openclaw-edge, in order of setup effort.
-
-### Option 1 — Self-host with Docker (keep your existing data)
-
-Works for existing openclaw users on Mac, Windows, or Linux who want to swap in the edge build without losing config, memories, or tools.
-
-openclaw stores all user data in **`~/.openclaw`** on every platform. The Docker image mounts this same directory, so your existing data is preserved automatically.
-
-```sh
-docker run -d \
-  --name openclaw-edge \
-  --restart unless-stopped \
-  -p 18789:18789 \
-  -v ~/.openclaw:/home/node/.openclaw \
-  -e OPENCLAW_GATEWAY_TOKEN="" \
-  ghcr.io/arry8/openclaw-edge:main
-```
-
-Then connect a client to `http://localhost:18789`.
-
-> **Note:** Use the `main` tag — it is rebuilt daily and always reflects the latest edge build. The `mega/YYYY-MM-DD` release tags do not have Docker images.
-
-**Switching back to upstream openclaw:** stop the container and run the upstream image in its place. The `~/.openclaw` volume is shared; no data migration needed.
-
----
-
-### Option 2 — Self-host with Docker Compose
-
-```yaml
-# docker-compose.yml
-services:
-  openclaw-edge:
-    image: ghcr.io/arry8/openclaw-edge:main
-    restart: unless-stopped
-    ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-    volumes:
-      - ${OPENCLAW_CONFIG_DIR:-~/.openclaw}:/home/node/.openclaw
-    environment:
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
-    cap_drop:
-      - NET_RAW
-      - NET_ADMIN
-    security_opt:
-      - no-new-privileges:true
-```
-
-```sh
-docker compose up -d
-```
-
-Set `OPENCLAW_CONFIG_DIR` in a `.env` file if your data lives somewhere other than `~/.openclaw`.
-
----
-
-### Config reference
-
-| Setting | Value | Notes |
-|---|---|---|
-| Data directory | `~/.openclaw` | Same on Mac, Windows, Linux. Override with `OPENCLAW_STATE_DIR`. |
-| Config file | `~/.openclaw/openclaw.json` | Override with `OPENCLAW_CONFIG_PATH`. |
-| Default port | `18789` | Override with `OPENCLAW_GATEWAY_PORT` or `--port`. |
-| Docker image | `ghcr.io/arry8/openclaw-edge:main` | Rebuilt daily on successful merge run. |
+Latest release and changelog: [Releases](https://github.com/Arry8/openclaw-edge/releases)
 
 ---
 
@@ -121,7 +82,7 @@ upstream release tag v2026.3.28 (fixed base)
                    └── stuck  →  ntfy.sh alert → stop
         │
         ▼
-  final pnpm build + pnpm test (optional)
+  final pnpm build
         │
         ▼
   push mega/latest  →  fast-forward main
@@ -130,153 +91,77 @@ upstream release tag v2026.3.28 (fixed base)
   create GH release  mega/YYYY-MM-DD-HHMM
 ```
 
-Typical outcome: **65–75% of open PRs** merge cleanly. The rest conflict and are skipped — logged in history and retried naturally when the next upstream release absorbs them.
+---
+
+## Using this build
+
+### Docker (keep your existing openclaw data)
+
+openclaw stores all user data in `~/.openclaw` on every platform (Mac, Windows, Linux). The Docker image mounts the same directory — your existing config, memories, and tools carry over automatically.
+
+```sh
+docker run -d \
+  --name openclaw-edge \
+  --restart unless-stopped \
+  -p 18789:18789 \
+  -v ~/.openclaw:/home/node/.openclaw \
+  -e OPENCLAW_GATEWAY_TOKEN="" \
+  ghcr.io/arry8/openclaw-edge:main
+```
+
+Connect a client to `http://localhost:18789`.
+
+> Use the `main` tag — it is rebuilt daily. The `mega/YYYY-MM-DD` release tags do not have Docker images.
+
+**Switching back to upstream openclaw:** stop the container and run the upstream image. The `~/.openclaw` volume is shared; no migration needed.
 
 ---
 
-## Build + release policy
+### Docker Compose
 
-**Both must pass before a release is created:**
+```yaml
+services:
+  openclaw-edge:
+    image: ghcr.io/arry8/openclaw-edge:main
+    restart: unless-stopped
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-~/.openclaw}:/home/node/.openclaw
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+```
 
-1. **Bundler** (`tsdown`/rolldown) — catches parse errors, missing imports, broken syntax
-2. **Type check** (`tsc`) — catches logic errors disguised as type errors (e.g. `.catch()` on `void|Promise<void>`, `override` on a non-existent base method)
+```sh
+docker compose up -d
+```
 
-**PR disposition is binary and deterministic — no patching:**
-- PR merges cleanly AND both checks pass → stays in
-- Either check fails → PR is auto-reverted, added to skip list, run continues
+Set `OPENCLAW_CONFIG_DIR` in a `.env` file if your data lives somewhere other than `~/.openclaw`.
 
 ---
 
-## Running locally
+### Config reference
 
-### Prerequisites
-
-- Node 22+, [Bun](https://bun.sh), [pnpm](https://pnpm.io)
-- [gh CLI](https://cli.github.com) authenticated
-- `upstream` remote pointing at `openclaw/openclaw`
-
-```sh
-git clone https://github.com/Arry8/openclaw-edge
-cd openclaw-edge
-git checkout mega/latest
-git remote add upstream https://github.com/openclaw/openclaw.git
-```
-
-### Dry run (no git changes)
-
-```sh
-bun scripts/mega-merge.ts --dry-run --limit 10
-```
-
-### Canonical catchup run
-
-```sh
-bun scripts/mega-merge.ts \
-  --build-interval 10 \
-  --auto-skip-on-build-failure \
-  --create-release \
-  --resume
-```
-
----
-
-## All options
-
-| Flag | Default | Description |
+| Setting | Default | Override |
 |---|---|---|
-| `--upstream <remote>` | `upstream` | Git remote for openclaw/openclaw |
-| `--state <open\|closed\|all>` | `open` | Which PRs to process |
-| `--limit <n>` | unlimited | Stop after N attempts |
-| `--dry-run` | off | Fetch and sort, no git changes |
-| `--resume` | off | Skip PRs already in history |
-| `--cache-prs` | off | Cache PR list to disk; skip API fetch on restarts |
-| `--cache-ttl <n>` | `60` | Cache TTL in minutes |
-| `--build-interval <n>` | `0` | Run `pnpm build` every N clean merges (0 = end only). Runs bundler + tsc. |
-| `--auto-skip-on-build-failure` | off | On build failure: parse error output, find culprit PR via `git log --first-parent`, revert it, retry build. Records auto-skips in `docs/mega-merge-autoskip.json`. Sends ntfy.sh alert if it cannot auto-fix. |
-| `--skip-build` | off | Skip all build validation |
-| `--test` | off | Run `pnpm test` after the final build |
-| `--create-release` | off | Tag HEAD and create a GH pre-release after the run |
-| `--release-interval <n>` | `0` | Also create a release every N successful merges |
-| `--no-promote-main` | off | Skip fast-forwarding `main` to `mega/latest` after clean build |
-| `--report <path>` | `docs/mega-merge-report.json` | Report file path |
-| `--changelog <path>` | `docs/mega-merge-changelog.md` | Changelog file path |
-| `--fetch-batch <n>` | `50` | PR refs per git fetch batch |
-| `--fetch-delay-ms <n>` | `200` | Delay between fetch batches |
-| `--no-commit` | off | Stage but don't commit successful merges |
-| `--aggressive-filter` | off | For closed PRs: skip stale/duplicate-labelled |
-
----
-
-## Auto-skip on build failure
-
-When `--auto-skip-on-build-failure` is set and a build fails, the script:
-
-1. Parses the build output for failing file paths (handles both `tsc` and rolldown error formats)
-2. For each failing file, runs `git log --first-parent -1 -- <file>` to find the `merge(pr#N)` commit that introduced it
-3. Reverts that commit with `git revert -m 1`
-4. Records the PR number in `docs/mega-merge-autoskip.json`
-5. Retries the build (up to 3 times)
-6. If the build passes → continues the run transparently
-7. If it cannot fix (pre-existing base issue, revert conflict, retries exhausted) → sends a high-priority [ntfy.sh](https://ntfy.sh) notification to `Arry8` and stops
-
-Auto-skipped PRs are loaded at startup on all future runs alongside the hardcoded `SKIP_LIST`.
-
----
-
-## Permanent skip list
-
-PRs that are known to break the build are in `SKIP_LIST` in `scripts/mega-merge.ts`:
-
-```typescript
-const SKIP_LIST = new Set<number>([
-  29181, // broken shim imports (../signal, ../telegram) removed by #45967
-  36307, // missing `detail:` key in audit.ts — syntax error
-  48125, // mixed || and ?? without parens in feishu/card-action.ts
-  51371, // transitively includes PR #56737 (navigation-guard.ts TS error)
-  55875, // unterminated regex in skill-scanner.ts — parse error
-  56660, // duplicate observedSuspiciousSignatures in config/io.ts
-  56617, // gateway-plugin.ts: override handleReconnectionAttempt not in base
-  56737, // navigation-guard.ts: .catch() on void|Promise<void> — TS error
-  56840, // gateway-plugin.ts: same override pattern as #56617
-  51722, // sandbox/browser.ts: duplicate object property — TS1117
-  45782, // fs-safe.ts + pairing-store.ts TS errors in error handling
-  47225, // stream-payload-utils.ts TS error in toolsOverride field
-]);
-```
-
-To add a PR: edit `SKIP_LIST`, revert its merge commit with `git revert -m 1 <sha>`, commit, rerun with `--resume`.
-
----
-
-## Key files
-
-| File | Purpose |
-|---|---|
-| `docs/mega-merge-history.json` | One entry per PR attempted. Source of truth for `--resume`. Written after every merge. |
-| `docs/mega-merge-autoskip.json` | PRs auto-reverted by `--auto-skip-on-build-failure`. Loaded at startup. |
-| `docs/mega-merge-pr-cache.json` | Cached PR list from GitHub API. Gitignored. |
-| `docs/mega-merge-report.json` | Last run summary. |
-| `docs/mega-merge-changelog.md` | Append-only human-readable batch log. |
+| Data directory | `~/.openclaw` | `OPENCLAW_STATE_DIR` |
+| Config file | `~/.openclaw/openclaw.json` | `OPENCLAW_CONFIG_PATH` |
+| Gateway port | `18789` | `OPENCLAW_GATEWAY_PORT` |
+| Docker image | `ghcr.io/arry8/openclaw-edge:main` | — |
 
 ---
 
 ## Automation
 
-GitHub Actions runs daily at 08:00 UTC. Each run processes as many PRs as possible within the 60-minute job timeout (~250 PRs/run). On success, `mega/latest` and `main` are updated and a pre-release tagged `mega/YYYY-MM-DD-HHMM` is created. `main` is force-pushed so it always reflects `mega/latest`.
+GitHub Actions runs daily at **08:00 UTC**. Each run merges as many PRs as possible within a 60-minute timeout (~250 PRs/run). On success, `mega/latest` and `main` are updated and a release tagged `mega/YYYY-MM-DD-HHMM` is created.
 
-See [`.github/workflows/mega-merge.yml`](.github/workflows/mega-merge.yml).
-
----
-
-## Relationship to openclaw
-
-- **openclaw/openclaw** — upstream source of truth
-- **Arry8/openclaw-edge** — this repo; integration build only, no original development
-
-`openclaw-edge` is not affiliated with the openclaw project or team.
+[![mega-merge](https://img.shields.io/github/actions/workflow/status/Arry8/openclaw-edge/mega-merge.yml?branch=mega%2Flatest&label=mega-merge&style=flat-square)](https://github.com/Arry8/openclaw-edge/actions/workflows/mega-merge.yml)
 
 ---
 
-## Prior art
-
-- [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html) — integration tree for the Linux kernel
+For details on running the merge script yourself, see [`docs/mega-merge-runbook.md`](docs/mega-merge-runbook.md).
