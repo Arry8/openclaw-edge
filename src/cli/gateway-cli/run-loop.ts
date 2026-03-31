@@ -51,7 +51,6 @@ export async function runGatewayLoop(params: {
     lock = null;
   };
   const exitProcess = (code: number) => {
-    process.removeListener("exit", onProcessExit);
     cleanupSignals();
     params.runtime.exit(code);
   };
