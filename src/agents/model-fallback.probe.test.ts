@@ -7,9 +7,11 @@ import { makeModelFallbackCfg } from "./test-helpers/model-fallback-config-fixtu
 
 // Mock auth-profiles module — must be before importing model-fallback
 vi.mock("./auth-profiles.js", () => ({
+  clearExpiredCooldowns: vi.fn(),
   ensureAuthProfileStore: vi.fn(),
   getSoonestCooldownExpiry: vi.fn(),
   isProfileInCooldown: vi.fn(),
+  loadAuthProfileStoreForRuntime: vi.fn(),
   resolveProfilesUnavailableReason: vi.fn(),
   resolveAuthProfileOrder: vi.fn(),
 }));
@@ -370,6 +372,7 @@ describe("runWithModelFallback – probe logic", () => {
           },
         },
       },
+      auth: { cooldowns: { rateLimitWaitSeconds: 0 } },
     } as Partial<OpenClawConfig>);
 
     mockedResolveAuthProfileOrder.mockImplementation(({ provider }: { provider: string }) => {
@@ -389,6 +392,11 @@ describe("runWithModelFallback – probe logic", () => {
     );
     mockedGetSoonestCooldownExpiry.mockReturnValue(NOW + 30 * 1000);
     mockedResolveProfilesUnavailableReason.mockReturnValue("rate_limit");
+
+    // All profiles in cooldown; set beyond the 90s wait-and-retry threshold
+    // so the test exercises the immediate-skip path without blocking on real timers.
+    const almostExpired = NOW + 120 * 1000;
+    mockedGetSoonestCooldownExpiry.mockReturnValue(almostExpired);
 
     // Simulate Google Vertex abort-wrapped RESOURCE_EXHAUSTED (the shape that was
     // previously swallowed by shouldRethrowAbort before the fallback loop could continue)
@@ -536,10 +544,12 @@ describe("runWithModelFallback – probe logic", () => {
           },
         },
       },
+      auth: { cooldowns: { rateLimitWaitSeconds: 0 } },
     } as Partial<OpenClawConfig>);
 
-    const almostExpired = NOW + 30 * 1000;
-    mockedGetSoonestCooldownExpiry.mockReturnValue(almostExpired);
+    // Wait-and-retry disabled via config — test exercises the immediate-failure path.
+    const farCooldown = NOW + 120 * 1000;
+    mockedGetSoonestCooldownExpiry.mockReturnValue(farCooldown);
 
     const run = vi.fn().mockResolvedValue("unreachable");
 

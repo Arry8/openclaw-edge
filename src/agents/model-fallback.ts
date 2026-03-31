@@ -6,6 +6,7 @@ import {
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { sanitizeForLog } from "../terminal/ansi.js";
 import {
+  clearExpiredCooldowns,
   ensureAuthProfileStore,
   getSoonestCooldownExpiry,
   isProfileInCooldown,
@@ -877,6 +878,93 @@ export async function runWithModelFallback<T>(params: {
         attempt: i + 1,
         total: candidates.length,
       });
+    }
+  }
+
+  // When all candidates failed exclusively due to cooldowns, wait for the
+  // soonest cooldown to expire and retry automatically rather than failing
+  // immediately. The system already knows the exact reset timestamp for each
+  // profile, so we wait for precisely that long instead of giving up.
+  //
+  // Configurable via auth.cooldowns.rateLimitWaitSeconds:
+  //   - 0        → disable waiting entirely (fail immediately as before)
+  //   - positive → cap the maximum wait (e.g., 300 = wait up to 5 minutes)
+  //   - omitted  → wait for the actual cooldown expiry with no cap (default)
+  const configuredWaitSeconds = params.cfg?.auth?.cooldowns?.rateLimitWaitSeconds;
+  const MAX_COOLDOWN_WAIT_MS =
+    typeof configuredWaitSeconds === "number" && Number.isFinite(configuredWaitSeconds)
+      ? configuredWaitSeconds * 1000
+      : Infinity; // No cap by default — wait for the actual reset time.
+  const allCooldownSkips =
+    authStore &&
+    attempts.length > 0 &&
+    attempts.every((a) => a.error.includes("cooldown") || a.reason === "rate_limit");
+
+  if (allCooldownSkips && authStore) {
+    const allProfileIds = [
+      ...new Set(
+        candidates.flatMap((c) =>
+          resolveAuthProfileOrder({
+            cfg: params.cfg,
+            store: authStore,
+            provider: c.provider,
+          }),
+        ),
+      ),
+    ];
+    const soonest = getSoonestCooldownExpiry(authStore, allProfileIds);
+    const now = Date.now();
+
+    if (soonest !== null && Number.isFinite(soonest) && soonest > now) {
+      const waitMs = soonest - now;
+
+      if (MAX_COOLDOWN_WAIT_MS === 0) {
+        // Waiting explicitly disabled — fall through to the error.
+      } else if (waitMs <= MAX_COOLDOWN_WAIT_MS) {
+        const waitSec = Math.ceil(waitMs / 1000);
+        log.warn(
+          `All providers are rate-limited. Waiting ${waitSec}s for cooldown to expire before retrying…`,
+        );
+
+        // Wait for the cooldown to expire, plus a small buffer.
+        await new Promise((resolve) => setTimeout(resolve, waitMs + 500));
+
+        // Clear expired cooldowns so the profiles are available again.
+        clearExpiredCooldowns(authStore);
+        log.warn("Cooldown expired — retrying request.");
+
+        // Single retry pass over all candidates.
+        for (const candidate of candidates) {
+          const profileIds = resolveAuthProfileOrder({
+            cfg: params.cfg,
+            store: authStore,
+            provider: candidate.provider,
+          });
+          if (!profileIds.some((id) => !isProfileInCooldown(authStore, id))) {
+            continue;
+          }
+          try {
+            return {
+              result: await params.run(candidate.provider, candidate.model),
+              provider: candidate.provider,
+              model: candidate.model,
+              attempts,
+            };
+          } catch (retryErr) {
+            if (shouldRethrowAbort(retryErr)) {
+              throw retryErr;
+            }
+            lastError = retryErr;
+            break;
+          }
+        }
+      } else {
+        const waitSec = Math.ceil(waitMs / 1000);
+        const maxSec = Math.ceil(MAX_COOLDOWN_WAIT_MS / 1000);
+        log.warn(
+          `All providers are rate-limited (resets in ${waitSec}s) but configured max wait is ${maxSec}s — failing immediately.`,
+        );
+      }
     }
   }
 
