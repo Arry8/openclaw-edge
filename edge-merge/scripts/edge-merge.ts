@@ -104,7 +104,7 @@ type MergeResult =
   | { status: "skipped"; reason: string }
   | { status: "already-applied" };
 
-type ReportEntry = PrRecord & { tier: 1 | 2 | 3 | 4; result: MergeResult };
+type ReportEntry = PrRecord & { tier: 0 | 1 | 2 | 3 | 4; result: MergeResult };
 
 type Report = {
   generatedAt: string;
@@ -165,7 +165,7 @@ function boolFlag(name: string): boolean {
 }
 
 const UPSTREAM = flag("--upstream", "upstream");
-const PR_STATE = flag("--state", "open") as "open" | "closed" | "all";
+const PR_STATE = flag("--state", "all") as "open" | "closed" | "all";
 const LIMIT = parseInt(flag("--limit", "0"), 10) || Infinity;
 const DRY_RUN = boolFlag("--dry-run");
 const RESUME = boolFlag("--resume");
@@ -602,8 +602,10 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
     return { skip: true, reason: "in skip list" };
   }
 
-  // For closed PRs: always skip ones that were actually merged (commits already in base)
-  if (pr.mergedAt !== null) {
+  // Skip merged PRs only if their commits are already in our tree (pre-tag merge).
+  // Post-tag merges (mergedAt set but headSha not yet reachable from HEAD) must be
+  // included — they are officially accepted upstream work that belongs in this build.
+  if (pr.mergedAt !== null && isAlreadyApplied(pr.headSha)) {
     return { skip: true, reason: "merged upstream" };
   }
 
@@ -634,15 +636,21 @@ function assignTier(title: string): 1 | 2 | 3 | 4 {
   return 4;
 }
 
-function sortPrs(prs: PrRecord[]): Array<PrRecord & { tier: 1 | 2 | 3 | 4 }> {
+function sortPrs(prs: PrRecord[]): Array<PrRecord & { tier: 0 | 1 | 2 | 3 | 4 }> {
   return prs
-    .map((pr) => ({ ...pr, tier: assignTier(pr.title) }))
+    .map((pr) => ({
+      ...pr,
+      // Tier 0 = post-tag merged (officially accepted upstream); applied before open PRs.
+      // Tiers 1–4 = open PRs sorted by security/fix/feat/other.
+      tier: (pr.mergedAt !== null ? 0 : assignTier(pr.title)) as 0 | 1 | 2 | 3 | 4,
+    }))
     .toSorted((a, b) => {
-      if (a.tier !== b.tier) {
-        return a.tier - b.tier;
-      }
-      // Within the same tier, older PRs first (more likely to be the "original" fix)
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      // Within tier 0: oldest mergedAt first (apply in upstream merge order)
+      // Within tiers 1–4: oldest createdAt first
+      const aTime = a.mergedAt ? new Date(a.mergedAt).getTime() : new Date(a.createdAt).getTime();
+      const bTime = b.mergedAt ? new Date(b.mergedAt).getTime() : new Date(b.createdAt).getTime();
+      return aTime - bTime;
     });
 }
 

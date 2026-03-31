@@ -26,6 +26,7 @@ PRs are sorted and applied in this order. When two PRs touch the same file, firs
 
 | Tier | Criteria | Examples |
 |---|---|---|
+| 0 | Post-tag merged (officially accepted upstream) | Any PR merged into openclaw/openclaw after the base tag |
 | 1 | Security / crash keywords in title | `xss`, `crash`, `oom`, `cve-`, `dos`, `data-loss` |
 | 2 | Title starts with `fix` | `fix: ...`, `fix(scope): ...` |
 | 3 | Title starts with `feat` | `feat: ...`, `feat(scope): ...` |
@@ -42,7 +43,7 @@ PRs with the same HEAD SHA are deduplicated (only one is processed).
 | Flag | Default | Description |
 |---|---|---|
 | `--upstream <remote>` | `upstream` | Git remote name for `openclaw/openclaw`. Change if you named the remote differently. |
-| `--state <open\|closed\|all>` | `open` | Which PRs to fetch. `open` = Phase 1 (open PRs). `closed` = Phase 2 (closed-but-not-merged PRs). `all` = both. |
+| `--state <open\|closed\|all>` | `all` | Which PRs to fetch. `all` = open PRs + closed-unmerged + post-tag merged (recommended). `open` = open PRs only. `closed` = closed PRs only. Post-tag merged PRs (merged into upstream after the base tag) are automatically detected and applied first as tier 0. |
 | `--limit <n>` | unlimited | Stop after attempting exactly N PRs. Both successes and failures count toward the limit. |
 
 ### Run control

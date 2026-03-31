@@ -75,8 +75,9 @@ Latest release and changelog: [Releases](https://github.com/Arry8/openclaw-edge/
 upstream release tag v2026.3.28 (fixed base)
         │
         ▼
-  fetch all open PR refs  ──►  sort by priority tier
-  (refs/pull/N/head)             1. security / crash
+  fetch all PR refs        ──►  sort by priority tier
+  (open + closed + merged)       0. post-tag merged (upstream-accepted)
+                                 1. security / crash
                                  2. fix
                                  3. feat
                                  4. other
