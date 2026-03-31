@@ -324,7 +324,9 @@ export async function runPreparedReply(
     envelopeOptions,
   );
   const hasMediaAttachment = Boolean(
-    sessionCtx.MediaPath || (sessionCtx.MediaPaths && sessionCtx.MediaPaths.length > 0),
+    sessionCtx.MediaPath ||
+    (sessionCtx.MediaPaths && sessionCtx.MediaPaths.length > 0) ||
+    (opts?.images && opts.images.length > 0),
   );
   // Guard against empty inbound messages *before* prepending system-generated metadata,
   // so that inboundMetaPrompt alone doesn't mask a truly empty user message.
