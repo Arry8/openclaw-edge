@@ -57,7 +57,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile --ignore-scripts
+        run: pnpm install --no-frozen-lockfile --ignore-scripts --config.allowNonAppliedPatches=true
 
       - name: Add upstream remote
         run: git remote add upstream https://github.com/openclaw/openclaw.git
