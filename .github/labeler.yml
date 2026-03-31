@@ -74,6 +74,11 @@
       - any-glob-to-any-file:
           - "extensions/telegram/**"
           - "docs/channels/telegram.md"
+"channel: utopia":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/utopia/**"
+          - "docs/channels/utopia.md"
 "channel: tlon":
   - changed-files:
       - any-glob-to-any-file:

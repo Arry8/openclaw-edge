@@ -1,0 +1,33 @@
+{
+  "name": "@openclaw/utopia",
+  "version": "2026.3.10",
+  "description": "OpenClaw Utopia messenger channel plugin",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "utopia",
+      "label": "Utopia",
+      "selectionLabel": "Utopia (Decentralized Messenger)",
+      "docsPath": "/channels/utopia",
+      "docsLabel": "utopia",
+      "blurb": "Decentralized messenger with crypto support; direct messages via Utopia API.",
+      "order": 56,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "utopia",
+      "localPath": "extensions/utopia",
+      "defaultChoice": "npm"
+    }
+  }
+}

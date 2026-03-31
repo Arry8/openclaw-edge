@@ -1,0 +1,9 @@
+{
+  "id": "utopia",
+  "channels": ["utopia"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
