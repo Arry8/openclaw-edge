@@ -365,6 +365,12 @@ Vapi voice assistant ↔ OpenClaw HTTP bridge. Near real-time phone calls with y
 Multi-lingual audio transcription via OpenRouter (Gemini, etc). Available on ClawHub.
 </Card>
 
+<Card title="Telegram /call Addon" icon="phone-volume" href="https://github.com/roshanis/openclaw-telegram-call-addon">
+  **@roshanis** • `telegram` `voice` `plugin`
+
+Community plugin that adds a Telegram `/call` command and forwards calls to a Pipecat-compatible voice backend.
+</Card>
+
 </CardGroup>
 
 ## 🏗️ Infrastructure & Deployment
