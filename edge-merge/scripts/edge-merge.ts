@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 // Authored by: cc (Claude Code) | 2026-03-29
 //
-// mega-merge.ts — Fetch every open PR on openclaw/openclaw and merge what
+// edge-merge.ts — Fetch every open PR on openclaw/openclaw and merge what
 // applies cleanly onto the current branch. Inspired by Linux linux-next.
 //
 // Usage:
-//   bun scripts/mega-merge.ts [options]
+//   bun scripts/edge-merge.ts [options]
 //
 // Options:
 //   --upstream <remote>   Git remote name for openclaw/openclaw (default: upstream)
@@ -15,7 +15,7 @@
 //   --dry-run             Fetch and sort but do not touch the git tree
 //   --resume              Skip PRs already in a previous report (--report must exist)
 //   --report <path>       Path to write/read the JSON report
-//                         (default: mega-merge/docs/report.json)
+//                         (default: edge-merge/docs/report.json)
 //   --fetch-batch <n>     PRs to fetch per git fetch batch (default: 50)
 //   --fetch-delay-ms <n>  Delay between fetch batches in ms (default: 200)
 //   --no-commit           Leave successful merges staged but do not commit
@@ -28,10 +28,10 @@
 //   --test                Run pnpm test after the final build passes
 //   --aggressive-filter   For closed PRs: also skip stale, wip, duplicate-labelled
 //   --changelog <path>    Append a human-readable batch summary to this markdown file
-//                         (default: mega-merge/docs/changelog.md)
+//                         (default: edge-merge/docs/changelog.md)
 //   --release-interval <n> Create a GitHub release every N successful merges
 //                         (default: 0 = only at the end when --create-release is set).
-//   --cache-prs           Cache the PR list to mega-merge/docs/pr-cache.json and reuse
+//   --cache-prs           Cache the PR list to edge-merge/docs/pr-cache.json and reuse
 //                         it on subsequent runs within --cache-ttl minutes. Useful for
 //                         local catchup loops where the API is hit on every restart.
 //   --cache-ttl <n>       Cache TTL in minutes (default: 60). Ignored without --cache-prs.
@@ -43,7 +43,7 @@
 //                         When a build fails (interval or final), parse the error
 //                         output to identify the failing file(s), trace each file
 //                         to its merge(pr#N) commit via git log, revert that commit,
-//                         record the PR in mega-merge/docs/autoskip.json, and retry
+//                         record the PR in edge-merge/docs/autoskip.json, and retry
 //                         the build (up to 3 times). If the build passes, the run
 //                         continues. If it cannot be auto-fixed (pre-existing base
 //                         issue, revert conflict, or retries exhausted), a ntfy.sh
@@ -57,7 +57,7 @@
 //                         the build output for failing file paths, trace each file to
 //                         the most recent merge commit, revert those commits, and retry
 //                         the build (up to 3 times). Reverted PR numbers are appended
-//                         to mega-merge/docs/autoskip.json and loaded automatically on
+//                         to edge-merge/docs/autoskip.json and loaded automatically on
 //                         future runs. When not set, existing behavior is preserved
 //                         (stop + print manual instructions).
 //
@@ -156,7 +156,7 @@ const SKIP_LIST = new Set<number>([
   53961, // delivery.ts:319 TS2339 Property 'length' does not exist on type 'DeliveryOutcome'
 ]);
 
-// Runtime set populated at startup from mega-merge/docs/autoskip.json.
+// Runtime set populated at startup from edge-merge/docs/autoskip.json.
 // Do NOT modify SKIP_LIST — auto-skips go here only.
 const AUTO_SKIP_SET = new Set<number>();
 
@@ -198,9 +198,9 @@ const PR_STATE = flag("--state", "open") as "open" | "closed" | "all";
 const LIMIT = parseInt(flag("--limit", "0"), 10) || Infinity;
 const DRY_RUN = boolFlag("--dry-run");
 const RESUME = boolFlag("--resume");
-const REPORT_PATH = resolve(REPO_DIR, flag("--report", "mega-merge/docs/report.json"));
-const HISTORY_PATH = resolve(REPO_DIR, "mega-merge/docs/history.json");
-const AUTOSKIP_PATH = resolve(REPO_DIR, "mega-merge/docs/autoskip.json");
+const REPORT_PATH = resolve(REPO_DIR, flag("--report", "edge-merge/docs/report.json"));
+const HISTORY_PATH = resolve(REPO_DIR, "edge-merge/docs/history.json");
+const AUTOSKIP_PATH = resolve(REPO_DIR, "edge-merge/docs/autoskip.json");
 const FETCH_BATCH = parseInt(flag("--fetch-batch", "50"), 10);
 const FETCH_DELAY_MS = parseInt(flag("--fetch-delay-ms", "200"), 10);
 const NO_COMMIT = boolFlag("--no-commit");
@@ -209,23 +209,23 @@ const BUILD_INTERVAL = parseInt(flag("--build-interval", "0"), 10); // 0 = disab
 const SKIP_BUILD = boolFlag("--skip-build");
 const RUN_TEST = boolFlag("--test");
 const AGGRESSIVE_FILTER = boolFlag("--aggressive-filter");
-const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "mega-merge/docs/changelog.md"));
+const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "edge-merge/docs/changelog.md"));
 const CREATE_RELEASE = boolFlag("--create-release");
 const RELEASE_INTERVAL = parseInt(flag("--release-interval", "0"), 10); // 0 = disabled
 const CONTINUOUS_BUILD = boolFlag("--continuous-build");
 const AUTO_SKIP_ON_BUILD_FAILURE = boolFlag("--auto-skip-on-build-failure");
 const CACHE_PRS = boolFlag("--cache-prs");
 const CACHE_TTL_MS = parseInt(flag("--cache-ttl", "60"), 10) * 60_000;
-const PR_CACHE_PATH = resolve(REPO_DIR, "mega-merge/docs/pr-cache.json");
+const PR_CACHE_PATH = resolve(REPO_DIR, "edge-merge/docs/pr-cache.json");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function log(msg: string) {
-  process.stdout.write(`[mega-merge] ${msg}\n`);
+  process.stdout.write(`[edge-merge] ${msg}\n`);
 }
 
 function warn(msg: string) {
-  process.stderr.write(`[mega-merge] WARN: ${msg}\n`);
+  process.stderr.write(`[edge-merge] WARN: ${msg}\n`);
 }
 
 // Run a command, return { ok, stdout, stderr }.
@@ -343,7 +343,7 @@ class ContinuousBuildManager {
         this.failed = true;
         this.failedAtSha = this.buildingSha;
         process.stderr.write(
-          `\n[mega-merge] Background build FAILED at ${this.failedAtSha?.slice(0, 12)}.\n` +
+          `\n[edge-merge] Background build FAILED at ${this.failedAtSha?.slice(0, 12)}.\n` +
             `  Build log: ${this.logPath}\n`,
         );
       }
@@ -906,7 +906,7 @@ async function notifyNtfy(title: string, message: string): Promise<void> {
   try {
     await fetch("https://ntfy.sh/Arry8", {
       method: "POST",
-      headers: { "Title": title, "Priority": "high", "Tags": "warning,mega-merge" },
+      headers: { "Title": title, "Priority": "high", "Tags": "warning,edge-merge" },
       body: message,
     });
   } catch {
@@ -924,8 +924,8 @@ async function autoSkipAndRetry(
     const files = extractFailingFiles(buildOutput);
     if (files.length === 0) {
       const msg = "Auto-skip: could not extract any failing file paths from build output. Add the offending PR to SKIP_LIST manually and rerun with --resume.";
-      process.stderr.write(`[mega-merge] ${msg}\n`);
-      await notifyNtfy("mega-merge: manual intervention required", msg);
+      process.stderr.write(`[edge-merge] ${msg}\n`);
+      await notifyNtfy("edge-merge: manual intervention required", msg);
       return false;
     }
     log(`Auto-skip: failing files detected: ${files.join(", ")}`);
@@ -950,8 +950,8 @@ async function autoSkipAndRetry(
 
     if (culprits.size === 0) {
       const msg = `Auto-skip: no merge(pr#N) commits found for failing files: ${unattributed.join(", ")} — pre-existing base issue, cannot auto-fix.`;
-      process.stderr.write(`[mega-merge] ${msg}\n`);
-      await notifyNtfy("mega-merge: manual intervention required", msg);
+      process.stderr.write(`[edge-merge] ${msg}\n`);
+      await notifyNtfy("edge-merge: manual intervention required", msg);
       return false;
     }
 
@@ -965,8 +965,8 @@ async function autoSkipAndRetry(
       const revertResult = run("git", ["revert", "-m", "1", "--no-edit", sha]);
       if (!revertResult.ok) {
         const msg = `Auto-skip: git revert of ${sha} (PR #${prNumber}) failed: ${revertResult.stderr.slice(0, 200)}. Resolve manually and rerun with --resume.`;
-        process.stderr.write(`[mega-merge] ${msg}\n`);
-        await notifyNtfy("mega-merge: manual intervention required", msg);
+        process.stderr.write(`[edge-merge] ${msg}\n`);
+        await notifyNtfy("edge-merge: manual intervention required", msg);
         return false;
       }
       const reason = `${culpritFiles[0]} (auto-skip attempt ${attempt})`;
@@ -987,8 +987,8 @@ async function autoSkipAndRetry(
   }
 
   const msg = `Auto-skip exhausted ${maxRetries} retries — build still failing. Check ${AUTOSKIP_PATH} for what was reverted, then resolve manually.`;
-  process.stderr.write(`[mega-merge] ${msg}\n`);
-  await notifyNtfy("mega-merge: manual intervention required", msg);
+  process.stderr.write(`[edge-merge] ${msg}\n`);
+  await notifyNtfy("edge-merge: manual intervention required", msg);
   return false;
 }
 
@@ -1003,20 +1003,20 @@ async function main() {
   const remoteCheck = run("git", ["remote", "get-url", UPSTREAM]);
   if (!remoteCheck.ok) {
     process.stderr.write(
-      `[mega-merge] ERROR: remote '${UPSTREAM}' not found.\n` +
+      `[edge-merge] ERROR: remote '${UPSTREAM}' not found.\n` +
         `  Add it with: git remote add ${UPSTREAM} https://github.com/openclaw/openclaw.git\n`,
     );
     process.exit(1);
   }
 
-  // Auto-commit mega-merge data files if they're the only dirty files — these
+  // Auto-commit edge-merge data files if they're the only dirty files — these
   // are always safe to commit and are commonly left dirty by interrupted runs.
   const AUTO_COMMIT_PATHS = [
-    resolve(REPO_DIR, "mega-merge/docs/history.json"),
-    resolve(REPO_DIR, "mega-merge/docs/changelog.md"),
-    resolve(REPO_DIR, "mega-merge/docs/pr-cache.json"),
-    resolve(REPO_DIR, "mega-merge/docs/report.json"),
-    resolve(REPO_DIR, "mega-merge/docs/autoskip.json"),
+    resolve(REPO_DIR, "edge-merge/docs/history.json"),
+    resolve(REPO_DIR, "edge-merge/docs/changelog.md"),
+    resolve(REPO_DIR, "edge-merge/docs/pr-cache.json"),
+    resolve(REPO_DIR, "edge-merge/docs/report.json"),
+    resolve(REPO_DIR, "edge-merge/docs/autoskip.json"),
   ];
   {
     const dirty = run("git", ["status", "--porcelain"]);
@@ -1027,7 +1027,7 @@ async function main() {
     const allAutoCommittable = dirtyFiles.every((f) => AUTO_COMMIT_PATHS.includes(f));
     if (dirtyTracked.length > 0 && allAutoCommittable) {
       run("git", ["add", ...AUTO_COMMIT_PATHS]);
-      const result = run("git", ["commit", "--no-verify", "-m", "chore(mega-merge): update history and changelog"]);
+      const result = run("git", ["commit", "--no-verify", "-m", "chore(edge-merge): update history and changelog"]);
       if (result.ok) {
         log("Auto-committed history/changelog leftover from previous run.");
       }
@@ -1042,8 +1042,8 @@ async function main() {
     .join("\n");
   if (trackedChanges) {
     process.stderr.write(
-      `[mega-merge] ERROR: working tree has uncommitted changes.\n` +
-        `  Commit or stash before running mega-merge.\n`,
+      `[edge-merge] ERROR: working tree has uncommitted changes.\n` +
+        `  Commit or stash before running edge-merge.\n`,
     );
     process.exit(1);
   }
@@ -1094,7 +1094,7 @@ async function main() {
   // Load already-processed set for resume
   const previouslyProcessed = loadPreviouslyProcessed();
 
-  // Populate AUTO_SKIP_SET from mega-merge/docs/autoskip.json so previously
+  // Populate AUTO_SKIP_SET from edge-merge/docs/autoskip.json so previously
   // auto-reverted PRs are not re-merged on subsequent runs.
   {
     const autoSkips = loadAutoSkips();
@@ -1236,7 +1236,7 @@ async function main() {
     if (cb?.failed) {
       process.stdout.write("\n");
       process.stderr.write(
-        `[mega-merge] Stopping merge loop: background build failed at ${cb.failedAtSha?.slice(0, 12)}.\n` +
+        `[edge-merge] Stopping merge loop: background build failed at ${cb.failedAtSha?.slice(0, 12)}.\n` +
           `  Add the offending PR to SKIP_LIST and rerun with --resume.\n`,
       );
       break;
@@ -1311,9 +1311,9 @@ async function main() {
           // Build fixed — continue merge loop
         } else {
           const intervalFailMsg = `Interval build FAILED after PR #${pr.number} (merge #${mergedCount}). Add #${pr.number} to SKIP_LIST and rerun with --resume.`;
-          await notifyNtfy("mega-merge: manual intervention required", intervalFailMsg);
+          await notifyNtfy("edge-merge: manual intervention required", intervalFailMsg);
           process.stderr.write(
-            `[mega-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
+            `[edge-merge] Interval build FAILED after PR #${pr.number} (merge #${mergedCount}).\n` +
               `  Last merged PR is the likely culprit. Add #${pr.number} to SKIP_LIST and rerun with --resume.\n` +
               `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
           );
@@ -1395,7 +1395,7 @@ async function main() {
     }
     if (cb.failed) {
       process.stderr.write(
-        `[mega-merge] Background build failed at ${cb.failedAtSha?.slice(0, 12)}; final build may also fail.\n`,
+        `[edge-merge] Background build failed at ${cb.failedAtSha?.slice(0, 12)}; final build may also fail.\n`,
       );
     }
   }
@@ -1494,9 +1494,9 @@ async function main() {
         buildPassed = true;
       } catch {
         const finalFailMsg = `Final build FAILED on branch ${baseBranch}. Use --auto-skip-on-build-failure or add offending PR to SKIP_LIST and rerun with --resume.`;
-        await notifyNtfy("mega-merge: manual intervention required", finalFailMsg);
+        await notifyNtfy("edge-merge: manual intervention required", finalFailMsg);
         process.stderr.write(
-          `[mega-merge] Final build FAILED.\n` +
+          `[edge-merge] Final build FAILED.\n` +
             `  Use 'git bisect' against the merge order in ${REPORT_PATH} to find the offending PR,\n` +
             `  add its number to SKIP_LIST, then rerun with --resume.\n` +
             `  Re-run with --auto-skip-on-build-failure to attempt automatic recovery.\n`,
@@ -1522,7 +1522,7 @@ async function main() {
         log("Tests passed.");
       } catch {
         process.stderr.write(
-          `[mega-merge] pnpm test FAILED.\n` +
+          `[edge-merge] pnpm test FAILED.\n` +
             `  Check test output above. If failures are pre-existing on the base tag, they are not\n` +
             `  caused by this run. Otherwise use 'git bisect' to identify the offending PR.\n`,
         );
@@ -1580,6 +1580,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  process.stderr.write(`[mega-merge] Fatal: ${err}\n`);
+  process.stderr.write(`[edge-merge] Fatal: ${err}\n`);
   process.exit(1);
 });

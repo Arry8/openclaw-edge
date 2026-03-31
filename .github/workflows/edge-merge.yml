@@ -1,11 +1,11 @@
 # Authored by: cc (Claude Code) | 2026-03-30
-# mega-merge.yml — Daily integration of upstream openclaw PRs onto mega/latest.
+# edge-merge.yml — Daily integration of upstream openclaw PRs onto mega/latest.
 # Runs at 08:00 UTC. Timing is arbitrary — this branch is not rebased on upstream
 # releases; it works through a fixed queue of ~6,500 open PRs independently.
 # Builds every 10 merges (bundler + tsc); auto-reverts PRs that fail the build.
 # Manual trigger available via workflow_dispatch with optional overrides.
 
-name: mega-merge
+name: edge-merge
 
 on:
   schedule:
@@ -24,7 +24,7 @@ on:
 # Prevent concurrent runs from fighting over mega/latest.
 # New run waits for the current one to finish rather than cancelling it.
 concurrency:
-  group: mega-merge
+  group: edge-merge
   cancel-in-progress: false
 
 permissions:
@@ -58,8 +58,8 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "mega-merge[bot]"
-          git config user.email "mega-merge[bot]@users.noreply.github.com"
+          git config user.name "edge-merge[bot]"
+          git config user.email "edge-merge[bot]@users.noreply.github.com"
 
       - name: Install dependencies
         run: |
@@ -69,7 +69,7 @@ jobs:
       - name: Add upstream remote
         run: git remote add upstream https://github.com/openclaw/openclaw.git
 
-      - name: Run mega-merge
+      - name: Run edge-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -90,7 +90,7 @@ jobs:
             ARGS+=(--skip-build)
           fi
 
-          bun mega-merge/scripts/mega-merge.ts "${ARGS[@]}"
+          bun edge-merge/scripts/edge-merge.ts "${ARGS[@]}"
 
       - name: Push mega/latest
         if: always()
@@ -100,8 +100,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mega-merge-report-${{ github.run_id }}
+          name: edge-merge-report-${{ github.run_id }}
           path: |
-            mega-merge/docs/report.json
-            mega-merge/docs/changelog.md
+            edge-merge/docs/report.json
+            edge-merge/docs/changelog.md
           if-no-files-found: ignore
