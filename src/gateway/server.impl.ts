@@ -1437,6 +1437,12 @@ export async function startGatewayServer(
               cronStorePath = cronState.storePath;
               deps.cron = cron;
               cronRunLogPrune = cronState.runLogPrune;
+              // Keep the request context in sync with hot-reloaded cron state.
+              // The gatewayRequestContext object is created once at startup and
+              // shared with request handlers, so it must be updated here.
+              gatewayRequestContext.cron = cron;
+              gatewayRequestContext.cronStorePath = cronStorePath;
+              gatewayRequestContext.cronRunLogPrune = cronRunLogPrune;
               channelHealthMonitor = nextState.channelHealthMonitor;
             },
             startChannel,
