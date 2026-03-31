@@ -187,6 +187,7 @@ export async function handleBashChatCommand(params: {
   elevated: {
     enabled: boolean;
     allowed: boolean;
+    defaultLevel?: "on" | "off" | "ask" | "full";
     failures: Array<{ gate: string; key: string }>;
   };
 }): Promise<ReplyPayload> {
@@ -351,7 +352,7 @@ export async function handleBashChatCommand(params: {
       elevated: {
         enabled: params.elevated.enabled,
         allowed: params.elevated.allowed,
-        defaultLevel: "on",
+        defaultLevel: params.elevated.defaultLevel ?? "on",
       },
     });
     const result = await execTool.execute("chat-bash", {
