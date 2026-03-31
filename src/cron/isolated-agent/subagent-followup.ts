@@ -112,6 +112,23 @@ export async function readDescendantSubagentFallbackReply(params: {
   return replies.join("\n\n");
 }
 
+function isInRunWindow(
+  entry: {
+    startedAt?: number;
+    createdAt: number;
+  },
+  runStartedAt?: number,
+): boolean {
+  if (typeof runStartedAt !== "number" || !Number.isFinite(runStartedAt)) {
+    return true;
+  }
+  const timestamp =
+    typeof entry.startedAt === "number" && Number.isFinite(entry.startedAt)
+      ? entry.startedAt
+      : entry.createdAt;
+  return Number.isFinite(timestamp) && timestamp >= runStartedAt;
+}
+
 /**
  * Waits for descendant subagents to complete using a push-based approach:
  * each active descendant run is awaited via `agent.wait` (gateway RPC) instead
@@ -123,15 +140,17 @@ export async function waitForDescendantSubagentSummary(params: {
   initialReply?: string;
   timeoutMs: number;
   observedActiveDescendants?: boolean;
+  runStartedAt?: number;
 }): Promise<string | undefined> {
   const timings = resolveCronSubagentTimings();
   const initialReply = params.initialReply?.trim();
   const deadline = Date.now() + Math.max(timings.waitMinMs, Math.floor(params.timeoutMs));
 
-  // Snapshot the currently active descendant run IDs.
+  // Snapshot the currently active descendant run IDs, scoped to the current cron run window
+  // when available so stale descendants from previous executions do not block the wait.
   const getActiveRuns = () =>
     listDescendantRunsForRequester(params.sessionKey).filter(
-      (entry) => typeof entry.endedAt !== "number",
+      (entry) => typeof entry.endedAt !== "number" && isInRunWindow(entry, params.runStartedAt),
     );
 
   const initialActiveRuns = getActiveRuns();
