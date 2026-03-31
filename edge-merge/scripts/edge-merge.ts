@@ -424,8 +424,10 @@ function createGhRelease(params: {
   if (changelogPath) {
     try {
       const full = readFileSync(changelogPath, "utf8");
-      const lastSection = full.lastIndexOf("\n## ");
-      notes = lastSection >= 0 ? full.slice(lastSection + 1) : full;
+      // Changelog is prepended — newest entry is at the top.
+      // Grab the first section only (everything before the second "## " header).
+      const secondSection = full.indexOf("\n## ");
+      notes = secondSection >= 0 ? full.slice(0, secondSection).trim() : full.trim();
     } catch {
       notes = "";
     }
