@@ -198,21 +198,9 @@ export function resolveExecHostApprovalContext(params: {
     ask: params.ask,
   });
   const hostSecurity = minSecurity(params.security, approvals.agent.security);
-  // DESIGN DECISION: User-level tools.exec.ask=off takes precedence over admin policies.
-  // This allows users to disable exec prompts in trusted environments (e.g., webchat/control-ui).
-  // However, user cannot override admin's explicit "off" (security restriction).
-  // Priority order:
-  // 1. params.ask === "off" → "off" (user opt-out always wins)
-  // 2. approvals.agent.ask === "off" && params.ask !== "off" → "off" (admin restriction stands)
-  // 3. Otherwise → maxAsk(params.ask, approvals.agent.ask)
-  let hostAsk: string;
-  if (params.ask === "off") {
-    hostAsk = "off"; // User opt-out always wins
-  } else if (approvals.agent.ask === "off") {
-    hostAsk = "off"; // Admin restriction stands (user cannot override to "always")
-  } else {
-    hostAsk = maxAsk(params.ask, approvals.agent.ask);
-  }
+  // An explicit ask=off policy in exec-approvals.json must be able to suppress
+  // prompts even when tool/runtime defaults are stricter (for example on-miss).
+  const hostAsk = approvals.agent.ask === "off" ? "off" : maxAsk(params.ask, approvals.agent.ask);
   const askFallback = approvals.agent.askFallback;
   if (hostSecurity === "deny") {
     throw new Error(`exec denied: host=${params.host} security=deny`);
