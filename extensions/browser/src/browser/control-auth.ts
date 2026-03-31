@@ -1,5 +1,7 @@
+import crypto from "node:crypto";
 import type { OpenClawConfig } from "../config/config.js";
-import { loadConfig } from "../config/config.js";
+import { loadConfig, writeConfigFile } from "../config/config.js";
+import { coerceSecretRef } from "../config/types.secrets.js";
 import { resolveGatewayAuth } from "../gateway/auth.js";
 import { ensureGatewayStartupAuth } from "../gateway/startup-auth.js";
 
@@ -62,10 +64,6 @@ export async function ensureBrowserControlAuth(params: {
     return { auth };
   }
 
-  if (params.cfg.gateway?.auth?.mode === "trusted-proxy") {
-    return { auth };
-  }
-
   // Re-read latest config to avoid racing with concurrent config writers.
   const latestCfg = loadConfig();
   const latestAuth = resolveBrowserControlAuth(latestCfg, env);
@@ -78,8 +76,41 @@ export async function ensureBrowserControlAuth(params: {
   if (latestCfg.gateway?.auth?.mode === "none") {
     return { auth: latestAuth };
   }
+
+  // trusted-proxy mode: the gateway authenticates via proxy headers, not
+  // tokens, so ensureGatewayStartupAuth will not generate a credential.
+  // Generate a browser-specific loopback token directly so the browser
+  // control server always starts with auth middleware installed.
+  // Skip generation if gateway.auth.token is a SecretRef (object) — the
+  // operator intentionally manages it externally and resolution may have
+  // failed temporarily; overwriting would cause config drift.
   if (latestCfg.gateway?.auth?.mode === "trusted-proxy") {
-    return { auth: latestAuth };
+    const existingTokenValue = latestCfg.gateway?.auth?.token;
+    if (coerceSecretRef(existingTokenValue, latestCfg.secrets?.defaults)) {
+      // Fail closed: the operator configured an external SecretRef for the
+      // token but it could not be resolved in this process. Starting the
+      // browser control server without auth would recreate the vulnerability.
+      throw new Error(
+        "browser control auth unavailable: gateway.auth.token is a SecretRef that could not be resolved; " +
+          "resolve the secret provider or set a literal token to start browser control in trusted-proxy mode",
+      );
+    }
+    const generatedToken = crypto.randomBytes(24).toString("hex");
+    const nextCfg: OpenClawConfig = {
+      ...latestCfg,
+      gateway: {
+        ...latestCfg.gateway,
+        auth: {
+          ...latestCfg.gateway?.auth,
+          token: generatedToken,
+        },
+      },
+    };
+    await writeConfigFile(nextCfg);
+    return {
+      auth: { token: generatedToken },
+      generatedToken,
+    };
   }
 
   const ensured = await ensureGatewayStartupAuth({
