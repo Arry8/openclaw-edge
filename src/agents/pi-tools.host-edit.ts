@@ -1,6 +1,9 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import type {
+  AgentToolResult,
+  AgentToolUpdateCallback,
+} from "@mariozechner/pi-agent-core";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 
 type EditToolRecoveryOptions = {

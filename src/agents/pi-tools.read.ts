@@ -30,6 +30,7 @@ import { sanitizeForPromptLiteral, wrapUntrustedPromptDataBlock } from "./saniti
 import { sanitizeToolResultImages } from "./tool-images.js";
 
 export {
+  assertRequiredParams,
   CLAUDE_PARAM_GROUPS,
   assertRequiredParams,
   normalizeToolParams,
