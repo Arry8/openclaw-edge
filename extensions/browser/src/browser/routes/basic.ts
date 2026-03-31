@@ -59,6 +59,32 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
     }
   });
 
+  // Gateway status (lightweight, profile-aware)
+  app.get("/status", async (req, res) => {
+    let current;
+    try {
+      current = ctx.state();
+    } catch {
+      return jsonError(res, 503, "browser server not started");
+    }
+
+    const profileCtx = getProfileContext(req, ctx);
+    if ("error" in profileCtx) {
+      return jsonError(res, profileCtx.status, profileCtx.error);
+    }
+
+    const profileState = current.profiles.get(profileCtx.profile.name);
+
+    res.json({
+      running: !!profileState?.running,
+      pid: profileState?.running?.pid ?? null,
+      profile: profileCtx.profile.name,
+      headless: current.resolved.headless,
+      enabled: current.resolved.enabled,
+      timestamp: Date.now(),
+    });
+  });
+
   // Get status (profile-aware)
   app.get("/", async (req, res) => {
     let current: ReturnType<typeof ctx.state>;
