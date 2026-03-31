@@ -44,10 +44,9 @@ Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html)
 
 The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging open PR applied on top. Updated daily via GitHub Actions.
 
-- **Phase 1**: all ~6,600 open PRs (`state=open`)
-- **Phase 2**: all ~16,900 closed-but-not-merged PRs (`state=closed`, `merged_at=null`)
+- All ~6,600 open PRs (`state=open`)
 - Typical outcome: **65–75%** of PRs merge cleanly; the rest conflict and are skipped
-- Every release includes a full changelog grouped by tier (Security/Crash → Fixes → Features → Other)
+- Every release includes a full changelog grouped by tier (Security / Crash → Fixes → Features → Other)
 
 Latest release and changelog: [Releases](https://github.com/Arry8/openclaw-edge/releases)
 
