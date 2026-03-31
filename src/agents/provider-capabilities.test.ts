@@ -26,6 +26,15 @@ const resolveProviderCapabilitiesWithPluginMock = vi.fn((params: { provider: str
         openAiCompatTurnValidation: false,
         geminiThoughtSignatureSanitization: true,
         geminiThoughtSignatureModelHints: ["gemini"],
+        transcriptToolCallIdModelHints: [
+          "mistral",
+          "mixtral",
+          "codestral",
+          "pixtral",
+          "devstral",
+          "ministral",
+          "mistralai",
+        ],
       };
     case "openai-codex":
       return {
