@@ -262,8 +262,14 @@ export function loadSettings(): UiSettings {
           ? parsed.navWidth
           : defaults.navWidth,
       navGroupsCollapsed:
-        typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
-          ? parsed.navGroupsCollapsed
+        typeof parsed.navGroupsCollapsed === "object" &&
+        parsed.navGroupsCollapsed !== null &&
+        !Array.isArray(parsed.navGroupsCollapsed)
+          ? Object.fromEntries(
+              Object.entries(parsed.navGroupsCollapsed).filter(
+                ([, value]) => typeof value === "boolean",
+              ),
+            )
           : defaults.navGroupsCollapsed,
       borderRadius:
         typeof parsed.borderRadius === "number" &&
