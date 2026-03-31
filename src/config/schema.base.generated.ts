@@ -10912,10 +10912,6 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
                 type: "string",
                 const: "qmd",
               },
-              {
-                type: "string",
-                const: "postgres",
-              },
             ],
           },
           citations: {
@@ -11152,48 +11148,6 @@ export const GENERATED_BASE_CONFIG_SCHEMA = {
                   },
                 },
                 additionalProperties: false,
-              },
-            },
-            additionalProperties: false,
-          },
-          postgres: {
-            type: "object",
-            properties: {
-              connectionString: {
-                type: "string",
-              },
-              embeddingProvider: {
-                type: "string",
-              },
-              embeddingModel: {
-                type: "string",
-              },
-              embeddingDimensions: {
-                type: "integer",
-                exclusiveMinimum: 0,
-                maximum: 9007199254740991,
-              },
-              indexType: {
-                anyOf: [
-                  {
-                    type: "string",
-                    const: "ivfflat",
-                  },
-                  {
-                    type: "string",
-                    const: "hnsw",
-                  },
-                ],
-              },
-              maxConnections: {
-                type: "integer",
-                exclusiveMinimum: 0,
-                maximum: 9007199254740991,
-              },
-              minSimilarity: {
-                type: "number",
-                minimum: 0,
-                maximum: 1,
               },
             },
             additionalProperties: false,
