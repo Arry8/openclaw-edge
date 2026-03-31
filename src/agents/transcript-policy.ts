@@ -3,7 +3,6 @@ import { isGoogleModelApi } from "./pi-embedded-helpers/google.js";
 import {
   isAnthropicProviderFamily,
   isOpenAiProviderFamily,
-  preservesAnthropicThinkingSignatures,
   resolveTranscriptToolCallIdMode,
   shouldDropThinkingBlocksForModel,
   shouldSanitizeGeminiThoughtSignaturesForModel,
@@ -132,7 +131,11 @@ export function resolveTranscriptPolicy(params: {
       (!isOpenAi && sanitizeToolCallIds) || requiresOpenAiCompatibleToolIdSanitization,
     toolCallIdMode,
     repairToolUseResultPairing,
-    preserveSignatures: isAnthropic && preservesAnthropicThinkingSignatures(provider),
+    // Preserve thinking signatures for all Anthropic-compatible API providers,
+    // not just recognized ones. Unrecognized providers (e.g. custom enterprise
+    // proxies) that speak anthropic-messages still require intact signatures,
+    // otherwise thinking blocks get stripped and the API returns an error.
+    preserveSignatures: isAnthropic,
     sanitizeThoughtSignatures: isOpenAi ? undefined : sanitizeThoughtSignatures,
     sanitizeThinkingSignatures: false,
     dropThinkingBlocks,
