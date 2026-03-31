@@ -71,6 +71,7 @@ export type SlackActionConfig = {
   memberInfo?: boolean;
   channelInfo?: boolean;
   emojiList?: boolean;
+  threads?: boolean;
 };
 
 export type SlackSlashCommandConfig = {

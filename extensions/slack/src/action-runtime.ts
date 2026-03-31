@@ -8,6 +8,7 @@ import {
   listSlackEmojis,
   listSlackPins,
   listSlackReactions,
+  listSlackThreads,
   pinSlackMessage,
   reactSlackMessage,
   readSlackMessages,
@@ -41,6 +42,7 @@ const messagingActions = new Set([
 
 const reactionsActions = new Set(["react", "reactions"]);
 const pinActions = new Set(["pinMessage", "unpinMessage", "listPins"]);
+const threadActions = new Set(["listThreads"]);
 
 export const slackActionRuntime = {
   deleteSlackMessage,
@@ -466,6 +468,30 @@ export async function handleSlackAction(
       }
     }
     return jsonResult({ ok: true, emojis: result });
+  }
+
+  if (threadActions.has(action)) {
+    if (!isActionEnabled("threads")) {
+      throw new Error("Slack threads are disabled.");
+    }
+    const channelId = resolveChannelId();
+    if (action === "listThreads") {
+      const limitRaw = params.limit;
+      const limit =
+        typeof limitRaw === "number" && Number.isFinite(limitRaw) ? limitRaw : undefined;
+      const before = readStringParam(params, "before");
+      const after = readStringParam(params, "after");
+      const result = await listSlackThreads(channelId, {
+        ...readOpts,
+        limit,
+        before: before ?? undefined,
+        after: after ?? undefined,
+      });
+      const threads = result.threads.map((thread) =>
+        withNormalizedTimestamp(thread as Record<string, unknown>, (thread as { ts?: unknown }).ts),
+      );
+      return jsonResult({ ok: true, threads, hasMore: result.hasMore });
+    }
   }
 
   throw new Error(`Unknown action: ${action}`);
