@@ -395,10 +395,10 @@ function appendChangelog(params: {
     params;
   const mins = Math.round(durationMs / 60_000);
   const tierLabels: Record<number, string> = {
-    1: "security/crash",
-    2: "fix",
-    3: "feat",
-    4: "other",
+    1: "Security / Crash",
+    2: "Fixes",
+    3: "Features",
+    4: "Other",
   };
 
   const lines: string[] = [];
@@ -421,7 +421,7 @@ function appendChangelog(params: {
     lines.push(``);
     for (const e of group) {
       lines.push(
-        `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title} (@${e.author})`,
+        `- [#${e.number}](https://github.com/openclaw/openclaw/pull/${e.number}) ${e.title}${e.author ? ` — Thanks @${e.author}` : ""}`,
       );
     }
     lines.push(``);
