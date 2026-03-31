@@ -55,7 +55,7 @@
       "author": "YangManBOBO",
       "closedAt": null,
       "createdAt": null,
-      "headSha": "0f77dea904dc1825f9128abce25811c65ada00f5",
+      "headSha": "deadbeef00000000000000000000000000000000",
       "isDraft": null,
       "labels": [
         "channel: telegram",
@@ -144729,4 +144729,3 @@
     }
   ]
 }
-
