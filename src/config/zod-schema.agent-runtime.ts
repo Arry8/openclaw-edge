@@ -785,6 +785,7 @@ export const AgentEntrySchema = z
     workspace: z.string().optional(),
     multipleWorkspaces: z.array(z.string()).min(1).optional(),
     agentDir: z.string().optional(),
+    auth: z.record(z.string(), z.string()).optional(),
     model: AgentModelSchema.optional(),
     thinkingDefault: z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"])

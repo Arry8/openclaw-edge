@@ -77,6 +77,8 @@ export type AgentConfig = {
   workspace?: string;
   multipleWorkspaces?: string[];
   agentDir?: string;
+  /** Per-agent auth profile bindings. Maps provider names to specific auth profile IDs. */
+  auth?: Record<string, string>;
   model?: AgentModelConfig;
   /** Optional per-agent default thinking level (overrides agents.defaults.thinkingDefault). */
   thinkingDefault?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
