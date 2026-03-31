@@ -23,6 +23,7 @@ import { createMessageTool } from "./tools/message-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
+import { createSessionsBroadcastTool } from "./tools/sessions-broadcast-tool.js";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
@@ -236,6 +237,12 @@ export function createOpenClawTools(
       config: resolvedConfig,
       callGateway: openClawToolsDeps.callGateway,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
+    }),
+    createSessionsBroadcastTool({
+      agentSessionKey: options?.agentSessionKey,
+      agentChannel: options?.agentChannel,
+      sandboxed: options?.sandboxed,
+      config: options?.config,
     }),
     createSessionsYieldTool({
       sessionId: options?.sessionId,
