@@ -197,7 +197,7 @@ To add a PR: edit `SKIP_LIST`, revert its merge commit with `git revert -m 1 <sh
 
 GitHub Actions runs daily at 08:00 UTC. Each run processes as many PRs as possible within the 60-minute job timeout (~250 PRs/run). On success, `mega/latest` and `main` are updated and a pre-release tagged `mega/YYYY-MM-DD-HHMM` is created. `main` is force-pushed so it always reflects `mega/latest`.
 
-See [`.github/workflows/edge-merge.yml`](.github/workflows/edge-merge.yml).
+See [`.github/workflows/edge-merge.yml`](.github/workflows/edge-merge.yml). For full operational details see the [edge-merge runbook](edge-merge/runbook.md).
 
 ---
 
