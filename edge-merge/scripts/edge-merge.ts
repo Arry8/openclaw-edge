@@ -1140,14 +1140,15 @@ async function main() {
   );
 
   // Print tier breakdown
-  const tierCounts = [1, 2, 3, 4].map(
+  const tierCounts = [0, 1, 2, 3, 4].map(
     (t) => candidates.filter((p) => p.tier === t).slice(0, limit).length,
   );
   log(
-    `  Tier 1 (security/crash): ${tierCounts[0]}  ` +
-      `Tier 2 (fix): ${tierCounts[1]}  ` +
-      `Tier 3 (feat): ${tierCounts[2]}  ` +
-      `Tier 4 (other): ${tierCounts[3]}`,
+    `  Tier 0 (post-tag merged): ${tierCounts[0]}  ` +
+      `Tier 1 (security/crash): ${tierCounts[1]}  ` +
+      `Tier 2 (fix): ${tierCounts[2]}  ` +
+      `Tier 3 (feat): ${tierCounts[3]}  ` +
+      `Tier 4 (other): ${tierCounts[4]}`,
   );
 
   const toProcess = candidates.slice(0, limit);
