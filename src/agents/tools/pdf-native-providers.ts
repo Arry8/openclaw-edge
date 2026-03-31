@@ -151,7 +151,10 @@ export async function geminiAnalyzePdf(params: {
     /\/v1beta$/i,
     "",
   );
-  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(params.modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  // Avoid duplicating /v1beta in URL path - only append if baseUrl doesn't already include it
+  const hasVersionSegment = /\/v1beta$/i.test(baseUrl) || /\/v1$/i.test(baseUrl);
+  const versionSegment = hasVersionSegment ? "" : "/v1beta";
+  const url = `${baseUrl}${versionSegment}/models/${encodeURIComponent(params.modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const res = await fetch(url, {
     method: "POST",
