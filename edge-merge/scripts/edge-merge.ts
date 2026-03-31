@@ -1217,9 +1217,10 @@ async function main() {
 
     // Write to history immediately so restarts resume from this point.
     if (
-      result.status === "merged" ||
-      result.status === "conflict" ||
-      result.status === "fetch-failed"
+      !DRY_RUN &&
+      (result.status === "merged" ||
+        result.status === "conflict" ||
+        result.status === "fetch-failed")
     ) {
       appendToHistory({ ...pr, result });
     }
@@ -1389,7 +1390,7 @@ async function main() {
     entries,
   };
 
-  writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
+  if (!DRY_RUN) writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
 
   // ── Flush remaining entries to history ────────────────────────────────────
   // merged/conflict/fetch-failed are already written mid-loop; this catches
@@ -1405,7 +1406,7 @@ async function main() {
     }
     const existingNums = new Set(history.entries.map((e) => e.number));
     const newEntries = entries.filter((e) => !existingNums.has(e.number));
-    if (newEntries.length > 0) {
+    if (!DRY_RUN && newEntries.length > 0) {
       history.entries.push(...newEntries);
       writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
     }
