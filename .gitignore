@@ -99,6 +99,7 @@ USER.md
 
 # local tooling
 .serena/
+/.codex/original-user-prompt.txt
 
 # Local IBM WML bridge files
 scripts/dev/.env.ibm-wml
