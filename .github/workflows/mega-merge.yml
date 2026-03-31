@@ -46,15 +46,18 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb', 'package.json') }}
-          restore-keys: ${{ runner.os }}-bun-
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: bun install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Add upstream remote
         run: git remote add upstream https://github.com/openclaw/openclaw.git
