@@ -34,6 +34,7 @@ import {
   resolveAgentMainSessionKey,
   resolveSessionFilePath,
   resolveStorePath,
+  saveSessionStore,
   updateSessionStore,
 } from "../config/sessions.js";
 import {
@@ -1067,16 +1068,16 @@ export async function runHeartbeatOnce(opts: {
 
     // Record last delivered heartbeat payload for dedupe.
     if (!shouldSkipMain && normalized.text.trim()) {
-      await updateSessionStore(storePath, (store) => {
-        const current = store[sessionKey];
-        if (current) {
-          store[sessionKey] = {
-            ...current,
-            lastHeartbeatText: normalized.text,
-            lastHeartbeatSentAt: startedAt,
-          };
-        }
-      });
+      const store = loadSessionStore(storePath);
+      const current = store[sessionKey];
+      if (current) {
+        store[sessionKey] = {
+          ...current,
+          lastHeartbeatText: normalized.text,
+          lastHeartbeatSentAt: startedAt,
+        };
+        await saveSessionStore(storePath, store);
+      }
     }
 
     emitHeartbeatEvent({
