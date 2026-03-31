@@ -38,6 +38,23 @@ Modeled after [linux-next](https://www.kernel.org/doc/man-pages/linux-next.html)
 - Do not expose the gateway port publicly without `OPENCLAW_GATEWAY_TOKEN` set
 - Consider running behind a reverse proxy with TLS
 
+### Egress firewall (optional but recommended)
+
+Code-level scanning cannot reliably catch malicious code disguised as a legitimate API call. The only enforceable mitigation is restricting what the process can reach at the network level.
+
+openclaw makes outbound calls to a well-known set of hosts (AI providers, ntfy.sh, GitHub). Anything outside that set — including attacker-controlled infrastructure — can be blocked at the container or host level.
+
+**Options, in order of effort:**
+
+| Option | Approach |
+|---|---|
+| **A — iptables in container** | Entrypoint script sets allowlist rules before starting the gateway. Requires `NET_ADMIN` cap temporarily, dropped before exec. |
+| **B — Docker network + proxy** | Isolated Docker network with egress via a filtering proxy (e.g. Squid with an allowlist). More maintainable than raw iptables. |
+| **C — Railway private networking** | Route egress through a proxy service on Railway's private network. Works with the existing Railway deployment. |
+| **D — gVisor / Firecracker** | Run the image under `gVisor` (`runsc`) for syscall filtering, or Firecracker for full VM-level isolation. Highest overhead, strongest isolation. |
+
+Known legitimate outbound destinations: `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.mistral.ai`, `api.x.ai`, `api.tavily.com`, `ntfy.sh`, `api.github.com`, `github.com`.
+
 ---
 
 ## What's in this build
