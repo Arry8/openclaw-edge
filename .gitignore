@@ -154,4 +154,5 @@ changelog/fragments/
 
 # Local scratch workspace
 .tmp/
-docs/mega-merge-report.json
+mega-merge/docs/report.json
+mega-merge/docs/pr-cache.json

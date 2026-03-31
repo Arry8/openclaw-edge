@@ -90,7 +90,7 @@ jobs:
             ARGS+=(--skip-build)
           fi
 
-          bun scripts/mega-merge.ts "${ARGS[@]}"
+          bun mega-merge/scripts/mega-merge.ts "${ARGS[@]}"
 
       - name: Push mega/latest
         if: always()
@@ -102,6 +102,6 @@ jobs:
         with:
           name: mega-merge-report-${{ github.run_id }}
           path: |
-            docs/mega-merge-report.json
-            docs/mega-merge-changelog.md
+            mega-merge/docs/report.json
+            mega-merge/docs/changelog.md
           if-no-files-found: ignore

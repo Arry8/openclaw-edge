@@ -15,7 +15,7 @@
 //   --dry-run             Fetch and sort but do not touch the git tree
 //   --resume              Skip PRs already in a previous report (--report must exist)
 //   --report <path>       Path to write/read the JSON report
-//                         (default: docs/mega-merge-report.json)
+//                         (default: mega-merge/docs/report.json)
 //   --fetch-batch <n>     PRs to fetch per git fetch batch (default: 50)
 //   --fetch-delay-ms <n>  Delay between fetch batches in ms (default: 200)
 //   --no-commit           Leave successful merges staged but do not commit
@@ -28,10 +28,10 @@
 //   --test                Run pnpm test after the final build passes
 //   --aggressive-filter   For closed PRs: also skip stale, wip, duplicate-labelled
 //   --changelog <path>    Append a human-readable batch summary to this markdown file
-//                         (default: docs/mega-merge-changelog.md)
+//                         (default: mega-merge/docs/changelog.md)
 //   --release-interval <n> Create a GitHub release every N successful merges
 //                         (default: 0 = only at the end when --create-release is set).
-//   --cache-prs           Cache the PR list to docs/mega-merge-pr-cache.json and reuse
+//   --cache-prs           Cache the PR list to mega-merge/docs/pr-cache.json and reuse
 //                         it on subsequent runs within --cache-ttl minutes. Useful for
 //                         local catchup loops where the API is hit on every restart.
 //   --cache-ttl <n>       Cache TTL in minutes (default: 60). Ignored without --cache-prs.
@@ -43,7 +43,7 @@
 //                         When a build fails (interval or final), parse the error
 //                         output to identify the failing file(s), trace each file
 //                         to its merge(pr#N) commit via git log, revert that commit,
-//                         record the PR in docs/mega-merge-autoskip.json, and retry
+//                         record the PR in mega-merge/docs/autoskip.json, and retry
 //                         the build (up to 3 times). If the build passes, the run
 //                         continues. If it cannot be auto-fixed (pre-existing base
 //                         issue, revert conflict, or retries exhausted), a ntfy.sh
@@ -57,7 +57,7 @@
 //                         the build output for failing file paths, trace each file to
 //                         the most recent merge commit, revert those commits, and retry
 //                         the build (up to 3 times). Reverted PR numbers are appended
-//                         to docs/mega-merge-autoskip.json and loaded automatically on
+//                         to mega-merge/docs/autoskip.json and loaded automatically on
 //                         future runs. When not set, existing behavior is preserved
 //                         (stop + print manual instructions).
 //
@@ -156,7 +156,7 @@ const SKIP_LIST = new Set<number>([
   53961, // delivery.ts:319 TS2339 Property 'length' does not exist on type 'DeliveryOutcome'
 ]);
 
-// Runtime set populated at startup from docs/mega-merge-autoskip.json.
+// Runtime set populated at startup from mega-merge/docs/autoskip.json.
 // Do NOT modify SKIP_LIST — auto-skips go here only.
 const AUTO_SKIP_SET = new Set<number>();
 
@@ -198,9 +198,9 @@ const PR_STATE = flag("--state", "open") as "open" | "closed" | "all";
 const LIMIT = parseInt(flag("--limit", "0"), 10) || Infinity;
 const DRY_RUN = boolFlag("--dry-run");
 const RESUME = boolFlag("--resume");
-const REPORT_PATH = resolve(REPO_DIR, flag("--report", "docs/mega-merge-report.json"));
-const HISTORY_PATH = resolve(REPO_DIR, "docs/mega-merge-history.json");
-const AUTOSKIP_PATH = resolve(REPO_DIR, "docs/mega-merge-autoskip.json");
+const REPORT_PATH = resolve(REPO_DIR, flag("--report", "mega-merge/docs/report.json"));
+const HISTORY_PATH = resolve(REPO_DIR, "mega-merge/docs/history.json");
+const AUTOSKIP_PATH = resolve(REPO_DIR, "mega-merge/docs/autoskip.json");
 const FETCH_BATCH = parseInt(flag("--fetch-batch", "50"), 10);
 const FETCH_DELAY_MS = parseInt(flag("--fetch-delay-ms", "200"), 10);
 const NO_COMMIT = boolFlag("--no-commit");
@@ -209,14 +209,14 @@ const BUILD_INTERVAL = parseInt(flag("--build-interval", "0"), 10); // 0 = disab
 const SKIP_BUILD = boolFlag("--skip-build");
 const RUN_TEST = boolFlag("--test");
 const AGGRESSIVE_FILTER = boolFlag("--aggressive-filter");
-const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "docs/mega-merge-changelog.md"));
+const CHANGELOG_PATH = resolve(REPO_DIR, flag("--changelog", "mega-merge/docs/changelog.md"));
 const CREATE_RELEASE = boolFlag("--create-release");
 const RELEASE_INTERVAL = parseInt(flag("--release-interval", "0"), 10); // 0 = disabled
 const CONTINUOUS_BUILD = boolFlag("--continuous-build");
 const AUTO_SKIP_ON_BUILD_FAILURE = boolFlag("--auto-skip-on-build-failure");
 const CACHE_PRS = boolFlag("--cache-prs");
 const CACHE_TTL_MS = parseInt(flag("--cache-ttl", "60"), 10) * 60_000;
-const PR_CACHE_PATH = resolve(REPO_DIR, "docs/mega-merge-pr-cache.json");
+const PR_CACHE_PATH = resolve(REPO_DIR, "mega-merge/docs/pr-cache.json");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1012,11 +1012,11 @@ async function main() {
   // Auto-commit mega-merge data files if they're the only dirty files — these
   // are always safe to commit and are commonly left dirty by interrupted runs.
   const AUTO_COMMIT_PATHS = [
-    resolve(REPO_DIR, "docs/mega-merge-history.json"),
-    resolve(REPO_DIR, "docs/mega-merge-changelog.md"),
-    resolve(REPO_DIR, "docs/mega-merge-pr-cache.json"),
-    resolve(REPO_DIR, "docs/mega-merge-report.json"),
-    resolve(REPO_DIR, "docs/mega-merge-autoskip.json"),
+    resolve(REPO_DIR, "mega-merge/docs/history.json"),
+    resolve(REPO_DIR, "mega-merge/docs/changelog.md"),
+    resolve(REPO_DIR, "mega-merge/docs/pr-cache.json"),
+    resolve(REPO_DIR, "mega-merge/docs/report.json"),
+    resolve(REPO_DIR, "mega-merge/docs/autoskip.json"),
   ];
   {
     const dirty = run("git", ["status", "--porcelain"]);
@@ -1094,7 +1094,7 @@ async function main() {
   // Load already-processed set for resume
   const previouslyProcessed = loadPreviouslyProcessed();
 
-  // Populate AUTO_SKIP_SET from docs/mega-merge-autoskip.json so previously
+  // Populate AUTO_SKIP_SET from mega-merge/docs/autoskip.json so previously
   // auto-reverted PRs are not re-merged on subsequent runs.
   {
     const autoSkips = loadAutoSkips();
