@@ -24,6 +24,86 @@ The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every
 
 ---
 
+## Using this build
+
+Three ways to run openclaw-edge, in order of setup effort.
+
+### Option 1 — Connect to the hosted gateway (no setup)
+
+A live instance running the latest edge build is at **`agent.hypertransient.com`**.
+
+1. Open openclaw → **Settings → Gateways → Remote**
+2. Add `https://agent.hypertransient.com`
+3. No token or pairing required
+
+This is a single-user deployment. Device auth is disabled; firewall it if you expose it externally.
+
+---
+
+### Option 2 — Self-host with Docker (keep your existing data)
+
+Works for existing openclaw users on Mac, Windows, or Linux who want to swap in the edge build without losing config, memories, or tools.
+
+openclaw stores all user data in **`~/.openclaw`** on every platform. The Docker image mounts this same directory, so your existing data is preserved automatically.
+
+```sh
+docker run -d \
+  --name openclaw-edge \
+  --restart unless-stopped \
+  -p 18789:18789 \
+  -v ~/.openclaw:/home/node/.openclaw \
+  -e OPENCLAW_GATEWAY_TOKEN="" \
+  ghcr.io/arry8/openclaw-edge:main
+```
+
+Then connect a client to `http://localhost:18789`.
+
+> **Note:** Use the `main` tag — it is rebuilt daily and always reflects the latest edge build. The `mega/YYYY-MM-DD` release tags do not have Docker images.
+
+**Switching back to upstream openclaw:** stop the container and run the upstream image in its place. The `~/.openclaw` volume is shared; no data migration needed.
+
+---
+
+### Option 3 — Self-host with Docker Compose
+
+```yaml
+# docker-compose.yml
+services:
+  openclaw-edge:
+    image: ghcr.io/arry8/openclaw-edge:main
+    restart: unless-stopped
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-~/.openclaw}:/home/node/.openclaw
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+```
+
+```sh
+docker compose up -d
+```
+
+Set `OPENCLAW_CONFIG_DIR` in a `.env` file if your data lives somewhere other than `~/.openclaw`.
+
+---
+
+### Config reference
+
+| Setting | Value | Notes |
+|---|---|---|
+| Data directory | `~/.openclaw` | Same on Mac, Windows, Linux. Override with `OPENCLAW_STATE_DIR`. |
+| Config file | `~/.openclaw/openclaw.json` | Override with `OPENCLAW_CONFIG_PATH`. |
+| Default port | `18789` | Override with `OPENCLAW_GATEWAY_PORT` or `--port`. |
+| Docker image | `ghcr.io/arry8/openclaw-edge:main` | Rebuilt daily on successful merge run. |
+
+---
+
 ## How it works
 
 ```
@@ -104,7 +184,6 @@ bun scripts/mega-merge.ts --dry-run --limit 10
 
 ```sh
 bun scripts/mega-merge.ts \
-  --cache-prs --cache-ttl 120 \
   --build-interval 10 \
   --auto-skip-on-build-failure \
   --create-release \
