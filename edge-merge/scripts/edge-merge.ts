@@ -992,7 +992,13 @@ async function main() {
     const dirtyTracked = dirty.stdout
       .split("\n")
       .filter((l) => l.trim() && !l.startsWith("??"));
-    const dirtyFiles = dirtyTracked.map((l) => resolve(REPO_DIR, l.slice(3).trim()));
+    // Porcelain v1: "XY PATH" where XY = 2 status chars, then a space.
+    // run() trims stdout, which strips the leading ' ' on the first line when
+    // X = ' ' (unindexed change). Detect and restore before slicing.
+    const dirtyFiles = dirtyTracked.map((l) => {
+      const line = l.length >= 3 && l[2] === " " ? l : " " + l;
+      return resolve(REPO_DIR, line.slice(3).trim());
+    });
     const allAutoCommittable = dirtyFiles.every((f) => AUTO_COMMIT_PATHS.includes(f));
     if (dirtyTracked.length > 0 && allAutoCommittable) {
       run("git", ["add", ...AUTO_COMMIT_PATHS]);
