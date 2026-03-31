@@ -847,8 +847,14 @@ export function buildStatusMessage(args: StatusArgs): string {
     }
     return "channel override";
   })();
+
+  // Extract configured fallbacks from model config
+  const configuredFallbacks = resolveAgentModelFallbackValues(args.config?.agents?.defaults?.model);
+  const fallbacksNote =
+    configuredFallbacks.length > 0 ? ` · Fallbacks: ${configuredFallbacks.join(", ")}` : "";
+
   const modelNote = channelModelNote ? ` · ${channelModelNote}` : "";
-  const modelLine = `🧠 Model: ${selectedModelLabel}${selectedAuthLabel}${modelNote}`;
+  const modelLine = `🧠 Model: ${selectedModelLabel}${selectedAuthLabel}${modelNote}${fallbacksNote}`;
   const showFallbackAuth = activeAuthLabelValue && activeAuthLabelValue !== selectedAuthLabelValue;
   let fallbackLine: string | null = null;
   if (fallbackState.active) {
