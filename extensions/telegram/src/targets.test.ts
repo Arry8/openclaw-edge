@@ -23,6 +23,11 @@ describe("stripTelegramInternalPrefixes", () => {
     expect(stripTelegramInternalPrefixes("telegram:group:-100123")).toBe("-100123");
   });
 
+  it("strips telegram+direct prefixes", () => {
+    expect(stripTelegramInternalPrefixes("telegram:direct:123456789")).toBe("123456789");
+    expect(stripTelegramInternalPrefixes("tg:direct:123456789")).toBe("123456789");
+  });
+
   it("does not strip group prefix without telegram prefix", () => {
     expect(stripTelegramInternalPrefixes("group:-100123")).toBe("group:-100123");
   });
@@ -85,6 +90,13 @@ describe("parseTelegramTarget", () => {
       chatType: "group",
     });
   });
+
+  it("parses telegram:direct prefixed targets as direct chats", () => {
+    expect(parseTelegramTarget("telegram:direct:123456789")).toEqual({
+      chatId: "123456789",
+      chatType: "direct",
+    });
+  });
 });
 
 describe("normalizeTelegramChatId", () => {
@@ -98,6 +110,7 @@ describe("normalizeTelegramChatId", () => {
   it("keeps numeric chat ids unchanged", () => {
     expect(normalizeTelegramChatId("-1001234567890")).toBe("-1001234567890");
     expect(normalizeTelegramChatId("123456789")).toBe("123456789");
+    expect(normalizeTelegramChatId("telegram:direct:123456789")).toBe("123456789");
   });
 
   it("normalizes bare delivery-only group prefixes for numeric chat ids", () => {
