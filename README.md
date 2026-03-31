@@ -59,11 +59,12 @@ Known legitimate outbound destinations: `api.anthropic.com`, `api.openai.com`, `
 
 ## What's in this build
 
-The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging open PR applied on top. Updated daily via GitHub Actions.
+The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every clean-merging PR applied on top. Updated daily via GitHub Actions.
 
-- All ~6,600 open PRs (`state=open`)
+- **Tier 0** — PRs merged into openclaw/openclaw *after* the base tag (official upstream commits not yet in the tag)
+- **Tiers 1–4** — All ~6,600 open PRs, sorted: security/crash → fix → feat → other
 - Typical outcome: **~28%** of PRs merge cleanly; the remaining ~72% conflict and are skipped
-- Every release includes a full changelog grouped by tier (Security / Crash → Fixes → Features → Other)
+- Every release includes a full changelog grouped by tier
 
 Latest release and changelog: [Releases](https://github.com/Arry8/openclaw-edge/releases)
 
