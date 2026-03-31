@@ -57,7 +57,9 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile --ignore-scripts --config.allowNonAppliedPatches=true
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-scripts --config.allowNonAppliedPatches=true
+          git add -A && git diff --cached --quiet || git commit --no-verify -m "chore(ci): regenerate lockfile after upstream changes"
 
       - name: Add upstream remote
         run: git remote add upstream https://github.com/openclaw/openclaw.git
