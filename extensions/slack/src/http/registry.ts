@@ -12,7 +12,16 @@ type RegisterSlackHttpHandlerArgs = {
   accountId?: string;
 };
 
-const slackHttpRoutes = new Map<string, SlackHttpRequestHandler>();
+// Use globalThis to ensure a single shared Map across all bundled module instances.
+// Without this, the bundler may duplicate this module into multiple chunks, causing
+// registerSlackHttpHandler and handleSlackHttpRequest to operate on different Maps.
+const GLOBAL_KEY = Symbol.for("openclaw.slack.httpRoutes");
+type GlobalWithRoutes = typeof globalThis & {
+  [GLOBAL_KEY]?: Map<string, SlackHttpRequestHandler>;
+};
+const slackHttpRoutes: Map<string, SlackHttpRequestHandler> = ((globalThis as GlobalWithRoutes)[
+  GLOBAL_KEY
+] ??= new Map());
 
 export function normalizeSlackWebhookPath(path?: string | null): string {
   const trimmed = path?.trim();
