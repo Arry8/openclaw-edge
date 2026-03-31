@@ -76,7 +76,6 @@ jobs:
 
           ARGS=(
             --resume
-            --cache-prs --cache-ttl 120
             --build-interval 10
             --auto-skip-on-build-failure
             --create-release
