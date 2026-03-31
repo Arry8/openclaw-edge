@@ -26,21 +26,9 @@ The `mega/latest` branch starts from upstream tag **`v2026.3.28`** and has every
 
 ## Using this build
 
-Three ways to run openclaw-edge, in order of setup effort.
+Two ways to run openclaw-edge, in order of setup effort.
 
-### Option 1 — Connect to the hosted gateway (no setup)
-
-A live instance running the latest edge build is at **`agent.hypertransient.com`**.
-
-1. Open openclaw → **Settings → Gateways → Remote**
-2. Add `https://agent.hypertransient.com`
-3. No token or pairing required
-
-This is a single-user deployment. Device auth is disabled; firewall it if you expose it externally.
-
----
-
-### Option 2 — Self-host with Docker (keep your existing data)
+### Option 1 — Self-host with Docker (keep your existing data)
 
 Works for existing openclaw users on Mac, Windows, or Linux who want to swap in the edge build without losing config, memories, or tools.
 
@@ -64,7 +52,7 @@ Then connect a client to `http://localhost:18789`.
 
 ---
 
-### Option 3 — Self-host with Docker Compose
+### Option 2 — Self-host with Docker Compose
 
 ```yaml
 # docker-compose.yml
