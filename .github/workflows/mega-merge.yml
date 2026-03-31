@@ -54,7 +54,7 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --no-frozen-lockfile
 
       - name: Add upstream remote
         run: git remote add upstream https://github.com/openclaw/openclaw.git
