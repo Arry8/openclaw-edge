@@ -567,6 +567,8 @@ export async function writeFileWithinRoot(params: {
   data: string | Buffer;
   encoding?: BufferEncoding;
   mkdir?: boolean;
+  /** Default mode for newly created files. Defaults to 0o600. */
+  mode?: number;
 }): Promise<void> {
   if (process.platform === "win32" || process.platform === "freebsd") {
     await writeFileWithinRootLegacy(params);
@@ -576,6 +578,7 @@ export async function writeFileWithinRoot(params: {
   const pinned = await resolvePinnedWriteTargetWithinRoot({
     rootDir: params.rootDir,
     relativePath: params.relativePath,
+    defaultMode: params.mode,
   });
 
   const identity = await runPinnedWriteHelper({
@@ -681,6 +684,7 @@ export async function writeFileFromPathWithinRoot(params: {
 async function resolvePinnedWriteTargetWithinRoot(params: {
   rootDir: string;
   relativePath: string;
+  defaultMode?: number;
 }): Promise<{
   rootReal: string;
   targetPath: string;
@@ -710,7 +714,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
   if (!basename || basename === "." || basename === "/") {
     throw new SafeOpenError("invalid-path", "invalid target path");
   }
-  let mode = 0o600;
+  let mode = params.defaultMode ?? 0o600;
   try {
     const opened = await openFileWithinRoot({
       rootDir: params.rootDir,
@@ -737,7 +741,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
     relativeParentPath:
       path.posix.dirname(relativePosix) === "." ? "" : path.posix.dirname(relativePosix),
     basename,
-    mode: mode || 0o600,
+    mode: mode ?? params.defaultMode ?? 0o600,
   };
 }
 
@@ -756,11 +760,13 @@ async function writeFileWithinRootLegacy(params: {
   data: string | Buffer;
   encoding?: BufferEncoding;
   mkdir?: boolean;
+  mode?: number;
 }): Promise<void> {
   const target = await openWritableFileWithinRoot({
     rootDir: params.rootDir,
     relativePath: params.relativePath,
     mkdir: params.mkdir,
+    mode: params.mode,
     truncateExisting: false,
   });
   const destinationPath = target.openedRealPath;
