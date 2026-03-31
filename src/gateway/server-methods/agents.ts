@@ -621,6 +621,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       agentId,
       name: rawName,
       workspace: workspaceDir,
+      skills: params.skills === null ? undefined : (params.skills ?? []),
     });
     const agentDir = resolveAgentDir(nextConfig, agentId);
     nextConfig = applyAgentConfig(nextConfig, { agentId, agentDir });
@@ -695,6 +696,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         : {}),
       ...(workspaceDir ? { workspace: workspaceDir } : {}),
       ...(model ? { model } : {}),
+      ...(params.skills !== undefined ? { skills: params.skills } : {}),
     });
 
     if (workspaceDir) {
