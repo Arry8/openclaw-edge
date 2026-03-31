@@ -170,7 +170,7 @@ export function buildGroupChatContext(params: { sessionCtx: TemplateContext }): 
     }
   }
   lines.push(
-    "Your replies are automatically sent to this group chat. Do not use the message tool to send to this same group — just reply normally.",
+    "Your replies are automatically sent to this group chat. Reply normally, and only use the message tool to send attachments, images, audio, video, or files.",
   );
   return lines.join(" ");
 }
