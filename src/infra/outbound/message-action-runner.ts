@@ -395,7 +395,9 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
   } = ctx;
   throwIfAborted(abortSignal);
   const action: ChannelMessageActionName = "send";
-  const to = readStringParam(params, "to", { required: true });
+  const to =
+    readStringParam(params, "to") ??
+    readStringParam(params, "target", { required: true });
   // Support media, path, and filePath parameters for attachments
   let mediaHint =
     readStringParam(params, "media", { trim: false }) ??
