@@ -609,6 +609,13 @@ function shouldSkip(pr: PrRecord): { skip: true; reason: string } | { skip: fals
     return { skip: true, reason: "merged upstream" };
   }
 
+  // Skip closed-unmerged PRs unless the user explicitly requested them via --state closed.
+  // The default --state all fetches everything but defers the 16K closed-unmerged backlog
+  // to an explicit opt-in run. Post-tag merged PRs (mergedAt !== null) are handled above.
+  if (pr.closedAt !== null && pr.mergedAt === null && PR_STATE !== "closed") {
+    return { skip: true, reason: "closed (unmerged)" };
+  }
+
   if (AGGRESSIVE_FILTER && pr.closedAt !== null) {
     // Skip old abandoned PRs with no obvious value
     const age = Date.now() - new Date(pr.closedAt).getTime();

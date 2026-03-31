@@ -43,7 +43,7 @@ PRs with the same HEAD SHA are deduplicated (only one is processed).
 | Flag | Default | Description |
 |---|---|---|
 | `--upstream <remote>` | `upstream` | Git remote name for `openclaw/openclaw`. Change if you named the remote differently. |
-| `--state <open\|closed\|all>` | `all` | Which PRs to fetch. `all` = open PRs + closed-unmerged + post-tag merged (recommended). `open` = open PRs only. `closed` = closed PRs only. Post-tag merged PRs (merged into upstream after the base tag) are automatically detected and applied first as tier 0. |
+| `--state <open\|closed\|all>` | `all` | Which PRs to fetch from the API. Default `all` processes open PRs + post-tag merged (tier 0) only — closed-unmerged are silently skipped unless `--state closed` is passed. `closed` = explicit Phase 2 run (16K closed-unmerged PRs). Post-tag merged PRs are always applied first as tier 0 regardless of `--state`. |
 | `--limit <n>` | unlimited | Stop after attempting exactly N PRs. Both successes and failures count toward the limit. |
 
 ### Run control
