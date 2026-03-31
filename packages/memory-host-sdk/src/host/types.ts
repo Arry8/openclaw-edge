@@ -24,7 +24,7 @@ export type MemorySyncProgressUpdate = {
 };
 
 export type MemoryProviderStatus = {
-  backend: "builtin" | "qmd";
+  backend: "builtin" | "qmd" | "postgres";
   provider: string;
   model?: string;
   requestedProvider?: string;

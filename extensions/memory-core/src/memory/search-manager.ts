@@ -16,6 +16,7 @@ import {
 const MEMORY_SEARCH_MANAGER_CACHE_KEY = Symbol.for("openclaw.memorySearchManagerCache");
 type MemorySearchManagerCacheStore = {
   qmdManagerCache: Map<string, MemorySearchManager>;
+  postgresManagerCache: Map<string, MemorySearchManager>;
 };
 
 function getMemorySearchManagerCacheStore(): MemorySearchManagerCacheStore {
@@ -24,12 +25,14 @@ function getMemorySearchManagerCacheStore(): MemorySearchManagerCacheStore {
     MEMORY_SEARCH_MANAGER_CACHE_KEY,
     () => ({
       qmdManagerCache: new Map<string, MemorySearchManager>(),
+      postgresManagerCache: new Map<string, MemorySearchManager>(),
     }),
   );
 }
 
 const log = createSubsystemLogger("memory");
-const { qmdManagerCache: QMD_MANAGER_CACHE } = getMemorySearchManagerCacheStore();
+const { qmdManagerCache: QMD_MANAGER_CACHE, postgresManagerCache: PG_MANAGER_CACHE } =
+  getMemorySearchManagerCacheStore();
 let managerRuntimePromise: Promise<typeof import("./manager-runtime.js")> | null = null;
 
 function loadManagerRuntime() {
@@ -48,6 +51,39 @@ export async function getMemorySearchManager(params: {
   purpose?: "default" | "status";
 }): Promise<MemorySearchManagerResult> {
   const resolved = resolveMemoryBackendConfig(params);
+
+  // ── PostgreSQL backend ──────────────────────────────────────────────────
+  if (resolved.backend === "postgres") {
+    try {
+      const { PostgresMemoryManager } = await import("./postgres-manager.js");
+      const primary = await PostgresMemoryManager.create({
+        cfg: params.cfg,
+        agentId: params.agentId,
+      });
+      const cacheKey = `pg:${params.agentId}`;
+      const wrapper = new FallbackMemoryManager(
+        {
+          primary,
+          fallbackFactory: async () => {
+            const { MemoryIndexManager } = await loadManagerRuntime();
+            return await MemoryIndexManager.get(params);
+          },
+        },
+        () => {
+          PG_MANAGER_CACHE.delete(cacheKey);
+        },
+      );
+      PG_MANAGER_CACHE.set(cacheKey, wrapper);
+      return { manager: wrapper };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`postgres memory backend failed to initialize: ${message}`);
+      log.warn("falling back to builtin memory backend");
+      // Fall through to builtin below
+    }
+  }
+
+  // ── QMD backend ─────────────────────────────────────────────────────────
   if (resolved.backend === "qmd" && resolved.qmd) {
     const statusOnly = params.purpose === "status";
     const baseCacheKey = buildQmdCacheKey(params.agentId, resolved.qmd);
@@ -159,6 +195,15 @@ class BorrowedMemoryManager implements MemorySearchManager {
 }
 
 export async function closeAllMemorySearchManagers(): Promise<void> {
+  const pgManagers = Array.from(PG_MANAGER_CACHE.values());
+  PG_MANAGER_CACHE.clear();
+  for (const manager of pgManagers) {
+    try {
+      await manager.close?.();
+    } catch (err) {
+      log.warn(`failed to close postgres memory manager: ${String(err)}`);
+    }
+  }
   const managers = Array.from(QMD_MANAGER_CACHE.values());
   QMD_MANAGER_CACHE.clear();
   for (const manager of managers) {
