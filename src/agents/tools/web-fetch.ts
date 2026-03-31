@@ -128,6 +128,23 @@ function resolveFetchMaxResponseBytes(fetch?: WebFetchConfig): number {
   return Math.min(FETCH_MAX_RESPONSE_BYTES_MAX, Math.max(FETCH_MAX_RESPONSE_BYTES_MIN, value));
 }
 
+function resolveFetchDefaultHeaders(fetch?: WebFetchConfig): Record<string, string> {
+  if (!fetch || typeof fetch !== "object") {
+    return {};
+  }
+  const defaultHeaders = "defaultHeaders" in fetch ? fetch.defaultHeaders : undefined;
+  if (!defaultHeaders || typeof defaultHeaders !== "object") {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(defaultHeaders)) {
+    if (typeof value === "string") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function resolveFirecrawlConfig(fetch?: WebFetchConfig): FirecrawlFetchConfig {
   if (!fetch || typeof fetch !== "object") {
     return undefined;
@@ -459,6 +476,7 @@ type WebFetchRuntimeParams = FirecrawlRuntimeParams & {
   timeoutSeconds: number;
   cacheTtlMs: number;
   userAgent: string;
+  defaultHeaders: Record<string, string>;
   readabilityEnabled: boolean;
 };
 
@@ -547,6 +565,7 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
           Accept: "text/markdown, text/html;q=0.9, */*;q=0.1",
           "User-Agent": params.userAgent,
           "Accept-Language": "en-US,en;q=0.9",
+          ...params.defaultHeaders,
         },
       },
     });
@@ -768,6 +787,7 @@ export function createWebFetchTool(options?: {
   const userAgent =
     (fetch && "userAgent" in fetch && typeof fetch.userAgent === "string" && fetch.userAgent) ||
     DEFAULT_FETCH_USER_AGENT;
+  const defaultHeaders = resolveFetchDefaultHeaders(fetch);
   const maxResponseBytes = resolveFetchMaxResponseBytes(fetch);
   return {
     label: "Web Fetch",
@@ -794,6 +814,7 @@ export function createWebFetchTool(options?: {
         timeoutSeconds: resolveTimeoutSeconds(fetch?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
         cacheTtlMs: resolveCacheTtlMs(fetch?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
         userAgent,
+        defaultHeaders,
         readabilityEnabled,
         firecrawlEnabled,
         firecrawlApiKey,
