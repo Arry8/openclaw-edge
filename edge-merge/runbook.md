@@ -164,7 +164,7 @@ When a build fails and `--auto-skip-on-build-failure` is not set (or the auto-sk
 
 **Step 1 — identify the bad PR**
 
-The script prints: `Last merged PR is the likely culprit. Add #NNNNN to SKIP_LIST and rerun with --resume.`
+The script prints: `Last merged PR is the likely culprit. Add #NNNNN to autoskip.json and rerun with --resume.`
 
 Confirm with:
 ```sh
@@ -172,9 +172,12 @@ git log --oneline -- <path/to/failing/file>
 # Look for:  merge(pr#NNNNN): ...
 ```
 
-**Step 2 — add to SKIP_LIST and revert**
+**Step 2 — add to autoskip.json and revert**
 
-Edit `edge-merge/scripts/edge-merge.ts`, find `SKIP_LIST`, add the PR number with a comment.
+Append a manual entry to `edge-merge/docs/autoskip.json`:
+```json
+{ "number": NNNNN, "reason": "<why it breaks the build>", "source": "manual" }
+```
 
 Then revert the merge commit (use `-m 1` for merge commits):
 ```sh
@@ -184,8 +187,8 @@ git revert -m 1 --no-edit <commit-sha>
 **Step 3 — commit and resume**
 
 ```sh
-git add edge-merge/scripts/edge-merge.ts
-git commit --no-verify -m "fix(edge-merge): add PR #NNNNN to SKIP_LIST — <reason>"
+git add edge-merge/docs/autoskip.json
+git commit --no-verify -m "fix(edge-merge): add PR #NNNNN to autoskip.json — <reason>"
 
 bun edge-merge/scripts/edge-merge.ts \
   --cache-prs --cache-ttl 120 \
@@ -252,7 +255,7 @@ git push origin mega/latest:main --force
 |---|---|
 | `edge-merge/scripts/edge-merge.ts` | The merge script. Contains `SKIP_LIST` and all logic. |
 | `edge-merge/docs/history.json` | One entry per PR attempted. Source of truth for `--resume`. Written after every single merge — not batched — so kills/crashes lose at most one entry. |
-| `edge-merge/docs/autoskip.json` | PRs auto-reverted by `--auto-skip-on-build-failure`. Loaded at startup alongside `SKIP_LIST`. |
+| `edge-merge/docs/autoskip.json` | All skipped PRs (`source: "manual"` or `"auto"`). Loaded into `SKIP_SET` at startup. |
 | `edge-merge/docs/pr-cache.json` | Cached PR list from GitHub API. Gitignored. Populated by `--cache-prs`. |
 | `edge-merge/docs/report.json` | Last run summary (JSON). Gitignored. Written at end of run; partial write on build failure. |
 | `edge-merge/docs/changelog.md` | Append-only human-readable batch log. Newest entries at top. |
@@ -261,16 +264,17 @@ git push origin mega/latest:main --force
 
 ## Permanent skip list
 
-`SKIP_LIST` in `edge-merge/scripts/edge-merge.ts` contains PRs that are known to break the build. These are never attempted regardless of merge cleanliness.
+`edge-merge/docs/autoskip.json` is the single source of truth for all skipped PRs. Entries have a `source` field: `"manual"` for hand-added entries, `"auto"` for entries written by `--auto-skip-on-build-failure`. Both are loaded into `SKIP_SET` at startup.
 
 To add a PR manually (when not using `--auto-skip-on-build-failure`):
 
-1. Add the PR number to `SKIP_LIST` with a comment explaining the failure
+1. Append to `edge-merge/docs/autoskip.json`:
+   ```json
+   { "number": NNNNN, "reason": "<why it breaks the build>", "source": "manual" }
+   ```
 2. Revert its merge commit: `git revert -m 1 <sha>`
-3. Commit: `git commit --no-verify -m "fix(edge-merge): add PR #NNNNN to SKIP_LIST — <reason>"`
+3. Commit: `git commit --no-verify -m "fix(edge-merge): add PR #NNNNN to autoskip.json — <reason>"`
 4. Resume: rerun with `--resume`
-
-Auto-skips (from `--auto-skip-on-build-failure`) go to `edge-merge/docs/autoskip.json`, not `SKIP_LIST`. Both are checked at startup.
 
 ---
 
