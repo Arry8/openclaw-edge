@@ -64,6 +64,7 @@ OpenClaw 可以使用许多 LLM 提供商。选择一个提供商，完成身份
 ## 社区工具
 
 - [Claude Max API Proxy](/providers/claude-max-api-proxy) - 面向 Claude 订阅凭证的社区代理（使用前请核实 Anthropic 政策/条款）
+- [Cursor Agent API Proxy](/providers/cursor-agent-api-proxy) - 将 Cursor CLI 包装为 OpenAI 兼容 API 服务
 
 有关完整的提供商目录（xAI、Groq、Mistral 等）和高级配置，
 请参见 [模型提供商](/concepts/model-providers)。
