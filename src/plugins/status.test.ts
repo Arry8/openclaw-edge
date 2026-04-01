@@ -714,6 +714,7 @@ describe("plugin status reports", () => {
       capabilityMode: "plain",
       capabilityKinds: ["context-engine"],
     });
+    expect(inspect.capabilities).toEqual([{ kind: "context-engine", ids: ["moon"] }]);
     expect(inspect.compatibility).toEqual([]);
     expectNoCompatibilityWarnings();
   });
