@@ -882,6 +882,16 @@ export async function dispatchReplyFromConfig(params: {
           };
           return run();
         },
+        onToolResult: (payload: ReplyPayload) => {
+          const run = async () => {
+            if (shouldRouteToOriginating) {
+              await sendPayloadAsync(payload, undefined, false);
+            } else {
+              dispatcher.sendBlockReply(payload);
+            }
+          };
+          return run();
+        },
       },
       params.configOverride,
     );
