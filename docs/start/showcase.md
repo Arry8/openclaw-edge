@@ -237,6 +237,12 @@ CLI for Linear that integrates with agentic workflows (Claude Code, OpenClaw). M
 Read, send, and archive messages via Beeper Desktop. Uses Beeper local MCP API so agents can manage all your chats (iMessage, WhatsApp, etc.) in one place.
 </Card>
 
+<Card title="Multi-Agent Swarm (14+ Agents)" icon="robot" href="https://github.com/adam91holt/clawdspace">
+  **@adam91holt** • `multi-agent` `slack` `orchestration` `swarm`
+
+  14+ Clawdbot agents under one gateway. Opus 4.5 orchestrator delegates to Codex workers. Self-maintaining agents that continuously improve. Open-sourced clawdspace for agent sandboxing.
+</Card>
+
 </CardGroup>
 
 ## 🤖 Automation & Workflows
