@@ -663,7 +663,7 @@ extension VoiceWakeSettings {
         state.voicePushToTalkEnabled = true
         state.swabbleTriggerWords = ["Claude", "Hey"]
 
-        let view = VoiceWakeSettings(state: state, isActive: true)
+        var view = VoiceWakeSettings(state: state, isActive: true)
         view.availableMics = [AudioInputDevice(uid: "mic-1", name: "Built-in")]
         view.availableLocales = [Locale(identifier: "en_US")]
         view.meterLevel = 0.42
