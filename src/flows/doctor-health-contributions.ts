@@ -41,6 +41,7 @@ import {
 } from "../commands/doctor-state-migrations.js";
 import { noteWorkspaceStatus } from "../commands/doctor-workspace-status.js";
 import { MEMORY_SYSTEM_PROMPT, shouldSuggestMemorySystem } from "../commands/doctor-workspace.js";
+import { noteWSLEnvironment } from "../commands/doctor-wsl.js";
 import { noteOpenAIOAuthTlsPrerequisites } from "../commands/oauth-tls-preflight.js";
 import { applyWizardMetadata, randomToken } from "../commands/onboard-helpers.js";
 import { ensureSystemdUserLingerInteractive } from "../commands/systemd-linger.js";
@@ -356,6 +357,10 @@ async function runHooksModelHealth(ctx: DoctorHealthFlowContext): Promise<void> 
   }
 }
 
+async function runWSLEnvironmentHealth(ctx: DoctorHealthFlowContext): Promise<void> {
+  await noteWSLEnvironment(ctx);
+}
+
 async function runSystemdLingerHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   if (
     ctx.options.nonInteractive === true ||
@@ -557,6 +562,12 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       id: "doctor:hooks-model",
       label: "Hooks model",
       run: runHooksModelHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:wsl-environment",
+      label: "WSL environment",
+      hint: "WSL2 systemd, resource limits, kernel version",
+      run: runWSLEnvironmentHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:systemd-linger",
