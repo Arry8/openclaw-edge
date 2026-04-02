@@ -110,6 +110,7 @@ export function createSessionsSendTool(opts?: {
       }
 
       let sessionKey = sessionKeyParam;
+      let isCrossAgent = false;
       if (!sessionKey && labelParam) {
         const requesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey);
         const requestedAgentId = labelAgentIdParam
@@ -117,9 +118,10 @@ export function createSessionsSendTool(opts?: {
           : undefined;
 
         // For cross-agent sends, check a2aPolicy first (applies to both sandboxed and non-sandboxed)
-        const isCrossAgent =
-          requesterAgentId && requestedAgentId && requestedAgentId !== requesterAgentId;
-        if (isCrossAgent) {
+        isCrossAgent = Boolean(
+          requesterAgentId && requestedAgentId && requestedAgentId !== requesterAgentId,
+        );
+        if (isCrossAgent && requesterAgentId && requestedAgentId) {
           if (!a2aPolicy.enabled) {
             return jsonResult({
               runId: crypto.randomUUID(),
@@ -201,7 +203,7 @@ export function createSessionsSendTool(opts?: {
         alias,
         mainKey,
         requesterInternalKey: effectiveRequesterKey,
-        restrictToSpawned,
+        restrictToSpawned: restrictToSpawned && !isCrossAgent,
       });
       if (!resolvedSession.ok) {
         return jsonResult({
@@ -213,7 +215,7 @@ export function createSessionsSendTool(opts?: {
       const visibleSession = await resolveVisibleSessionReference({
         resolvedSession,
         requesterSessionKey: effectiveRequesterKey,
-        restrictToSpawned,
+        restrictToSpawned: restrictToSpawned && !isCrossAgent,
         visibilitySessionKey: sessionKey,
       });
       if (!visibleSession.ok) {
