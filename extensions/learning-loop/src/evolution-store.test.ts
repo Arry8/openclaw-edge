@@ -23,6 +23,19 @@ afterEach(() => {
 });
 
 describe("EvolutionStore", () => {
+  it("rejects skill names that escape the skills directory", () => {
+    const { store } = createStore();
+    const entry = createEvolutionEntry("execution_failure", "escape", {
+      section: "Instructions",
+      action: "append",
+      content: "Do not allow traversal.",
+      target: "body",
+    });
+
+    expect(() => store.appendEntry("../outside", entry)).toThrow("Invalid skill name");
+    expect(() => store.getPendingEntries("/tmp/outside")).toThrow("Invalid skill name");
+  });
+
   it("replaces entries by merge target index when the evolver requests dedup replacement", () => {
     const { store } = createStore();
 

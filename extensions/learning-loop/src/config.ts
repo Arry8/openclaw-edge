@@ -110,6 +110,12 @@ export const learningLoopConfigSchema = {
       typeof nudge.skillInterval === "number"
         ? Math.floor(nudge.skillInterval)
         : DEFAULTS.skillInterval;
+    if (memoryInterval < 3 || memoryInterval > 50) {
+      throw new Error("nudge.memoryInterval must be between 3 and 50");
+    }
+    if (skillInterval < 3 || skillInterval > 50) {
+      throw new Error("nudge.skillInterval must be between 3 and 50");
+    }
 
     // Memory config (optional)
     const memory = (cfg.memory as Record<string, unknown>) ?? {};

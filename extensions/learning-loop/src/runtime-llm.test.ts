@@ -77,6 +77,18 @@ describe("runtime-llm", () => {
     expect(api.runtime.agent.resolveAgentWorkspaceDir).toHaveBeenCalledWith(api.config, "ops");
   });
 
+  it("supports active-agent workspace overrides for scoped learning services", () => {
+    const api = makeApi();
+
+    const skillsDir = resolveLearningLoopSkillsBaseDir(api, {
+      agentId: "ops",
+      workspaceDir: "/tmp/openclaw-ops-workspace",
+    });
+
+    expect(skillsDir).toBe("/tmp/openclaw-ops-workspace/skills");
+    expect(api.runtime.agent.resolveAgentWorkspaceDir).not.toHaveBeenCalled();
+  });
+
   it("runs embedded llm calls with the default agent model and json-only contract", async () => {
     const api = makeApi({
       config: {
@@ -130,6 +142,43 @@ describe("runtime-llm", () => {
         agentId: "main",
         provider: "anthropic",
         model: "claude-opus-4-6",
+      }),
+    );
+  });
+
+  it("runs embedded llm calls with scoped agent runtime overrides", async () => {
+    const api = makeApi({
+      config: {
+        agents: {
+          list: [
+            {
+              id: "main",
+              default: true,
+              model: { primary: "anthropic/claude-opus-4-6" },
+            },
+            {
+              id: "ops",
+              model: { primary: "openai/gpt-5.4" },
+            },
+          ],
+        },
+      },
+    });
+    const callLlm = createLearningLoopLlmCaller(api, {
+      agentId: "ops",
+      workspaceDir: "/tmp/openclaw-ops-workspace",
+      agentDir: "/tmp/openclaw-ops-agent",
+    });
+
+    await callLlm("system prompt", "user prompt");
+
+    expect(api.runtime.agent.runEmbeddedPiAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "ops",
+        workspaceDir: "/tmp/openclaw-ops-workspace",
+        agentDir: "/tmp/openclaw-ops-agent",
+        provider: "openai",
+        model: "gpt-5.4",
       }),
     );
   });

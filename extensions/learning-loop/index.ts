@@ -57,28 +57,57 @@ export default definePluginEntry({
     // ========================================================================
 
     const graphiti = new GraphitiClient(cfg.graphiti.mcpServerUrl, cfg.graphiti.groupId);
+    type LearningLoopScope = {
+      agentDir?: string;
+      agentId?: string;
+      sessionId?: string;
+      workspaceDir?: string;
+    };
 
-    const llmCallFn = createLearningLoopLlmCaller(api);
+    type ScopedServices = {
+      evolutionService: EvolutionService;
+      nudgeManager: NudgeManager;
+    };
 
-    // Keep evolutions alongside the active agent workspace skills tree so the
-    // agent can immediately consume solidified updates.
-    const skillsBaseDir = resolveLearningLoopSkillsBaseDir(api);
+    const sessionServices = new Map<string, ScopedServices>();
+    let defaultServices: ScopedServices | null = null;
 
-    const evolutionService = new EvolutionService({
-      graphiti,
-      callLlm: llmCallFn,
-      skillsBaseDir,
-      config: cfg.evolution,
-      logger: api.logger,
-    });
+    const createScopedServices = (scope?: LearningLoopScope): ScopedServices => {
+      const llmCallFn = createLearningLoopLlmCaller(api, scope);
+      const skillsBaseDir = resolveLearningLoopSkillsBaseDir(api, scope);
+      const evolutionService = new EvolutionService({
+        graphiti,
+        callLlm: llmCallFn,
+        skillsBaseDir,
+        config: cfg.evolution,
+        logger: api.logger,
+      });
+      const nudgeManager = new NudgeManager(
+        graphiti,
+        evolutionService,
+        llmCallFn,
+        cfg.nudge,
+        api.logger,
+      );
 
-    const nudgeManager = new NudgeManager(
-      graphiti,
-      evolutionService,
-      llmCallFn,
-      cfg.nudge,
-      api.logger,
-    );
+      return { evolutionService, nudgeManager };
+    };
+
+    const getScopedServices = (scope?: LearningLoopScope): ScopedServices => {
+      const sessionId = scope?.sessionId?.trim();
+      if (sessionId) {
+        const existing = sessionServices.get(sessionId);
+        if (existing) {
+          return existing;
+        }
+        const scoped = createScopedServices(scope);
+        sessionServices.set(sessionId, scoped);
+        return scoped;
+      }
+
+      defaultServices ??= createScopedServices(scope);
+      return defaultServices;
+    };
 
     api.logger.info(
       `learning-loop: plugin registered (graphiti: ${cfg.graphiti.mcpServerUrl}, ` +
@@ -187,7 +216,7 @@ export default definePluginEntry({
             context?: string;
           };
 
-          if (looksLikeInjection(observation)) {
+          if (looksLikeInjection(observation) || (context && looksLikeInjection(context))) {
             return {
               content: [{ type: "text", text: "Blocked: content looks like prompt injection." }],
               details: { action: "blocked" },
@@ -238,7 +267,7 @@ export default definePluginEntry({
 
     if (cfg.evolution.enabled) {
       api.registerTool(
-        {
+        (toolCtx) => ({
           name: "skill_evolve",
           label: "Skill Evolve",
           description:
@@ -249,6 +278,7 @@ export default definePluginEntry({
           }),
           async execute(_toolCallId, params) {
             const { skillName } = params as { skillName: string };
+            const { evolutionService } = getScopedServices(toolCtx);
 
             // We pass an empty messages array here; the hook-based flow
             // provides the real messages. For manual tool calls, the agent
@@ -279,12 +309,12 @@ export default definePluginEntry({
               },
             };
           },
-        },
+        }),
         { name: "skill_evolve" },
       );
 
       api.registerTool(
-        {
+        (toolCtx) => ({
           name: "skill_solidify",
           label: "Skill Solidify",
           description:
@@ -294,6 +324,7 @@ export default definePluginEntry({
           }),
           async execute(_toolCallId, params) {
             const { skillName } = params as { skillName: string };
+            const { evolutionService } = getScopedServices(toolCtx);
             const count = evolutionService.solidifySkill(skillName);
 
             return {
@@ -309,7 +340,7 @@ export default definePluginEntry({
               details: { solidified: count },
             };
           },
-        },
+        }),
         { name: "skill_solidify" },
       );
     }
@@ -347,6 +378,7 @@ export default definePluginEntry({
       api.on("before_prompt_build", async (_event, ctx) => {
         if (isLearningLoopInternalSessionId(ctx.sessionId)) return;
         try {
+          const { evolutionService } = getScopedServices(ctx);
           const evolvedSkills = evolutionService.listEvolvedSkills();
           const experiences = evolvedSkills
             .map((s) => evolutionService.getDescriptionExperiences(s))
@@ -362,14 +394,20 @@ export default definePluginEntry({
     }
 
     // Session lifecycle: clear caches on new sessions
-    api.on("session_start", (event) => {
+    api.on("session_start", (event, ctx) => {
       if (isLearningLoopInternalSessionId(event.sessionId)) return;
+      const { evolutionService, nudgeManager } = getScopedServices(ctx);
       evolutionService.clearSignals();
       nudgeManager.resetAll();
     });
 
+    api.on("session_end", (event) => {
+      sessionServices.delete(event.sessionId);
+    });
+
     // Reset nudge counters when user manually uses knowledge tools
-    api.on("after_tool_call", (event) => {
+    api.on("after_tool_call", (event, ctx) => {
+      const { nudgeManager } = getScopedServices(ctx);
       const name = (event as Record<string, unknown>).toolName as string | undefined;
       if (name === "knowledge_store" || name === "knowledge_search") {
         nudgeManager.resetCounter("memory");
@@ -382,6 +420,7 @@ export default definePluginEntry({
     if (cfg.memory.autoCapture || cfg.evolution.enabled || cfg.nudge.enabled) {
       api.on("agent_end", async (event, ctx) => {
         if (isLearningLoopInternalSessionId(ctx.sessionId)) return;
+        const { evolutionService, nudgeManager } = getScopedServices(ctx);
 
         try {
           if (cfg.memory.autoCapture && event.success && event.messages?.length) {
@@ -399,9 +438,7 @@ export default definePluginEntry({
               }
 
               if (userTexts.length > 0) {
-                const sessionId = (event as Record<string, unknown>).sessionId as
-                  | string
-                  | undefined;
+                const sessionId = ctx.sessionId;
                 const conversationContent = userTexts.slice(-3).join("\n---\n");
 
                 if (!looksLikeInjection(conversationContent)) {
@@ -468,6 +505,7 @@ export default definePluginEntry({
           .description("Show learning loop status")
           .action(async () => {
             await runCliCommand(async () => {
+              const { evolutionService } = getScopedServices();
               const evolvedSkills = evolutionService.listEvolvedSkills();
               console.log("Learning Loop Status");
               console.log("====================");
@@ -501,6 +539,7 @@ export default definePluginEntry({
           .argument("<skill>", "Skill name")
           .action(async (skill: string) => {
             await runCliCommand(async () => {
+              const { evolutionService } = getScopedServices();
               const result = await evolutionService.evolveSkill(skill, []);
               if (!result) {
                 console.log("No evolution needed.");
@@ -518,6 +557,7 @@ export default definePluginEntry({
           .argument("<skill>", "Skill name")
           .action(async (skill: string) => {
             await runCliCommand(async () => {
+              const { evolutionService } = getScopedServices();
               const count = evolutionService.solidifySkill(skill);
               console.log(
                 count > 0
@@ -532,6 +572,7 @@ export default definePluginEntry({
           .argument("<skill>", "Skill name")
           .action(async (skill: string) => {
             await runCliCommand(async () => {
+              const { evolutionService } = getScopedServices();
               const entries = evolutionService.getPendingEntries(skill);
               if (entries.length === 0) {
                 console.log("No pending entries.");
@@ -560,6 +601,8 @@ export default definePluginEntry({
         api.logger.info(`learning-loop: service started (graphiti: ${cfg.graphiti.mcpServerUrl})`);
       },
       stop: async () => {
+        sessionServices.clear();
+        defaultServices = null;
         await graphiti.dispose();
         api.logger.info("learning-loop: service stopped");
       },

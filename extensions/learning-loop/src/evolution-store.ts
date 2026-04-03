@@ -7,7 +7,7 @@
 // ============================================================================
 
 import fs from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import {
   createEmptyEvolutionFile,
   type EvolutionEntry,
@@ -19,7 +19,11 @@ import {
 // ============================================================================
 
 export class EvolutionStore {
-  constructor(private readonly skillsBaseDir: string) {}
+  private readonly skillsBaseDir: string;
+
+  constructor(skillsBaseDir: string) {
+    this.skillsBaseDir = resolve(skillsBaseDir);
+  }
 
   // --------------------------------------------------------------------------
   // Evolution file operations
@@ -87,6 +91,17 @@ export class EvolutionStore {
     return file.entries
       .filter((e) => e.change.target === "body" && e.change.action !== "skip")
       .map((e) => e.change.content);
+  }
+
+  /**
+   * Load the current SKILL.md contents for a skill when present.
+   */
+  loadSkillMarkdown(skillName: string): string | undefined {
+    try {
+      return fs.readFileSync(this.skillMdPath(skillName), "utf-8");
+    } catch {
+      return undefined;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -179,21 +194,38 @@ export class EvolutionStore {
   // --------------------------------------------------------------------------
 
   private evolutionFilePath(skillName: string): string {
-    return join(this.skillsBaseDir, skillName, "evolutions.json");
+    return join(this.skillDirPath(skillName), "evolutions.json");
   }
 
   private skillMdPath(skillName: string): string {
-    return join(this.skillsBaseDir, skillName, "SKILL.md");
+    return join(this.skillDirPath(skillName), "SKILL.md");
   }
 
   private saveEvolutionFile(skillName: string, file: EvolutionFile): void {
-    const dir = join(this.skillsBaseDir, skillName);
+    const dir = this.skillDirPath(skillName);
     fs.mkdirSync(dir, { recursive: true });
 
     const filePath = this.evolutionFilePath(skillName);
     const tmpPath = filePath + ".tmp";
     fs.writeFileSync(tmpPath, JSON.stringify(file, null, 2), "utf-8");
     fs.renameSync(tmpPath, filePath);
+  }
+
+  private skillDirPath(skillName: string): string {
+    const normalizedSkillName = skillName.trim();
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(normalizedSkillName)) {
+      throw new Error(`Invalid skill name: ${skillName}`);
+    }
+
+    const skillDir = resolve(this.skillsBaseDir, normalizedSkillName);
+    const basePrefix = this.skillsBaseDir.endsWith(sep)
+      ? this.skillsBaseDir
+      : `${this.skillsBaseDir}${sep}`;
+    if (skillDir !== this.skillsBaseDir && !skillDir.startsWith(basePrefix)) {
+      throw new Error(`Invalid skill path for ${skillName}`);
+    }
+
+    return skillDir;
   }
 
   /**

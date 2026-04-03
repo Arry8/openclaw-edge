@@ -6,6 +6,11 @@ import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/core
 const DEFAULT_AGENT_ID = "main";
 export const LEARNING_LOOP_INTERNAL_SESSION_PREFIX = "__openclaw_learning_loop_internal__-";
 type ConfiguredAgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[number];
+type LearningLoopRuntimeScope = {
+  agentId?: string;
+  workspaceDir?: string;
+  agentDir?: string;
+};
 const JSON_ONLY_OUTPUT_CONTRACT = [
   "You are running an internal learning-loop review task.",
   "Return only the requested JSON.",
@@ -40,17 +45,27 @@ function resolveConfiguredDefaultAgentEntry(
   return agents.find((entry) => entry.default === true) ?? agents[0];
 }
 
+function resolveConfiguredAgentEntry(
+  cfg: OpenClawConfig | undefined,
+  agentId: string,
+): ConfiguredAgentEntry | undefined {
+  const normalizedAgentId = agentId.trim().toLowerCase();
+  if (!normalizedAgentId) {
+    return undefined;
+  }
+
+  return cfg?.agents?.list?.find((entry) => entry.id.trim().toLowerCase() === normalizedAgentId);
+}
+
 function resolveProviderModel(params: {
   cfg?: OpenClawConfig;
   agentId: string;
   runtime: OpenClawPluginApi["runtime"];
 }): { provider: string; model: string } {
-  const defaultAgentEntry = resolveConfiguredDefaultAgentEntry(params.cfg);
+  const configuredAgentEntry = resolveConfiguredAgentEntry(params.cfg, params.agentId);
   const configuredAgentModel =
-    defaultAgentEntry &&
-    typeof defaultAgentEntry.id === "string" &&
-    defaultAgentEntry.id.trim().toLowerCase() === params.agentId
-      ? readPrimaryModel(defaultAgentEntry.model)
+    configuredAgentEntry && typeof configuredAgentEntry.id === "string"
+      ? readPrimaryModel(configuredAgentEntry.model)
       : undefined;
   const configuredDefaultModel = readPrimaryModel(params.cfg?.agents?.defaults?.model);
   const modelRef = configuredAgentModel ?? configuredDefaultModel;
@@ -105,10 +120,42 @@ export function resolveLearningLoopAgentId(cfg?: OpenClawConfig): string {
   return trimmed || DEFAULT_AGENT_ID;
 }
 
-export function resolveLearningLoopSkillsBaseDir(api: OpenClawPluginApi): string {
+function resolveScopedAgentId(cfg: OpenClawConfig, scope?: LearningLoopRuntimeScope): string {
+  const scopedAgentId = scope?.agentId?.trim().toLowerCase();
+  if (scopedAgentId) {
+    return scopedAgentId;
+  }
+  return resolveLearningLoopAgentId(cfg);
+}
+
+function resolveLearningLoopRuntimeScope(
+  api: OpenClawPluginApi,
+  scope?: LearningLoopRuntimeScope,
+): {
+  agentId: string;
+  agentDir: string;
+  cfg: OpenClawConfig;
+  workspaceDir: string;
+} {
   const cfg = api.config ?? ({} as OpenClawConfig);
-  const agentId = resolveLearningLoopAgentId(cfg);
-  const workspaceDir = api.runtime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const agentId = resolveScopedAgentId(cfg, scope);
+  const workspaceDir =
+    scope?.workspaceDir ?? api.runtime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const agentDir = scope?.agentDir ?? api.runtime.agent.resolveAgentDir(cfg, agentId);
+
+  return {
+    agentId,
+    agentDir,
+    cfg,
+    workspaceDir,
+  };
+}
+
+export function resolveLearningLoopSkillsBaseDir(
+  api: OpenClawPluginApi,
+  scope?: LearningLoopRuntimeScope,
+): string {
+  const { workspaceDir } = resolveLearningLoopRuntimeScope(api, scope);
   return path.join(workspaceDir, "skills");
 }
 
@@ -120,17 +167,15 @@ export function isLearningLoopInternalSessionId(sessionId?: string): boolean {
 
 export function createLearningLoopLlmCaller(
   api: OpenClawPluginApi,
+  scope?: LearningLoopRuntimeScope,
 ): (systemPrompt: string, userPrompt: string) => Promise<string> {
   return async (systemPrompt: string, userPrompt: string): Promise<string> => {
-    const cfg = api.config ?? ({} as OpenClawConfig);
-    const agentId = resolveLearningLoopAgentId(cfg);
+    const { cfg, agentDir, agentId, workspaceDir } = resolveLearningLoopRuntimeScope(api, scope);
     const { provider, model } = resolveProviderModel({
       cfg,
       agentId,
       runtime: api.runtime,
     });
-    const workspaceDir = api.runtime.agent.resolveAgentWorkspaceDir(cfg, agentId);
-    const agentDir = api.runtime.agent.resolveAgentDir(cfg, agentId);
     const thinkLevel = api.runtime.agent.resolveThinkingDefault({
       cfg,
       provider,

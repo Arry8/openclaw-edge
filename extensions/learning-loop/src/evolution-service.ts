@@ -5,8 +5,6 @@
 //   detect signals → generate experiences → approve → persist → solidify
 // ============================================================================
 
-import fs from "node:fs";
-import { join } from "node:path";
 import type { EvolutionConfig } from "./config.js";
 import type { EvolutionEntry } from "./evolution-schema.js";
 import { EvolutionStore } from "./evolution-store.js";
@@ -201,13 +199,7 @@ export class EvolutionService {
     messages: unknown[],
   ): ExperienceContext {
     // Try to load current SKILL.md
-    let skillContent: string | undefined;
-    const skillMdPath = join(this.store["skillsBaseDir"], skillName, "SKILL.md");
-    try {
-      skillContent = fs.readFileSync(skillMdPath, "utf-8");
-    } catch {
-      // Skill may not have a SKILL.md yet
-    }
+    const skillContent = this.store.loadSkillMarkdown(skillName);
 
     // Build conversation snippet (last 30 messages, truncated)
     const snippet = this.buildConversationSnippet(messages);
