@@ -2,12 +2,15 @@ import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { DEFAULT_ACCOUNT_ID, type OpenClawConfig } from "openclaw/plugin-sdk/setup";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createPluginSetupWizardStatus,
   createQueuedWizardPrompter,
   runSetupWizardFinalize,
 } from "../../../test/helpers/plugins/setup-wizard.js";
+import { whatsappSetupPlugin } from "./channel.setup.js";
 import { whatsappSetupWizard } from "./setup-surface.js";
 
 const hoisted = vi.hoisted(() => ({
+  detectWhatsAppLinked: vi.fn(async () => false),
   loginWeb: vi.fn(async () => {}),
   pathExists: vi.fn(async () => false),
   resolveWhatsAppAuthDir: vi.fn(() => ({
@@ -18,6 +21,14 @@ const hoisted = vi.hoisted(() => ({
 vi.mock("./login.js", () => ({
   loginWeb: hoisted.loginWeb,
 }));
+
+vi.mock("./setup-finalize.js", async () => {
+  const actual = await vi.importActual<typeof import("./setup-finalize.js")>("./setup-finalize.js");
+  return {
+    ...actual,
+    detectWhatsAppLinked: hoisted.detectWhatsAppLinked,
+  };
+});
 
 vi.mock("openclaw/plugin-sdk/setup", async () => {
   const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/setup")>(
@@ -43,16 +54,21 @@ function createRuntime(): RuntimeEnv {
   } as unknown as RuntimeEnv;
 }
 
+const whatsappGetStatus = createPluginSetupWizardStatus({
+  ...whatsappSetupPlugin,
+} as never);
+
 async function runFinalizeWithHarness(params: {
   harness: ReturnType<typeof createQueuedWizardPrompter>;
   cfg?: Parameters<NonNullable<typeof whatsappSetupWizard.finalize>>[0]["cfg"];
   runtime?: RuntimeEnv;
   forceAllowFrom?: boolean;
+  accountId?: string;
 }) {
   return await runSetupWizardFinalize({
     finalize: whatsappSetupWizard.finalize,
     cfg: params.cfg ?? {},
-    accountId: DEFAULT_ACCOUNT_ID,
+    accountId: params.accountId ?? DEFAULT_ACCOUNT_ID,
     runtime: params.runtime ?? createRuntime(),
     prompter: params.harness.prompter,
     forceAllowFrom: params.forceAllowFrom ?? false,
@@ -93,6 +109,8 @@ async function runSeparatePhoneFlow(params: { selectValues: string[]; textValues
 
 describe("whatsapp setup wizard", () => {
   beforeEach(() => {
+    hoisted.detectWhatsAppLinked.mockReset();
+    hoisted.detectWhatsAppLinked.mockResolvedValue(false);
     hoisted.loginWeb.mockReset();
     hoisted.pathExists.mockReset();
     hoisted.pathExists.mockResolvedValue(false);
@@ -133,6 +151,69 @@ describe("whatsapp setup wizard", () => {
     expect(result.cfg.channels?.whatsapp?.dmPolicy).toBe("disabled");
     expect(result.cfg.channels?.whatsapp?.allowFrom).toBeUndefined();
     expect(harness.text).not.toHaveBeenCalled();
+  });
+
+  it("writes named-account DM policy and allowFrom instead of the channel root", async () => {
+    hoisted.pathExists.mockResolvedValue(true);
+    const harness = createSeparatePhoneHarness({
+      selectValues: ["separate", "open"],
+    });
+
+    const named = expectFinalizeResult(
+      await runFinalizeWithHarness({
+        harness,
+        accountId: "work",
+        cfg: {
+          channels: {
+            whatsapp: {
+              dmPolicy: "disabled",
+              allowFrom: ["+15555550123"],
+              accounts: {
+                work: {
+                  authDir: "/tmp/work",
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(named.cfg.channels?.whatsapp?.dmPolicy).toBe("disabled");
+    expect(named.cfg.channels?.whatsapp?.allowFrom).toEqual(["+15555550123"]);
+    expect(named.cfg.channels?.whatsapp?.accounts?.work?.dmPolicy).toBe("open");
+    expect(named.cfg.channels?.whatsapp?.accounts?.work?.allowFrom).toEqual([
+      "*",
+      "+15555550123",
+    ]);
+    expect(harness.note).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "`channels.whatsapp.accounts.work.dmPolicy` + `channels.whatsapp.accounts.work.allowFrom`",
+      ),
+      "WhatsApp DM access",
+    );
+  });
+
+  it("labels the selected named account in setup status even when not linked", async () => {
+    const status = await whatsappGetStatus({
+      cfg: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              work: {
+                authDir: "/tmp/work",
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      accountOverrides: {
+        whatsapp: "work",
+      },
+    });
+
+    expect(status.configured).toBe(false);
+    expect(status.statusLines).toEqual(["WhatsApp (work): not linked"]);
   });
 
   it("normalizes allowFrom entries when list mode is selected", async () => {
