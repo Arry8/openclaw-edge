@@ -66,8 +66,9 @@ import {
   type ChannelPlugin,
   type OpenClawConfig,
 } from "./runtime-api.js";
-import { getSlackRuntime } from "./runtime.js";
+import { getOptionalSlackRuntime, getSlackRuntime } from "./runtime.js";
 import { fetchSlackScopes } from "./scopes.js";
+import { collectSlackSecurityAuditFindings } from "./security-audit.js";
 import { sendMessageSlack } from "./send.js";
 import { slackSetupAdapter } from "./setup-core.js";
 import { slackSetupWizard } from "./setup-surface.js";
@@ -94,6 +95,10 @@ const resolveSlackDmPolicy = createScopedDmSecurityResolver<ResolvedSlackAccount
 
 function resolveSlackProbe() {
   return probeSlack;
+}
+
+function resolveSlackHandleAction() {
+  return getOptionalSlackRuntime()?.channel?.slack?.handleSlackAction ?? handleSlackAction;
 }
 
 // Select the appropriate Slack token for read/write operations.
@@ -364,7 +369,7 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount, SlackProbe> = crea
     },
     actions: createSlackActions(SLACK_CHANNEL, {
       invoke: async (action, cfg, toolContext) =>
-        await handleSlackAction(
+        await resolveSlackHandleAction()(
           action,
           cfg as OpenClawConfig,
           toolContext as SlackActionContext | undefined,
@@ -456,6 +461,9 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount, SlackProbe> = crea
         });
       },
     },
+    mentions: {
+      stripPatterns: () => ["<@[^>\\s]+>"],
+    },
   },
   pairing: {
     text: {
@@ -484,6 +492,7 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount, SlackProbe> = crea
   security: {
     resolveDmPolicy: resolveSlackDmPolicy,
     collectWarnings: collectSlackSecurityWarnings,
+    collectAuditFindings: collectSlackSecurityAuditFindings,
   },
   threading: {
     scopedAccountReplyToMode: {
