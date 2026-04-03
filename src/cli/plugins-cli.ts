@@ -871,7 +871,7 @@ export function registerPluginsCli(program: Command) {
       } = await import("../commands/doctor/shared/stale-plugin-config.js");
 
       const snapshot = await readConfigFileSnapshot();
-      const cfg = snapshot.config;
+      const cfg = (snapshot.sourceConfig ?? snapshot.config) as OpenClawConfig;
       const hits = scanStalePluginConfig(cfg, process.env);
 
       if (hits.length === 0) {
@@ -910,6 +910,12 @@ export function registerPluginsCli(program: Command) {
       }
 
       const { config: nextConfig, changes } = maybeRepairStalePluginConfig(cfg, process.env);
+
+      if (changes.length === 0) {
+        defaultRuntime.log("No stale plugin references were removed.");
+        return;
+      }
+
       await replaceConfigFile({ nextConfig, baseHash: snapshot.hash ?? undefined });
 
       lines.push("");
