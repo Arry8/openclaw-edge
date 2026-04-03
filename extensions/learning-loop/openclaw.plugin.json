@@ -1,0 +1,122 @@
+{
+  "id": "learning-loop",
+  "uiHints": {
+    "graphiti.mcpServerUrl": {
+      "label": "Graphiti MCP Server URL",
+      "placeholder": "http://localhost:8000/mcp/",
+      "help": "URL of the Graphiti MCP server for knowledge graph storage"
+    },
+    "graphiti.groupId": {
+      "label": "Graph Group ID",
+      "placeholder": "openclaw-default",
+      "help": "Namespace for isolating knowledge graphs per user/project"
+    },
+    "evolution.enabled": {
+      "label": "Skill Evolution",
+      "help": "Automatically refine skills based on errors and user corrections"
+    },
+    "evolution.approvalPolicy": {
+      "label": "Approval Policy",
+      "help": "Whether to always apply evolutions or ask for approval first"
+    },
+    "evolution.maxEntriesPerRound": {
+      "label": "Max Evolutions Per Round",
+      "help": "Maximum skill improvements generated per conversation round",
+      "advanced": true,
+      "placeholder": "2"
+    },
+    "nudge.enabled": {
+      "label": "Learning Nudge",
+      "help": "Periodically review conversations to persist knowledge"
+    },
+    "nudge.memoryInterval": {
+      "label": "Memory Nudge Interval",
+      "help": "Number of turns between memory reviews",
+      "advanced": true,
+      "placeholder": "10"
+    },
+    "nudge.skillInterval": {
+      "label": "Skill Nudge Interval",
+      "help": "Number of turns between skill reviews",
+      "advanced": true,
+      "placeholder": "10"
+    },
+    "memory.autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Automatically inject relevant knowledge from the graph before agent starts"
+    },
+    "memory.autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically extract and store knowledge from conversations"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "graphiti": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mcpServerUrl": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string"
+          }
+        },
+        "required": ["mcpServerUrl"]
+      },
+      "evolution": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "approvalPolicy": {
+            "type": "string",
+            "enum": ["always_allow", "ask"]
+          },
+          "maxEntriesPerRound": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5
+          }
+        }
+      },
+      "nudge": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "memoryInterval": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 50
+          },
+          "skillInterval": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 50
+          }
+        }
+      },
+      "memory": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "autoRecall": {
+            "type": "boolean"
+          },
+          "autoCapture": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "required": ["graphiti"]
+  }
+}

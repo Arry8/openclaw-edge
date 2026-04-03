@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import syncFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -271,7 +272,7 @@ async function writeWorkspaceSetupState(
 ): Promise<void> {
   await fs.mkdir(path.dirname(statePath), { recursive: true });
   const payload = `${JSON.stringify(state, null, 2)}\n`;
-  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now().toString(36)}-${randomUUID()}`;
   try {
     await fs.writeFile(tmpPath, payload, { encoding: "utf-8" });
     await fs.rename(tmpPath, statePath);

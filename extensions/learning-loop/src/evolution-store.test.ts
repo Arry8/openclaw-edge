@@ -1,0 +1,101 @@
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { createEvolutionEntry } from "./evolution-schema.js";
+import { EvolutionStore } from "./evolution-store.js";
+
+const tempDirs: string[] = [];
+
+function createStore() {
+  const dir = mkdtempSync(join(tmpdir(), "learning-loop-store-"));
+  tempDirs.push(dir);
+  return {
+    dir,
+    store: new EvolutionStore(dir),
+  };
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0, tempDirs.length)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe("EvolutionStore", () => {
+  it("replaces entries by merge target index when the evolver requests dedup replacement", () => {
+    const { store } = createStore();
+
+    const original = createEvolutionEntry("execution_failure", "first", {
+      section: "Instructions",
+      action: "append",
+      content: "Use rg --files for workspace file discovery.",
+      target: "body",
+    });
+    const description = createEvolutionEntry("user_correction", "second", {
+      section: "Instructions",
+      action: "append",
+      content: "Keep shell output concise.",
+      target: "description",
+    });
+    const replacement = createEvolutionEntry("execution_failure", "replace", {
+      section: "Instructions",
+      action: "replace",
+      content: "Prefer rg before grep for repository searches.",
+      target: "body",
+      mergeTarget: "0",
+    });
+
+    store.appendEntry("search-skill", original);
+    store.appendEntry("search-skill", description);
+    store.appendEntry("search-skill", replacement);
+
+    const file = store.loadEvolutionFile("search-skill");
+
+    expect(file.entries).toHaveLength(2);
+    expect(file.entries[0]).toEqual(replacement);
+    expect(file.entries[1]).toEqual(description);
+  });
+
+  it("solidifies body entries into SKILL.md and keeps description entries for prompt injection", () => {
+    const { dir, store } = createStore();
+    const skillName = "search-skill";
+    const skillDir = join(dir, skillName);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "# search-skill\n\n## Instructions\n\nExisting rule.\n",
+      "utf-8",
+    );
+
+    const bodyEntry = createEvolutionEntry("execution_failure", "body", {
+      section: "Instructions",
+      action: "append",
+      content: "Retry after reloading credentials if the MCP session looks stale.",
+      target: "body",
+    });
+    const descriptionEntry = createEvolutionEntry("user_correction", "description", {
+      section: "Instructions",
+      action: "append",
+      content: "Prefer rg over grep for text search.",
+      target: "description",
+    });
+
+    store.appendEntry(skillName, bodyEntry);
+    store.appendEntry(skillName, descriptionEntry);
+
+    expect(store.solidify(skillName)).toBe(1);
+
+    const skillMd = readFileSync(join(skillDir, "SKILL.md"), "utf-8");
+    const pending = store.getPendingEntries(skillName);
+
+    expect(skillMd).toContain("Existing rule.");
+    expect(skillMd).toContain("Retry after reloading credentials if the MCP session looks stale.");
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.change.content).toBe("Prefer rg over grep for text search.");
+    expect(store.formatDescriptionExperiences(skillName)).toContain(
+      "Prefer rg over grep for text search.",
+    );
+    expect(store.listEvolvedSkills()).toEqual(["search-skill"]);
+  });
+});

@@ -1,0 +1,251 @@
+// ============================================================================
+// Evolution Store
+//
+// File-based persistence for skill evolution entries.
+// Manages evolutions.json alongside SKILL.md files.
+// Supports solidification (writing pending entries into SKILL.md).
+// ============================================================================
+
+import fs from "node:fs";
+import { join } from "node:path";
+import {
+  createEmptyEvolutionFile,
+  type EvolutionEntry,
+  type EvolutionFile,
+} from "./evolution-schema.js";
+
+// ============================================================================
+// Store
+// ============================================================================
+
+export class EvolutionStore {
+  constructor(private readonly skillsBaseDir: string) {}
+
+  // --------------------------------------------------------------------------
+  // Evolution file operations
+  // --------------------------------------------------------------------------
+
+  /**
+   * Load the evolutions.json for a skill. Returns empty file if not found.
+   */
+  loadEvolutionFile(skillName: string): EvolutionFile {
+    const filePath = this.evolutionFilePath(skillName);
+    try {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      return JSON.parse(raw) as EvolutionFile;
+    } catch {
+      return createEmptyEvolutionFile(skillName);
+    }
+  }
+
+  /**
+   * Append or merge an evolution entry for a skill.
+   * Handles merge_target for dedup replacements.
+   */
+  appendEntry(skillName: string, entry: EvolutionEntry): void {
+    const file = this.loadEvolutionFile(skillName);
+
+    // Handle merge target: replace existing entry
+    if (entry.change.mergeTarget) {
+      const idx = this.resolveMergeIndex(file.entries, entry.change.mergeTarget);
+      if (idx >= 0) {
+        file.entries[idx] = entry;
+      } else {
+        file.entries.push(entry);
+      }
+    } else {
+      file.entries.push(entry);
+    }
+
+    file.updatedAt = new Date().toISOString();
+    this.saveEvolutionFile(skillName, file);
+  }
+
+  /**
+   * Get all pending (unapplied) entries for a skill.
+   */
+  getPendingEntries(skillName: string): EvolutionEntry[] {
+    const file = this.loadEvolutionFile(skillName);
+    return file.entries.filter((e) => !e.applied && e.change.action !== "skip");
+  }
+
+  /**
+   * Get existing entry descriptions for dedup context in LLM prompts.
+   */
+  getExistingDescriptions(skillName: string): string[] {
+    const file = this.loadEvolutionFile(skillName);
+    return file.entries
+      .filter((e) => e.change.target === "description" && e.change.action !== "skip")
+      .map((e) => e.change.content);
+  }
+
+  /**
+   * Get existing body entries for dedup context.
+   */
+  getExistingBodyEntries(skillName: string): string[] {
+    const file = this.loadEvolutionFile(skillName);
+    return file.entries
+      .filter((e) => e.change.target === "body" && e.change.action !== "skip")
+      .map((e) => e.change.content);
+  }
+
+  // --------------------------------------------------------------------------
+  // Solidification: write pending body entries into SKILL.md
+  // --------------------------------------------------------------------------
+
+  /**
+   * Write all pending body entries into the skill's SKILL.md file.
+   * Marks entries as applied after successful write.
+   * Returns the number of entries solidified.
+   */
+  solidify(skillName: string): number {
+    const file = this.loadEvolutionFile(skillName);
+    const pending = file.entries.filter(
+      (e) => !e.applied && e.change.target === "body" && e.change.action !== "skip",
+    );
+
+    if (pending.length === 0) {
+      return 0;
+    }
+
+    const skillMdPath = this.skillMdPath(skillName);
+    let skillContent: string;
+    try {
+      skillContent = fs.readFileSync(skillMdPath, "utf-8");
+    } catch {
+      // Create minimal SKILL.md if it doesn't exist
+      skillContent = `# ${skillName}\n`;
+    }
+
+    // Inject each pending entry into the appropriate section
+    for (const entry of pending) {
+      skillContent = this.injectIntoSection(
+        skillContent,
+        entry.change.section,
+        entry.change.content,
+      );
+      entry.applied = true;
+    }
+
+    // Atomic write
+    const tmpPath = skillMdPath + ".tmp";
+    fs.writeFileSync(tmpPath, skillContent, "utf-8");
+    fs.renameSync(tmpPath, skillMdPath);
+
+    file.updatedAt = new Date().toISOString();
+    this.saveEvolutionFile(skillName, file);
+
+    return pending.length;
+  }
+
+  /**
+   * Format description-layer experiences as text for prompt injection.
+   */
+  formatDescriptionExperiences(skillName: string): string {
+    const descriptions = this.getExistingDescriptions(skillName);
+    if (descriptions.length === 0) return "";
+
+    return [
+      `<skill-experiences skill="${skillName}">`,
+      "Learned from past usage:",
+      ...descriptions.map((d, i) => `${i + 1}. ${d}`),
+      "</skill-experiences>",
+    ].join("\n");
+  }
+
+  /**
+   * List all skills that have evolution files.
+   */
+  listEvolvedSkills(): string[] {
+    const skills: string[] = [];
+    try {
+      const entries = fs.readdirSync(this.skillsBaseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const evoPath = join(this.skillsBaseDir, entry.name, "evolutions.json");
+          if (fs.existsSync(evoPath)) {
+            skills.push(entry.name);
+          }
+        }
+      }
+    } catch {
+      // skills dir may not exist yet
+    }
+    return skills;
+  }
+
+  // --------------------------------------------------------------------------
+  // Internals
+  // --------------------------------------------------------------------------
+
+  private evolutionFilePath(skillName: string): string {
+    return join(this.skillsBaseDir, skillName, "evolutions.json");
+  }
+
+  private skillMdPath(skillName: string): string {
+    return join(this.skillsBaseDir, skillName, "SKILL.md");
+  }
+
+  private saveEvolutionFile(skillName: string, file: EvolutionFile): void {
+    const dir = join(this.skillsBaseDir, skillName);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const filePath = this.evolutionFilePath(skillName);
+    const tmpPath = filePath + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(file, null, 2), "utf-8");
+    fs.renameSync(tmpPath, filePath);
+  }
+
+  /**
+   * Inject content into a specific markdown section.
+   * Creates the section header if it doesn't exist.
+   */
+  private injectIntoSection(markdown: string, sectionName: string, content: string): string {
+    const headerRegex = new RegExp(`^(##\\s+${sectionName})\\s*$`, "mi");
+    const match = headerRegex.exec(markdown);
+
+    if (match) {
+      // Section exists: append after header (and any existing content before next section)
+      const insertPos = match.index + match[0].length;
+
+      // Find the next section header or end of file
+      const restOfFile = markdown.slice(insertPos);
+      const nextSectionMatch = /^##\s+/m.exec(restOfFile);
+
+      if (nextSectionMatch) {
+        const beforeNext = restOfFile.slice(0, nextSectionMatch.index);
+        const afterNext = restOfFile.slice(nextSectionMatch.index);
+        return (
+          markdown.slice(0, insertPos) +
+          beforeNext.trimEnd() +
+          "\n\n" +
+          content.trim() +
+          "\n\n" +
+          afterNext
+        );
+      }
+
+      // No next section: append at end
+      return markdown.trimEnd() + "\n\n" + content.trim() + "\n";
+    }
+
+    // Section doesn't exist: create it at the end
+    return markdown.trimEnd() + "\n\n## " + sectionName + "\n\n" + content.trim() + "\n";
+  }
+
+  private resolveMergeIndex(entries: EvolutionEntry[], mergeTarget: string): number {
+    const byId = entries.findIndex((entry) => entry.id === mergeTarget);
+    if (byId >= 0) {
+      return byId;
+    }
+
+    if (/^\d+$/.test(mergeTarget)) {
+      const index = Number.parseInt(mergeTarget, 10);
+      if (index >= 0 && index < entries.length) {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+}

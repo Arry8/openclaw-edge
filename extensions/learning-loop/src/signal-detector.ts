@@ -1,0 +1,211 @@
+// ============================================================================
+// Signal Detector
+//
+// Rule-based (no LLM) detection of evolution signals from conversation
+// history. Detects execution failures and user corrections that indicate
+// a skill should be refined.
+// ============================================================================
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type SignalType = "execution_failure" | "user_correction";
+
+export type EvolutionSignal = {
+  type: SignalType;
+  section: "Instructions" | "Examples" | "Troubleshooting";
+  excerpt: string;
+  skillName?: string;
+  toolName?: string;
+};
+
+type Message = {
+  role: string;
+  content: string | Array<{ type: string; text?: string }>;
+  name?: string;
+};
+
+// ============================================================================
+// Detection patterns
+// ============================================================================
+
+const FAILURE_PATTERNS = [
+  /\berror\b/i,
+  /\bexception\b/i,
+  /\bfailed\b/i,
+  /\bfailure\b/i,
+  /\btimeout\b/i,
+  /\btimed?\s*out\b/i,
+  /\bcrash(?:ed|es|ing)?\b/i,
+  /\bpanic\b/i,
+  /\bfatal\b/i,
+  /\baborted?\b/i,
+  /\bruntime error\b/i,
+  /\bsyntax error\b/i,
+  /\btype error\b/i,
+  /\breference error\b/i,
+  /\bstack trace\b/i,
+  /\btraceback\b/i,
+  /\bsegfault\b/i,
+  /\bcommand not found\b/i,
+  /\bbad request\b/i,
+  /\bno such file\b/i,
+  /\bpermission denied\b/i,
+  /\bconnection refused\b/i,
+  /\bunavailable\b/i,
+  /\boverloaded\b/i,
+  /\brate limit(?:ed)?\b/i,
+  /\bunauthorized\b/i,
+  /\bforbidden\b/i,
+  /\bunauthenticated\b/i,
+  /\binvalid (?:api key|credentials|token)\b/i,
+  /\bENOENT\b/,
+  /\bEACCES\b/,
+  /\bECONNREFUSED\b/,
+  /\bEPIPE\b/,
+  /exit code [1-9]\d*/i,
+  /status\s*(?:code\s*)?[45]\d{2}/i,
+];
+
+const CORRECTION_PATTERNS = [
+  // English
+  /\bthat'?s?\s+(?:not\s+)?(?:wrong|incorrect|right)\b/i,
+  /\bno,?\s+(?:that|it|this)\b/i,
+  /\byou\s+(?:should|need\s+to|have\s+to|must)\b/i,
+  /\bshould\s+(?:be|have|use)\b/i,
+  /\binstead,?\s+(?:use|do|try)\b/i,
+  /\bactually,?\s+(?:it|you|the|we)\b/i,
+  /\bdon'?t\s+(?:do|use|add)\b/i,
+  /\bnever\s+(?:do|use|add)\b/i,
+  /\balways\s+(?:do|use|add)\b/i,
+  /\bplease\s+(?:fix|change|update|correct)\b/i,
+  /\bwrong\s+(?:way|approach|method)\b/i,
+  /\btry\s+(?:again|this|a\s+different)\b/i,
+  /\bnot\s+what\s+I\b/i,
+  /\bI\s+(?:said|meant|wanted|asked)\b/i,
+  /\bstop\s+(?:doing|using|adding)\b/i,
+  /\bprefer\s+(?:to|if|that)\b/i,
+  /\bplease\s+use\b/i,
+  /\bmake\s+sure\s+to\b/i,
+  /\b(?:use|prefer)\b.+\brather than\b/i,
+];
+
+// Patterns to attribute a signal to a specific skill name (looks for SKILL.md references)
+const SKILL_ATTRIBUTION_PATTERN = /(?:skill|SKILL\.md|\.agents\/skills\/)[\\/]?([a-zA-Z0-9_-]+)/i;
+const TOOL_ATTRIBUTION_PATTERN = /tool[_\s]*(?:call|name|use)?[:\s]*["']?([a-zA-Z0-9_-]+)["']?/i;
+
+// ============================================================================
+// Detector
+// ============================================================================
+
+export class SignalDetector {
+  private processedKeys = new Set<string>();
+  private static readonly MAX_PROCESSED = 500;
+
+  /**
+   * Detect evolution signals from a list of messages.
+   * Returns deduplicated signals with type, section, and context.
+   */
+  detect(messages: unknown[]): EvolutionSignal[] {
+    const signals: EvolutionSignal[] = [];
+
+    for (const raw of messages) {
+      if (!raw || typeof raw !== "object") continue;
+      const msg = raw as Message;
+      const text = extractText(msg);
+      if (!text) continue;
+
+      // Detect execution failures in tool results and assistant messages
+      if (msg.role === "tool" || msg.role === "assistant") {
+        for (const pattern of FAILURE_PATTERNS) {
+          if (pattern.test(text)) {
+            const signal = this.buildSignal("execution_failure", text, msg);
+            if (signal && !this.isDuplicate(signal)) {
+              signals.push(signal);
+            }
+            break; // one signal per message
+          }
+        }
+      }
+
+      // Detect user corrections
+      if (msg.role === "user") {
+        for (const pattern of CORRECTION_PATTERNS) {
+          if (pattern.test(text)) {
+            const signal = this.buildSignal("user_correction", text, msg);
+            if (signal && !this.isDuplicate(signal)) {
+              signals.push(signal);
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    return signals;
+  }
+
+  /**
+   * Clear processed signal cache. Call at conversation boundaries.
+   */
+  clearProcessedSignals(): void {
+    this.processedKeys.clear();
+  }
+
+  // --------------------------------------------------------------------------
+  // Internals
+  // --------------------------------------------------------------------------
+
+  private buildSignal(type: SignalType, text: string, msg: Message): EvolutionSignal | null {
+    // Extract a focused excerpt (context around the match, max 300 chars)
+    const excerpt = text.length > 300 ? text.slice(0, 300) + "..." : text;
+
+    // Determine target section based on signal type
+    const section: EvolutionSignal["section"] =
+      type === "execution_failure" ? "Troubleshooting" : "Instructions";
+
+    // Try to attribute to a skill
+    const skillMatch = SKILL_ATTRIBUTION_PATTERN.exec(text);
+    const toolMatch = TOOL_ATTRIBUTION_PATTERN.exec(text);
+
+    return {
+      type,
+      section,
+      excerpt,
+      skillName: skillMatch?.[1],
+      toolName: toolMatch?.[1] ?? msg.name,
+    };
+  }
+
+  private isDuplicate(signal: EvolutionSignal): boolean {
+    // Safety cap: clear if too many tracked signals
+    if (this.processedKeys.size > SignalDetector.MAX_PROCESSED) {
+      this.processedKeys.clear();
+    }
+
+    const key = `${signal.type}:${signal.excerpt.slice(0, 100)}`;
+    if (this.processedKeys.has(key)) {
+      return true;
+    }
+    this.processedKeys.add(key);
+    return false;
+  }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function extractText(msg: Message): string {
+  if (typeof msg.content === "string") {
+    return msg.content;
+  }
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .filter((block) => block.type === "text" && typeof block.text === "string")
+      .map((block) => block.text!)
+      .join("\n");
+  }
+  return "";
+}
