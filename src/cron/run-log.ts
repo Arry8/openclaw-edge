@@ -153,9 +153,10 @@ async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLin
   // Read at most maxBytes from the tail of the file.  This is enough to
   // contain keepLines lines (each run-log JSON line is typically <2 KB).
   // Read enough bytes to capture keepLines entries.  Each JSONL run-log line
-  // is typically under 2 KB, so keepLines * 2048 is a safe upper bound.
-  // Use the greater of maxBytes and the line-count estimate to be safe.
-  const tailBytes = Math.max(opts.maxBytes, opts.keepLines * 2048);
+  // can include summaries up to 2000 chars plus JSON overhead, so we use a
+  // generous 4 KB per-line estimate.  Use the greater of maxBytes and the
+  // line-count estimate to avoid under-reading.
+  const tailBytes = Math.max(opts.maxBytes, opts.keepLines * 4096);
   const startPos = Math.max(0, stat.size - tailBytes);
 
   const lines: string[] = [];
