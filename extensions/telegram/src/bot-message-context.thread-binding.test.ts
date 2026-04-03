@@ -1,10 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildTelegramMessageContextForTest } from "./bot-message-context.test-harness.js";
 
 const recordInboundSessionMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const resolveTelegramConversationRouteMock = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk/conversation-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/conversation-runtime")>();
+vi.mock("./bot-message-context.session.runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./bot-message-context.session.runtime.js")>();
   return {
     ...actual,
     recordInboundSession: (...args: unknown[]) => recordInboundSessionMock(...args),
@@ -18,8 +19,6 @@ vi.mock("./conversation-route.js", async (importOriginal) => {
       resolveTelegramConversationRouteMock(...args),
   };
 });
-
-let buildTelegramMessageContextForTest: typeof import("./bot-message-context.test-harness.js").buildTelegramMessageContextForTest;
 
 function createBoundRoute(params: { accountId: string; sessionKey: string; agentId: string }) {
   return {
@@ -38,12 +37,6 @@ function createBoundRoute(params: { accountId: string; sessionKey: string; agent
 }
 
 describe("buildTelegramMessageContext thread binding override", () => {
-  beforeAll(async () => {
-    vi.resetModules();
-    ({ buildTelegramMessageContextForTest } =
-      await import("./bot-message-context.test-harness.js"));
-  });
-
   beforeEach(() => {
     recordInboundSessionMock.mockClear();
     resolveTelegramConversationRouteMock.mockReset();

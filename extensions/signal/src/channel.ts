@@ -11,11 +11,14 @@ import { resolveTextChunkLimit } from "openclaw/plugin-sdk/reply-runtime";
 import { buildOutboundBaseSessionKey, type RoutePeer } from "openclaw/plugin-sdk/routing";
 import { createComputedAccountStatusAdapter } from "openclaw/plugin-sdk/status-helpers";
 import { resolveSignalAccount, type ResolvedSignalAccount } from "./accounts.js";
+import { signalApprovalAuth } from "./approval-auth.js";
 import { markdownToSignalTextChunks } from "./format.js";
 import { signalMessageActions } from "./message-actions.js";
+import { monitorSignalProvider } from "./monitor.js";
 import { looksLikeSignalTargetId, normalizeSignalMessagingTarget } from "./normalize.js";
 import { resolveSignalOutboundTarget } from "./outbound-session.js";
 import { probeSignal, type SignalProbe } from "./probe.js";
+import { resolveSignalReactionLevel } from "./reaction-level.js";
 import {
   buildBaseChannelStatusSummary,
   chunkText,
@@ -27,7 +30,7 @@ import {
   resolveChannelMediaMaxBytes,
   type ChannelPlugin,
 } from "./runtime-api.js";
-import { getSignalRuntime } from "./runtime.js";
+import { sendMessageSignal } from "./send.js";
 import { signalSetupAdapter } from "./setup-core.js";
 import {
   signalConfigAdapter,
@@ -35,16 +38,14 @@ import {
   signalSecurityAdapter,
   signalSetupWizard,
 } from "./shared.js";
-type SignalSendFn = ReturnType<typeof getSignalRuntime>["channel"]["signal"]["sendMessageSignal"];
+type SignalSendFn = typeof sendMessageSignal;
 
 function resolveSignalSendContext(params: {
   cfg: Parameters<typeof resolveSignalAccount>[0]["cfg"];
   accountId?: string;
   deps?: { [channelId: string]: unknown };
 }) {
-  const send =
-    resolveOutboundSendDep<SignalSendFn>(params.deps, "signal") ??
-    getSignalRuntime().channel.signal.sendMessageSignal;
+  const send = resolveOutboundSendDep<SignalSendFn>(params.deps, "signal") ?? sendMessageSignal;
   const maxBytes = resolveChannelMediaMaxBytes({
     cfg: params.cfg,
     resolveChannelLimitMb: ({ cfg, accountId }) =>
@@ -60,6 +61,7 @@ async function sendSignalOutbound(params: {
   text: string;
   mediaUrl?: string;
   mediaLocalRoots?: readonly string[];
+  mediaReadFile?: (filePath: string) => Promise<Buffer>;
   accountId?: string;
   deps?: { [channelId: string]: unknown };
 }) {
@@ -68,6 +70,7 @@ async function sendSignalOutbound(params: {
     cfg: params.cfg,
     ...(params.mediaUrl ? { mediaUrl: params.mediaUrl } : {}),
     ...(params.mediaLocalRoots?.length ? { mediaLocalRoots: params.mediaLocalRoots } : {}),
+    ...(params.mediaReadFile ? { mediaReadFile: params.mediaReadFile } : {}),
     maxBytes,
     accountId: params.accountId ?? undefined,
   });
@@ -186,6 +189,7 @@ async function sendFormattedSignalMedia(ctx: {
   text: string;
   mediaUrl: string;
   mediaLocalRoots?: readonly string[];
+  mediaReadFile?: (filePath: string) => Promise<Buffer>;
   accountId?: string | null;
   deps?: { [channelId: string]: unknown };
   abortSignal?: AbortSignal;
@@ -211,6 +215,7 @@ async function sendFormattedSignalMedia(ctx: {
     cfg: ctx.cfg,
     mediaUrl: ctx.mediaUrl,
     mediaLocalRoots: ctx.mediaLocalRoots,
+    ...(ctx.mediaReadFile ? { mediaReadFile: ctx.mediaReadFile } : {}),
     maxBytes,
     accountId: ctx.accountId ?? undefined,
     textMode: "plain",
@@ -227,6 +232,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         setup: signalSetupAdapter,
       }),
       actions: signalMessageActions,
+      auth: signalApprovalAuth,
       allowlist: buildDmGroupAccountAllowlistAdapter({
         channelId: "signal",
         resolveAccount: resolveSignalAccount,
@@ -237,6 +243,15 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         resolveDmPolicy: (account) => account.config.dmPolicy,
         resolveGroupPolicy: (account) => account.config.groupPolicy,
       }),
+      agentPrompt: {
+        reactionGuidance: ({ cfg, accountId }) => {
+          const level = resolveSignalReactionLevel({
+            cfg,
+            accountId: accountId ?? undefined,
+          }).agentReactionGuidance;
+          return level ? { level, channelLabel: "Signal" } : undefined;
+        },
+      },
       messaging: {
         normalizeTarget: normalizeSignalMessagingTarget,
         parseExplicitTarget: ({ raw }) => parseSignalExplicitTarget(raw),
@@ -283,7 +298,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
           });
           ctx.log?.info(`[${account.accountId}] starting provider (${account.baseUrl})`);
           // Lazy import: the monitor pulls the reply pipeline; avoid ESM init cycles.
-          return getSignalRuntime().channel.signal.monitorSignalProvider({
+          return monitorSignalProvider({
             accountId: account.accountId,
             config: ctx.cfg,
             runtime: ctx.runtime,
@@ -299,7 +314,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         message: PAIRING_APPROVED_MESSAGE,
         normalizeAllowEntry: createPairingPrefixStripper(/^signal:/i),
         notify: async ({ id, message }) => {
-          await getSignalRuntime().channel.signal.sendMessageSignal(id, message);
+          await sendMessageSignal(id, message);
         },
       },
     },
@@ -325,6 +340,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
           text,
           mediaUrl,
           mediaLocalRoots,
+          mediaReadFile,
           accountId,
           deps,
           abortSignal,
@@ -335,6 +351,7 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
             text,
             mediaUrl,
             mediaLocalRoots,
+            mediaReadFile,
             accountId,
             deps,
             abortSignal,
@@ -350,13 +367,23 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
             accountId: accountId ?? undefined,
             deps,
           }),
-        sendMedia: async ({ cfg, to, text, mediaUrl, mediaLocalRoots, accountId, deps }) =>
+        sendMedia: async ({
+          cfg,
+          to,
+          text,
+          mediaUrl,
+          mediaLocalRoots,
+          mediaReadFile,
+          accountId,
+          deps,
+        }) =>
           await sendSignalOutbound({
             cfg,
             to,
             text,
             mediaUrl,
             mediaLocalRoots,
+            mediaReadFile,
             accountId: accountId ?? undefined,
             deps,
           }),

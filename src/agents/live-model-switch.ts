@@ -1,5 +1,5 @@
 import { loadSessionStore, resolveStorePath, type SessionEntry } from "../config/sessions.js";
-import { resolveDefaultModelForAgent } from "./model-selection.js";
+import { resolveDefaultModelForAgent, resolvePersistedModelRef } from "./model-selection.js";
 import {
   consumeEmbeddedRunModelSwitch,
   requestEmbeddedRunModelSwitch,
@@ -48,8 +48,16 @@ export function resolveLiveSessionModelSelection(params: {
     agentId,
   });
   const entry = loadSessionStore(storePath, { skipCache: true })[sessionKey];
-  const provider = entry?.providerOverride?.trim() || defaultModelRef.provider;
-  const model = entry?.modelOverride?.trim() || defaultModelRef.model;
+  const persisted = resolvePersistedModelRef({
+    defaultProvider: defaultModelRef.provider,
+    runtimeProvider: entry?.modelProvider,
+    runtimeModel: entry?.model,
+    overrideProvider: entry?.providerOverride,
+    overrideModel: entry?.modelOverride,
+  });
+  const provider =
+    persisted?.provider ?? entry?.providerOverride?.trim() ?? defaultModelRef.provider;
+  const model = persisted?.model ?? defaultModelRef.model;
   const authProfileId = entry?.authProfileOverride?.trim() || undefined;
   return {
     provider,
@@ -100,4 +108,16 @@ export function hasDifferentLiveSessionModelSelection(
     (current.authProfileId?.trim() ? current.authProfileIdSource : undefined) !==
       next.authProfileIdSource
   );
+}
+
+export function shouldTrackPersistedLiveSessionModelSelection(
+  current: {
+    provider: string;
+    model: string;
+    authProfileId?: string;
+    authProfileIdSource?: string;
+  },
+  persisted: LiveSessionModelSelection | null | undefined,
+): boolean {
+  return !hasDifferentLiveSessionModelSelection(current, persisted);
 }

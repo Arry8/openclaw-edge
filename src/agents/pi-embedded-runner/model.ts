@@ -1,9 +1,10 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { OpenClawConfig } from "../../config/config.js";
-import type { ModelDefinitionConfig } from "../../config/types.js";
+import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types.js";
 import {
   applyProviderResolvedModelCompatWithPlugins,
+  applyProviderResolvedTransportWithPlugin,
   buildProviderUnknownModelHintWithPlugin,
   clearProviderRuntimeHookCache,
   normalizeProviderTransportWithPlugin,
@@ -21,6 +22,10 @@ import {
   shouldSuppressBuiltInModel,
 } from "../model-suppression.js";
 import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
+import {
+  resolveProviderRequestConfig,
+  sanitizeConfiguredModelProviderRequest,
+} from "../provider-request-config.js";
 import { normalizeResolvedProviderModel } from "./model.provider-normalization.js";
 
 type InlineModelEntry = Omit<ModelDefinitionConfig, "api"> & {
@@ -34,11 +39,16 @@ type InlineProviderConfig = {
   api?: ModelDefinitionConfig["api"];
   models?: ModelDefinitionConfig[];
   headers?: unknown;
+  authHeader?: boolean;
+  request?: ModelProviderConfig["request"];
 };
 
 type ProviderRuntimeHooks = {
   applyProviderResolvedModelCompatWithPlugins?: (
     params: Parameters<typeof applyProviderResolvedModelCompatWithPlugins>[0],
+  ) => unknown;
+  applyProviderResolvedTransportWithPlugin?: (
+    params: Parameters<typeof applyProviderResolvedTransportWithPlugin>[0],
   ) => unknown;
   buildProviderUnknownModelHintWithPlugin: (
     params: Parameters<typeof buildProviderUnknownModelHintWithPlugin>[0],
@@ -57,12 +67,33 @@ type ProviderRuntimeHooks = {
 
 const DEFAULT_PROVIDER_RUNTIME_HOOKS: ProviderRuntimeHooks = {
   applyProviderResolvedModelCompatWithPlugins,
+  applyProviderResolvedTransportWithPlugin,
   buildProviderUnknownModelHintWithPlugin,
   prepareProviderDynamicModel,
   runProviderDynamicModel,
   normalizeProviderResolvedModelWithPlugin,
   normalizeProviderTransportWithPlugin,
 };
+
+const STATIC_PROVIDER_RUNTIME_HOOKS: ProviderRuntimeHooks = {
+  applyProviderResolvedModelCompatWithPlugins: () => undefined,
+  applyProviderResolvedTransportWithPlugin: () => undefined,
+  buildProviderUnknownModelHintWithPlugin: () => undefined,
+  prepareProviderDynamicModel: async () => {},
+  runProviderDynamicModel: () => undefined,
+  normalizeProviderResolvedModelWithPlugin: () => undefined,
+  normalizeProviderTransportWithPlugin: () => undefined,
+};
+
+function resolveRuntimeHooks(params?: {
+  runtimeHooks?: ProviderRuntimeHooks;
+  skipProviderRuntimeHooks?: boolean;
+}): ProviderRuntimeHooks {
+  if (params?.skipProviderRuntimeHooks) {
+    return STATIC_PROVIDER_RUNTIME_HOOKS;
+  }
+  return params?.runtimeHooks ?? DEFAULT_PROVIDER_RUNTIME_HOOKS;
+}
 
 function normalizeResolvedTransportApi(api: unknown): ModelDefinitionConfig["api"] | undefined {
   switch (api) {
@@ -74,6 +105,7 @@ function normalizeResolvedTransportApi(api: unknown): ModelDefinitionConfig["api
     case "openai-codex-responses":
     case "openai-completions":
     case "openai-responses":
+    case "azure-openai-responses":
       return api;
     default:
       return undefined;
@@ -98,6 +130,36 @@ function sanitizeModelHeaders(
     next[headerName] = headerValue;
   }
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function applyResolvedTransportFallback(params: {
+  provider: string;
+  cfg?: OpenClawConfig;
+  runtimeHooks: ProviderRuntimeHooks;
+  model: Model<Api>;
+}): Model<Api> | undefined {
+  const normalized = params.runtimeHooks.normalizeProviderTransportWithPlugin({
+    provider: params.provider,
+    config: params.cfg,
+    context: {
+      provider: params.provider,
+      api: params.model.api,
+      baseUrl: params.model.baseUrl,
+    },
+  }) as { api?: Api | null; baseUrl?: string } | undefined;
+  if (!normalized) {
+    return undefined;
+  }
+  const nextApi = normalizeResolvedTransportApi(normalized.api) ?? params.model.api;
+  const nextBaseUrl = normalized.baseUrl ?? params.model.baseUrl;
+  if (nextApi === params.model.api && nextBaseUrl === params.model.baseUrl) {
+    return undefined;
+  }
+  return {
+    ...params.model,
+    api: nextApi,
+    baseUrl: nextBaseUrl,
+  };
 }
 
 function normalizeResolvedModel(params: {
@@ -137,9 +199,29 @@ function normalizeResolvedModel(params: {
       model: (pluginNormalized ?? normalizedInputModel) as never,
     },
   }) as Model<Api> | undefined;
+  const transportNormalized = runtimeHooks.applyProviderResolvedTransportWithPlugin?.({
+    provider: params.provider,
+    config: params.cfg,
+    context: {
+      config: params.cfg,
+      agentDir: params.agentDir,
+      provider: params.provider,
+      modelId: normalizedInputModel.id,
+      model: (compatNormalized ?? pluginNormalized ?? normalizedInputModel) as never,
+    },
+  }) as Model<Api> | undefined;
+  const fallbackTransportNormalized =
+    transportNormalized ??
+    applyResolvedTransportFallback({
+      provider: params.provider,
+      cfg: params.cfg,
+      runtimeHooks,
+      model: compatNormalized ?? pluginNormalized ?? normalizedInputModel,
+    });
   return normalizeResolvedProviderModel({
     provider: params.provider,
-    model: compatNormalized ?? pluginNormalized ?? normalizedInputModel,
+    model:
+      fallbackTransportNormalized ?? compatNormalized ?? pluginNormalized ?? normalizedInputModel,
   });
 }
 
@@ -229,10 +311,17 @@ function applyConfiguredProviderOverrides(params: {
   const providerHeaders = sanitizeModelHeaders(providerConfig.headers, {
     stripSecretRefMarkers: true,
   });
+  const providerRequest = sanitizeConfiguredModelProviderRequest(providerConfig.request);
   const configuredHeaders = sanitizeModelHeaders(configuredModel?.headers, {
     stripSecretRefMarkers: true,
   });
-  if (!configuredModel && !providerConfig.baseUrl && !providerConfig.api && !providerHeaders) {
+  if (
+    !configuredModel &&
+    !providerConfig.baseUrl &&
+    !providerConfig.api &&
+    !providerHeaders &&
+    !providerRequest
+  ) {
     return {
       ...discoveredModel,
       headers: discoveredHeaders,
@@ -251,26 +340,31 @@ function applyConfiguredProviderOverrides(params: {
     cfg: params.cfg,
     runtimeHooks: params.runtimeHooks,
   });
-  return {
-    ...discoveredModel,
+  const requestConfig = resolveProviderRequestConfig({
+    provider: params.provider,
     api:
       resolvedTransport.api ??
       normalizeResolvedTransportApi(discoveredModel.api) ??
       "openai-responses",
     baseUrl: resolvedTransport.baseUrl ?? discoveredModel.baseUrl,
+    discoveredHeaders,
+    providerHeaders,
+    modelHeaders: configuredHeaders,
+    authHeader: providerConfig.authHeader,
+    request: providerRequest,
+    capability: "llm",
+    transport: "stream",
+  });
+  return {
+    ...discoveredModel,
+    api: requestConfig.api ?? "openai-responses",
+    baseUrl: requestConfig.baseUrl ?? discoveredModel.baseUrl,
     reasoning: configuredModel?.reasoning ?? discoveredModel.reasoning,
     input: normalizedInput,
     cost: configuredModel?.cost ?? discoveredModel.cost,
     contextWindow: configuredModel?.contextWindow ?? discoveredModel.contextWindow,
     maxTokens: configuredModel?.maxTokens ?? discoveredModel.maxTokens,
-    headers:
-      discoveredHeaders || providerHeaders || configuredHeaders
-        ? {
-            ...discoveredHeaders,
-            ...providerHeaders,
-            ...configuredHeaders,
-          }
-        : undefined,
+    headers: requestConfig.headers,
     compat: configuredModel?.compat ?? discoveredModel.compat,
   };
 }
@@ -286,29 +380,33 @@ export function buildInlineProviderModels(
     const providerHeaders = sanitizeModelHeaders(entry?.headers, {
       stripSecretRefMarkers: true,
     });
+    const providerRequest = sanitizeConfiguredModelProviderRequest(entry?.request);
     return (entry?.models ?? []).map((model) => {
       const transport = resolveProviderTransport({
         provider: trimmed,
         api: model.api ?? entry?.api,
         baseUrl: entry?.baseUrl,
       });
+      const modelHeaders = sanitizeModelHeaders((model as InlineModelEntry).headers, {
+        stripSecretRefMarkers: true,
+      });
+      const requestConfig = resolveProviderRequestConfig({
+        provider: trimmed,
+        api: transport.api ?? model.api,
+        baseUrl: transport.baseUrl,
+        providerHeaders,
+        modelHeaders,
+        authHeader: entry?.authHeader,
+        request: providerRequest,
+        capability: "llm",
+        transport: "stream",
+      });
       return {
         ...model,
         provider: trimmed,
-        baseUrl: transport.baseUrl,
-        api: transport.api ?? model.api,
-        headers: (() => {
-          const modelHeaders = sanitizeModelHeaders((model as InlineModelEntry).headers, {
-            stripSecretRefMarkers: true,
-          });
-          if (!providerHeaders && !modelHeaders) {
-            return undefined;
-          }
-          return {
-            ...providerHeaders,
-            ...modelHeaders,
-          };
-        })(),
+        baseUrl: requestConfig.baseUrl,
+        api: requestConfig.api ?? model.api,
+        headers: requestConfig.headers,
       };
     });
   });
@@ -444,6 +542,7 @@ function resolveConfiguredFallbackModel(params: {
   const providerHeaders = sanitizeModelHeaders(providerConfig?.headers, {
     stripSecretRefMarkers: true,
   });
+  const providerRequest = sanitizeConfiguredModelProviderRequest(providerConfig?.request);
   const modelHeaders = sanitizeModelHeaders(configuredModel?.headers, {
     stripSecretRefMarkers: true,
   });
@@ -457,6 +556,17 @@ function resolveConfiguredFallbackModel(params: {
     cfg,
     runtimeHooks,
   });
+  const requestConfig = resolveProviderRequestConfig({
+    provider,
+    api: fallbackTransport.api ?? "openai-responses",
+    baseUrl: fallbackTransport.baseUrl,
+    providerHeaders,
+    modelHeaders,
+    authHeader: providerConfig?.authHeader,
+    request: providerRequest,
+    capability: "llm",
+    transport: "stream",
+  });
   return normalizeResolvedModel({
     provider,
     cfg,
@@ -464,9 +574,9 @@ function resolveConfiguredFallbackModel(params: {
     model: {
       id: modelId,
       name: modelId,
-      api: fallbackTransport.api ?? "openai-responses",
+      api: requestConfig.api ?? "openai-responses",
       provider,
-      baseUrl: fallbackTransport.baseUrl,
+      baseUrl: requestConfig.baseUrl,
       reasoning: configuredModel?.reasoning ?? false,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -478,8 +588,7 @@ function resolveConfiguredFallbackModel(params: {
         configuredModel?.maxTokens ??
         providerConfig?.models?.[0]?.maxTokens ??
         DEFAULT_CONTEXT_TOKENS,
-      headers:
-        providerHeaders || modelHeaders ? { ...providerHeaders, ...modelHeaders } : undefined,
+      headers: requestConfig.headers,
     } as Model<Api>,
     runtimeHooks,
   });
@@ -518,6 +627,7 @@ export function resolveModel(
     authStorage?: AuthStorage;
     modelRegistry?: ModelRegistry;
     runtimeHooks?: ProviderRuntimeHooks;
+    skipProviderRuntimeHooks?: boolean;
   },
 ): {
   model?: Model<Api>;
@@ -528,13 +638,14 @@ export function resolveModel(
   const resolvedAgentDir = agentDir ?? resolveOpenClawAgentDir();
   const authStorage = options?.authStorage ?? discoverAuthStorage(resolvedAgentDir);
   const modelRegistry = options?.modelRegistry ?? discoverModels(authStorage, resolvedAgentDir);
+  const runtimeHooks = resolveRuntimeHooks(options);
   const model = resolveModelWithRegistry({
     provider,
     modelId,
     modelRegistry,
     cfg,
     agentDir: resolvedAgentDir,
-    runtimeHooks: options?.runtimeHooks,
+    runtimeHooks,
   });
   if (model) {
     return { model, authStorage, modelRegistry };
@@ -546,7 +657,7 @@ export function resolveModel(
       modelId,
       cfg,
       agentDir: resolvedAgentDir,
-      runtimeHooks: options?.runtimeHooks,
+      runtimeHooks,
     }),
     authStorage,
     modelRegistry,
@@ -563,6 +674,7 @@ export async function resolveModelAsync(
     modelRegistry?: ModelRegistry;
     retryTransientProviderRuntimeMiss?: boolean;
     runtimeHooks?: ProviderRuntimeHooks;
+    skipProviderRuntimeHooks?: boolean;
   },
 ): Promise<{
   model?: Model<Api>;
@@ -573,13 +685,14 @@ export async function resolveModelAsync(
   const resolvedAgentDir = agentDir ?? resolveOpenClawAgentDir();
   const authStorage = options?.authStorage ?? discoverAuthStorage(resolvedAgentDir);
   const modelRegistry = options?.modelRegistry ?? discoverModels(authStorage, resolvedAgentDir);
+  const runtimeHooks = resolveRuntimeHooks(options);
   const explicitModel = resolveExplicitModelWithRegistry({
     provider,
     modelId,
     modelRegistry,
     cfg,
     agentDir: resolvedAgentDir,
-    runtimeHooks: options?.runtimeHooks,
+    runtimeHooks,
   });
   if (explicitModel?.kind === "suppressed") {
     return {
@@ -588,14 +701,13 @@ export async function resolveModelAsync(
         modelId,
         cfg,
         agentDir: resolvedAgentDir,
-        runtimeHooks: options?.runtimeHooks,
+        runtimeHooks,
       }),
       authStorage,
       modelRegistry,
     };
   }
   const providerConfig = resolveConfiguredProviderConfig(cfg, provider);
-  const runtimeHooks = options?.runtimeHooks ?? DEFAULT_PROVIDER_RUNTIME_HOOKS;
   const resolveDynamicAttempt = async (attemptOptions?: { clearHookCache?: boolean }) => {
     if (attemptOptions?.clearHookCache) {
       clearProviderRuntimeHookCache();
@@ -618,7 +730,7 @@ export async function resolveModelAsync(
       modelRegistry,
       cfg,
       agentDir: resolvedAgentDir,
-      runtimeHooks: options?.runtimeHooks,
+      runtimeHooks,
     });
   };
   let model =
@@ -639,7 +751,7 @@ export async function resolveModelAsync(
       modelId,
       cfg,
       agentDir: resolvedAgentDir,
-      runtimeHooks: options?.runtimeHooks,
+      runtimeHooks,
     }),
     authStorage,
     modelRegistry,

@@ -7,7 +7,17 @@ import * as probeModule from "./probe.js";
 import type { OpenClawConfig } from "./runtime-api.js";
 import { clearSlackRuntime, setSlackRuntime } from "./runtime.js";
 
-const handleSlackActionMock = vi.fn();
+const { handleSlackActionMock } = vi.hoisted(() => ({
+  handleSlackActionMock: vi.fn(),
+}));
+
+vi.mock("./action-runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./action-runtime.js")>();
+  return {
+    ...actual,
+    handleSlackAction: handleSlackActionMock,
+  };
+});
 
 beforeEach(async () => {
   handleSlackActionMock.mockReset();
@@ -116,6 +126,24 @@ describe("slackPlugin actions", () => {
     }
 
     expect(Type.Object(schema.properties).required).toBeUndefined();
+  });
+
+  it("treats interactive reply payloads as structured Slack payloads", () => {
+    const hasStructuredReplyPayload = slackPlugin.messaging?.hasStructuredReplyPayload;
+    if (!hasStructuredReplyPayload) {
+      throw new Error("slack messaging.hasStructuredReplyPayload unavailable");
+    }
+
+    expect(
+      hasStructuredReplyPayload({
+        payload: {
+          text: "Choose",
+          interactive: {
+            blocks: [{ type: "buttons", buttons: [{ label: "Retry", value: "retry" }] }],
+          },
+        },
+      }),
+    ).toBe(true);
   });
 
   it("forwards read threadId to Slack action handler", async () => {

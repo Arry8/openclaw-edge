@@ -63,6 +63,7 @@ openclaw channels status --probe
 <Note>
 Gateway config reload watches the active config file path (resolved from profile/state defaults, or `OPENCLAW_CONFIG_PATH` when set).
 Default mode is `gateway.reload.mode="hybrid"`.
+After the first successful load, the running process serves the active in-memory config snapshot; successful reload swaps that snapshot atomically.
 </Note>
 
 ## Runtime model
@@ -258,12 +259,12 @@ Events are not replayed. On sequence gaps, refresh state (`health`, `system-pres
 
 ## Common failure signatures
 
-| Signature                                                      | Likely issue                             |
-| -------------------------------------------------------------- | ---------------------------------------- |
-| `refusing to bind gateway ... without auth`                    | Non-loopback bind without token/password |
-| `another gateway instance is already listening` / `EADDRINUSE` | Port conflict                            |
-| `Gateway start blocked: set gateway.mode=local`                | Config set to remote mode                |
-| `unauthorized` during connect                                  | Auth mismatch between client and gateway |
+| Signature                                                      | Likely issue                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `refusing to bind gateway ... without auth`                    | Non-loopback bind without token/password                                        |
+| `another gateway instance is already listening` / `EADDRINUSE` | Port conflict                                                                   |
+| `Gateway start blocked: set gateway.mode=local`                | Config set to remote mode, or local-mode stamp is missing from a damaged config |
+| `unauthorized` during connect                                  | Auth mismatch between client and gateway                                        |
 
 For full diagnosis ladders, use [Gateway Troubleshooting](/gateway/troubleshooting).
 

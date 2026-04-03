@@ -1,9 +1,5 @@
+import type { PluginRuntime } from "openclaw/plugin-sdk/testing";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  PluginApprovalRequest,
-  PluginApprovalResolved,
-} from "../../../src/infra/plugin-approvals.js";
-import type { PluginRuntime } from "../../../src/plugins/runtime/types.js";
 import { createStartAccountContext } from "../../../test/helpers/plugins/start-account-context.js";
 import type { ResolvedDiscordAccount } from "./accounts.js";
 import type { OpenClawConfig } from "./runtime-api.js";
@@ -13,6 +9,15 @@ let setDiscordRuntime: typeof import("./runtime.js").setDiscordRuntime;
 const probeDiscordMock = vi.hoisted(() => vi.fn());
 const monitorDiscordProviderMock = vi.hoisted(() => vi.fn());
 const auditDiscordChannelPermissionsMock = vi.hoisted(() => vi.fn());
+const sleepWithAbortMock = vi.hoisted(() => vi.fn(async () => undefined));
+
+vi.mock("openclaw/plugin-sdk/runtime-env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/runtime-env")>();
+  return {
+    ...actual,
+    sleepWithAbort: sleepWithAbortMock,
+  };
+});
 
 vi.mock("./probe.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./probe.js")>();
@@ -49,46 +54,14 @@ function createCfg(): OpenClawConfig {
   } as OpenClawConfig;
 }
 
-function createPluginApprovalRequest(
-  overrides?: Partial<PluginApprovalRequest["request"]>,
-): PluginApprovalRequest {
-  return {
-    id: "plugin:approval-1",
-    request: {
-      title: "Sensitive plugin action",
-      description: "The plugin asked to perform a sensitive action.",
-      severity: "warning",
-      pluginId: "plugin-test",
-      toolName: "plugin.tool",
-      agentId: "agent-1",
-      sessionKey: "agent:agent-1:discord:channel:123456789",
-      ...overrides,
-    },
-    createdAtMs: 1_000,
-    expiresAtMs: 61_000,
-  };
+function resolveAccount(cfg: OpenClawConfig, accountId = "default"): ResolvedDiscordAccount {
+  return discordPlugin.config.resolveAccount(cfg, accountId) as ResolvedDiscordAccount;
 }
 
-function createPluginApprovalResolved(
-  request?: PluginApprovalRequest["request"],
-): PluginApprovalResolved {
-  return {
-    id: "plugin:approval-1",
-    decision: "allow-once",
-    resolvedBy: "discord:123",
-    ts: 2_000,
-    request,
-  };
-}
-
-function resolveAccount(cfg: OpenClawConfig): ResolvedDiscordAccount {
-  return discordPlugin.config.resolveAccount(cfg, "default") as ResolvedDiscordAccount;
-}
-
-function startDiscordAccount(cfg: OpenClawConfig) {
+function startDiscordAccount(cfg: OpenClawConfig, accountId = "default") {
   return discordPlugin.gateway!.startAccount!(
     createStartAccountContext({
-      account: resolveAccount(cfg),
+      account: resolveAccount(cfg, accountId),
       cfg,
     }),
   );
@@ -109,6 +82,8 @@ afterEach(() => {
   probeDiscordMock.mockReset();
   monitorDiscordProviderMock.mockReset();
   auditDiscordChannelPermissionsMock.mockReset();
+  sleepWithAbortMock.mockReset();
+  sleepWithAbortMock.mockResolvedValue(undefined);
 });
 
 beforeEach(async () => {
@@ -124,9 +99,6 @@ beforeAll(async () => {
 describe("discordPlugin outbound", () => {
   it("forwards mediaLocalRoots to sendMessageDiscord", async () => {
     const sendMessageDiscord = vi.fn(async () => ({ messageId: "m1" }));
-    installDiscordRuntime({
-      sendMessageDiscord,
-    });
 
     const result = await discordPlugin.outbound!.sendMedia!({
       cfg: {} as OpenClawConfig,
@@ -135,6 +107,9 @@ describe("discordPlugin outbound", () => {
       mediaUrl: "/tmp/image.png",
       mediaLocalRoots: ["/tmp/agent-root"],
       accountId: "work",
+      deps: {
+        discord: sendMessageDiscord,
+      },
     });
 
     expect(sendMessageDiscord).toHaveBeenCalledWith(
@@ -146,115 +121,6 @@ describe("discordPlugin outbound", () => {
       }),
     );
     expect(result).toMatchObject({ channel: "discord", messageId: "m1" });
-  });
-
-  it("builds interactive plugin approval pending payloads for Discord forwarding", () => {
-    const cfg = createCfg();
-    cfg.channels!.discord!.execApprovals = {
-      enabled: true,
-      approvers: ["123"],
-    };
-    const payload = discordPlugin.execApprovals?.buildPluginPendingPayload?.({
-      cfg,
-      request: createPluginApprovalRequest(),
-      target: { channel: "discord", to: "user:123" },
-      nowMs: 2_000,
-    });
-
-    expect(payload?.text).toContain("Plugin approval required");
-    const discordData = (payload?.channelData as { discord?: { components?: unknown } } | undefined)
-      ?.discord;
-    expect(discordData?.components).toBeDefined();
-    const componentsJson = JSON.stringify(discordData?.components ?? {});
-    expect(componentsJson).toContain("Plugin Approval Required");
-    expect(componentsJson).toContain("execapproval:id=plugin%3Aapproval-1;action=allow-once");
-    const execApproval = (payload?.channelData as { execApproval?: { approvalId?: string } })
-      ?.execApproval;
-    expect(execApproval?.approvalId).toBe("plugin:approval-1");
-  });
-
-  it("neutralizes plugin approval mentions in forwarded text and components", () => {
-    const cfg = createCfg();
-    cfg.channels!.discord!.execApprovals = {
-      enabled: true,
-      approvers: ["123"],
-    };
-    const payload = discordPlugin.execApprovals?.buildPluginPendingPayload?.({
-      cfg,
-      request: createPluginApprovalRequest({
-        title: "Heads up @everyone <@123> <@&456>",
-        description: "route @here and <#789>",
-      }),
-      target: { channel: "discord", to: "user:123" },
-      nowMs: 2_000,
-    });
-
-    const text = payload?.text ?? "";
-    const componentsJson = JSON.stringify(
-      ((payload?.channelData as { discord?: { components?: unknown } } | undefined)?.discord
-        ?.components ?? {}) as object,
-    );
-
-    expect(text).toContain("@\u200beveryone");
-    expect(text).toContain("@\u200bhere");
-    expect(text).toContain("<@\u200b123>");
-    expect(text).toContain("<@\u200b&456>");
-    expect(text).toContain("<#\u200b789>");
-    expect(text).not.toContain("@everyone");
-    expect(text).not.toContain("@here");
-    expect(componentsJson).not.toContain("@everyone");
-    expect(componentsJson).not.toContain("@here");
-    expect(componentsJson).not.toContain("<@123>");
-    expect(componentsJson).not.toContain("<@&456>");
-    expect(componentsJson).not.toContain("<#789>");
-  });
-
-  it("falls back to non-interactive plugin approval pending payload when Discord exec approvals are disabled", () => {
-    const payload = discordPlugin.execApprovals?.buildPluginPendingPayload?.({
-      cfg: createCfg(),
-      request: createPluginApprovalRequest(),
-      target: { channel: "discord", to: "user:123" },
-      nowMs: 2_000,
-    });
-
-    expect(payload?.text).toContain("Plugin approval required");
-    const channelData = payload?.channelData as
-      | {
-          execApproval?: { approvalId?: string; approvalSlug?: string };
-          discord?: { components?: unknown };
-        }
-      | undefined;
-    expect(channelData?.execApproval?.approvalId).toBe("plugin:approval-1");
-    expect(channelData?.execApproval?.approvalSlug).toBe("plugin:a");
-    expect(channelData?.discord?.components).toBeUndefined();
-  });
-
-  it("builds rich plugin approval resolved payloads when request snapshot is available", () => {
-    const payload = discordPlugin.execApprovals?.buildPluginResolvedPayload?.({
-      cfg: createCfg(),
-      resolved: createPluginApprovalResolved(createPluginApprovalRequest().request),
-      target: { channel: "discord", to: "user:123" },
-    });
-
-    expect(payload?.text).toContain("Plugin approval allowed once");
-    const discordData = (payload?.channelData as { discord?: { components?: unknown } } | undefined)
-      ?.discord;
-    expect(discordData?.components).toBeDefined();
-    const componentsJson = JSON.stringify(discordData?.components ?? {});
-    expect(componentsJson).toContain("Plugin Approval: Allowed (once)");
-  });
-
-  it("falls back to plain text plugin resolved payload when request snapshot is missing", () => {
-    const payload = discordPlugin.execApprovals?.buildPluginResolvedPayload?.({
-      cfg: createCfg(),
-      resolved: createPluginApprovalResolved(undefined),
-      target: { channel: "discord", to: "user:123" },
-    });
-
-    expect(payload?.text).toContain("Plugin approval allowed once");
-    const discordData = (payload?.channelData as { discord?: { components?: unknown } } | undefined)
-      ?.discord;
-    expect(discordData?.components).toBeUndefined();
   });
 
   it("uses direct Discord probe helpers for status probes", async () => {
@@ -329,8 +195,45 @@ describe("discordPlugin outbound", () => {
         accountId: "default",
       }),
     );
+    expect(sleepWithAbortMock).not.toHaveBeenCalled();
     expect(runtimeProbeDiscord).not.toHaveBeenCalled();
     expect(runtimeMonitorDiscordProvider).not.toHaveBeenCalled();
+  });
+
+  it("stagger starts later accounts in multi-bot setups", async () => {
+    probeDiscordMock.mockResolvedValue({
+      ok: true,
+      bot: { username: "Cherry" },
+      application: {
+        intents: {
+          messageContent: "limited",
+          guildMembers: "disabled",
+          presence: "disabled",
+        },
+      },
+      elapsedMs: 1,
+    });
+    monitorDiscordProviderMock.mockResolvedValue(undefined);
+
+    const cfg = {
+      channels: {
+        discord: {
+          accounts: {
+            // "alpha" sorts before "zeta" so alpha is index 0, zeta is index 1
+            alpha: { token: "Bot alpha-token", enabled: true },
+            zeta: { token: "Bot zeta-token", enabled: true },
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    // First account (index 0) — no delay
+    await startDiscordAccount(cfg, "alpha");
+    expect(sleepWithAbortMock).not.toHaveBeenCalled();
+
+    // Second account (index 1) — 10s delay
+    await startDiscordAccount(cfg, "zeta");
+    expect(sleepWithAbortMock).toHaveBeenCalledWith(10_000, expect.any(Object));
   });
 });
 
