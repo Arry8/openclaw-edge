@@ -252,4 +252,33 @@ describe("learning-loop plugin", () => {
     });
     expect(pluginMocks.graphiti.addObservation).not.toHaveBeenCalled();
   });
+
+  it("resets nudge counters when typed after_tool_call events use learning tools", () => {
+    const { api, on } = createApi();
+
+    learningLoopPlugin.register(api);
+
+    const afterToolCallHandler = on.mock.calls.find(([name]) => name === "after_tool_call")?.[1];
+    if (typeof afterToolCallHandler !== "function") {
+      throw new Error("expected learning-loop plugin to register after_tool_call");
+    }
+
+    afterToolCallHandler(
+      {
+        toolName: "knowledge_store",
+        params: {},
+      },
+      { sessionId: "session-1" },
+    );
+    afterToolCallHandler(
+      {
+        toolName: "skill_evolve",
+        params: {},
+      },
+      { sessionId: "session-1" },
+    );
+
+    expect(pluginMocks.nudgeManager.resetCounter).toHaveBeenCalledWith("memory");
+    expect(pluginMocks.nudgeManager.resetCounter).toHaveBeenCalledWith("skill");
+  });
 });

@@ -408,7 +408,7 @@ export default definePluginEntry({
     // Reset nudge counters when user manually uses knowledge tools
     api.on("after_tool_call", (event, ctx) => {
       const { nudgeManager } = getScopedServices(ctx);
-      const name = (event as Record<string, unknown>).toolName as string | undefined;
+      const name = event.toolName;
       if (name === "knowledge_store" || name === "knowledge_search") {
         nudgeManager.resetCounter("memory");
       }
