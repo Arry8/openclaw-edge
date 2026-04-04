@@ -126,6 +126,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     replyToBody?: string;
     replyToSender?: string;
     replyToIsQuote?: boolean;
+    replyToAuthor?: string;
   };
 
   async function handleSignalInboundMessage(entry: SignalInboundEntry) {
@@ -221,6 +222,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       ReplyToBody: entry.replyToBody,
       ReplyToSender: entry.replyToSender,
       ReplyToIsQuote: entry.replyToIsQuote,
+      ReplyToAuthor: entry.replyToAuthor,
       Timestamp: entry.timestamp ?? undefined,
       MediaPath: entry.mediaPath,
       MediaType: entry.mediaType,
@@ -881,6 +883,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       replyToBody: visibleQuoteText || undefined,
       replyToSender: visibleQuoteSender,
       replyToIsQuote: visibleQuoteText ? true : undefined,
+      replyToAuthor: quoteAuthor,
     });
   };
 }
