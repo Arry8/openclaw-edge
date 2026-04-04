@@ -149,7 +149,7 @@ export function parseApiErrorInfo(raw?: string): ApiErrorInfo | null {
     if (typeof err.type === "string") {
       errType = err.type;
     }
-    if (typeof err.code === "string" && !errType) {
+    if (typeof err.code === "string" && !errType && !/^\d+$/.test(err.code.trim())) {
       errType = err.code;
     }
     if (
