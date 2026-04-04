@@ -213,7 +213,7 @@ describe("parseIMessageAllowFromEntries", () => {
     });
   });
 
-  it('writes open policy state to the named account and preserves inherited allowFrom with "*"', () => {
+  it('writes open policy state to the named account and stores inherited allowFrom with "*"', () => {
     const next = imessageDmPolicy.setPolicy(
       {
         channels: {
@@ -312,6 +312,28 @@ describe("imessage setup status", () => {
     });
 
     expect(status.statusLines).toContain("imsg: missing (/tmp/work-imsg)");
+  });
+
+  it("does not inherit configured state from a sibling when defaultAccount is named", async () => {
+    const status = await getIMessageSetupStatus({
+      cfg: {
+        channels: {
+          imessage: {
+            defaultAccount: "work",
+            accounts: {
+              default: {
+                cliPath: "/usr/local/bin/imsg",
+              },
+              work: {},
+            },
+          },
+        },
+      } as never,
+      accountOverrides: {},
+    });
+
+    expect(status.configured).toBe(false);
+    expect(status.statusLines).toContain("iMessage: needs setup");
   });
 });
 

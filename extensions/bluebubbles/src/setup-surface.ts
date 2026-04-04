@@ -149,14 +149,9 @@ const dmPolicy: ChannelSetupDmPolicy = {
     resolveBlueBubblesAccount({
       cfg,
       accountId: accountId ?? resolveDefaultBlueBubblesAccountId(cfg),
-    }).config
-      .dmPolicy ?? "pairing",
+    }).config.dmPolicy ?? "pairing",
   setPolicy: (cfg, policy, accountId) =>
-    setBlueBubblesDmPolicy(
-      cfg,
-      accountId ?? resolveDefaultBlueBubblesAccountId(cfg),
-      policy,
-    ),
+    setBlueBubblesDmPolicy(cfg, accountId ?? resolveDefaultBlueBubblesAccountId(cfg), policy),
   promptAllowFrom: promptBlueBubblesAllowFrom,
 };
 
@@ -174,10 +169,7 @@ export const blueBubblesSetupWizard: ChannelSetupWizard = {
       unconfiguredScore: 0,
       includeStatusLine: true,
       resolveConfigured: ({ cfg, accountId }) =>
-        (accountId ? [accountId] : listBlueBubblesAccountIds(cfg)).some((resolvedAccountId) => {
-          const account = resolveBlueBubblesAccount({ cfg, accountId: resolvedAccountId });
-          return account.configured;
-        }),
+        resolveBlueBubblesAccount({ cfg, accountId }).configured,
     }),
     resolveSelectionHint: ({ configured }) =>
       configured ? "configured" : "iMessage via BlueBubbles app",

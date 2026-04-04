@@ -211,6 +211,28 @@ describe("googlechat setup", () => {
     expect(status.configured).toBe(false);
   });
 
+  it("reports configured state for the configured defaultAccount instead of any account", async () => {
+    const status = await googlechatStatus({
+      cfg: {
+        channels: {
+          googlechat: {
+            defaultAccount: "alerts",
+            accounts: {
+              default: {
+                serviceAccount: { client_email: "default@example.com" },
+              },
+              alerts: {},
+            },
+          },
+        },
+      } as OpenClawConfig,
+      accountOverrides: {},
+      options: {},
+    });
+
+    expect(status.configured).toBe(false);
+  });
+
   it("reports account-scoped config keys for named accounts", () => {
     expect(googlechatPlugin.setupWizard?.dmPolicy?.resolveConfigKeys?.({}, "alerts")).toEqual({
       policyKey: "channels.googlechat.accounts.alerts.dm.policy",
@@ -306,10 +328,7 @@ describe("googlechat setup", () => {
 
     expect(next?.channels?.googlechat?.dm?.policy).toBeUndefined();
     expect(next?.channels?.googlechat?.accounts?.alerts?.dm?.policy).toBe("open");
-    expect(next?.channels?.googlechat?.accounts?.alerts?.dm?.allowFrom).toEqual([
-      "users/123",
-      "*",
-    ]);
+    expect(next?.channels?.googlechat?.accounts?.alerts?.dm?.allowFrom).toEqual(["users/123", "*"]);
   });
 
   it("keeps startAccount pending until abort, then unregisters", async () => {

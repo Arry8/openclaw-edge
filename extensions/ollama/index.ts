@@ -5,10 +5,8 @@ import {
   type ProviderAuthMethodNonInteractiveContext,
   type ProviderAuthResult,
   type ProviderDiscoveryContext,
-  type ProviderReplayPolicy,
-  type ProviderReplayPolicyContext,
 } from "openclaw/plugin-sdk/plugin-entry";
-import { buildOpenAICompatibleReplayPolicy } from "openclaw/plugin-sdk/provider-model-shared";
+import { buildProviderReplayFamilyHooks } from "openclaw/plugin-sdk/provider-model-shared";
 import {
   buildOllamaProvider,
   configureOllamaNonInteractive,
@@ -25,15 +23,13 @@ import {
   createConfiguredOllamaCompatStreamWrapper,
   createConfiguredOllamaStreamFn,
 } from "./src/stream.js";
+import { createOllamaWebSearchProvider } from "./src/web-search-provider.js";
 
 const PROVIDER_ID = "ollama";
 const DEFAULT_API_KEY = "ollama-local";
-
-function buildOllamaReplayPolicy(
-  ctx: ProviderReplayPolicyContext,
-): ProviderReplayPolicy | undefined {
-  return buildOpenAICompatibleReplayPolicy(ctx.modelApi);
-}
+const OPENAI_COMPATIBLE_REPLAY_HOOKS = buildProviderReplayFamilyHooks({
+  family: "openai-compatible",
+});
 
 function shouldSkipAmbientOllamaDiscovery(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env.VITEST) || env.NODE_ENV === "test";
@@ -44,6 +40,7 @@ export default definePluginEntry({
   name: "Ollama Provider",
   description: "Bundled Ollama provider plugin",
   register(api: OpenClawPluginApi) {
+    api.registerWebSearchProvider(createOllamaWebSearchProvider());
     api.registerProvider({
       id: PROVIDER_ID,
       label: "Ollama",
@@ -158,7 +155,8 @@ export default definePluginEntry({
           providerBaseUrl: config?.models?.providers?.ollama?.baseUrl,
         });
       },
-      buildReplayPolicy: (ctx) => buildOllamaReplayPolicy(ctx),
+      ...OPENAI_COMPATIBLE_REPLAY_HOOKS,
+      resolveReasoningOutputMode: () => "native",
       wrapStreamFn: (ctx) => {
         return createConfiguredOllamaCompatStreamWrapper(ctx);
       },
@@ -173,6 +171,9 @@ export default definePluginEntry({
           client,
         };
       },
+      matchesContextOverflowError: ({ errorMessage }) =>
+        /\bollama\b.*(?:context length|too many tokens|context window)/i.test(errorMessage) ||
+        /\btruncating input\b.*\btoo long\b/i.test(errorMessage),
       resolveSyntheticAuth: ({ providerConfig }) => {
         const hasApiConfig =
           Boolean(providerConfig?.api?.trim()) ||
