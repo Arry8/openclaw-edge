@@ -146,49 +146,57 @@ export class EvolutionStore {
    */
   solidify(skillName: string): number {
     const file = this.loadEvolutionFile(skillName);
-    const pending = file.entries.filter(
-      (e) => !e.applied && e.change.target === "body" && e.change.action !== "skip",
-    );
-
-    if (pending.length === 0) {
+    const pendingEntries = file.entries.filter((e) => !e.applied && e.change.action !== "skip");
+    if (pendingEntries.length === 0) {
       return 0;
     }
 
-    const skillMdPath = this.skillMdPath(skillName);
-    let skillContent: string;
-    try {
-      skillContent = fs.readFileSync(skillMdPath, "utf-8");
-    } catch {
-      // Create minimal SKILL.md if it doesn't exist
-      skillContent = `# ${skillName}\n`;
+    const pendingBodyEntries = pendingEntries.filter((entry) => entry.change.target === "body");
+    if (pendingBodyEntries.length > 0) {
+      const skillMdPath = this.skillMdPath(skillName);
+      let skillContent: string;
+      try {
+        skillContent = fs.readFileSync(skillMdPath, "utf-8");
+      } catch {
+        // Create minimal SKILL.md if it doesn't exist
+        skillContent = `# ${skillName}\n`;
+      }
+
+      // Inject each pending body entry into the appropriate section.
+      for (const entry of pendingBodyEntries) {
+        skillContent = this.injectIntoSection(
+          skillContent,
+          entry.change.section,
+          entry.change.content,
+        );
+      }
+
+      // Atomic write
+      const tmpPath = this.createTempPath(skillMdPath);
+      fs.writeFileSync(tmpPath, skillContent, "utf-8");
+      fs.renameSync(tmpPath, skillMdPath);
     }
 
-    // Inject each pending entry into the appropriate section
-    for (const entry of pending) {
-      skillContent = this.injectIntoSection(
-        skillContent,
-        entry.change.section,
-        entry.change.content,
-      );
+    for (const entry of pendingEntries) {
       entry.applied = true;
     }
-
-    // Atomic write
-    const tmpPath = this.createTempPath(skillMdPath);
-    fs.writeFileSync(tmpPath, skillContent, "utf-8");
-    fs.renameSync(tmpPath, skillMdPath);
 
     file.updatedAt = new Date().toISOString();
     this.saveEvolutionFile(skillName, file);
 
-    return pending.length;
+    return pendingEntries.length;
   }
 
   /**
    * Format description-layer experiences as text for prompt injection.
    */
   formatDescriptionExperiences(skillName: string): string {
-    const descriptions = this.getExistingDescriptions(skillName);
+    const descriptions = this.loadEvolutionFile(skillName)
+      .entries.filter(
+        (entry) =>
+          entry.applied && entry.change.target === "description" && entry.change.action !== "skip",
+      )
+      .map((entry) => entry.change.content);
     if (descriptions.length === 0) return "";
 
     return [
@@ -217,7 +225,7 @@ export class EvolutionStore {
     } catch {
       // skills dir may not exist yet
     }
-    return skills;
+    return skills.sort((a, b) => a.localeCompare(b));
   }
 
   // --------------------------------------------------------------------------

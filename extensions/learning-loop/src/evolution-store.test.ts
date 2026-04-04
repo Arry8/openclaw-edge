@@ -123,19 +123,40 @@ describe("EvolutionStore", () => {
     store.appendEntry(skillName, bodyEntry);
     store.appendEntry(skillName, descriptionEntry);
 
-    expect(store.solidify(skillName)).toBe(1);
+    expect(store.solidify(skillName)).toBe(2);
 
     const skillMd = readFileSync(join(skillDir, "SKILL.md"), "utf-8");
     const pending = store.getPendingEntries(skillName);
 
     expect(skillMd).toContain("Existing rule.");
     expect(skillMd).toContain("Retry after reloading credentials if the MCP session looks stale.");
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.change.content).toBe("Prefer rg over grep for text search.");
+    expect(pending).toEqual([]);
     expect(store.formatDescriptionExperiences(skillName)).toContain(
       "Prefer rg over grep for text search.",
     );
     expect(store.listEvolvedSkills()).toEqual(["search-skill"]);
+  });
+
+  it("approves pending description entries during solidify without touching SKILL.md", () => {
+    const { dir, store } = createStore();
+    const skillName = "reply-style";
+    const skillDir = join(dir, skillName);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# reply-style\n", "utf-8");
+
+    const descriptionEntry = createEvolutionEntry("user_correction", "description", {
+      section: "Instructions",
+      action: "append",
+      content: "Keep final replies terse.",
+      target: "description",
+    });
+
+    store.appendEntry(skillName, descriptionEntry);
+
+    expect(store.formatDescriptionExperiences(skillName)).toBe("");
+    expect(store.solidify(skillName)).toBe(1);
+    expect(store.formatDescriptionExperiences(skillName)).toContain("Keep final replies terse.");
+    expect(readFileSync(join(skillDir, "SKILL.md"), "utf-8")).toBe("# reply-style\n");
   });
 
   it("does not duplicate existing content when re-solidifying a pending entry after a crash window", () => {
@@ -176,5 +197,20 @@ describe("EvolutionStore", () => {
     expect(tempPathA).not.toBe(`${filePath}.tmp`);
     expect(tempPathB).not.toBe(`${filePath}.tmp`);
     expect(tempPathA).not.toBe(tempPathB);
+  });
+
+  it("returns evolved skill ids in sorted order", () => {
+    const { store } = createStore();
+    const bodyEntry = createEvolutionEntry("execution_failure", "body", {
+      section: "Instructions",
+      action: "append",
+      content: "Keep skills sorted.",
+      target: "body",
+    });
+
+    store.appendEntry("zeta-skill", bodyEntry);
+    store.appendEntry("alpha-skill", bodyEntry);
+
+    expect(store.listEvolvedSkills()).toEqual(["alpha-skill", "zeta-skill"]);
   });
 });

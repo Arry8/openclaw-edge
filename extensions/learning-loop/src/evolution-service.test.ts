@@ -119,6 +119,31 @@ describe("EvolutionService", () => {
     );
   });
 
+  it("defers description experiences until ask-mode entries are manually approved", async () => {
+    const skillsBaseDir = createTempDir();
+    const service = new EvolutionService({
+      graphiti: { addObservation: vi.fn(async () => "stored") } as unknown as GraphitiClient,
+      callLlm: vi.fn(
+        async () =>
+          '[{"section":"Instructions","action":"append","content":"Keep final replies terse.","target":"description","source_signal":"user_correction","context_summary":"Needs approval before prompt injection."}]',
+      ),
+      skillsBaseDir,
+      config: {
+        enabled: true,
+        approvalPolicy: "ask",
+        maxEntriesPerRound: 2,
+      },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    const result = await service.evolveSkill("reply-style", []);
+
+    expect(result?.applied).toBe(false);
+    expect(service.getDescriptionExperiences("reply-style")).toBe("");
+    expect(service.solidifySkill("reply-style")).toBe(1);
+    expect(service.getDescriptionExperiences("reply-style")).toContain("Keep final replies terse.");
+  });
+
   it("skips manual evolution when the feature is disabled", async () => {
     const skillsBaseDir = createTempDir();
     const callLlm = vi.fn(async () => "[]");

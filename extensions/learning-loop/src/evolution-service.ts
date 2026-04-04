@@ -182,6 +182,9 @@ export class EvolutionService {
     // Apply based on policy
     const shouldApply = this.config.approvalPolicy === "always_allow";
     for (const entry of entries) {
+      if (shouldApply && entry.change.target === "description") {
+        entry.applied = true;
+      }
       this.store.appendEntry(skillName, entry);
     }
 
