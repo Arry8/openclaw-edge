@@ -24,6 +24,7 @@ export function buildAtomicTempPath(filePath: string): string {
 // ============================================================================
 
 export class EvolutionStore {
+  private static readonly skillWriteLocks = new Map<string, Promise<void>>();
   private readonly skillsBaseDir: string;
 
   constructor(skillsBaseDir: string) {
@@ -97,23 +98,25 @@ export class EvolutionStore {
    * Append or merge an evolution entry for a skill.
    * Handles merge_target for dedup replacements.
    */
-  appendEntry(skillName: string, entry: EvolutionEntry): void {
-    const file = this.loadEvolutionFile(skillName);
+  async appendEntry(skillName: string, entry: EvolutionEntry): Promise<void> {
+    await this.withSkillWriteLock(skillName, () => {
+      const file = this.loadEvolutionFile(skillName);
 
-    // Handle merge target: replace existing entry
-    if (entry.change.mergeTarget) {
-      const idx = this.resolveMergeIndex(file.entries, entry.change.mergeTarget);
-      if (idx >= 0) {
-        file.entries[idx] = entry;
+      // Handle merge target: replace existing entry
+      if (entry.change.mergeTarget) {
+        const idx = this.resolveMergeIndex(file.entries, entry.change.mergeTarget);
+        if (idx >= 0) {
+          file.entries[idx] = entry;
+        } else {
+          file.entries.push(entry);
+        }
       } else {
         file.entries.push(entry);
       }
-    } else {
-      file.entries.push(entry);
-    }
 
-    file.updatedAt = new Date().toISOString();
-    this.saveEvolutionFile(skillName, file);
+      file.updatedAt = new Date().toISOString();
+      this.saveEvolutionFile(skillName, file);
+    });
   }
 
   /**
@@ -144,47 +147,49 @@ export class EvolutionStore {
    * Marks entries as applied after successful write.
    * Returns the number of entries solidified.
    */
-  solidify(skillName: string): number {
-    const file = this.loadEvolutionFile(skillName);
-    const pendingEntries = file.entries.filter((e) => !e.applied && e.change.action !== "skip");
-    if (pendingEntries.length === 0) {
-      return 0;
-    }
-
-    const pendingBodyEntries = pendingEntries.filter((entry) => entry.change.target === "body");
-    if (pendingBodyEntries.length > 0) {
-      const skillMdPath = this.skillMdPath(skillName);
-      let skillContent: string;
-      try {
-        skillContent = fs.readFileSync(skillMdPath, "utf-8");
-      } catch {
-        // Create minimal SKILL.md if it doesn't exist
-        skillContent = `# ${skillName}\n`;
+  async solidify(skillName: string): Promise<number> {
+    return this.withSkillWriteLock(skillName, () => {
+      const file = this.loadEvolutionFile(skillName);
+      const pendingEntries = file.entries.filter((e) => !e.applied && e.change.action !== "skip");
+      if (pendingEntries.length === 0) {
+        return 0;
       }
 
-      // Inject each pending body entry into the appropriate section.
-      for (const entry of pendingBodyEntries) {
-        skillContent = this.injectIntoSection(
-          skillContent,
-          entry.change.section,
-          entry.change.content,
-        );
+      const pendingBodyEntries = pendingEntries.filter((entry) => entry.change.target === "body");
+      if (pendingBodyEntries.length > 0) {
+        const skillMdPath = this.skillMdPath(skillName);
+        let skillContent: string;
+        try {
+          skillContent = fs.readFileSync(skillMdPath, "utf-8");
+        } catch {
+          // Create minimal SKILL.md if it doesn't exist
+          skillContent = `# ${skillName}\n`;
+        }
+
+        // Inject each pending body entry into the appropriate section.
+        for (const entry of pendingBodyEntries) {
+          skillContent = this.injectIntoSection(
+            skillContent,
+            entry.change.section,
+            entry.change.content,
+          );
+        }
+
+        // Atomic write
+        const tmpPath = this.createTempPath(skillMdPath);
+        fs.writeFileSync(tmpPath, skillContent, "utf-8");
+        fs.renameSync(tmpPath, skillMdPath);
       }
 
-      // Atomic write
-      const tmpPath = this.createTempPath(skillMdPath);
-      fs.writeFileSync(tmpPath, skillContent, "utf-8");
-      fs.renameSync(tmpPath, skillMdPath);
-    }
+      for (const entry of pendingEntries) {
+        entry.applied = true;
+      }
 
-    for (const entry of pendingEntries) {
-      entry.applied = true;
-    }
+      file.updatedAt = new Date().toISOString();
+      this.saveEvolutionFile(skillName, file);
 
-    file.updatedAt = new Date().toISOString();
-    this.saveEvolutionFile(skillName, file);
-
-    return pendingEntries.length;
+      return pendingEntries.length;
+    });
   }
 
   /**
@@ -269,6 +274,29 @@ export class EvolutionStore {
 
   private createTempPath(filePath: string): string {
     return buildAtomicTempPath(filePath);
+  }
+
+  private async withSkillWriteLock<T>(skillName: string, task: () => T | Promise<T>): Promise<T> {
+    const lockKey = this.evolutionFilePath(skillName);
+    const previousLock = EvolutionStore.skillWriteLocks.get(lockKey) ?? Promise.resolve();
+
+    let releaseLock: (() => void) | undefined;
+    const currentLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const nextLock = previousLock.catch(() => {}).then(() => currentLock);
+    EvolutionStore.skillWriteLocks.set(lockKey, nextLock);
+
+    await previousLock.catch(() => {});
+
+    try {
+      return await task();
+    } finally {
+      releaseLock?.();
+      if (EvolutionStore.skillWriteLocks.get(lockKey) === nextLock) {
+        EvolutionStore.skillWriteLocks.delete(lockKey);
+      }
+    }
   }
 
   /**

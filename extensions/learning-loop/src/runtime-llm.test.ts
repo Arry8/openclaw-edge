@@ -7,7 +7,18 @@ import {
   resolveLearningLoopSkillsBaseDir,
 } from "./runtime-llm.js";
 
-function makeApi(overrides?: Partial<OpenClawPluginApi>): OpenClawPluginApi {
+type TestApi = {
+  api: OpenClawPluginApi;
+  mocks: {
+    runEmbeddedPiAgent: ReturnType<typeof vi.fn>;
+    resolveAgentWorkspaceDir: ReturnType<typeof vi.fn>;
+    resolveAgentDir: ReturnType<typeof vi.fn>;
+    resolveThinkingDefault: ReturnType<typeof vi.fn>;
+    resolveAgentTimeoutMs: ReturnType<typeof vi.fn>;
+  };
+};
+
+function makeApi(overrides?: Partial<OpenClawPluginApi>): TestApi {
   const runEmbeddedPiAgent = vi.fn(async () => ({
     payloads: [{ text: '[{"stored":true}]' }],
     meta: { durationMs: 5 },
@@ -17,7 +28,7 @@ function makeApi(overrides?: Partial<OpenClawPluginApi>): OpenClawPluginApi {
   const resolveThinkingDefault = vi.fn(() => "low");
   const resolveAgentTimeoutMs = vi.fn(() => 15_000);
 
-  return {
+  const api = {
     config: {},
     runtime: {
       agent: {
@@ -34,6 +45,17 @@ function makeApi(overrides?: Partial<OpenClawPluginApi>): OpenClawPluginApi {
     },
     ...overrides,
   } as unknown as OpenClawPluginApi;
+
+  return {
+    api,
+    mocks: {
+      runEmbeddedPiAgent,
+      resolveAgentWorkspaceDir,
+      resolveAgentDir,
+      resolveThinkingDefault,
+      resolveAgentTimeoutMs,
+    },
+  };
 }
 
 describe("runtime-llm", () => {
@@ -63,7 +85,7 @@ describe("runtime-llm", () => {
   });
 
   it("stores evolutions under the default agent workspace skills tree", () => {
-    const api = makeApi({
+    const { api, mocks } = makeApi({
       config: {
         agents: {
           list: [{ id: "ops", default: true }],
@@ -74,11 +96,11 @@ describe("runtime-llm", () => {
     const skillsDir = resolveLearningLoopSkillsBaseDir(api);
 
     expect(skillsDir).toBe("/tmp/openclaw-learning-loop-workspace/skills");
-    expect(api.runtime.agent.resolveAgentWorkspaceDir).toHaveBeenCalledWith(api.config, "ops");
+    expect(mocks.resolveAgentWorkspaceDir).toHaveBeenCalledWith(api.config, "ops");
   });
 
   it("supports active-agent workspace overrides for scoped learning services", () => {
-    const api = makeApi();
+    const { api, mocks } = makeApi();
 
     const skillsDir = resolveLearningLoopSkillsBaseDir(api, {
       agentId: "ops",
@@ -86,11 +108,11 @@ describe("runtime-llm", () => {
     });
 
     expect(skillsDir).toBe("/tmp/openclaw-ops-workspace/skills");
-    expect(api.runtime.agent.resolveAgentWorkspaceDir).not.toHaveBeenCalled();
+    expect(mocks.resolveAgentWorkspaceDir).not.toHaveBeenCalled();
   });
 
   it("runs embedded llm calls with the default agent model and json-only contract", async () => {
-    const api = makeApi({
+    const { api, mocks } = makeApi({
       config: {
         agents: {
           defaults: {
@@ -111,8 +133,8 @@ describe("runtime-llm", () => {
     const result = await callLlm("system prompt", "user prompt");
 
     expect(result).toBe('[{"stored":true}]');
-    expect(api.runtime.agent.runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
-    expect(api.runtime.agent.runEmbeddedPiAgent).toHaveBeenCalledWith(
+    expect(mocks.runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.runEmbeddedPiAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "ops",
         sessionId: expect.stringMatching(/^__openclaw_learning_loop_internal__-/),
@@ -132,12 +154,12 @@ describe("runtime-llm", () => {
   });
 
   it("falls back to runtime defaults when no model is configured", async () => {
-    const api = makeApi();
+    const { api, mocks } = makeApi();
     const callLlm = createLearningLoopLlmCaller(api);
 
     await callLlm("system prompt", "user prompt");
 
-    expect(api.runtime.agent.runEmbeddedPiAgent).toHaveBeenCalledWith(
+    expect(mocks.runEmbeddedPiAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "main",
         provider: "anthropic",
@@ -147,7 +169,7 @@ describe("runtime-llm", () => {
   });
 
   it("runs embedded llm calls with scoped agent runtime overrides", async () => {
-    const api = makeApi({
+    const { api, mocks } = makeApi({
       config: {
         agents: {
           list: [
@@ -172,7 +194,7 @@ describe("runtime-llm", () => {
 
     await callLlm("system prompt", "user prompt");
 
-    expect(api.runtime.agent.runEmbeddedPiAgent).toHaveBeenCalledWith(
+    expect(mocks.runEmbeddedPiAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "ops",
         workspaceDir: "/tmp/openclaw-ops-workspace",
@@ -184,7 +206,7 @@ describe("runtime-llm", () => {
   });
 
   it("uses unique internal session ids even when calls share the same timestamp", async () => {
-    const api = makeApi();
+    const { api, mocks } = makeApi();
     const callLlm = createLearningLoopLlmCaller(api);
     vi.spyOn(Date, "now").mockReturnValue(1_717_171_717_171);
 
@@ -193,8 +215,8 @@ describe("runtime-llm", () => {
       callLlm("system prompt", "user prompt two"),
     ]);
 
-    const sessionIds = api.runtime.agent.runEmbeddedPiAgent.mock.calls.map(
-      ([params]) => params.sessionId,
+    const sessionIds = mocks.runEmbeddedPiAgent.mock.calls.map(
+      (call) => (call[0] as { sessionId: string }).sessionId,
     );
 
     expect(sessionIds).toHaveLength(2);

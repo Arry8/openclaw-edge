@@ -35,7 +35,7 @@ describe("EvolutionStore", () => {
     expect(() => store.loadEvolutionFile("broken-skill")).toThrow();
   });
 
-  it("rejects skill names that escape the skills directory", () => {
+  it("rejects skill names that escape the skills directory", async () => {
     const { store } = createStore();
     const entry = createEvolutionEntry("execution_failure", "escape", {
       section: "Instructions",
@@ -44,11 +44,11 @@ describe("EvolutionStore", () => {
       target: "body",
     });
 
-    expect(() => store.appendEntry("../outside", entry)).toThrow("Invalid skill name");
+    await expect(store.appendEntry("../outside", entry)).rejects.toThrow("Invalid skill name");
     expect(() => store.getPendingEntries("/tmp/outside")).toThrow("Invalid skill name");
   });
 
-  it("allows the internal _general fallback skill id", () => {
+  it("allows the internal _general fallback skill id", async () => {
     const { store } = createStore();
     const entry = createEvolutionEntry("execution_failure", "general", {
       section: "Troubleshooting",
@@ -57,12 +57,12 @@ describe("EvolutionStore", () => {
       target: "body",
     });
 
-    store.appendEntry("_general", entry);
+    await store.appendEntry("_general", entry);
 
     expect(store.getPendingEntries("_general")).toHaveLength(1);
   });
 
-  it("replaces entries by merge target index when the evolver requests dedup replacement", () => {
+  it("replaces entries by merge target index when the evolver requests dedup replacement", async () => {
     const { store } = createStore();
 
     const original = createEvolutionEntry("execution_failure", "first", {
@@ -85,9 +85,9 @@ describe("EvolutionStore", () => {
       mergeTarget: "0",
     });
 
-    store.appendEntry("search-skill", original);
-    store.appendEntry("search-skill", description);
-    store.appendEntry("search-skill", replacement);
+    await store.appendEntry("search-skill", original);
+    await store.appendEntry("search-skill", description);
+    await store.appendEntry("search-skill", replacement);
 
     const file = store.loadEvolutionFile("search-skill");
 
@@ -96,7 +96,7 @@ describe("EvolutionStore", () => {
     expect(file.entries[1]).toEqual(description);
   });
 
-  it("solidifies body entries into SKILL.md and keeps description entries for prompt injection", () => {
+  it("solidifies body entries into SKILL.md and keeps description entries for prompt injection", async () => {
     const { dir, store } = createStore();
     const skillName = "search-skill";
     const skillDir = join(dir, skillName);
@@ -120,10 +120,10 @@ describe("EvolutionStore", () => {
       target: "description",
     });
 
-    store.appendEntry(skillName, bodyEntry);
-    store.appendEntry(skillName, descriptionEntry);
+    await store.appendEntry(skillName, bodyEntry);
+    await store.appendEntry(skillName, descriptionEntry);
 
-    expect(store.solidify(skillName)).toBe(2);
+    await expect(store.solidify(skillName)).resolves.toBe(2);
 
     const skillMd = readFileSync(join(skillDir, "SKILL.md"), "utf-8");
     const pending = store.getPendingEntries(skillName);
@@ -137,7 +137,7 @@ describe("EvolutionStore", () => {
     expect(store.listEvolvedSkills()).toEqual(["search-skill"]);
   });
 
-  it("approves pending description entries during solidify without touching SKILL.md", () => {
+  it("approves pending description entries during solidify without touching SKILL.md", async () => {
     const { dir, store } = createStore();
     const skillName = "reply-style";
     const skillDir = join(dir, skillName);
@@ -151,15 +151,15 @@ describe("EvolutionStore", () => {
       target: "description",
     });
 
-    store.appendEntry(skillName, descriptionEntry);
+    await store.appendEntry(skillName, descriptionEntry);
 
     expect(store.formatDescriptionExperiences(skillName)).toBe("");
-    expect(store.solidify(skillName)).toBe(1);
+    await expect(store.solidify(skillName)).resolves.toBe(1);
     expect(store.formatDescriptionExperiences(skillName)).toContain("Keep final replies terse.");
     expect(readFileSync(join(skillDir, "SKILL.md"), "utf-8")).toBe("# reply-style\n");
   });
 
-  it("does not duplicate existing content when re-solidifying a pending entry after a crash window", () => {
+  it("does not duplicate existing content when re-solidifying a pending entry after a crash window", async () => {
     const { dir, store } = createStore();
     const skillName = "search-skill";
     const skillDir = join(dir, skillName);
@@ -178,13 +178,40 @@ describe("EvolutionStore", () => {
       target: "body",
     });
 
-    store.appendEntry(skillName, bodyEntry);
+    await store.appendEntry(skillName, bodyEntry);
 
-    expect(store.solidify(skillName)).toBe(1);
+    await expect(store.solidify(skillName)).resolves.toBe(1);
 
     const skillMd = readFileSync(join(skillDir, "SKILL.md"), "utf-8");
     expect(skillMd.match(/Use rg before grep for repository searches\./g)).toHaveLength(1);
     expect(store.getPendingEntries(skillName)).toEqual([]);
+  });
+
+  it("serializes appendEntry updates across store instances for the same skill", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "learning-loop-store-shared-"));
+    tempDirs.push(dir);
+
+    const firstStore = new EvolutionStore(dir);
+    const secondStore = new EvolutionStore(dir);
+    const firstEntry = createEvolutionEntry("execution_failure", "first", {
+      section: "Instructions",
+      action: "append",
+      content: "Keep the first concurrent update.",
+      target: "body",
+    });
+    const secondEntry = createEvolutionEntry("user_correction", "second", {
+      section: "Troubleshooting",
+      action: "append",
+      content: "Keep the second concurrent update.",
+      target: "body",
+    });
+
+    await Promise.all([
+      firstStore.appendEntry("shared-skill", firstEntry),
+      secondStore.appendEntry("shared-skill", secondEntry),
+    ]);
+
+    expect(firstStore.loadEvolutionFile("shared-skill").entries).toEqual([firstEntry, secondEntry]);
   });
 
   it("builds unique temp file names for atomic writes", () => {
@@ -199,7 +226,7 @@ describe("EvolutionStore", () => {
     expect(tempPathA).not.toBe(tempPathB);
   });
 
-  it("returns evolved skill ids in sorted order", () => {
+  it("returns evolved skill ids in sorted order", async () => {
     const { store } = createStore();
     const bodyEntry = createEvolutionEntry("execution_failure", "body", {
       section: "Instructions",
@@ -208,8 +235,8 @@ describe("EvolutionStore", () => {
       target: "body",
     });
 
-    store.appendEntry("zeta-skill", bodyEntry);
-    store.appendEntry("alpha-skill", bodyEntry);
+    await store.appendEntry("zeta-skill", bodyEntry);
+    await store.appendEntry("alpha-skill", bodyEntry);
 
     expect(store.listEvolvedSkills()).toEqual(["alpha-skill", "zeta-skill"]);
   });

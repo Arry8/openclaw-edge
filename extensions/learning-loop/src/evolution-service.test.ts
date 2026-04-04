@@ -82,7 +82,7 @@ describe("EvolutionService", () => {
     expect(result?.entries).toHaveLength(1);
     expect(result?.applied).toBe(true);
     expect(service.getPendingEntries("ops-skill")).toHaveLength(1);
-    expect(service.solidifySkill("ops-skill")).toBe(1);
+    await expect(service.solidifySkill("ops-skill")).resolves.toBe(1);
 
     const skillMd = readFileSync(join(skillsBaseDir, "ops-skill", "SKILL.md"), "utf-8");
     expect(skillMd).toContain("## Troubleshooting");
@@ -113,7 +113,7 @@ describe("EvolutionService", () => {
     expect(result).not.toBeNull();
     expect(result?.applied).toBe(false);
     expect(service.getPendingEntries("review-skill")).toHaveLength(1);
-    expect(service.solidifySkill("review-skill")).toBe(1);
+    await expect(service.solidifySkill("review-skill")).resolves.toBe(1);
     expect(readFileSync(join(skillsBaseDir, "review-skill", "SKILL.md"), "utf-8")).toContain(
       "Queue this for review before updating the skill.",
     );
@@ -140,7 +140,7 @@ describe("EvolutionService", () => {
 
     expect(result?.applied).toBe(false);
     expect(service.getDescriptionExperiences("reply-style")).toBe("");
-    expect(service.solidifySkill("reply-style")).toBe(1);
+    await expect(service.solidifySkill("reply-style")).resolves.toBe(1);
     expect(service.getDescriptionExperiences("reply-style")).toContain("Keep final replies terse.");
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { createTestPluginApi } from "../../test/helpers/plugins/plugin-api.js";
+import type { NudgeAction } from "./src/nudge-manager.js";
 
 const pluginMocks = vi.hoisted(() => {
   const callOrder: string[] = [];
@@ -30,7 +31,7 @@ const pluginMocks = vi.hoisted(() => {
     clearSignals: vi.fn(),
   };
   const nudgeManager = {
-    checkNudge: vi.fn(() => {
+    checkNudge: vi.fn<(messages: unknown[]) => NudgeAction | null>(() => {
       callOrder.push("checkNudge");
       return null;
     }),
@@ -158,7 +159,7 @@ describe("learning-loop plugin", () => {
       pluginMocks.callOrder.push("runAutoEvolution");
       return [];
     });
-    pluginMocks.nudgeManager.checkNudge.mockImplementation(() => {
+    pluginMocks.nudgeManager.checkNudge.mockImplementation((): NudgeAction | null => {
       pluginMocks.callOrder.push("checkNudge");
       return null;
     });
@@ -292,7 +293,7 @@ describe("learning-loop plugin", () => {
       resolveDrain = resolve;
     });
 
-    pluginMocks.nudgeManager.checkNudge.mockImplementation(() => {
+    pluginMocks.nudgeManager.checkNudge.mockImplementation((): NudgeAction => {
       pluginMocks.callOrder.push("checkNudge");
       return "memory_review";
     });

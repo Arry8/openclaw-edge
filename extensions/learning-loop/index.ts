@@ -323,7 +323,7 @@ export default definePluginEntry({
           async execute(_toolCallId, params) {
             const { skillName } = params as { skillName: string };
             const { evolutionService } = getScopedServices(toolCtx);
-            const count = evolutionService.solidifySkill(skillName);
+            const count = await evolutionService.solidifySkill(skillName);
 
             return {
               content: [
@@ -586,7 +586,7 @@ export default definePluginEntry({
           .action(async (skill: string) => {
             await runCliCommand(async () => {
               const { evolutionService } = getScopedServices();
-              const count = evolutionService.solidifySkill(skill);
+              const count = await evolutionService.solidifySkill(skill);
               console.log(
                 count > 0
                   ? `Solidified ${count} entry(ies) into ${skill}/SKILL.md.`

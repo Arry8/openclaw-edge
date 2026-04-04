@@ -127,8 +127,8 @@ export class EvolutionService {
   /**
    * Write pending body entries into a skill's SKILL.md.
    */
-  solidifySkill(skillName: string): number {
-    const count = this.store.solidify(skillName);
+  async solidifySkill(skillName: string): Promise<number> {
+    const count = await this.store.solidify(skillName);
     if (count > 0) {
       this.logger.info(`learning-loop: solidified ${count} entries into ${skillName}/SKILL.md`);
     }
@@ -185,7 +185,7 @@ export class EvolutionService {
       if (shouldApply && entry.change.target === "description") {
         entry.applied = true;
       }
-      this.store.appendEntry(skillName, entry);
+      await this.store.appendEntry(skillName, entry);
     }
 
     if (shouldApply) {
