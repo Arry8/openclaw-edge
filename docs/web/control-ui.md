@@ -141,8 +141,9 @@ By default, Control UI/WebSocket Serve requests can authenticate via Tailscale i
 verifies the identity by resolving the `x-forwarded-for` address with
 `tailscale whois` and matching it to the header, and only accepts these when the
 request hits loopback with Tailscale’s `x-forwarded-*` headers. Set
-`gateway.auth.allowTailscale: false` (or force `gateway.auth.mode: "password"`)
-if you want to require a token/password even for Serve traffic.
+`gateway.auth.allowTailscale: false` if you want to require explicit shared-secret
+credentials even for Serve traffic. Then use `gateway.auth.mode: "token"` or
+`"password"`.
 Tokenless Serve auth assumes the gateway host is trusted. If untrusted local
 code may run on that host, require token/password auth.
 
@@ -163,6 +164,12 @@ Paste the token into the UI settings (sent as `connect.params.auth.token`).
 If you open the dashboard over plain HTTP (`http://<lan-ip>` or `http://<tailscale-ip>`),
 the browser runs in a **non-secure context** and blocks WebCrypto. By default,
 OpenClaw **blocks** Control UI connections without device identity.
+
+Documented exceptions:
+
+- localhost-only insecure HTTP compatibility with `gateway.controlUi.allowInsecureAuth=true`
+- successful operator Control UI auth through `gateway.auth.mode: "trusted-proxy"`
+- break-glass `gateway.controlUi.dangerouslyDisableDeviceAuth=true`
 
 **Recommended fix:** use HTTPS (Tailscale Serve) or open the UI locally:
 
@@ -202,6 +209,14 @@ OpenClaw **blocks** Control UI connections without device identity.
 
 `dangerouslyDisableDeviceAuth` disables Control UI device identity checks and is a
 severe security downgrade. Revert quickly after emergency use.
+
+Trusted-proxy note:
+
+- successful trusted-proxy auth can admit **operator** Control UI sessions without
+  device identity
+- this does **not** extend to node-role Control UI sessions
+- same-host loopback reverse proxies still do not satisfy trusted-proxy auth; see
+  [Trusted Proxy Auth](/gateway/trusted-proxy-auth)
 
 See [Tailscale](/gateway/tailscale) for HTTPS setup guidance.
 

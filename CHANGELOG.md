@@ -102,6 +102,7 @@ Docs: https://docs.openclaw.ai
 - Synology Chat/security: default low-level HTTPS helper TLS verification to on so helper/API defaults match the shipped safe account default, and only explicit `allowInsecureSsl: true` opts out.
 - Android/canvas security: require exact normalized A2UI URL matches before forwarding canvas bridge actions, rejecting query mismatches and descendant paths while still allowing fragment-only A2UI navigation.
 - Cron: send failure notifications through the job's primary delivery channel using the same session context as successful delivery when no explicit `failureDestination` is configured. (#60622) Thanks @artwalker.
+- Gateway/auth: serialize async shared-secret auth attempts per client so concurrent Tailscale-capable failures cannot overrun the intended auth rate-limit budget. Thanks @Telecaster2147.
 
 ## 2026.4.2
 
@@ -611,6 +612,7 @@ Docs: https://docs.openclaw.ai
 - Telegram/forum topics: keep native `/new` and `/reset` routed to the active topic by preserving the topic target on forum-thread command context. (#35963)
 - Status/port diagnostics: treat single-process dual-stack loopback gateway listeners as healthy in `openclaw status --all`, suppressing false "port already in use" conflict warnings. (#53398) Thanks @DanWebb1949.
 - CLI/Docker: treat loopback private-host CLI gateway connects as local for silent pairing auto-approval, while keeping remote backend and public-host CLI connects behind pairing. (#55113) Thanks @sar618.
+- Slack/socket mode: mark the underlying socket client as shutting down before provider stop paths call Bolt teardown so stale-socket restarts stop leaking orphaned ping reconnect loops. (#56646) Thanks @hsiaoa.
 
 ## 2026.3.24
 
