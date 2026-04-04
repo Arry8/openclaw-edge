@@ -15,28 +15,14 @@ import { definePluginEntry, type OpenClawPluginApi } from "./api.js";
 import { learningLoopConfigSchema, type LearningLoopConfig } from "./src/config.js";
 import { EvolutionService } from "./src/evolution-service.js";
 import { GraphitiClient } from "./src/graphiti-client.js";
+import { looksLikeInjection } from "./src/injection-guard.js";
+import { extractMessageText } from "./src/message-content.js";
 import { NudgeManager } from "./src/nudge-manager.js";
 import {
   createLearningLoopLlmCaller,
   isLearningLoopInternalSessionId,
   resolveLearningLoopSkillsBaseDir,
 } from "./src/runtime-llm.js";
-
-// ============================================================================
-// Prompt injection guard (same pattern as memory-lancedb)
-// ============================================================================
-
-const PROMPT_INJECTION_PATTERNS = [
-  /ignore (all|any|previous|above|prior) instructions/i,
-  /do not follow (the )?(system|developer)/i,
-  /system prompt/i,
-  /<\s*(system|assistant|developer|tool|function)\b/i,
-];
-
-function looksLikeInjection(text: string): boolean {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  return PROMPT_INJECTION_PATTERNS.some((p) => p.test(normalized));
-}
 
 // ============================================================================
 // Plugin Definition
@@ -432,8 +418,9 @@ export default definePluginEntry({
                 const msg = raw as Record<string, unknown>;
                 if (msg.role !== "user") continue;
 
-                if (typeof msg.content === "string" && msg.content.length > 10) {
-                  userTexts.push(msg.content);
+                const content = extractMessageText(msg.content);
+                if (content.length > 10) {
+                  userTexts.push(content);
                 }
               }
 

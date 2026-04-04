@@ -9,6 +9,7 @@ import type { EvolutionConfig } from "./config.js";
 import type { EvolutionEntry } from "./evolution-schema.js";
 import { EvolutionStore } from "./evolution-store.js";
 import type { GraphitiClient } from "./graphiti-client.js";
+import { extractMessageText } from "./message-content.js";
 import { SignalDetector, type EvolutionSignal } from "./signal-detector.js";
 import { SkillEvolver, type ExperienceContext } from "./skill-evolver.js";
 
@@ -101,6 +102,8 @@ export class EvolutionService {
    * Manually trigger evolution for a specific skill using the conversation.
    */
   async evolveSkill(skillName: string, messages: unknown[]): Promise<EvolutionResult | null> {
+    if (!this.config.enabled) return null;
+
     const signals = this.detector.detect(messages);
     // For manual evolution, use all signals even if no skill attribution
     const relevantSignals =
@@ -178,11 +181,11 @@ export class EvolutionService {
 
     // Apply based on policy
     const shouldApply = this.config.approvalPolicy === "always_allow";
+    for (const entry of entries) {
+      this.store.appendEntry(skillName, entry);
+    }
 
     if (shouldApply) {
-      for (const entry of entries) {
-        this.store.appendEntry(skillName, entry);
-      }
       this.logger.info(`learning-loop: applied ${entries.length} evolution(s) to ${skillName}`);
     }
 
@@ -221,16 +224,7 @@ export class EvolutionService {
       if (!raw || typeof raw !== "object") continue;
       const msg = raw as Record<string, unknown>;
       const role = String(msg.role ?? "unknown");
-      let content = "";
-
-      if (typeof msg.content === "string") {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        content = (msg.content as Array<Record<string, unknown>>)
-          .filter((b) => b.type === "text" && typeof b.text === "string")
-          .map((b) => b.text as string)
-          .join("\n");
-      }
+      const content = extractMessageText(msg.content);
 
       if (!content) continue;
 

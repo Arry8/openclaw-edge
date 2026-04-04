@@ -30,6 +30,8 @@ type Message = {
 // Detection patterns
 // ============================================================================
 
+import { extractMessageText } from "./message-content.js";
+
 const FAILURE_PATTERNS = [
   /\berror\b/i,
   /\bexception\b/i,
@@ -70,7 +72,8 @@ const FAILURE_PATTERNS = [
 
 const CORRECTION_PATTERNS = [
   // English
-  /\bthat'?s?\s+(?:not\s+)?(?:wrong|incorrect|right)\b/i,
+  /\bthat'?s?\s+(?:wrong|incorrect)\b/i,
+  /\bthat'?s?\s+not\s+(?:right|correct)\b/i,
   /\bno,?\s+(?:that|it|this)\b/i,
   /\byou\s+(?:should|need\s+to|have\s+to|must)\b/i,
   /\bshould\s+(?:be|have|use)\b/i,
@@ -198,14 +201,5 @@ export class SignalDetector {
 // ============================================================================
 
 function extractText(msg: Message): string {
-  if (typeof msg.content === "string") {
-    return msg.content;
-  }
-  if (Array.isArray(msg.content)) {
-    return msg.content
-      .filter((block) => block.type === "text" && typeof block.text === "string")
-      .map((block) => block.text!)
-      .join("\n");
-  }
-  return "";
+  return extractMessageText(msg.content);
 }

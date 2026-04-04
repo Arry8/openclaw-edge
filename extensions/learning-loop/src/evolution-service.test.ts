@@ -90,4 +90,52 @@ describe("EvolutionService", () => {
       "Retry once after refreshing credentials if the gateway rejects the request.",
     );
   });
+
+  it("persists pending evolutions when approval policy is ask", async () => {
+    const skillsBaseDir = createTempDir();
+    const service = new EvolutionService({
+      graphiti: { addObservation: vi.fn(async () => "stored") } as unknown as GraphitiClient,
+      callLlm: vi.fn(
+        async () =>
+          '[{"section":"Instructions","action":"append","content":"Queue this for review before updating the skill.","target":"body","source_signal":"user_correction","context_summary":"Manual review is required."}]',
+      ),
+      skillsBaseDir,
+      config: {
+        enabled: true,
+        approvalPolicy: "ask",
+        maxEntriesPerRound: 2,
+      },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    const result = await service.evolveSkill("review-skill", []);
+
+    expect(result).not.toBeNull();
+    expect(result?.applied).toBe(false);
+    expect(service.getPendingEntries("review-skill")).toHaveLength(1);
+    expect(service.solidifySkill("review-skill")).toBe(1);
+    expect(readFileSync(join(skillsBaseDir, "review-skill", "SKILL.md"), "utf-8")).toContain(
+      "Queue this for review before updating the skill.",
+    );
+  });
+
+  it("skips manual evolution when the feature is disabled", async () => {
+    const skillsBaseDir = createTempDir();
+    const callLlm = vi.fn(async () => "[]");
+    const service = new EvolutionService({
+      graphiti: { addObservation: vi.fn(async () => "stored") } as unknown as GraphitiClient,
+      callLlm,
+      skillsBaseDir,
+      config: {
+        enabled: false,
+        approvalPolicy: "always_allow",
+        maxEntriesPerRound: 2,
+      },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    await expect(service.evolveSkill("disabled-skill", [])).resolves.toBeNull();
+    expect(callLlm).not.toHaveBeenCalled();
+    expect(service.listEvolvedSkills()).toEqual([]);
+  });
 });

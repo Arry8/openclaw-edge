@@ -122,4 +122,21 @@ describe("SignalDetector", () => {
       section: "Instructions",
     });
   });
+
+  it("does not treat positive confirmations as corrections", () => {
+    const detector = new SignalDetector();
+
+    const signals = detector.detect([
+      {
+        role: "user",
+        content: "That's right, keep doing that.",
+      },
+      {
+        role: "user",
+        content: "That is correct.",
+      },
+    ]);
+
+    expect(signals).toEqual([]);
+  });
 });

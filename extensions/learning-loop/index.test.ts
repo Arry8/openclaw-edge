@@ -192,6 +192,39 @@ describe("learning-loop plugin", () => {
     );
   });
 
+  it("auto-captures text blocks from user messages", async () => {
+    const { api, on } = createApi();
+
+    learningLoopPlugin.register(api);
+
+    const agentEndHandler = on.mock.calls.find(([name]) => name === "agent_end")?.[1];
+    if (typeof agentEndHandler !== "function") {
+      throw new Error("expected learning-loop plugin to register agent_end");
+    }
+
+    await agentEndHandler(
+      {
+        success: true,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Store this block-based memory marker for auto-capture." },
+            ],
+          },
+        ],
+      },
+      { sessionId: "session-blocks" },
+    );
+
+    expect(pluginMocks.graphiti.addEpisode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: expect.stringMatching(/^session-session-blocks-/),
+        content: "Store this block-based memory marker for auto-capture.",
+      }),
+    );
+  });
+
   it("scopes evolution storage to the active session workspace", async () => {
     const { api, on } = createApi();
 

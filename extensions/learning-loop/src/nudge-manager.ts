@@ -10,6 +10,8 @@
 import type { NudgeConfig } from "./config.js";
 import type { EvolutionService } from "./evolution-service.js";
 import type { GraphitiClient } from "./graphiti-client.js";
+import { looksLikeInjection } from "./injection-guard.js";
+import { extractMessageText } from "./message-content.js";
 
 // ============================================================================
 // Types
@@ -176,7 +178,7 @@ export class NudgeManager {
       const observation = String(item.observation ?? "");
       const importance = Number(item.importance ?? 0.5);
 
-      if (!observation || importance < 0.3) continue;
+      if (!observation || importance < 0.3 || looksLikeInjection(observation)) continue;
 
       try {
         await this.graphiti.addObservation(category, observation);
@@ -226,16 +228,7 @@ export class NudgeManager {
       if (!raw || typeof raw !== "object") continue;
       const msg = raw as Record<string, unknown>;
       const role = String(msg.role ?? "unknown");
-      let content = "";
-
-      if (typeof msg.content === "string") {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        content = (msg.content as Array<Record<string, unknown>>)
-          .filter((b) => b.type === "text" && typeof b.text === "string")
-          .map((b) => b.text as string)
-          .join("\n");
-      }
+      const content = extractMessageText(msg.content);
 
       if (!content) continue;
       const preview = content.length > 300 ? content.slice(0, 300) + "..." : content;

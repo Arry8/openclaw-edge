@@ -242,6 +242,7 @@ export class EvolutionStore {
    * Creates the section header if it doesn't exist.
    */
   private injectIntoSection(markdown: string, sectionName: string, content: string): string {
+    const trimmedContent = content.trim();
     const headerRegex = new RegExp(`^(##\\s+${sectionName})\\s*$`, "mi");
     const match = headerRegex.exec(markdown);
 
@@ -255,23 +256,33 @@ export class EvolutionStore {
 
       if (nextSectionMatch) {
         const beforeNext = restOfFile.slice(0, nextSectionMatch.index);
+        if (this.sectionAlreadyContains(beforeNext, trimmedContent)) {
+          return markdown;
+        }
         const afterNext = restOfFile.slice(nextSectionMatch.index);
         return (
           markdown.slice(0, insertPos) +
           beforeNext.trimEnd() +
           "\n\n" +
-          content.trim() +
+          trimmedContent +
           "\n\n" +
           afterNext
         );
       }
 
       // No next section: append at end
-      return markdown.trimEnd() + "\n\n" + content.trim() + "\n";
+      if (this.sectionAlreadyContains(restOfFile, trimmedContent)) {
+        return markdown;
+      }
+      return markdown.trimEnd() + "\n\n" + trimmedContent + "\n";
     }
 
     // Section doesn't exist: create it at the end
-    return markdown.trimEnd() + "\n\n## " + sectionName + "\n\n" + content.trim() + "\n";
+    return markdown.trimEnd() + "\n\n## " + sectionName + "\n\n" + trimmedContent + "\n";
+  }
+
+  private sectionAlreadyContains(sectionBody: string, content: string): boolean {
+    return sectionBody.replace(/\r\n/g, "\n").includes(content.replace(/\r\n/g, "\n"));
   }
 
   private resolveMergeIndex(entries: EvolutionEntry[], mergeTarget: string): number {

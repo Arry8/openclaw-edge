@@ -126,6 +126,34 @@ describe("EvolutionStore", () => {
     expect(store.listEvolvedSkills()).toEqual(["search-skill"]);
   });
 
+  it("does not duplicate existing content when re-solidifying a pending entry after a crash window", () => {
+    const { dir, store } = createStore();
+    const skillName = "search-skill";
+    const skillDir = join(dir, skillName);
+    const repeatedRule = "Use rg before grep for repository searches.";
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      `# search-skill\n\n## Instructions\n\n${repeatedRule}\n`,
+      "utf-8",
+    );
+
+    const bodyEntry = createEvolutionEntry("execution_failure", "body", {
+      section: "Instructions",
+      action: "append",
+      content: repeatedRule,
+      target: "body",
+    });
+
+    store.appendEntry(skillName, bodyEntry);
+
+    expect(store.solidify(skillName)).toBe(1);
+
+    const skillMd = readFileSync(join(skillDir, "SKILL.md"), "utf-8");
+    expect(skillMd.match(/Use rg before grep for repository searches\./g)).toHaveLength(1);
+    expect(store.getPendingEntries(skillName)).toEqual([]);
+  });
+
   it("builds unique temp file names for atomic writes", () => {
     const filePath = "/tmp/openclaw/evolutions.json";
     const tempPathA = buildAtomicTempPath(filePath);

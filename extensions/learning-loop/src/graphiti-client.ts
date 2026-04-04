@@ -276,9 +276,10 @@ export class GraphitiClient {
    * Delete a specific fact edge from the knowledge graph.
    */
   async deleteFact(uuid: string): Promise<void> {
-    await this.callTool("delete_entity_edge", {
+    const result = await this.callTool("delete_entity_edge", {
       uuid,
     });
+    this.extractText(result);
   }
 
   /**

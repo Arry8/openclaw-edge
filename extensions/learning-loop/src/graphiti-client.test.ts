@@ -198,6 +198,22 @@ describe("GraphitiClient", () => {
     );
   });
 
+  it("surfaces delete errors instead of reporting success", async () => {
+    clientMocks.callToolImpl.mockResolvedValueOnce({
+      content: [{ type: "text", text: "delete failed" }],
+      structuredContent: {
+        result: {
+          error: "invalid uuid",
+        },
+      },
+      isError: true,
+    });
+
+    const graphiti = new GraphitiClient("http://localhost:8000/mcp/", "openclaw-test");
+
+    await expect(graphiti.deleteFact("fact-123")).rejects.toThrow("Graphiti error: invalid uuid");
+  });
+
   it("retries search with a sanitized query after a RediSearch syntax error", async () => {
     clientMocks.callToolImpl
       .mockResolvedValueOnce({
