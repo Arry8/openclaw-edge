@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LiveSessionModelSwitchError } from "../../agents/live-model-switch.js";
+import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
+import type { SessionEntry } from "../../config/sessions.js";
 import type { TemplateContext } from "../templating.js";
 import type { GetReplyOptions } from "../types.js";
 import { MAX_LIVE_SWITCH_RETRIES } from "./agent-runner-execution.js";
@@ -116,6 +117,10 @@ type FallbackRunnerParams = {
 
 type EmbeddedAgentParams = {
   onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
+  onAgentEvent?: (payload: {
+    stream: string;
+    data: { phase?: string; completed?: boolean };
+  }) => Promise<void> | void;
 };
 
 function createMockTypingSignaler(): TypingSignaler {
@@ -227,6 +232,145 @@ describe("runAgentTurnWithFallback", () => {
       mediaUrls: ["/tmp/generated.png"],
     });
     expect(onToolResult.mock.calls[0]?.[0]?.text).toBeUndefined();
+  });
+
+  it("keeps compaction start notices silent by default", async () => {
+    const onBlockReply = vi.fn();
+    state.runEmbeddedPiAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      await params.onAgentEvent?.({ stream: "compaction", data: { phase: "start" } });
+      return { payloads: [{ text: "final" }], meta: {} };
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "whatsapp",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: { onBlockReply },
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(result.kind).toBe("success");
+    expect(onBlockReply).not.toHaveBeenCalled();
+  });
+
+  it("keeps compaction callbacks active when notices are silent by default", async () => {
+    const onBlockReply = vi.fn();
+    const onCompactionStart = vi.fn();
+    const onCompactionEnd = vi.fn();
+    state.runEmbeddedPiAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      await params.onAgentEvent?.({ stream: "compaction", data: { phase: "start" } });
+      await params.onAgentEvent?.({
+        stream: "compaction",
+        data: { phase: "end", completed: true },
+      });
+      return { payloads: [{ text: "final" }], meta: {} };
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "whatsapp",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {
+        onBlockReply,
+        onCompactionStart,
+        onCompactionEnd,
+      },
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(result.kind).toBe("success");
+    expect(onCompactionStart).toHaveBeenCalledTimes(1);
+    expect(onCompactionEnd).toHaveBeenCalledTimes(1);
+    expect(onBlockReply).not.toHaveBeenCalled();
+  });
+
+  it("emits a compaction start notice when notifyUser is enabled", async () => {
+    const onBlockReply = vi.fn();
+    state.runEmbeddedPiAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      await params.onAgentEvent?.({ stream: "compaction", data: { phase: "start" } });
+      return { payloads: [{ text: "final" }], meta: {} };
+    });
+
+    const followupRun = createFollowupRun();
+    followupRun.run.config = {
+      agents: {
+        defaults: {
+          compaction: {
+            notifyUser: true,
+          },
+        },
+      },
+    };
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun,
+      sessionCtx: {
+        Provider: "whatsapp",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: { onBlockReply },
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(result.kind).toBe("success");
+    expect(onBlockReply).toHaveBeenCalledTimes(1);
+    expect(onBlockReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "🧹 Compacting context...",
+        replyToId: "msg",
+        replyToCurrent: true,
+        isCompactionNotice: true,
+      }),
+    );
   });
 
   it("does not show a rate-limit countdown for mixed-cause fallback exhaustion", async () => {
@@ -602,5 +746,64 @@ describe("runAgentTurnWithFallback", () => {
     expect(followupRun.run.model).toBe("gpt-5.4");
     expect(followupRun.run.authProfileId).toBe("profile-c");
     expect(followupRun.run.authProfileIdSource).toBe("auto");
+  });
+
+  it("does not roll back newer override changes after a failed fallback candidate", async () => {
+    state.runWithModelFallbackMock.mockImplementation(
+      async (params: { run: (provider: string, model: string) => Promise<unknown> }) => {
+        await expect(params.run("openai", "gpt-5.4")).rejects.toThrow("fallback failed");
+        throw new Error("fallback failed");
+      },
+    );
+    const sessionEntry: SessionEntry = {
+      sessionId: "session",
+      updatedAt: Date.now(),
+      providerOverride: "anthropic",
+      modelOverride: "claude",
+      authProfileOverride: "anthropic:default",
+      authProfileOverrideSource: "user",
+    };
+    const sessionStore = { main: sessionEntry };
+    state.runEmbeddedPiAgentMock.mockImplementationOnce(async () => {
+      sessionEntry.providerOverride = "zai";
+      sessionEntry.modelOverride = "glm-5";
+      sessionEntry.authProfileOverride = "zai:work";
+      sessionEntry.authProfileOverrideSource = "user";
+      throw new Error("fallback failed");
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "whatsapp",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {},
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => sessionEntry,
+      activeSessionStore: sessionStore,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(result.kind).toBe("final");
+    expect(sessionEntry.providerOverride).toBe("zai");
+    expect(sessionEntry.modelOverride).toBe("glm-5");
+    expect(sessionEntry.authProfileOverride).toBe("zai:work");
+    expect(sessionEntry.authProfileOverrideSource).toBe("user");
+    expect(sessionStore.main.providerOverride).toBe("zai");
+    expect(sessionStore.main.modelOverride).toBe("glm-5");
   });
 });
