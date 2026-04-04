@@ -27,17 +27,19 @@ This page covers the internal architecture of the OpenClaw plugin system.
 Capabilities are the public **native plugin** model inside OpenClaw. Every
 native OpenClaw plugin registers against one or more capability types:
 
-| Capability            | Registration method                           | Example plugins                      |
-| --------------------- | --------------------------------------------- | ------------------------------------ |
-| Text inference        | `api.registerProvider(...)`                   | `openai`, `anthropic`                |
-| CLI inference backend | `api.registerCliBackend(...)`                 | `openai`, `anthropic`                |
-| Speech                | `api.registerSpeechProvider(...)`             | `elevenlabs`, `microsoft`            |
-| Realtime voice        | `api.registerRealtimeVoiceProvider(...)`      | `openai`                             |
-| Media understanding   | `api.registerMediaUnderstandingProvider(...)` | `openai`, `google`                   |
-| Image generation      | `api.registerImageGenerationProvider(...)`    | `openai`, `google`, `fal`, `minimax` |
-| Video generation      | `api.registerVideoGenerationProvider(...)`    | `qwen`                               |
-| Web search            | `api.registerWebSearchProvider(...)`          | `google`                             |
-| Channel / messaging   | `api.registerChannel(...)`                    | `msteams`, `matrix`                  |
+| Capability             | Registration method                              | Example plugins                      |
+| ---------------------- | ------------------------------------------------ | ------------------------------------ |
+| Text inference         | `api.registerProvider(...)`                      | `openai`, `anthropic`                |
+| CLI inference backend  | `api.registerCliBackend(...)`                    | `openai`, `anthropic`                |
+| Speech                 | `api.registerSpeechProvider(...)`                | `elevenlabs`, `microsoft`            |
+| Realtime transcription | `api.registerRealtimeTranscriptionProvider(...)` | `openai`                             |
+| Realtime voice         | `api.registerRealtimeVoiceProvider(...)`         | `openai`                             |
+| Media understanding    | `api.registerMediaUnderstandingProvider(...)`    | `openai`, `google`                   |
+| Image generation       | `api.registerImageGenerationProvider(...)`       | `openai`, `google`, `fal`, `minimax` |
+| Video generation       | `api.registerVideoGenerationProvider(...)`       | `qwen`                               |
+| Web fetch              | `api.registerWebFetchProvider(...)`              | `firecrawl`                          |
+| Web search             | `api.registerWebSearchProvider(...)`             | `google`                             |
+| Channel / messaging    | `api.registerChannel(...)`                       | `msteams`, `matrix`                  |
 
 A plugin that registers zero capabilities but provides hooks, tools, or
 services is a **legacy hook-only** plugin. That pattern is still fully supported.
@@ -233,13 +235,16 @@ That means:
 Examples:
 
 - the bundled `openai` plugin owns OpenAI model-provider behavior and OpenAI
-  speech + media-understanding + image-generation behavior
+  speech + realtime-voice + media-understanding + image-generation behavior
 - the bundled `elevenlabs` plugin owns ElevenLabs speech behavior
 - the bundled `microsoft` plugin owns Microsoft speech behavior
 - the bundled `google` plugin owns Google model-provider behavior plus Google
   media-understanding + image-generation + web-search behavior
+- the bundled `firecrawl` plugin owns Firecrawl web-fetch behavior
 - the bundled `minimax`, `mistral`, `moonshot`, and `zai` plugins own their
   media-understanding backends
+- the bundled `qwen` plugin owns Qwen text-provider behavior plus
+  media-understanding and video-generation behavior
 - the `voice-call` plugin is a feature plugin: it owns call transport, tools,
   CLI, routes, and Twilio media-stream bridging, but it consumes shared speech
   plus realtime-transcription and realtime-voice capabilities instead of
@@ -295,8 +300,9 @@ That same pattern should be preferred for future capabilities.
 ### Multi-capability company plugin example
 
 A company plugin should feel cohesive from the outside. If OpenClaw has shared
-contracts for models, speech, media understanding, and web search, a vendor can
-own all of its surfaces in one place:
+contracts for models, speech, realtime transcription, realtime voice, media
+understanding, image generation, video generation, web fetch, and web search,
+a vendor can own all of its surfaces in one place:
 
 ```ts
 import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry";
