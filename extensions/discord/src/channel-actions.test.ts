@@ -53,7 +53,15 @@ describe("discordMessageActions", () => {
     expect(discovery?.capabilities).toEqual(["interactive", "components"]);
     expect(discovery?.schema).not.toBeNull();
     expect(discovery?.actions).toEqual(
-      expect.arrayContaining(["send", "poll", "react", "reactions", "emoji-list", "permissions"]),
+      expect.arrayContaining([
+        "send",
+        "upload-file",
+        "poll",
+        "react",
+        "reactions",
+        "emoji-list",
+        "permissions",
+      ]),
     );
     expect(discovery?.actions).not.toContain("channel-create");
     expect(discovery?.actions).not.toContain("role-add");
