@@ -172,10 +172,24 @@ async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLin
     }
   }
 
-  // If we started mid-file the first "line" is likely a partial JSON fragment;
-  // drop it to avoid writing corrupt data.
+  // If we started mid-file, the first "line" may be a partial JSON fragment.
+  // Only drop it when we actually landed in the middle of a line.  When
+  // startPos happens to fall exactly on a newline boundary the first streamed
+  // line is already complete and should be kept.
   if (startPos > 0 && lines.length > 0) {
-    lines.shift();
+    const fd = await fs.open(filePath, "r");
+    try {
+      const buf = Buffer.alloc(1);
+      await fd.read(buf, 0, 1, startPos - 1);
+      const prevByte = buf[0];
+      // 0x0A = newline.  If the byte immediately before startPos is a newline
+      // the first streamed line starts at a line boundary and is complete.
+      if (prevByte !== 0x0a) {
+        lines.shift();
+      }
+    } finally {
+      await fd.close();
+    }
   }
 
   const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));
