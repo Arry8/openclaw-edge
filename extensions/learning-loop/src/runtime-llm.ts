@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -182,7 +183,7 @@ export function createLearningLoopLlmCaller(
       model,
     });
     const timeoutMs = api.runtime.agent.resolveAgentTimeoutMs({ cfg });
-    const sessionId = `${LEARNING_LOOP_INTERNAL_SESSION_PREFIX}${Date.now()}`;
+    const sessionId = `${LEARNING_LOOP_INTERNAL_SESSION_PREFIX}${Date.now()}-${randomUUID()}`;
 
     let tempDir: string | null = null;
     try {

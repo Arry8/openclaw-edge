@@ -182,4 +182,24 @@ describe("runtime-llm", () => {
       }),
     );
   });
+
+  it("uses unique internal session ids even when calls share the same timestamp", async () => {
+    const api = makeApi();
+    const callLlm = createLearningLoopLlmCaller(api);
+    vi.spyOn(Date, "now").mockReturnValue(1_717_171_717_171);
+
+    await Promise.all([
+      callLlm("system prompt", "user prompt one"),
+      callLlm("system prompt", "user prompt two"),
+    ]);
+
+    const sessionIds = api.runtime.agent.runEmbeddedPiAgent.mock.calls.map(
+      ([params]) => params.sessionId,
+    );
+
+    expect(sessionIds).toHaveLength(2);
+    expect(new Set(sessionIds).size).toBe(2);
+    expect(sessionIds[0]).toMatch(/^__openclaw_learning_loop_internal__-1717171717171-/);
+    expect(sessionIds[1]).toMatch(/^__openclaw_learning_loop_internal__-1717171717171-/);
+  });
 });

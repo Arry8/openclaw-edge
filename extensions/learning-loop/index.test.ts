@@ -34,6 +34,9 @@ const pluginMocks = vi.hoisted(() => {
       callOrder.push("checkNudge");
       return null;
     }),
+    drainPendingReview: vi.fn(async () => {
+      callOrder.push("drainPendingReview");
+    }),
     resetAll: vi.fn(),
     resetCounter: vi.fn(),
   };
@@ -144,6 +147,24 @@ describe("learning-loop plugin", () => {
         (fn as { mockClear: () => void }).mockClear();
       }
     });
+    pluginMocks.graphiti.addEpisode.mockImplementation(async () => {
+      pluginMocks.callOrder.push("addEpisode");
+      return "ok";
+    });
+    pluginMocks.graphiti.closeConnection.mockImplementation(async () => {
+      pluginMocks.callOrder.push("closeConnection");
+    });
+    pluginMocks.evolutionService.runAutoEvolution.mockImplementation(async () => {
+      pluginMocks.callOrder.push("runAutoEvolution");
+      return [];
+    });
+    pluginMocks.nudgeManager.checkNudge.mockImplementation(() => {
+      pluginMocks.callOrder.push("checkNudge");
+      return null;
+    });
+    pluginMocks.nudgeManager.drainPendingReview.mockImplementation(async () => {
+      pluginMocks.callOrder.push("drainPendingReview");
+    });
     pluginMocks.isLearningLoopInternalSessionId.mockReturnValue(false);
   });
 
@@ -183,6 +204,7 @@ describe("learning-loop plugin", () => {
       "addEpisode",
       "runAutoEvolution",
       "checkNudge",
+      "drainPendingReview",
       "closeConnection",
     ]);
     expect(pluginMocks.graphiti.addEpisode).toHaveBeenCalledWith(
@@ -260,6 +282,47 @@ describe("learning-loop plugin", () => {
     );
 
     expect(pluginMocks.graphiti.closeConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for background nudge reviews before closing the Graphiti connection", async () => {
+    const { api, on } = createApi();
+
+    let resolveDrain: (() => void) | undefined;
+    const drainPromise = new Promise<void>((resolve) => {
+      resolveDrain = resolve;
+    });
+
+    pluginMocks.nudgeManager.checkNudge.mockImplementation(() => {
+      pluginMocks.callOrder.push("checkNudge");
+      return "memory_review";
+    });
+    pluginMocks.nudgeManager.drainPendingReview.mockImplementation(() => {
+      pluginMocks.callOrder.push("drainPendingReview");
+      return drainPromise;
+    });
+
+    learningLoopPlugin.register(api);
+
+    const agentEndHandler = on.mock.calls.find(([name]) => name === "agent_end")?.[1];
+    if (typeof agentEndHandler !== "function") {
+      throw new Error("expected learning-loop plugin to register agent_end");
+    }
+
+    const endPromise = agentEndHandler(
+      {
+        success: false,
+        messages: [{ role: "user", content: "Review this conversation." }],
+      },
+      { runId: "run-nudge", sessionId: "session-nudge" },
+    );
+
+    await Promise.resolve();
+    expect(pluginMocks.graphiti.closeConnection).not.toHaveBeenCalled();
+
+    resolveDrain?.();
+    await endPromise;
+
+    expect(pluginMocks.callOrder.slice(-2)).toEqual(["drainPendingReview", "closeConnection"]);
   });
 
   it("does not track internal learning-loop runs as active Graphiti users", async () => {

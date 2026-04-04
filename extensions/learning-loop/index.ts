@@ -59,6 +59,17 @@ export default definePluginEntry({
     const activeRunKeys = new Set<string>();
     let defaultServices: ScopedServices | null = null;
 
+    const listScopedServices = (): ScopedServices[] => {
+      const services = new Set<ScopedServices>();
+      if (defaultServices) {
+        services.add(defaultServices);
+      }
+      for (const scoped of sessionServices.values()) {
+        services.add(scoped);
+      }
+      return [...services];
+    };
+
     const createScopedServices = (scope?: LearningLoopScope): ScopedServices => {
       const llmCallFn = createLearningLoopLlmCaller(api, scope);
       const skillsBaseDir = resolveLearningLoopSkillsBaseDir(api, scope);
@@ -397,7 +408,14 @@ export default definePluginEntry({
     });
 
     api.on("session_end", (event) => {
-      sessionServices.delete(event.sessionId);
+      const services = sessionServices.get(event.sessionId);
+      if (!services) return;
+
+      void services.nudgeManager.drainPendingReview().finally(() => {
+        if (sessionServices.get(event.sessionId) === services) {
+          sessionServices.delete(event.sessionId);
+        }
+      });
     });
 
     // Reset nudge counters when user manually uses knowledge tools
@@ -479,6 +497,14 @@ export default definePluginEntry({
           // One-shot local agent runs still need cleanup, but concurrent agent
           // turns must not lose the shared transport underneath in-flight work.
           if (activeRunKeys.size === 0) {
+            await Promise.all(
+              listScopedServices().map((services) => services.nudgeManager.drainPendingReview()),
+            );
+
+            if (activeRunKeys.size > 0) {
+              return;
+            }
+
             await graphiti.closeConnection();
           }
         }

@@ -4,7 +4,7 @@ import type { GraphitiClient } from "./graphiti-client.js";
 import { NudgeManager } from "./nudge-manager.js";
 
 async function waitForReview(manager: NudgeManager): Promise<void> {
-  await (Reflect.get(manager, "pendingReview") as Promise<void> | null);
+  await manager.drainPendingReview();
 }
 
 describe("NudgeManager", () => {

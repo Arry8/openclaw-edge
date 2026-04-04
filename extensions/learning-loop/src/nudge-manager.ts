@@ -128,6 +128,10 @@ export class NudgeManager {
     this.turnsSinceSkill = 0;
   }
 
+  async drainPendingReview(): Promise<void> {
+    await this.pendingReview;
+  }
+
   // --------------------------------------------------------------------------
   // Background review
   // --------------------------------------------------------------------------
