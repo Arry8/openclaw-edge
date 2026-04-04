@@ -201,7 +201,8 @@ export function formatRawAssistantErrorForUi(raw?: string): string {
   if (info?.message) {
     const prefix = info.httpCode ? `HTTP ${info.httpCode}` : "LLM error";
     const type = info.type ? ` ${info.type}` : "";
-    return `${prefix}${type}: ${info.message}`;
+    const requestId = info.requestId ? ` (request_id: ${info.requestId})` : "";
+    return `${prefix}${type}: ${info.message}${requestId}`;
   }
 
   return trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed;

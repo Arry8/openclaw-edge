@@ -3,6 +3,8 @@ import { formatRawAssistantErrorForUi, parseApiErrorInfo } from "./assistant-err
 
 const OPENROUTER_HEALER_ALPHA_404_PAYLOAD =
   '{"error":{"message":"Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni","code":404},"user_id":"user_33GTyP8uDSYYbaeBO48AGHXyuMC"}';
+const OPENROUTER_HEALER_ALPHA_404_WITH_REQUEST_ID_PAYLOAD =
+  '{"error":{"message":"Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni","code":404},"request_id":"req_test"}';
 const CUSTOM_NUMERIC_ERROR_CODE_PAYLOAD =
   '{"error":{"message":"Provider-specific error", "code":1001},"user_id":"user_33GTyP8uDSYYbaeBO48AGHXyuMC"}';
 
@@ -19,6 +21,12 @@ describe("assistant-error-format", () => {
     });
     expect(formatRawAssistantErrorForUi(OPENROUTER_HEALER_ALPHA_404_PAYLOAD)).toBe(
       "HTTP 404: Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni",
+    );
+  });
+
+  it("includes request IDs in formatted error messages", () => {
+    expect(formatRawAssistantErrorForUi(OPENROUTER_HEALER_ALPHA_404_WITH_REQUEST_ID_PAYLOAD)).toBe(
+      "HTTP 404: Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni (request_id: req_test)",
     );
   });
 

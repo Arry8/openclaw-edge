@@ -636,6 +636,11 @@ function classifyFailoverClassificationFromMessage(raw: string): FailoverClassif
   if (isModelNotFoundErrorMessage(raw)) {
     return toReasonClassification("model_not_found");
   }
+  if (isOpenRouterModel404Payload(raw)) {
+    // OpenRouter model-not-found payloads can be JSON-wrapped and only expose
+    // a numeric 404 code plus an OpenRouter model URL in the message body.
+    return toReasonClassification("model_not_found");
+  }
   if (isContextOverflowError(raw)) {
     return { kind: "context_overflow" };
   }
@@ -1178,6 +1183,18 @@ export function isModelNotFoundErrorMessage(raw: string): boolean {
   }
 
   return false;
+}
+
+function isOpenRouterModel404Payload(raw: string): boolean {
+  if (!isRawApiErrorPayload(raw)) {
+    return false;
+  }
+  const apiInfo = parseApiErrorInfo(raw);
+  return (
+    apiInfo?.httpCode === "404" &&
+    typeof apiInfo.message === "string" &&
+    apiInfo.message.toLowerCase().includes("openrouter.ai")
+  );
 }
 
 function isCliSessionExpiredErrorMessage(raw: string): boolean {
