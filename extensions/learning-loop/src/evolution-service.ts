@@ -9,6 +9,7 @@ import type { EvolutionConfig } from "./config.js";
 import type { EvolutionEntry } from "./evolution-schema.js";
 import { EvolutionStore } from "./evolution-store.js";
 import type { GraphitiClient } from "./graphiti-client.js";
+import { looksLikeInjection } from "./injection-guard.js";
 import { extractMessageText } from "./message-content.js";
 import { SignalDetector, type EvolutionSignal } from "./signal-detector.js";
 import { SkillEvolver, type ExperienceContext } from "./skill-evolver.js";
@@ -180,7 +181,10 @@ export class EvolutionService {
     const context = this.buildContext(skillName, signals, messages);
 
     // Generate experiences via LLM
-    const entries = await this.evolver.generateExperiences(skillName, context);
+    const entries = this.filterUnsafeEntries(
+      skillName,
+      await this.evolver.generateExperiences(skillName, context),
+    );
     if (entries.length === 0) return null;
 
     // Apply based on policy
@@ -201,6 +205,21 @@ export class EvolutionService {
       entries,
       applied: shouldApply,
     };
+  }
+
+  private filterUnsafeEntries(skillName: string, entries: EvolutionEntry[]): EvolutionEntry[] {
+    return entries.filter((entry) => {
+      if (entry.change.target !== "description") {
+        return true;
+      }
+      if (!looksLikeInjection(entry.change.content)) {
+        return true;
+      }
+      this.logger.warn(
+        `learning-loop: blocked injection-like description evolution for ${skillName}`,
+      );
+      return false;
+    });
   }
 
   private buildContext(

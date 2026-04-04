@@ -14,6 +14,7 @@ import {
   type EvolutionEntry,
   type EvolutionFile,
 } from "./evolution-schema.js";
+import { looksLikeInjection } from "./injection-guard.js";
 
 export function buildAtomicTempPath(filePath: string): string {
   return `${filePath}.tmp-${process.pid}-${Date.now().toString(36)}-${randomUUID()}`;
@@ -205,7 +206,8 @@ export class EvolutionStore {
         (entry) =>
           entry.applied && entry.change.target === "description" && entry.change.action !== "skip",
       )
-      .map((entry) => entry.change.content);
+      .map((entry) => entry.change.content)
+      .filter((content) => !looksLikeInjection(content));
     if (descriptions.length === 0) return "";
 
     return [

@@ -118,6 +118,7 @@ const TOOL_ATTRIBUTION_PATTERNS = [
 export class SignalDetector {
   private processedKeys = new Set<string>();
   private static readonly MAX_PROCESSED = 500;
+  private static readonly EXECUTION_FAILURE_ROLES = new Set(["tool", "toolResult", "assistant"]);
 
   /**
    * Detect evolution signals from a list of messages.
@@ -133,7 +134,7 @@ export class SignalDetector {
       if (!text) continue;
 
       // Detect execution failures in tool results and assistant messages
-      if (msg.role === "tool" || msg.role === "assistant") {
+      if (SignalDetector.EXECUTION_FAILURE_ROLES.has(msg.role)) {
         for (const pattern of FAILURE_PATTERNS) {
           if (pattern.test(text)) {
             const signal = this.buildSignal("execution_failure", text, msg);

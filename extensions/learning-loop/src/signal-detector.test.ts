@@ -75,6 +75,25 @@ describe("SignalDetector", () => {
     });
   });
 
+  it("detects execution failures from toolResult messages", () => {
+    const detector = new SignalDetector();
+
+    const signals = detector.detect([
+      {
+        role: "toolResult",
+        name: "knowledge_store",
+        content: "command not found: rg",
+      },
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      type: "execution_failure",
+      section: "Troubleshooting",
+      toolName: "knowledge_store",
+    });
+  });
+
   it("detects user corrections, deduplicates them, and clears dedupe state between sessions", () => {
     const detector = new SignalDetector();
     const correction = {
