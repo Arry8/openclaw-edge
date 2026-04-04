@@ -3983,6 +3983,30 @@
       "hasChildren": false
     },
     {
+      "path": "agents.defaults.skills",
+      "kind": "core",
+      "type": "array",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "advanced"
+      ],
+      "label": "Skills",
+      "help": "Optional default skill allowlist inherited by agents that omit agents.list[].skills. Omit for unrestricted skills, set [] to give inheriting agents no skills, and remember explicit agents.list[].skills replaces this default instead of merging with it.",
+      "hasChildren": true
+    },
+    {
+      "path": "agents.defaults.skills.*",
+      "kind": "core",
+      "type": "string",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
       "path": "agents.defaults.skipBootstrap",
       "kind": "core",
       "type": "boolean",
@@ -6459,7 +6483,7 @@
         "advanced"
       ],
       "label": "Agent Skill Filter",
-      "help": "Optional allowlist of skills for this agent (omit = all skills; empty = no skills).",
+      "help": "Optional allowlist of skills for this agent. If omitted, the agent inherits agents.defaults.skills when set; otherwise skills stay unrestricted. Set [] for no skills. An explicit list fully replaces inherited defaults instead of merging with them.",
       "hasChildren": true
     },
     {
@@ -7814,6 +7838,38 @@
       "label": "Auth Cooldowns",
       "help": "Cooldown/backoff controls for temporary profile suppression after billing-related failures and retry windows. Use these to prevent rapid re-selection of profiles that are still blocked.",
       "hasChildren": true
+    },
+    {
+      "path": "auth.cooldowns.authPermanentBackoffMinutes",
+      "kind": "core",
+      "type": "number",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "access",
+        "auth",
+        "reliability"
+      ],
+      "label": "Auth-Permanent Backoff (minutes)",
+      "help": "Base backoff (minutes) for high-confidence auth_permanent failures (default: 10). Keep this shorter than billing so providers recover automatically after transient upstream auth incidents.",
+      "hasChildren": false
+    },
+    {
+      "path": "auth.cooldowns.authPermanentMaxMinutes",
+      "kind": "core",
+      "type": "number",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "access",
+        "auth",
+        "performance"
+      ],
+      "label": "Auth-Permanent Backoff Cap (minutes)",
+      "help": "Cap (minutes) for auth_permanent backoff (default: 60).",
+      "hasChildren": false
     },
     {
       "path": "auth.cooldowns.billingBackoffHours",
@@ -12222,7 +12278,7 @@
         "advanced"
       ],
       "label": "Internal Hooks Enabled",
-      "help": "Enables processing for internal hook handlers and configured entries in the internal hook runtime. Keep disabled unless internal hook handlers are intentionally configured.",
+      "help": "Enables processing for internal hooks and configured entries in the internal hook runtime. Keep disabled unless internal hooks are intentionally configured.",
       "hasChildren": false
     },
     {
@@ -12286,72 +12342,6 @@
       "deprecated": false,
       "sensitive": false,
       "tags": [],
-      "hasChildren": false
-    },
-    {
-      "path": "hooks.internal.handlers",
-      "kind": "core",
-      "type": "array",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [
-        "advanced"
-      ],
-      "label": "Internal Hook Handlers",
-      "help": "List of internal event handlers mapping event names to modules and optional exports. Keep handler definitions explicit so event-to-code routing is auditable.",
-      "hasChildren": true
-    },
-    {
-      "path": "hooks.internal.handlers.*",
-      "kind": "core",
-      "type": "object",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": true
-    },
-    {
-      "path": "hooks.internal.handlers.*.event",
-      "kind": "core",
-      "type": "string",
-      "required": true,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [
-        "advanced"
-      ],
-      "label": "Internal Hook Event",
-      "help": "Internal event name that triggers this handler module when emitted by the runtime. Use stable event naming conventions to avoid accidental overlap across handlers.",
-      "hasChildren": false
-    },
-    {
-      "path": "hooks.internal.handlers.*.export",
-      "kind": "core",
-      "type": "string",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [
-        "advanced"
-      ],
-      "label": "Internal Hook Export",
-      "help": "Optional named export for the internal hook handler function when module default export is not used. Set this when one module ships multiple handler entrypoints.",
-      "hasChildren": false
-    },
-    {
-      "path": "hooks.internal.handlers.*.module",
-      "kind": "core",
-      "type": "string",
-      "required": true,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [
-        "advanced"
-      ],
-      "label": "Internal Hook Module",
-      "help": "Safe relative module path for the internal hook handler implementation loaded at runtime. Keep module files in reviewed directories and avoid dynamic path composition.",
       "hasChildren": false
     },
     {
@@ -28078,6 +28068,137 @@
       "hasChildren": true
     },
     {
+      "path": "channels.bluebubbles.accounts.*.actions",
+      "kind": "channel",
+      "type": "object",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": true
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.addParticipant",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.edit",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.leaveGroup",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.reactions",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.removeParticipant",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.renameGroup",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.reply",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.sendAttachment",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.sendWithEffect",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.setGroupIcon",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
+      "path": "channels.bluebubbles.accounts.*.actions.unsend",
+      "kind": "channel",
+      "type": "boolean",
+      "required": true,
+      "defaultValue": true,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": false
+    },
+    {
       "path": "channels.bluebubbles.accounts.*.allowFrom",
       "kind": "channel",
       "type": "array",
@@ -30009,16 +30130,6 @@
       "sensitive": false,
       "tags": [],
       "hasChildren": true
-    },
-    {
-      "path": "channels.discord.accounts.*.guilds.*.channels.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
     },
     {
       "path": "channels.discord.accounts.*.guilds.*.channels.*.autoArchiveDuration",
@@ -32512,16 +32623,6 @@
       "sensitive": false,
       "tags": [],
       "hasChildren": true
-    },
-    {
-      "path": "channels.discord.guilds.*.channels.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
     },
     {
       "path": "channels.discord.guilds.*.channels.*.autoArchiveDuration",
@@ -36507,16 +36608,6 @@
       "hasChildren": true
     },
     {
-      "path": "channels.googlechat.accounts.*.groups.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
-    },
-    {
       "path": "channels.googlechat.accounts.*.groups.*.enabled",
       "kind": "channel",
       "type": "boolean",
@@ -37186,16 +37277,6 @@
       "sensitive": false,
       "tags": [],
       "hasChildren": true
-    },
-    {
-      "path": "channels.googlechat.groups.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
     },
     {
       "path": "channels.googlechat.groups.*.enabled",
@@ -48892,16 +48973,6 @@
       "hasChildren": true
     },
     {
-      "path": "channels.slack.accounts.*.channels.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
-    },
-    {
       "path": "channels.slack.accounts.*.channels.*.allowBots",
       "kind": "channel",
       "type": "boolean",
@@ -50352,16 +50423,6 @@
       "sensitive": false,
       "tags": [],
       "hasChildren": true
-    },
-    {
-      "path": "channels.slack.channels.*.allow",
-      "kind": "channel",
-      "type": "boolean",
-      "required": false,
-      "deprecated": false,
-      "sensitive": false,
-      "tags": [],
-      "hasChildren": false
     },
     {
       "path": "channels.slack.channels.*.allowBots",

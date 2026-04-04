@@ -18,7 +18,9 @@ export function createBoundaryVitestConfig(env: Record<string, string | undefine
       isolate: false,
       runner: "./test/non-isolated-runner.ts",
       include: loadBoundaryIncludePatternsFromEnv(env) ?? boundaryTestFiles,
-      setupFiles: [],
+      // Boundary workers still need the shared isolated HOME/bootstrap. Only
+      // per-file module isolation is disabled here.
+      setupFiles: sharedVitestConfig.test.setupFiles,
     },
   });
 }

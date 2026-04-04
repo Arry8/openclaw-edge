@@ -6,7 +6,12 @@ import {
   listAvailableExtensionIds,
   listChangedExtensionIds,
 } from "../../scripts/lib/changed-extensions.mjs";
-import { resolveExtensionTestPlan } from "../../scripts/lib/extension-test-plan.mjs";
+import {
+  DEFAULT_EXTENSION_TEST_SHARD_COUNT,
+  createExtensionTestShards,
+  resolveExtensionBatchPlan,
+  resolveExtensionTestPlan,
+} from "../../scripts/lib/extension-test-plan.mjs";
 import { bundledPluginFile, bundledPluginRoot } from "../helpers/bundled-plugin-paths.js";
 
 const scriptPath = path.join(process.cwd(), "scripts", "test-extension.mjs");
@@ -33,12 +38,21 @@ describe("scripts/test-extension.mjs", () => {
 
     expect(plan.extensionId).toBe("slack");
     expect(plan.extensionDir).toBe(bundledPluginRoot("slack"));
-    expect(plan.config).toBe("vitest.channels.config.ts");
+    expect(plan.config).toBe("vitest.extension-channels.config.ts");
     expect(plan.roots).toContain(bundledPluginRoot("slack"));
     expect(plan.hasTests).toBe(true);
   });
 
-  it("resolves provider extensions onto the extensions vitest config", () => {
+  it("resolves provider extensions onto the provider vitest config", () => {
+    const plan = resolveExtensionTestPlan({ targetArg: "openai", cwd: process.cwd() });
+
+    expect(plan.extensionId).toBe("openai");
+    expect(plan.config).toBe("vitest.extension-providers.config.ts");
+    expect(plan.roots).toContain(bundledPluginRoot("openai"));
+    expect(plan.hasTests).toBe(true);
+  });
+
+  it("keeps non-provider extensions on the shared extensions vitest config", () => {
     const plan = resolveExtensionTestPlan({ targetArg: "firecrawl", cwd: process.cwd() });
 
     expect(plan.extensionId).toBe("firecrawl");
@@ -52,7 +66,7 @@ describe("scripts/test-extension.mjs", () => {
 
     expect(plan.roots).toContain(bundledPluginRoot("line"));
     expect(plan.roots).not.toContain("src/line");
-    expect(plan.config).toBe("vitest.extensions.config.ts");
+    expect(plan.config).toBe("vitest.channels.config.ts");
     expect(plan.hasTests).toBe(true);
   });
 
@@ -101,6 +115,59 @@ describe("scripts/test-extension.mjs", () => {
     expect(plan.extensionId).toBe(extensionId);
     expect(plan.hasTests).toBe(false);
     expect(plan.testFileCount).toBe(0);
+  });
+
+  it("batches extensions into config-specific vitest invocations", () => {
+    const batch = resolveExtensionBatchPlan({
+      cwd: process.cwd(),
+      extensionIds: ["slack", "firecrawl", "line", "openai"],
+    });
+
+    expect(batch.extensionIds).toEqual(["firecrawl", "line", "openai", "slack"]);
+    expect(batch.planGroups).toEqual([
+      {
+        config: "vitest.channels.config.ts",
+        extensionIds: ["line", "slack"],
+        roots: [bundledPluginRoot("slack"), bundledPluginRoot("line")],
+        testFileCount: expect.any(Number),
+      },
+      {
+        config: "vitest.extension-providers.config.ts",
+        extensionIds: ["openai"],
+        roots: [bundledPluginRoot("openai")],
+        testFileCount: expect.any(Number),
+      },
+      {
+        config: "vitest.extensions.config.ts",
+        extensionIds: ["firecrawl"],
+        roots: [bundledPluginRoot("firecrawl")],
+        testFileCount: expect.any(Number),
+      },
+    ]);
+  });
+
+  it("balances extension test shards by test file count", () => {
+    const shards = createExtensionTestShards({
+      cwd: process.cwd(),
+      shardCount: DEFAULT_EXTENSION_TEST_SHARD_COUNT,
+    });
+
+    expect(shards).toHaveLength(DEFAULT_EXTENSION_TEST_SHARD_COUNT);
+
+    const assigned = shards.flatMap((shard) => shard.extensionIds);
+    const uniqueAssigned = [...new Set(assigned)];
+    const expected = listAvailableExtensionIds().filter(
+      (extensionId) =>
+        resolveExtensionTestPlan({ cwd: process.cwd(), targetArg: extensionId }).hasTests,
+    );
+
+    expect(uniqueAssigned.toSorted((left, right) => left.localeCompare(right))).toEqual(
+      expected.toSorted((left, right) => left.localeCompare(right)),
+    );
+    expect(assigned).toHaveLength(expected.length);
+
+    const totals = shards.map((shard) => shard.testFileCount);
+    expect(Math.max(...totals) - Math.min(...totals)).toBeLessThanOrEqual(1);
   });
 
   it("treats extensions without tests as a no-op by default", () => {

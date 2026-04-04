@@ -347,12 +347,18 @@ export async function runEmbeddedAttempt(
       : sandbox.workspaceDir
     : resolvedWorkspace;
   await fs.mkdir(effectiveWorkspace, { recursive: true });
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey,
+    config: params.config,
+    agentId: params.agentId,
+  });
 
   let restoreSkillEnv: (() => void) | undefined;
   try {
     const { shouldLoadSkillEntries, skillEntries } = resolveEmbeddedRunSkillEntries({
       workspaceDir: effectiveWorkspace,
       config: params.config,
+      agentId: sessionAgentId,
       skillsSnapshot: params.skillsSnapshot,
     });
     restoreSkillEnv = params.skillsSnapshot
@@ -370,6 +376,7 @@ export async function runEmbeddedAttempt(
       entries: shouldLoadSkillEntries ? skillEntries : undefined,
       config: params.config,
       workspaceDir: effectiveWorkspace,
+      agentId: sessionAgentId,
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
@@ -408,7 +415,7 @@ export async function runEmbeddedAttempt(
 
     const agentDir = params.agentDir ?? resolveOpenClawAgentDir();
 
-    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+    const { defaultAgentId } = resolveSessionAgentIds({
       sessionKey: params.sessionKey,
       config: params.config,
       agentId: params.agentId,
@@ -1457,6 +1464,8 @@ export async function runEmbeddedAttempt(
           sessionKey: params.sessionKey,
           sessionId: params.sessionId,
           workspaceDir: params.workspaceDir,
+          modelProviderId: params.model.provider,
+          modelId: params.model.id,
           messageProvider: params.messageProvider ?? undefined,
           trigger: params.trigger,
           channelId: params.messageChannel ?? params.messageProvider ?? undefined,
@@ -1524,7 +1533,8 @@ export async function runEmbeddedAttempt(
 
         try {
           // Idempotent cleanup for legacy sessions with persisted image payloads.
-          // Called each run; only mutates already-answered user turns that still carry image blocks.
+          // Only mutates user turns older than a few assistant replies so recent
+          // history stays byte-identical for prompt-cache prefix matching.
           const didPruneImages = pruneProcessedHistoryImages(activeSession.messages);
           if (didPruneImages) {
             activeSession.agent.replaceMessages(activeSession.messages);

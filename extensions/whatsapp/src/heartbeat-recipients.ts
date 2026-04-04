@@ -1,13 +1,13 @@
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/account-id";
-import { normalizeE164 } from "openclaw/plugin-sdk/account-resolution";
-import { readChannelAllowFromStoreSync } from "openclaw/plugin-sdk/channel-pairing";
-import { normalizeChannelId } from "openclaw/plugin-sdk/channel-targets";
 import {
+  DEFAULT_ACCOUNT_ID,
   loadSessionStore,
+  normalizeChannelId,
+  normalizeE164,
+  readChannelAllowFromStoreSync,
   resolveStorePath,
   type OpenClawConfig,
-} from "openclaw/plugin-sdk/config-runtime";
-import { resolveWhatsAppAccount } from "./accounts.js";
+} from "./heartbeat-recipients.runtime.js";
+import { resolveDefaultWhatsAppAccountId, resolveWhatsAppAccount } from "./accounts.js";
 
 type HeartbeatRecipientsResult = { recipients: string[]; source: string };
 type HeartbeatRecipientsOpts = { to?: string; all?: boolean; accountId?: string };
@@ -56,7 +56,8 @@ export function resolveWhatsAppHeartbeatRecipients(
   }
 
   const sessionRecipients = getSessionRecipients(cfg);
-  const resolvedAccountId = opts.accountId?.trim() || DEFAULT_ACCOUNT_ID;
+  const resolvedAccountId =
+    opts.accountId?.trim() || resolveDefaultWhatsAppAccountId(cfg) || DEFAULT_ACCOUNT_ID;
   const configuredAllowFrom =
     (resolveWhatsAppAccount({ cfg, accountId: resolvedAccountId }).allowFrom ?? [])
       .filter((value) => value !== "*")
