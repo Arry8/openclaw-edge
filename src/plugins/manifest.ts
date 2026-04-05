@@ -76,6 +76,7 @@ export type PluginManifestContracts = {
   realtimeVoiceProviders?: string[];
   mediaUnderstandingProviders?: string[];
   imageGenerationProviders?: string[];
+  videoGenerationProviders?: string[];
   webFetchProviders?: string[];
   webSearchProviders?: string[];
   tools?: string[];
@@ -91,6 +92,10 @@ export type PluginManifestProviderAuthChoice = {
   /** Optional user-facing choice label/hint for grouped onboarding UI. */
   choiceLabel?: string;
   choiceHint?: string;
+  /** Lower values sort earlier in interactive assistant pickers. */
+  assistantPriority?: number;
+  /** Keep the choice out of interactive assistant pickers while preserving manual CLI support. */
+  assistantVisibility?: "visible" | "manual-only";
   /** Legacy choice ids that should point users at this replacement choice. */
   deprecatedChoiceIds?: string[];
   /** Optional grouping metadata for auth-choice pickers. */
@@ -151,6 +156,7 @@ function normalizeManifestContracts(value: unknown): PluginManifestContracts | u
   const realtimeVoiceProviders = normalizeStringList(value.realtimeVoiceProviders);
   const mediaUnderstandingProviders = normalizeStringList(value.mediaUnderstandingProviders);
   const imageGenerationProviders = normalizeStringList(value.imageGenerationProviders);
+  const videoGenerationProviders = normalizeStringList(value.videoGenerationProviders);
   const webFetchProviders = normalizeStringList(value.webFetchProviders);
   const webSearchProviders = normalizeStringList(value.webSearchProviders);
   const tools = normalizeStringList(value.tools);
@@ -160,6 +166,7 @@ function normalizeManifestContracts(value: unknown): PluginManifestContracts | u
     ...(realtimeVoiceProviders.length > 0 ? { realtimeVoiceProviders } : {}),
     ...(mediaUnderstandingProviders.length > 0 ? { mediaUnderstandingProviders } : {}),
     ...(imageGenerationProviders.length > 0 ? { imageGenerationProviders } : {}),
+    ...(videoGenerationProviders.length > 0 ? { videoGenerationProviders } : {}),
     ...(webFetchProviders.length > 0 ? { webFetchProviders } : {}),
     ...(webSearchProviders.length > 0 ? { webSearchProviders } : {}),
     ...(tools.length > 0 ? { tools } : {}),
@@ -202,6 +209,14 @@ function normalizeProviderAuthChoices(
     }
     const choiceLabel = typeof entry.choiceLabel === "string" ? entry.choiceLabel.trim() : "";
     const choiceHint = typeof entry.choiceHint === "string" ? entry.choiceHint.trim() : "";
+    const assistantPriority =
+      typeof entry.assistantPriority === "number" && Number.isFinite(entry.assistantPriority)
+        ? entry.assistantPriority
+        : undefined;
+    const assistantVisibility =
+      entry.assistantVisibility === "manual-only" || entry.assistantVisibility === "visible"
+        ? entry.assistantVisibility
+        : undefined;
     const deprecatedChoiceIds = normalizeStringList(entry.deprecatedChoiceIds);
     const groupId = typeof entry.groupId === "string" ? entry.groupId.trim() : "";
     const groupLabel = typeof entry.groupLabel === "string" ? entry.groupLabel.trim() : "";
@@ -221,6 +236,8 @@ function normalizeProviderAuthChoices(
       choiceId,
       ...(choiceLabel ? { choiceLabel } : {}),
       ...(choiceHint ? { choiceHint } : {}),
+      ...(assistantPriority !== undefined ? { assistantPriority } : {}),
+      ...(assistantVisibility ? { assistantVisibility } : {}),
       ...(deprecatedChoiceIds.length > 0 ? { deprecatedChoiceIds } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupLabel ? { groupLabel } : {}),
@@ -320,7 +337,7 @@ export function loadPluginManifest(
   }
   let raw: unknown;
   try {
-    raw = JSON5.parse(fs.readFileSync(opened.fd, "utf-8")) as unknown;
+    raw = JSON5.parse(fs.readFileSync(opened.fd, "utf-8"));
   } catch (err) {
     return {
       ok: false,

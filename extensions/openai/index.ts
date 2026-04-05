@@ -25,12 +25,12 @@ export default definePluginEntry({
     api.registerCliBackend(buildOpenAICodexCliBackend());
     api.registerProvider(buildOpenAIProvider());
     api.registerProvider(buildOpenAICodexProviderPlugin());
-    api.registerSpeechProvider(buildOpenAISpeechProvider());
+    api.registerImageGenerationProvider(buildOpenAIImageGenerationProvider());
     api.registerRealtimeTranscriptionProvider(buildOpenAIRealtimeTranscriptionProvider());
     api.registerRealtimeVoiceProvider(buildOpenAIRealtimeVoiceProvider());
+    api.registerSpeechProvider(buildOpenAISpeechProvider());
     api.registerMediaUnderstandingProvider(openaiMediaUnderstandingProvider);
     api.registerMediaUnderstandingProvider(openaiCodexMediaUnderstandingProvider);
-    api.registerImageGenerationProvider(buildOpenAIImageGenerationProvider());
     if (promptOverlayMode !== "off") {
       api.on("before_prompt_build", (_event, ctx) =>
         shouldApplyOpenAIPromptOverlay({

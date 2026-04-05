@@ -55,7 +55,7 @@ import {
 } from "../plugins/channel-plugin-ids.js";
 import { getGlobalHookRunner, runGlobalGatewayStopSafely } from "../plugins/hook-runner-global.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { getActivePluginRegistry, setActivePluginRegistry } from "../plugins/runtime.js";
 import { createPluginRuntime } from "../plugins/runtime/index.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import { getTotalQueueSize } from "../process/command-queue.js";
@@ -89,6 +89,7 @@ import {
   type GatewayUpdateAvailableEventPayload,
 } from "./events.js";
 import { ExecApprovalManager } from "./exec-approval-manager.js";
+import { startMcpLoopbackServer } from "./mcp-http.js";
 import { startGatewayModelPricingRefresh } from "./model-pricing-cache.js";
 import { NodeRegistry } from "./node-registry.js";
 import { createChannelManager } from "./server-channels.js";
@@ -287,15 +288,30 @@ async function prepareGatewayStartupConfig(params: {
       tailscale: params.tailscaleOverride,
     },
   );
-  await params.activateRuntimeSecrets(startupPreflightConfig, {
-    reason: "startup",
-    activate: false,
-  });
+  const preflightConfig = (
+    await params.activateRuntimeSecrets(startupPreflightConfig, {
+      reason: "startup",
+      activate: false,
+    })
+  ).config;
+  const preflightAuthOverride =
+    typeof preflightConfig.gateway?.auth?.token === "string" ||
+    typeof preflightConfig.gateway?.auth?.password === "string"
+      ? {
+          ...params.authOverride,
+          ...(typeof preflightConfig.gateway?.auth?.token === "string"
+            ? { token: preflightConfig.gateway.auth.token }
+            : {}),
+          ...(typeof preflightConfig.gateway?.auth?.password === "string"
+            ? { password: preflightConfig.gateway.auth.password }
+            : {}),
+        }
+      : params.authOverride;
 
   const authBootstrap = await ensureGatewayStartupAuth({
     cfg: params.runtimeConfig,
     env: process.env,
-    authOverride: params.authOverride,
+    authOverride: preflightAuthOverride,
     tailscaleOverride: params.tailscaleOverride,
     persist: true,
     baseHash: params.configSnapshot.hash,
@@ -598,7 +614,8 @@ export async function startGatewayServer(
       preferSetupRuntimeForChannelPlugins: deferredConfiguredChannelPluginIds.length > 0,
     }));
   } else {
-    setActivePluginRegistry(emptyPluginRegistry);
+    pluginRegistry = getActivePluginRegistry() ?? emptyPluginRegistry;
+    setActivePluginRegistry(pluginRegistry);
   }
   const channelLogs = Object.fromEntries(
     listChannelPlugins().map((plugin) => [plugin.id, logChannels.child(plugin.id)]),
@@ -636,7 +653,8 @@ export async function startGatewayServer(
   } = runtimeConfig;
   const getResolvedAuth = () =>
     resolveGatewayAuth({
-      authConfig: getRuntimeConfig().gateway?.auth,
+      authConfig:
+        getActiveSecretsRuntimeSnapshot()?.config.gateway?.auth ?? getRuntimeConfig().gateway?.auth,
       authOverride: opts.auth,
       env: process.env,
       tailscaleMode,
@@ -783,6 +801,7 @@ export async function startGatewayServer(
   let skillsChangeUnsub = () => {};
   let channelHealthMonitor: ReturnType<typeof startChannelHealthMonitor> | null = null;
   let stopModelPricingRefresh = () => {};
+  let mcpServer: { port: number; close: () => Promise<void> } | undefined;
   let configReloader: { stop: () => Promise<void> } = { stop: async () => {} };
   const closeOnStartupFailure = async () => {
     if (diagnosticsEnabled) {
@@ -798,6 +817,7 @@ export async function startGatewayServer(
     stopModelPricingRefresh();
     channelHealthMonitor?.stop();
     clearSecretsRuntimeSnapshot();
+    await mcpServer?.close().catch(() => {});
     await createGatewayCloseHandler({
       bonjourStop,
       tailscaleCleanup,
@@ -864,6 +884,13 @@ export async function startGatewayServer(
   let transcriptUnsub: (() => void) | null = null;
   let lifecycleUnsub: (() => void) | null = null;
   try {
+    try {
+      mcpServer = await startMcpLoopbackServer(0);
+      log.info(`MCP loopback server listening on http://127.0.0.1:${mcpServer.port}/mcp`);
+    } catch (error) {
+      log.warn(`MCP loopback server failed to start: ${String(error)}`);
+    }
+
     if (!minimalTestGateway) {
       const machineDisplayName = await getMachineDisplayName();
       const discovery = await startGatewayDiscovery({
@@ -1542,6 +1569,7 @@ export async function startGatewayServer(
       stopModelPricingRefresh();
       channelHealthMonitor?.stop();
       clearSecretsRuntimeSnapshot();
+      await mcpServer?.close().catch(() => {});
       await close(opts);
     },
   };
