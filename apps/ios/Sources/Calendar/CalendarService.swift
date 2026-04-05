@@ -8,15 +8,17 @@ final class CalendarService: CalendarServicing {
         private var continuation: CheckedContinuation<Bool, Never>?
         private var hasResumed = false
 
-        func install(_ continuation: CheckedContinuation<Bool, Never>) {
+        @discardableResult
+        func install(_ continuation: CheckedContinuation<Bool, Never>) -> Bool {
             self.lock.lock()
             if self.hasResumed {
                 self.lock.unlock()
                 continuation.resume(returning: false)
-                return
+                return false
             }
             self.continuation = continuation
             self.lock.unlock()
+            return true
         }
 
         func resume(_ value: Bool) {
@@ -76,7 +78,7 @@ final class CalendarService: CalendarServicing {
         let status = EKEventStore.authorizationStatus(for: .event)
         let authorized: Bool
         if status == .notDetermined {
-            authorized = await Self.requestWriteOnlyEventAccess(store: store)
+            authorized = await Self.requestEventAccess(store: store)
         } else {
             authorized = EventKitAuthorization.allowsWrite(status: status)
         }
@@ -149,27 +151,15 @@ final class CalendarService: CalendarServicing {
         }
     }
 
-    private static func requestWriteOnlyEventAccess(store: EKEventStore) async -> Bool {
-        await self.awaitPermissionRequest { completion in
-            if #available(iOS 17.0, *) {
-                store.requestWriteOnlyAccessToEvents { granted, _ in
-                    completion(granted)
-                }
-            } else {
-                store.requestAccess(to: .event) { granted, _ in
-                    completion(granted)
-                }
-            }
-        }
-    }
-
     private static func awaitPermissionRequest(
         _ start: @escaping (@Sendable @escaping (Bool) -> Void) -> Void) async -> Bool
     {
         let box = PermissionRequestBox()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                box.install(continuation)
+                guard box.install(continuation) else {
+                    return
+                }
                 start { granted in
                     box.resume(granted)
                 }
@@ -179,18 +169,30 @@ final class CalendarService: CalendarServicing {
         }
     }
 
+}
+
 #if DEBUG
 extension CalendarService {
     final class _TestPermissionRequestBox: @unchecked Sendable {
         private let box = PermissionRequestBox()
+        private let stateLock = NSLock()
+        private var didInstall = false
 
-        func resume(_ value: Bool) {
+        @discardableResult
+        func resume(_ value: Bool) -> Bool {
+            stateLock.lock()
+            let installed = didInstall
+            stateLock.unlock()
             self.box.resume(value)
+            return installed
         }
 
         func installAndAwait() async -> Bool {
             await withCheckedContinuation { continuation in
-                self.box.install(continuation)
+                stateLock.lock()
+                let installed = self.box.install(continuation)
+                if installed { didInstall = true }
+                stateLock.unlock()
             }
         }
     }
