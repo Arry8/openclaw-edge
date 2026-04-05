@@ -2,6 +2,7 @@ import type { ChatType } from "../channels/chat-type.js";
 import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
 import type { AgentElevatedAllowFromConfig, SessionSendPolicyAction } from "./types.base.js";
 import type { MemoryQmdIndexPath } from "./types.memory.js";
+import type { ConfiguredProviderRequest } from "./types.provider-request.js";
 import type { SecretInput } from "./types.secrets.js";
 
 export type MediaUnderstandingScopeMatch = {
@@ -44,6 +45,8 @@ type MediaProviderRequestConfig = {
   baseUrl?: string;
   /** Optional headers merged into provider requests. */
   headers?: Record<string, string>;
+  /** Optional request transport overrides for provider HTTP calls. */
+  request?: ConfiguredProviderRequest;
 };
 
 export type MediaUnderstandingModelConfig = MediaProviderRequestConfig & {
@@ -274,7 +277,7 @@ export type ExecToolConfig = {
     workspaceOnly?: boolean;
     /**
      * Optional allowlist of model ids that can use apply_patch.
-     * Accepts either raw ids (e.g. "gpt-5.2") or full ids (e.g. "openai/gpt-5.2").
+     * Accepts either raw ids (e.g. "gpt-5.4") or full ids (e.g. "openai/gpt-5.4").
      */
     allowModels?: string[];
   };
@@ -503,6 +506,21 @@ export type ToolsConfig = {
         };
       };
     } & Record<string, unknown>;
+    /** X (formerly Twitter) search tool configuration using xAI Grok. */
+    x_search?: {
+      /** Enable X search tool (default: true when xAI auth is available via plugin config or XAI_API_KEY). */
+      enabled?: boolean;
+      /** Model id to use for X search. */
+      model?: string;
+      /** Keep inline citations in the xAI response payload when available. */
+      inlineCitations?: boolean;
+      /** Optional max search/tool turns for xAI to use internally. */
+      maxTurns?: number;
+      /** Timeout in seconds for X search requests. */
+      timeoutSeconds?: number;
+      /** Cache TTL in minutes for X search results. */
+      cacheTtlMinutes?: number;
+    };
     fetch?: {
       /** Enable web fetch tool (default: true). */
       enabled?: boolean;
@@ -608,5 +626,10 @@ export type ToolsConfig = {
       alsoAllow?: string[];
       deny?: string[];
     };
+  };
+  /** Experimental tool flags. Default off unless explicitly enabled. */
+  experimental?: {
+    /** Enable the structured `update_plan` tool for all providers. OpenAI-family runs auto-enable it. */
+    planTool?: boolean;
   };
 };
