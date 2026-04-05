@@ -1,9 +1,13 @@
 package ai.openclaw.app
 
 import ai.openclaw.app.gateway.GatewayEndpoint
+import ai.openclaw.app.gateway.GatewayConnectAuth
 import ai.openclaw.app.gateway.GatewaySession
+import ai.openclaw.app.gateway.GatewayTrustPrompt
 import ai.openclaw.app.gateway.GatewayTlsProbeFailure
 import ai.openclaw.app.gateway.GatewayTlsProbeResult
+import ai.openclaw.app.gateway.resolveOperatorSessionConnectAuth
+import ai.openclaw.app.gateway.shouldConnectOperatorSession
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,13 +28,13 @@ class GatewayBootstrapAuthTest {
   fun skipsOperatorSessionWhenOnlyBootstrapAuthExists() {
     assertFalse(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = "", bootstrapToken = "bootstrap-1", password = ""),
+        GatewayConnectAuth(token = "", bootstrapToken = "bootstrap-1", password = ""),
         storedOperatorToken = "",
       ),
     )
     assertFalse(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
+        GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
         storedOperatorToken = null,
       ),
     )
@@ -40,25 +44,25 @@ class GatewayBootstrapAuthTest {
   fun connectsOperatorSessionWhenSharedPasswordOrStoredAuthExists() {
     assertTrue(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = "shared-token", bootstrapToken = "bootstrap-1", password = null),
+        GatewayConnectAuth(token = "shared-token", bootstrapToken = "bootstrap-1", password = null),
         storedOperatorToken = null,
       ),
     )
     assertTrue(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = "shared-password"),
+        GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = "shared-password"),
         storedOperatorToken = null,
       ),
     )
     assertTrue(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
+        GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
         storedOperatorToken = "stored-token",
       ),
     )
     assertFalse(
       shouldConnectOperatorSession(
-        NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = "", password = null),
+        GatewayConnectAuth(token = null, bootstrapToken = "", password = null),
         storedOperatorToken = null,
       ),
     )
@@ -68,23 +72,23 @@ class GatewayBootstrapAuthTest {
   fun resolveOperatorSessionConnectAuthUsesStoredTokenPathAfterBootstrapHandoff() {
     val resolved =
       resolveOperatorSessionConnectAuth(
-        auth = NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
+        auth = GatewayConnectAuth(token = null, bootstrapToken = "bootstrap-1", password = null),
         storedOperatorToken = "stored-token",
       )
 
-    assertEquals(NodeRuntime.GatewayConnectAuth(token = null, bootstrapToken = null, password = null), resolved)
+    assertEquals(GatewayConnectAuth(token = null, bootstrapToken = null, password = null), resolved)
   }
 
   @Test
   fun resolveOperatorSessionConnectAuthPrefersExplicitSharedAuth() {
     val resolved =
       resolveOperatorSessionConnectAuth(
-        auth = NodeRuntime.GatewayConnectAuth(token = "shared-token", bootstrapToken = "bootstrap-1", password = "shared-password"),
+        auth = GatewayConnectAuth(token = "shared-token", bootstrapToken = "bootstrap-1", password = "shared-password"),
         storedOperatorToken = "stored-token",
       )
 
     assertEquals(
-      NodeRuntime.GatewayConnectAuth(token = "shared-token", bootstrapToken = null, password = null),
+      GatewayConnectAuth(token = "shared-token", bootstrapToken = null, password = null),
       resolved,
     )
   }
@@ -105,7 +109,7 @@ class GatewayBootstrapAuthTest {
 
     val auth =
       runtime.resolveGatewayConnectAuth(
-        NodeRuntime.GatewayConnectAuth(
+        GatewayConnectAuth(
           token = null,
           bootstrapToken = "setup-bootstrap-token",
           password = null,
@@ -138,7 +142,7 @@ class GatewayBootstrapAuthTest {
         )
       val endpoint = GatewayEndpoint.manual(host = "gateway.example", port = 18789)
       val explicitAuth =
-        NodeRuntime.GatewayConnectAuth(
+        GatewayConnectAuth(
           token = null,
           bootstrapToken = "setup-bootstrap-token",
           password = null,
@@ -168,7 +172,7 @@ class GatewayBootstrapAuthTest {
 
     runtime.connect(
       GatewayEndpoint.manual(host = "gateway.example", port = 18789),
-      NodeRuntime.GatewayConnectAuth(token = "shared-token", bootstrapToken = null, password = null),
+      GatewayConnectAuth(token = "shared-token", bootstrapToken = null, password = null),
     )
 
     assertEquals(
@@ -178,7 +182,7 @@ class GatewayBootstrapAuthTest {
     assertNull(runtime.pendingGatewayTrust.value)
   }
 
-  private fun waitForGatewayTrustPrompt(runtime: NodeRuntime): NodeRuntime.GatewayTrustPrompt {
+  private fun waitForGatewayTrustPrompt(runtime: NodeRuntime): GatewayTrustPrompt {
     repeat(50) {
       runtime.pendingGatewayTrust.value?.let { return it }
       Thread.sleep(10)

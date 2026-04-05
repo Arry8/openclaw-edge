@@ -14,8 +14,9 @@ import ai.openclaw.android.gateway.GatewayEvent
 import ai.openclaw.android.gateway.ChatSessionEntry
 import ai.openclaw.app.chat.OutgoingAttachment
 import ai.openclaw.app.gateway.DeviceIdentityStore
+import ai.openclaw.app.gateway.GatewayConnectAuth
 import ai.openclaw.app.gateway.GatewayEndpoint
-import ai.openclaw.app.gateway.GatewayTlsProbeFailure
+import ai.openclaw.app.gateway.GatewayTrustPrompt
 import ai.openclaw.app.gateway.GatewayTlsProbeResult
 import ai.openclaw.app.gateway.probeGatewayTlsFingerprint
 import ai.openclaw.app.gateway.NodeGatewayCoordinator
@@ -48,12 +49,6 @@ class NodeRuntime(
   val prefs: SecurePrefs = SecurePrefs(context.applicationContext),
   private val tlsFingerprintProbe: suspend (String, Int) -> GatewayTlsProbeResult = ::probeGatewayTlsFingerprint,
 ) {
-  data class GatewayConnectAuth(
-    val token: String?,
-    val bootstrapToken: String?,
-    val password: String?,
-  )
-
   private val appContext = context.applicationContext
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   val canvas = CanvasController()
@@ -194,6 +189,7 @@ class NodeRuntime(
             updateHomeCanvasState()
           },
         ),
+      tlsFingerprintProbe = tlsFingerprintProbe,
     )
 
   private val operatorSession = gatewayCoordinator.operatorSession
@@ -240,23 +236,15 @@ class NodeRuntime(
     motionActivityAvailable = { motionHandler.isActivityAvailable() },
     motionPedometerAvailable = { motionHandler.isPedometerAvailable() },
   )
-  data class GatewayTrustPrompt(
-    val endpoint: GatewayEndpoint,
-    val fingerprintSha256: String,
-    val auth: GatewayConnectAuth,
-  )
-
   val gateways: StateFlow<List<GatewayEndpoint>> = gatewayCoordinator.gateways
   val discoveryStatusText: StateFlow<String> = gatewayCoordinator.discoveryStatusText
-
-  private val _pendingGatewayTrust = MutableStateFlow<GatewayTrustPrompt?>(null)
 
   val isConnected: StateFlow<Boolean> = gatewayCoordinator.isConnected
   val nodeConnected: StateFlow<Boolean> = gatewayCoordinator.nodeConnected
 
   val statusText: StateFlow<String> = gatewayCoordinator.statusText
 
-  val pendingGatewayTrust: StateFlow<GatewayTrustPrompt?> = _pendingGatewayTrust.asStateFlow()
+  val pendingGatewayTrust: StateFlow<GatewayTrustPrompt?> = gatewayCoordinator.pendingGatewayTrust
 
   private fun resolveNodeMainSessionKey(agentId: String? = gatewayDefaultAgentId): String {
     val deviceId = identityStore.loadOrCreate().deviceId
@@ -717,7 +705,7 @@ class NodeRuntime(
     endpoint: GatewayEndpoint,
     auth: GatewayConnectAuth,
   ) {
-    gatewayCoordinator.connect(endpoint)
+    gatewayCoordinator.connect(endpoint, auth)
   }
 
   internal fun resolveGatewayConnectAuth(explicitAuth: GatewayConnectAuth? = null): GatewayConnectAuth {
@@ -730,22 +718,11 @@ class NodeRuntime(
   }
 
   fun acceptGatewayTrustPrompt() {
-    _pendingGatewayTrust.value = null
     gatewayCoordinator.acceptGatewayTrustPrompt()
   }
 
   fun declineGatewayTrustPrompt() {
-    _pendingGatewayTrust.value = null
     gatewayCoordinator.declineGatewayTrustPrompt()
-  }
-
-  private fun gatewayTlsProbeFailureMessage(failure: GatewayTlsProbeFailure?): String {
-    return when (failure) {
-      GatewayTlsProbeFailure.TLS_UNAVAILABLE ->
-        "Failed: this host requires wss:// or Tailscale Serve. No TLS endpoint detected."
-      GatewayTlsProbeFailure.ENDPOINT_UNREACHABLE, null ->
-        "Failed: couldn't reach the secure gateway endpoint for this host."
-    }
   }
 
   private fun hasRecordAudioPermission(): Boolean {
@@ -760,7 +737,6 @@ class NodeRuntime(
   }
 
   fun disconnect() {
-    _pendingGatewayTrust.value = null
     gatewayCoordinator.disconnect()
   }
 
@@ -1006,47 +982,4 @@ class NodeRuntime(
     return operatorSession.request(method, paramsJson, timeoutMs)
   }
 
-}
-
-internal fun resolveOperatorSessionConnectAuth(
-  auth: NodeRuntime.GatewayConnectAuth,
-  storedOperatorToken: String?,
-): NodeRuntime.GatewayConnectAuth? {
-  val explicitToken = auth.token?.trim()?.takeIf { it.isNotEmpty() }
-  if (explicitToken != null) {
-    return NodeRuntime.GatewayConnectAuth(
-      token = explicitToken,
-      bootstrapToken = null,
-      password = null,
-    )
-  }
-
-  val explicitPassword = auth.password?.trim()?.takeIf { it.isNotEmpty() }
-  if (explicitPassword != null) {
-    return NodeRuntime.GatewayConnectAuth(
-      token = null,
-      bootstrapToken = null,
-      password = explicitPassword,
-    )
-  }
-
-  val storedToken = storedOperatorToken?.trim()?.takeIf { it.isNotEmpty() }
-  if (storedToken != null) {
-    // Bootstrap can seed the operator token, but operator should reconnect
-    // through the stored device-token path rather than bootstrap auth itself.
-    return NodeRuntime.GatewayConnectAuth(
-      token = null,
-      bootstrapToken = null,
-      password = null,
-    )
-  }
-
-  return null
-}
-
-internal fun shouldConnectOperatorSession(
-  auth: NodeRuntime.GatewayConnectAuth,
-  storedOperatorToken: String?,
-): Boolean {
-  return resolveOperatorSessionConnectAuth(auth, storedOperatorToken) != null
 }
