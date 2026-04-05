@@ -385,6 +385,9 @@ function resolveDirectoryEntryKind(
     return "user";
   }
   if (entry.kind === "group" || entry.kind === "channel") {
+    // Directory entries marked as "channel" still map to the resolver's shared
+    // non-user branch. This keeps channel/group session routing aligned with the
+    // existing target-kind contract in this module.
     return "group";
   }
   return fallbackKind;
