@@ -88,6 +88,30 @@ describe("resolveMessagingTarget (directory fallback)", () => {
     expect(mocks.listGroupsLive).toHaveBeenCalledTimes(1);
   });
 
+  it("respects a single directory entry kind even when the initial kind guess was group", async () => {
+    const entry: ChannelDirectoryEntry = { kind: "user", id: "staff_bob", name: "Bob" };
+    mocks.listGroups.mockResolvedValue([entry]);
+    mocks.listGroupsLive.mockResolvedValue([]);
+
+    const result = await resolveMessagingTarget({
+      cfg,
+      channel: "dingtalk",
+      input: "Bob",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.target).toEqual({
+        to: "staff_bob",
+        kind: "user",
+        display: "Bob",
+        source: "directory",
+      });
+    }
+    expect(mocks.listGroups).toHaveBeenCalledTimes(1);
+    expect(mocks.listPeers).not.toHaveBeenCalled();
+  });
+
   it("skips directory lookup for direct ids", async () => {
     const result = await resolveMessagingTarget({
       cfg,
