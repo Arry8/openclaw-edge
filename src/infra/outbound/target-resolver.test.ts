@@ -112,6 +112,32 @@ describe("resolveMessagingTarget (directory fallback)", () => {
     expect(mocks.listPeers).not.toHaveBeenCalled();
   });
 
+  it('normalizes "channel" directory entries to the shared group target kind', async () => {
+    const entry: ChannelDirectoryEntry = {
+      kind: "channel",
+      id: "channel:support-room",
+      name: "Support Room",
+    };
+    mocks.listGroups.mockResolvedValue([entry]);
+    mocks.listGroupsLive.mockResolvedValue([]);
+
+    const result = await resolveMessagingTarget({
+      cfg,
+      channel: "dingtalk",
+      input: "Support Room",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.target).toEqual({
+        to: "channel:support-room",
+        kind: "group",
+        display: "Support Room",
+        source: "directory",
+      });
+    }
+  });
+
   it("skips directory lookup for direct ids", async () => {
     const result = await resolveMessagingTarget({
       cfg,
