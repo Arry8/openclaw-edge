@@ -327,9 +327,35 @@ function mergeAudioOutputsPreservingAttachmentOrder(params: {
   if (syntheticOutputs.length === 0) {
     return outputs;
   }
-  return [...outputs, ...syntheticOutputs].sort(
-    (left, right) => left.attachmentIndex - right.attachmentIndex,
-  );
+  if (outputs.length === 0) {
+    return syntheticOutputs;
+  }
+
+  const merged = [...outputs];
+  for (const synthetic of syntheticOutputs) {
+    const insertAt = merged.findIndex(
+      (existing) => synthetic.attachmentIndex < existing.attachmentIndex,
+    );
+    if (insertAt === -1) {
+      merged.push(synthetic);
+    } else {
+      merged.splice(insertAt, 0, synthetic);
+    }
+  }
+  return merged;
+}
+
+function mediaOutputCapabilityRank(output: MediaUnderstandingOutput): number {
+  if (output.kind.startsWith("image.")) {
+    return 0;
+  }
+  if (output.kind === "audio.transcription") {
+    return 1;
+  }
+  if (output.kind.startsWith("video.")) {
+    return 2;
+  }
+  return CAPABILITY_ORDER.length;
 }
 
 function isBinaryMediaMime(mime?: string): boolean {
@@ -562,20 +588,24 @@ export async function applyMediaUnderstanding(params: {
     if (syntheticSkippedAudioOutputs.length > 0) {
       const firstAudioIdx = outputs.findIndex((o) => o.kind === "audio.transcription");
       if (firstAudioIdx >= 0) {
-        // Split: keep non-audio in place, replace audio slice with merged+sorted version
         const before = outputs.slice(0, firstAudioIdx);
         const existingAudio = outputs.filter((o) => o.kind === "audio.transcription");
         const afterLastAudio = outputs.slice(
           outputs.reduce((last, o, i) => (o.kind === "audio.transcription" ? i : last), firstAudioIdx) + 1,
         );
-        const mergedAudio = [...existingAudio, ...syntheticSkippedAudioOutputs].sort(
-          (a, b) => a.attachmentIndex - b.attachmentIndex,
-        );
+        const mergedAudio = mergeAudioOutputsPreservingAttachmentOrder({
+          outputs: existingAudio,
+          syntheticOutputs: syntheticSkippedAudioOutputs,
+        });
         outputs.length = 0;
         outputs.push(...before, ...mergedAudio, ...afterLastAudio);
       } else {
-        // No real audio outputs — append synthetic at end
-        outputs.push(...syntheticSkippedAudioOutputs);
+        const insertIndex = outputs.findIndex((output) => mediaOutputCapabilityRank(output) > 1);
+        if (insertIndex === -1) {
+          outputs.push(...syntheticSkippedAudioOutputs);
+        } else {
+          outputs.splice(insertIndex, 0, ...syntheticSkippedAudioOutputs);
+        }
       }
     }
 
