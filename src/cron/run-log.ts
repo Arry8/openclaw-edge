@@ -150,46 +150,55 @@ async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLin
   const { createReadStream } = await import("node:fs");
   const { createInterface } = await import("node:readline");
 
-  // Read at most maxBytes from the tail of the file.  This is enough to
-  // contain keepLines lines (each run-log JSON line is typically <2 KB).
-  // Read enough bytes to capture keepLines entries.  Each JSONL run-log line
-  // can include summaries up to 2000 chars plus JSON overhead, so we use a
-  // generous 4 KB per-line estimate.  Use the greater of maxBytes and the
-  // line-count estimate to avoid under-reading.
-  const tailBytes = Math.max(opts.maxBytes, opts.keepLines * 4096);
-  const startPos = Math.max(0, stat.size - tailBytes);
+  let tailBytes = Math.max(opts.maxBytes, 64 * 1024);
+  let lines: string[] = [];
+  let startPos = 0;
 
-  const lines: string[] = [];
-  const rl = createInterface({
-    input: createReadStream(filePath, { start: startPos, encoding: "utf-8" }),
-    crlfDelay: Infinity,
-  });
+  while (true) {
+    tailBytes = Math.min(stat.size, tailBytes);
+    startPos = Math.max(0, stat.size - tailBytes);
+    lines = [];
 
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    if (trimmed) {
-      lines.push(trimmed);
-    }
-  }
+    const rl = createInterface({
+      input: createReadStream(filePath, { start: startPos, encoding: "utf-8" }),
+      crlfDelay: Infinity,
+    });
 
-  // If we started mid-file, the first "line" may be a partial JSON fragment.
-  // Only drop it when we actually landed in the middle of a line.  When
-  // startPos happens to fall exactly on a newline boundary the first streamed
-  // line is already complete and should be kept.
-  if (startPos > 0 && lines.length > 0) {
-    const fd = await fs.open(filePath, "r");
-    try {
-      const buf = Buffer.alloc(1);
-      await fd.read(buf, 0, 1, startPos - 1);
-      const prevByte = buf[0];
-      // 0x0A = newline.  If the byte immediately before startPos is a newline
-      // the first streamed line starts at a line boundary and is complete.
-      if (prevByte !== 0x0a) {
-        lines.shift();
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        lines.push(trimmed);
       }
-    } finally {
-      await fd.close();
     }
+
+    // If we started mid-file, the first "line" may be a partial JSON fragment.
+    // Only drop it when we actually landed in the middle of a line.  When
+    // startPos happens to fall exactly on a newline boundary the first streamed
+    // line is already complete and should be kept.
+    if (startPos > 0 && lines.length > 0) {
+      const fd = await fs.open(filePath, "r");
+      try {
+        const buf = Buffer.alloc(1);
+        await fd.read(buf, 0, 1, startPos - 1);
+        const prevByte = buf[0];
+        // 0x0A = newline.  If the byte immediately before startPos is a newline
+        // the first streamed line starts at a line boundary and is complete.
+        if (prevByte !== 0x0a) {
+          lines.shift();
+        }
+      } finally {
+        await fd.close();
+      }
+    }
+
+    if (startPos === 0 || lines.length >= opts.keepLines) {
+      break;
+    }
+
+    if (tailBytes >= stat.size) {
+      break;
+    }
+    tailBytes *= 2;
   }
 
   const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));

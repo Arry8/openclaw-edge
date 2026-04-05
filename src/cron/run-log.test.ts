@@ -437,6 +437,38 @@ describe("cron run log", () => {
     });
   });
 
+  it("readCronRunLogEntriesPage keeps requested lines even when each line exceeds 4 KB", async () => {
+    await withRunLogDir("openclaw-cron-log-prune-long-lines-", async (dir) => {
+      const logPath = path.join(dir, "runs", "job-long-lines.jsonl");
+      await fs.mkdir(path.dirname(logPath), { recursive: true });
+
+      const lines: string[] = [];
+      for (let i = 0; i < 12; i++) {
+        lines.push(
+          JSON.stringify({
+            ts: 5000 + i,
+            jobId: "job-long-lines",
+            action: "finished",
+            status: "ok",
+            summary: `${i}-` + "x".repeat(6000),
+          }),
+        );
+      }
+      await fs.writeFile(logPath, lines.join("\n") + "\n", "utf-8");
+
+      const page = await readCronRunLogEntriesPage(logPath, {
+        limit: 20,
+        offset: 0,
+        sortDir: "desc",
+        pruneOptions: { maxBytes: 500, keepLines: 10 },
+      });
+
+      expect(page.entries).toHaveLength(10);
+      expect(page.entries.at(-1)?.ts).toBe(5002);
+      expect(page.entries[0]?.ts).toBe(5011);
+    });
+  });
+
   it("readCronRunLogEntriesPageAll succeeds even when prune would fail (read-only dir)", async () => {
     await withRunLogDir("openclaw-cron-log-prune-fail-all-", async (dir) => {
       const storePath = path.join(dir, "jobs.json");
