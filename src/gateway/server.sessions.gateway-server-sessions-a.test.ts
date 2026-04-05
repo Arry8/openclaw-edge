@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
-import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
 import { loadConfig } from "../config/config.js";
 import { withSessionStoreLockForTest } from "../config/sessions/store.js";
@@ -182,6 +181,16 @@ vi.mock("../acp/control-plane/manager.js", () => ({
     closeSession: acpManagerMocks.closeSession,
   }),
 }));
+
+vi.mock("../../extensions/browser/runtime-api.js", async () => {
+  const actual = await vi.importActual<typeof import("../../extensions/browser/runtime-api.js")>(
+    "../../extensions/browser/runtime-api.js",
+  );
+  return {
+    ...actual,
+    closeTrackedBrowserTabsForSessions: browserSessionTabMocks.closeTrackedBrowserTabsForSessions,
+  };
+});
 
 vi.mock("../plugin-sdk/browser-maintenance.js", () => ({
   closeTrackedBrowserTabsForSessions: browserSessionTabMocks.closeTrackedBrowserTabsForSessions,
@@ -971,7 +980,7 @@ describe("gateway server sessions", () => {
     expect(list1.ok).toBe(true);
     expect(list1.payload?.path).toBe(storePath);
     expect(list1.payload?.sessions.some((s) => s.key === "global")).toBe(false);
-    expect(list1.payload?.defaults?.modelProvider).toBe(DEFAULT_PROVIDER);
+    expect(list1.payload?.defaults?.modelProvider).toBe("anthropic");
     const main = list1.payload?.sessions.find((s) => s.key === "agent:main:main");
     expect(main?.totalTokens).toBeUndefined();
     expect(main?.totalTokensFresh).toBe(false);
@@ -1342,16 +1351,15 @@ describe("gateway server sessions", () => {
           execNode: "mac-mini",
           displayName: "Ops Child",
           cliSessionIds: {
-            "claude-cli": "cli-session-123",
+            "codex-cli": "cli-session-123",
           },
           cliSessionBindings: {
-            "claude-cli": {
+            "codex-cli": {
               sessionId: "cli-session-123",
-              authProfileId: "anthropic:work",
+              authProfileId: "openai-codex:work",
               extraSystemPromptHash: "prompt-hash",
             },
           },
-          claudeCliSessionId: "cli-session-123",
           deliveryContext: {
             channel: "discord",
             to: "discord:child",
@@ -1411,7 +1419,6 @@ describe("gateway server sessions", () => {
           }
         >;
         cliSessionIds?: Record<string, string>;
-        claudeCliSessionId?: string;
         deliveryContext?: {
           channel?: string;
           to?: string;
@@ -1457,16 +1464,15 @@ describe("gateway server sessions", () => {
     expect(reset.payload?.entry.execNode).toBe("mac-mini");
     expect(reset.payload?.entry.displayName).toBe("Ops Child");
     expect(reset.payload?.entry.cliSessionBindings).toEqual({
-      "claude-cli": {
+      "codex-cli": {
         sessionId: "cli-session-123",
-        authProfileId: "anthropic:work",
+        authProfileId: "openai-codex:work",
         extraSystemPromptHash: "prompt-hash",
       },
     });
     expect(reset.payload?.entry.cliSessionIds).toEqual({
-      "claude-cli": "cli-session-123",
+      "codex-cli": "cli-session-123",
     });
-    expect(reset.payload?.entry.claudeCliSessionId).toBe("cli-session-123");
     expect(reset.payload?.entry.deliveryContext).toEqual({
       channel: "discord",
       to: "discord:child",
@@ -1521,7 +1527,6 @@ describe("gateway server sessions", () => {
           }
         >;
         cliSessionIds?: Record<string, string>;
-        claudeCliSessionId?: string;
         deliveryContext?: {
           channel?: string;
           to?: string;
@@ -1565,16 +1570,15 @@ describe("gateway server sessions", () => {
     expect(store["agent:main:subagent:child"]?.execNode).toBe("mac-mini");
     expect(store["agent:main:subagent:child"]?.displayName).toBe("Ops Child");
     expect(store["agent:main:subagent:child"]?.cliSessionBindings).toEqual({
-      "claude-cli": {
+      "codex-cli": {
         sessionId: "cli-session-123",
-        authProfileId: "anthropic:work",
+        authProfileId: "openai-codex:work",
         extraSystemPromptHash: "prompt-hash",
       },
     });
     expect(store["agent:main:subagent:child"]?.cliSessionIds).toEqual({
-      "claude-cli": "cli-session-123",
+      "codex-cli": "cli-session-123",
     });
-    expect(store["agent:main:subagent:child"]?.claudeCliSessionId).toBe("cli-session-123");
     expect(store["agent:main:subagent:child"]?.deliveryContext).toEqual({
       channel: "discord",
       to: "discord:child",

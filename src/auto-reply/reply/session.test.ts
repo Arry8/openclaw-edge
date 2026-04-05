@@ -1573,7 +1573,7 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
     }
   });
 
-  it("preserves selected auth profile overrides across /new and /reset", async () => {
+  it("preserves selected auth profile overrides but clears stale cli session bindings across /new and /reset", async () => {
     const storePath = await createStorePath("openclaw-reset-model-auth-");
     const sessionKey = "agent:main:telegram:dm:user-model-auth";
     const existingSessionId = "existing-session-model-auth";
@@ -1583,14 +1583,13 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
       authProfileOverride: "20251001",
       authProfileOverrideSource: "user",
       authProfileOverrideCompactionCount: 2,
-      cliSessionIds: { "claude-cli": "cli-session-123" },
+      cliSessionIds: { "codex-cli": "cli-session-123" },
       cliSessionBindings: {
-        "claude-cli": {
+        "codex-cli": {
           sessionId: "cli-session-123",
-          authProfileId: "anthropic:default",
+          authProfileId: "openai-codex:default",
         },
       },
-      claudeCliSessionId: "cli-session-123",
     } as const;
     const cases = [
       {
@@ -1641,9 +1640,12 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
         authProfileOverrideSource: overrides.authProfileOverrideSource,
         authProfileOverrideCompactionCount: overrides.authProfileOverrideCompactionCount,
       });
-      expect(result.sessionEntry.cliSessionIds).toEqual(overrides.cliSessionIds);
-      expect(result.sessionEntry.cliSessionBindings).toEqual(overrides.cliSessionBindings);
-      expect(result.sessionEntry.claudeCliSessionId).toBe(overrides.claudeCliSessionId);
+      expect(result.sessionEntry.cliSessionIds).toBeUndefined();
+      expect(result.sessionEntry.cliSessionBindings).toBeUndefined();
+
+      const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
+      expect(stored[sessionKey].cliSessionIds).toBeUndefined();
+      expect(stored[sessionKey].cliSessionBindings).toBeUndefined();
     }
   });
 
@@ -2111,10 +2113,10 @@ describe("persistSessionUsageUpdate", () => {
       sessionKey,
       usage: { input: 24_000, output: 2_000, cacheRead: 8_000 },
       usageIsContextSnapshot: true,
-      providerUsed: "claude-cli",
+      providerUsed: "codex-cli",
       cliSessionBinding: {
         sessionId: "cli-session-1",
-        authProfileId: "anthropic:default",
+        authProfileId: "openai-codex:default",
         extraSystemPromptHash: "prompt-hash",
         mcpConfigHash: "mcp-hash",
       },
@@ -2124,10 +2126,10 @@ describe("persistSessionUsageUpdate", () => {
     const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
     expect(stored[sessionKey].totalTokens).toBe(32_000);
     expect(stored[sessionKey].totalTokensFresh).toBe(true);
-    expect(stored[sessionKey].cliSessionIds?.["claude-cli"]).toBe("cli-session-1");
-    expect(stored[sessionKey].cliSessionBindings?.["claude-cli"]).toEqual({
+    expect(stored[sessionKey].cliSessionIds?.["codex-cli"]).toBe("cli-session-1");
+    expect(stored[sessionKey].cliSessionBindings?.["codex-cli"]).toEqual({
       sessionId: "cli-session-1",
-      authProfileId: "anthropic:default",
+      authProfileId: "openai-codex:default",
       extraSystemPromptHash: "prompt-hash",
       mcpConfigHash: "mcp-hash",
     });

@@ -8,6 +8,7 @@ import {
   BUNDLED_SPEECH_PLUGIN_IDS,
   BUNDLED_WEB_FETCH_PLUGIN_IDS,
   BUNDLED_WEB_SEARCH_PLUGIN_IDS,
+  BUNDLED_VIDEO_GENERATION_PLUGIN_IDS,
 } from "../bundled-capability-metadata.js";
 import { loadBundledCapabilityRuntimeRegistry } from "../bundled-capability-runtime.js";
 import type {
@@ -17,6 +18,7 @@ import type {
   RealtimeTranscriptionProviderPlugin,
   RealtimeVoiceProviderPlugin,
   SpeechProviderPlugin,
+  VideoGenerationProviderPlugin,
   WebFetchProviderPlugin,
   WebSearchProviderPlugin,
 } from "../types.js";
@@ -26,6 +28,7 @@ import {
   loadVitestRealtimeTranscriptionProviderContractRegistry,
   loadVitestRealtimeVoiceProviderContractRegistry,
   loadVitestSpeechProviderContractRegistry,
+  loadVitestVideoGenerationProviderContractRegistry,
 } from "./speech-vitest-registry.js";
 
 type BundledCapabilityRuntimeRegistry = ReturnType<typeof loadBundledCapabilityRuntimeRegistry>;
@@ -50,16 +53,17 @@ type RealtimeVoiceProviderContractEntry = CapabilityContractEntry<RealtimeVoiceP
 type MediaUnderstandingProviderContractEntry =
   CapabilityContractEntry<MediaUnderstandingProviderPlugin>;
 type ImageGenerationProviderContractEntry = CapabilityContractEntry<ImageGenerationProviderPlugin>;
+type VideoGenerationProviderContractEntry = CapabilityContractEntry<VideoGenerationProviderPlugin>;
 
 type PluginRegistrationContractEntry = {
   pluginId: string;
-  cliBackendIds: string[];
   providerIds: string[];
   speechProviderIds: string[];
   realtimeTranscriptionProviderIds: string[];
   realtimeVoiceProviderIds: string[];
   mediaUnderstandingProviderIds: string[];
   imageGenerationProviderIds: string[];
+  videoGenerationProviderIds: string[];
   webFetchProviderIds: string[];
   webSearchProviderIds: string[];
   toolNames: string[];
@@ -113,6 +117,8 @@ let mediaUnderstandingProviderContractRegistryCache:
   | MediaUnderstandingProviderContractEntry[]
   | null = null;
 let imageGenerationProviderContractRegistryCache: ImageGenerationProviderContractEntry[] | null =
+  null;
+let videoGenerationProviderContractRegistryCache: VideoGenerationProviderContractEntry[] | null =
   null;
 const providerContractPluginIdsByProviderId = createProviderContractPluginIdsByProviderId();
 
@@ -462,6 +468,21 @@ function loadImageGenerationProviderContractRegistry(): ImageGenerationProviderC
   return imageGenerationProviderContractRegistryCache;
 }
 
+function loadVideoGenerationProviderContractRegistry(): VideoGenerationProviderContractEntry[] {
+  if (!videoGenerationProviderContractRegistryCache) {
+    videoGenerationProviderContractRegistryCache = process.env.VITEST
+      ? loadVitestVideoGenerationProviderContractRegistry()
+      : loadBundledCapabilityRuntimeRegistry({
+          pluginIds: BUNDLED_VIDEO_GENERATION_PLUGIN_IDS,
+          pluginSdkResolution: "dist",
+        }).videoGenerationProviders.map((entry) => ({
+          pluginId: entry.pluginId,
+          provider: entry.provider,
+        }));
+  }
+  return videoGenerationProviderContractRegistryCache;
+}
+
 function createLazyArrayView<T>(load: () => T[]): T[] {
   return new Proxy([] as T[], {
     get(_target, prop) {
@@ -576,16 +597,19 @@ export const mediaUnderstandingProviderContractRegistry: MediaUnderstandingProvi
 export const imageGenerationProviderContractRegistry: ImageGenerationProviderContractEntry[] =
   createLazyArrayView(loadImageGenerationProviderContractRegistry);
 
+export const videoGenerationProviderContractRegistry: VideoGenerationProviderContractEntry[] =
+  createLazyArrayView(loadVideoGenerationProviderContractRegistry);
+
 function loadPluginRegistrationContractRegistry(): PluginRegistrationContractEntry[] {
   return BUNDLED_PLUGIN_CONTRACT_SNAPSHOTS.map((entry) => ({
     pluginId: entry.pluginId,
-    cliBackendIds: uniqueStrings(entry.cliBackendIds),
     providerIds: uniqueStrings(entry.providerIds),
     speechProviderIds: uniqueStrings(entry.speechProviderIds),
     realtimeTranscriptionProviderIds: uniqueStrings(entry.realtimeTranscriptionProviderIds),
     realtimeVoiceProviderIds: uniqueStrings(entry.realtimeVoiceProviderIds),
     mediaUnderstandingProviderIds: uniqueStrings(entry.mediaUnderstandingProviderIds),
     imageGenerationProviderIds: uniqueStrings(entry.imageGenerationProviderIds),
+    videoGenerationProviderIds: uniqueStrings(entry.videoGenerationProviderIds),
     webFetchProviderIds: uniqueStrings(entry.webFetchProviderIds),
     webSearchProviderIds: uniqueStrings(entry.webSearchProviderIds),
     toolNames: uniqueStrings(entry.toolNames),

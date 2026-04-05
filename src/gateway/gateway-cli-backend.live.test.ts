@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -20,16 +21,10 @@ const CLI_IMAGE = isTruthyEnvValue(process.env.OPENCLAW_LIVE_CLI_BACKEND_IMAGE_P
 const CLI_RESUME = isTruthyEnvValue(process.env.OPENCLAW_LIVE_CLI_BACKEND_RESUME_PROBE);
 const describeLive = LIVE && CLI_LIVE ? describe : describe.skip;
 
-const DEFAULT_MODEL = "claude-cli/claude-sonnet-4-6";
-const DEFAULT_CLAUDE_ARGS = [
-  "-p",
-  "--output-format",
-  "stream-json",
-  "--include-partial-messages",
-  "--verbose",
-  "--permission-mode",
-  "bypassPermissions",
-];
+const DEFAULT_MODEL = "codex-cli/gpt-5.4";
+const BOOTSTRAP_LIVE_MODEL = process.env.OPENCLAW_LIVE_CLI_BACKEND_MODEL ?? DEFAULT_MODEL;
+const describeBootstrapLive =
+  LIVE && CLI_LIVE && BOOTSTRAP_LIVE_MODEL.startsWith("codex-cli/") ? describe : describe.skip;
 const DEFAULT_CODEX_ARGS = [
   "exec",
   "--json",
@@ -39,8 +34,6 @@ const DEFAULT_CODEX_ARGS = [
   "read-only",
   "--skip-git-repo-check",
 ];
-const DEFAULT_CLEAR_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_OLD"];
-
 function randomImageProbeCode(len = 6): string {
   // Chosen to avoid common OCR confusions in our 5x7 bitmap font.
   // Notably: 0↔8, B↔8, 6↔9, 3↔B, D↔0.
@@ -110,17 +103,6 @@ function parseImageMode(raw?: string): "list" | "repeat" | undefined {
   throw new Error("OPENCLAW_LIVE_CLI_BACKEND_IMAGE_MODE must be 'list' or 'repeat'.");
 }
 
-function withMcpConfigOverrides(args: string[], mcpConfigPath: string): string[] {
-  const next = [...args];
-  if (!next.includes("--strict-mcp-config")) {
-    next.push("--strict-mcp-config");
-  }
-  if (!next.includes("--mcp-config")) {
-    next.push("--mcp-config", mcpConfigPath);
-  }
-  return next;
-}
-
 async function getFreeGatewayPort(): Promise<number> {
   return await getFreePortBlockWithPermissionFallback({
     offsets: [0, 1, 2, 4],
@@ -167,6 +149,69 @@ async function connectClient(params: { url: string; token: string }) {
   });
 }
 
+async function runGatewayCliBootstrapLiveProbe(): Promise<{
+  ok: boolean;
+  text: string;
+  expectedText: string;
+  systemPromptReport: {
+    injectedWorkspaceFiles?: Array<{ name?: string }>;
+  } | null;
+}> {
+  return await new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    delete env.VITEST;
+    const child = spawn(
+      "pnpm",
+      ["exec", "tsx", path.join("scripts", "gateway-cli-bootstrap-live-probe.ts")],
+      {
+        cwd: process.cwd(),
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`bootstrap probe timed out\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    }, 120_000);
+    timeout.unref();
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0) {
+        reject(
+          new Error(`bootstrap probe exit=${String(code)}\nstdout:\n${stdout}\nstderr:\n${stderr}`),
+        );
+        return;
+      }
+      const line = stdout
+        .trim()
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .findLast((entry) => entry.startsWith("{") && entry.endsWith("}"));
+      if (!line) {
+        reject(
+          new Error(`bootstrap probe missing JSON result\nstdout:\n${stdout}\nstderr:\n${stderr}`),
+        );
+        return;
+      }
+      resolve(JSON.parse(line) as Awaited<ReturnType<typeof runGatewayCliBootstrapLiveProbe>>);
+    });
+  });
+}
+
 describeLive("gateway live (cli backend)", () => {
   it("runs the agent pipeline against the local CLI backend", async () => {
     const preservedEnv = new Set(
@@ -203,7 +248,7 @@ describeLive("gateway live (cli backend)", () => {
     process.env.OPENCLAW_GATEWAY_TOKEN = token;
 
     const rawModel = process.env.OPENCLAW_LIVE_CLI_BACKEND_MODEL ?? DEFAULT_MODEL;
-    const parsed = parseModelRef(rawModel, "claude-cli");
+    const parsed = parseModelRef(rawModel, "codex-cli");
     if (!parsed) {
       throw new Error(
         `OPENCLAW_LIVE_CLI_BACKEND_MODEL must resolve to a CLI backend model. Got: ${rawModel}`,
@@ -213,11 +258,7 @@ describeLive("gateway live (cli backend)", () => {
     const modelKey = `${providerId}/${parsed.model}`;
 
     const providerDefaults =
-      providerId === "claude-cli"
-        ? { command: "claude", args: DEFAULT_CLAUDE_ARGS }
-        : providerId === "codex-cli"
-          ? { command: "codex", args: DEFAULT_CODEX_ARGS }
-          : null;
+      providerId === "codex-cli" ? { command: "codex", args: DEFAULT_CODEX_ARGS } : null;
 
     const cliCommand = process.env.OPENCLAW_LIVE_CLI_BACKEND_COMMAND ?? providerDefaults?.command;
     if (!cliCommand) {
@@ -237,8 +278,13 @@ describeLive("gateway live (cli backend)", () => {
       parseJsonStringArray(
         "OPENCLAW_LIVE_CLI_BACKEND_CLEAR_ENV",
         process.env.OPENCLAW_LIVE_CLI_BACKEND_CLEAR_ENV,
-      ) ?? (providerId === "claude-cli" ? DEFAULT_CLEAR_ENV : []);
+      ) ?? [];
     const filteredCliClearEnv = cliClearEnv.filter((name) => !preservedEnv.has(name));
+    const preservedCliEnv = Object.fromEntries(
+      [...preservedEnv]
+        .map((name) => [name, process.env[name]])
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
     const cliImageArg = process.env.OPENCLAW_LIVE_CLI_BACKEND_IMAGE_ARG?.trim() || undefined;
     const cliImageMode = parseImageMode(process.env.OPENCLAW_LIVE_CLI_BACKEND_IMAGE_MODE);
 
@@ -249,13 +295,7 @@ describeLive("gateway live (cli backend)", () => {
     }
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-live-cli-"));
-    const disableMcpConfig = process.env.OPENCLAW_LIVE_CLI_BACKEND_DISABLE_MCP_CONFIG !== "0";
-    let cliArgs = baseCliArgs;
-    if (providerId === "claude-cli" && disableMcpConfig) {
-      const mcpConfigPath = path.join(tempDir, "claude-mcp.json");
-      await fs.writeFile(mcpConfigPath, `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`);
-      cliArgs = withMcpConfigOverrides(baseCliArgs, mcpConfigPath);
-    }
+    const cliArgs = baseCliArgs;
 
     const cfg = loadConfig();
     const existingBackends = cfg.agents?.defaults?.cliBackends ?? {};
@@ -275,6 +315,7 @@ describeLive("gateway live (cli backend)", () => {
               command: cliCommand,
               args: cliArgs,
               clearEnv: filteredCliClearEnv.length > 0 ? filteredCliClearEnv : undefined,
+              env: Object.keys(preservedCliEnv).length > 0 ? preservedCliEnv : undefined,
               systemPromptWhen: "never",
               ...(cliImageArg ? { imageArg: cliImageArg, imageMode: cliImageMode } : {}),
             },
@@ -401,7 +442,7 @@ describeLive("gateway live (cli backend)", () => {
       }
     } finally {
       clearRuntimeConfigSnapshot();
-      client.stop();
+      await client.stopAndWait();
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
       if (previous.configPath === undefined) {
@@ -445,5 +486,16 @@ describeLive("gateway live (cli backend)", () => {
         process.env.ANTHROPIC_API_KEY_OLD = previous.anthropicApiKeyOld;
       }
     }
+  }, 60_000);
+});
+
+describeBootstrapLive("gateway live (cli backend bootstrap context)", () => {
+  it("injects AGENTS, SOUL, IDENTITY, and USER files into the first CLI turn", async () => {
+    const result = await runGatewayCliBootstrapLiveProbe();
+    expect(result.ok).toBe(true);
+    expect(result.text).toBe(result.expectedText);
+    expect(
+      result.systemPromptReport?.injectedWorkspaceFiles?.map((entry) => entry.name) ?? [],
+    ).toEqual(expect.arrayContaining(["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md"]));
   }, 60_000);
 });
