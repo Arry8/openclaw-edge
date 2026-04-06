@@ -34,7 +34,7 @@ permissions:
 jobs:
   merge:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 350
 
     steps:
       - name: Checkout mega/latest
@@ -42,7 +42,7 @@ jobs:
         with:
           ref: mega/latest
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -72,7 +72,7 @@ jobs:
 
       - name: Run edge-merge
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           LIMIT="${{ github.event.inputs.limit || '0' }}"
           SKIP_BUILD="${{ github.event.inputs.skip_build || 'false' }}"
