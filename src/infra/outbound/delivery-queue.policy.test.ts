@@ -17,6 +17,12 @@ describe("delivery-queue policy", () => {
       "chat_id is empty",
       "Outbound not configured for channel: demo-channel",
       "MatrixError: [403] User @bot:matrix.example.com not in room !mixedCase:matrix.example.com",
+      "Call to sendMessage failed! (400: Bad Request: message is too long)",
+      "Call to sendPhoto failed! (413: Request Entity Too Large)",
+      "400 Bad Request: message is too long",
+      "message is too long",
+      "payload too large",
+      "request entity too large",
     ])("returns true for permanent error: %s", (msg) => {
       expect(isPermanentDeliveryError(msg)).toBe(true);
     });
@@ -27,6 +33,8 @@ describe("delivery-queue policy", () => {
       "socket hang up",
       "rate limited",
       "500 Internal Server Error",
+      "Call to sendMessage failed! (502: Bad Gateway)",
+      "Call to sendMessage failed! (500: Internal Server Error)",
     ])("returns false for transient error: %s", (msg) => {
       expect(isPermanentDeliveryError(msg)).toBe(false);
     });

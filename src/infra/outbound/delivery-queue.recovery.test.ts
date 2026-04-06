@@ -138,6 +138,63 @@ describe("delivery-queue recovery", () => {
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("permanent error"));
   });
 
+  it("treats Telegram 400 message-too-long as a permanent error", async () => {
+    const id = await enqueueDelivery(
+      { channel: "telegram", to: "chat:123", payloads: [{ text: "x".repeat(50_000) }] },
+      tmpDir(),
+    );
+    const deliver = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("Call to sendMessage failed! (400: Bad Request: message is too long)"),
+      );
+    const log = createRecoveryLog();
+    const { result } = await runRecovery({ deliver, log });
+
+    expect(result.failed).toBe(1);
+    expect(result.recovered).toBe(0);
+    expect(await loadPendingDeliveries(tmpDir())).toHaveLength(0);
+    expect(fs.existsSync(path.join(tmpDir(), "delivery-queue", "failed", `${id}.json`))).toBe(true);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("permanent error"));
+  });
+
+  it("treats Telegram 413 entity-too-large as a permanent error", async () => {
+    const id = await enqueueDelivery(
+      { channel: "telegram", to: "chat:456", payloads: [{ text: "huge" }] },
+      tmpDir(),
+    );
+    const deliver = vi
+      .fn()
+      .mockRejectedValue(new Error("Call to sendPhoto failed! (413: Request Entity Too Large)"));
+    const log = createRecoveryLog();
+    const { result } = await runRecovery({ deliver, log });
+
+    expect(result.failed).toBe(1);
+    expect(result.recovered).toBe(0);
+    expect(await loadPendingDeliveries(tmpDir())).toHaveLength(0);
+    expect(fs.existsSync(path.join(tmpDir(), "delivery-queue", "failed", `${id}.json`))).toBe(true);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("permanent error"));
+  });
+
+  it("still retries 5xx server errors (not permanent)", async () => {
+    await enqueueDelivery(
+      { channel: "telegram", to: "chat:789", payloads: [{ text: "retry me" }] },
+      tmpDir(),
+    );
+    const deliver = vi
+      .fn()
+      .mockRejectedValue(new Error("Call to sendMessage failed! (502: Bad Gateway)"));
+    const log = createRecoveryLog();
+    const { result } = await runRecovery({ deliver, log });
+
+    expect(result.failed).toBe(1);
+    expect(result.recovered).toBe(0);
+    // Entry stays in pending (not moved to failed/) — eligible for future retry
+    const entries = await loadPendingDeliveries(tmpDir());
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.retryCount).toBe(1);
+  });
+
   it("passes skipQueue: true to prevent re-enqueueing during recovery", async () => {
     await enqueueDelivery(
       { channel: "demo-channel-a", to: "+1", payloads: [{ text: "a" }] },

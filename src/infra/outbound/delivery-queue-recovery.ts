@@ -51,6 +51,11 @@ const PERMANENT_ERROR_PATTERNS: readonly RegExp[] = [
   /outbound not configured for channel/i,
   /ambiguous .* recipient/i,
   /User .* not in room/i,
+  // HTTP 4xx client errors — these will not succeed on retry.
+  /failed!\s*\(4\d{2}:/i, // Grammy-style: "Call to sendMessage failed! (400: ...)"
+  /\b4\d{2}\b.*\bbad request\b/i, // Generic "400 Bad Request" variants
+  /message.*(is\s+)?too\s+long/i, // Message-too-long across channels
+  /request entity too large|payload too large/i, // 413-style body errors
 ];
 
 function createEmptyRecoverySummary(): RecoverySummary {
