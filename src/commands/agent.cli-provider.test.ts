@@ -137,7 +137,7 @@ beforeEach(() => {
 describe("agentCommand CLI provider handling", () => {
   it("rejects explicit CLI overrides that are outside the models allowlist", async () => {
     vi.mocked(modelSelectionModule.isCliProvider).mockImplementation(
-      (provider) => provider.trim().toLowerCase() === "codex-cli",
+      (provider) => provider.trim().toLowerCase() === "claude-cli",
     );
     try {
       await withTempHome(async (home) => {
@@ -153,11 +153,11 @@ describe("agentCommand CLI provider handling", () => {
             {
               message: "use disallowed cli override",
               sessionKey: "agent:main:subagent:cli-override-error",
-              model: "codex-cli/gpt-5.4",
+              model: "claude-cli/opus",
             },
             runtime,
           ),
-        ).rejects.toThrow('Model override "codex-cli/gpt-5.4" is not allowed for agent "main".');
+        ).rejects.toThrow('Model override "claude-cli/opus" is not allowed for agent "main".');
       });
     } finally {
       vi.mocked(modelSelectionModule.isCliProvider).mockImplementation(() => false);
@@ -166,7 +166,7 @@ describe("agentCommand CLI provider handling", () => {
 
   it("clears stored CLI overrides when they fall outside the models allowlist", async () => {
     vi.mocked(modelSelectionModule.isCliProvider).mockImplementation(
-      (provider) => provider.trim().toLowerCase() === "codex-cli",
+      (provider) => provider.trim().toLowerCase() === "claude-cli",
     );
     try {
       await withTempHome(async (home) => {
@@ -175,8 +175,8 @@ describe("agentCommand CLI provider handling", () => {
           "agent:main:subagent:clear-cli-overrides": {
             sessionId: "session-clear-cli-overrides",
             updatedAt: Date.now(),
-            providerOverride: "codex-cli",
-            modelOverride: "gpt-5.4",
+            providerOverride: "claude-cli",
+            modelOverride: "opus",
           },
         });
 
@@ -189,7 +189,7 @@ describe("agentCommand CLI provider handling", () => {
 
         vi.mocked(loadModelCatalog).mockResolvedValueOnce([
           { id: "gpt-4.1-mini", name: "GPT-4.1 Mini", provider: "openai" },
-          { id: "gpt-5.4", name: "GPT-5.4", provider: "codex-cli" },
+          { id: "opus", name: "Opus", provider: "claude-cli" },
         ]);
 
         await agentCommand(
@@ -214,9 +214,9 @@ describe("agentCommand CLI provider handling", () => {
     }
   });
 
-  it("clears stale CLI session IDs before retrying after session expiration", async () => {
+  it("clears stale Claude CLI legacy session IDs before retrying after session expiration", async () => {
     vi.mocked(modelSelectionModule.isCliProvider).mockImplementation(
-      (provider) => provider.trim().toLowerCase() === "codex-cli",
+      (provider) => provider.trim().toLowerCase() === "claude-cli",
     );
     try {
       await withTempHome(async (home) => {
@@ -226,23 +226,24 @@ describe("agentCommand CLI provider handling", () => {
           [sessionKey]: {
             sessionId: "session-cli-123",
             updatedAt: Date.now(),
-            providerOverride: "codex-cli",
-            modelOverride: "gpt-5.4",
-            cliSessionIds: { "codex-cli": "stale-cli-session" },
+            providerOverride: "claude-cli",
+            modelOverride: "opus",
+            cliSessionIds: { "claude-cli": "stale-cli-session" },
+            claudeCliSessionId: "stale-legacy-session",
           },
         });
 
         mockConfig(home, store, {
-          model: { primary: "codex-cli/gpt-5.4", fallbacks: [] },
-          models: { "codex-cli/gpt-5.4": {} },
+          model: { primary: "claude-cli/opus", fallbacks: [] },
+          models: { "claude-cli/opus": {} },
         });
 
         runCliAgentSpy
           .mockRejectedValueOnce(
             new FailoverError("session expired", {
               reason: "session_expired",
-              provider: "codex-cli",
-              model: "gpt-5.4",
+              provider: "claude-cli",
+              model: "opus",
               status: 410,
             }),
           )
@@ -264,8 +265,10 @@ describe("agentCommand CLI provider handling", () => {
 
         const saved = readSessionStore<{
           cliSessionIds?: Record<string, string>;
+          claudeCliSessionId?: string;
         }>(store);
-        expect(saved[sessionKey]?.cliSessionIds?.["codex-cli"]).toBeUndefined();
+        expect(saved[sessionKey]?.cliSessionIds?.["claude-cli"]).toBeUndefined();
+        expect(saved[sessionKey]?.claudeCliSessionId).toBeUndefined();
       });
     } finally {
       vi.mocked(modelSelectionModule.isCliProvider).mockImplementation(() => false);

@@ -323,8 +323,17 @@ describe("openai plugin", () => {
     expect(OPENAI_GPT5_EXECUTION_BIAS).toContain(
       "Do prerequisite lookup or discovery before dependent actions.",
     );
+    expect(OPENAI_GPT5_EXECUTION_BIAS).toContain(
+      "Stop once the request is fully handled; do not add extra tool calls just for optional polish.",
+    );
     expect(OPENAI_GPT5_OUTPUT_CONTRACT).toContain(
       "Return the requested sections only, in the requested order.",
+    );
+    expect(OPENAI_GPT5_OUTPUT_CONTRACT).toContain(
+      "Prefer commas, periods, or parentheses over em dashes in normal prose.",
+    );
+    expect(OPENAI_GPT5_OUTPUT_CONTRACT).toContain(
+      "Do not use em dashes unless the user explicitly asks for them or they are required in quoted text.",
     );
   });
 

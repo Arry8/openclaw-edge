@@ -34,15 +34,21 @@ export const OPENAI_GPT5_OUTPUT_CONTRACT = `## GPT-5 Output Contract
 
 Return the requested sections only, in the requested order.
 Prefer terse answers by default; expand only when depth materially helps.
-Avoid restating large internal plans when the next action is already clear.`;
+Avoid restating large internal plans when the next action is already clear.
+
+## Punctuation
+
+Prefer commas, periods, or parentheses over em dashes in normal prose.
+Do not use em dashes unless the user explicitly asks for them or they are required in quoted text.`;
 
 export const OPENAI_GPT5_EXECUTION_BIAS = `## Execution Bias
 
 Start the real work in the same turn when the next step is clear.
 Do prerequisite lookup or discovery before dependent actions.
-If another tool call would likely improve correctness or completeness, keep going instead of stopping at partial progress.
+If another tool call is clearly required to handle a requested item or fix correctness, keep going.
+Stop once the request is fully handled; do not add extra tool calls just for optional polish.
 Multi-part requests stay incomplete until every requested item is handled or clearly marked blocked.
-Before the final answer, quickly verify correctness, coverage, formatting, and obvious side effects.`;
+Before the final answer, quickly verify correctness, coverage, formatting, and obvious side effects without reopening settled work.`;
 
 export type OpenAIPromptOverlayMode = "friendly" | "off";
 
