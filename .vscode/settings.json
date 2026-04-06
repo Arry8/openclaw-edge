@@ -18,5 +18,7 @@
   "typescript.reportStyleChecksAsWarnings": false,
   "typescript.updateImportsOnFileMove.enabled": "always",
   "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.experimental.useTsgo": false
+  "typescript.experimental.useTsgo": false,
+  "postman.settings.dotenv-detection-notification-visibility": false,
+  "dotnet.defaultSolution": "disable"
 }

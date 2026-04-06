@@ -1,6 +1,9 @@
 node_modules
 **/node_modules/
 
+# VS Code C# Dev Kit auto-generated solution file
+*.sln
+
 # Content pipeline outputs (generated, not versioned)
 outputs/
 data/research/
