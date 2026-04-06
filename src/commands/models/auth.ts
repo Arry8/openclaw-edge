@@ -38,8 +38,8 @@ import { isRemoteEnvironment } from "../oauth-env.js";
 import { createVpsAwareOAuthHandlers } from "../oauth-flow.js";
 import { openUrl } from "../onboard-helpers.js";
 import {
+  applyProviderAuthConfigPatch,
   applyDefaultModel,
-  mergeConfigPatch,
   pickAuthMethod,
   resolveProviderMatch,
 } from "../provider-auth-helpers.js";
@@ -241,7 +241,7 @@ async function persistProviderAuthResult(params: {
   await updateConfig((cfg) => {
     let next = cfg;
     if (params.result.configPatch) {
-      next = mergeConfigPatch(next, params.result.configPatch);
+      next = applyProviderAuthConfigPatch(next, params.result.configPatch);
     }
     for (const profile of params.result.profiles) {
       next = applyAuthProfileConfig(next, {
@@ -420,10 +420,9 @@ export async function modelsAuthPasteTokenCommand(
   logConfigUpdated(runtime);
   runtime.log(`Auth profile: ${profileId} (${provider}/token)`);
   if (provider === "anthropic") {
-    runtime.log("Anthropic setup-token auth is a legacy/manual path in OpenClaw.");
-    runtime.log(
-      "Anthropic told OpenClaw users this path requires Extra Usage on the Claude account.",
-    );
+    runtime.log("Anthropic setup-token auth is supported in OpenClaw.");
+    runtime.log("OpenClaw prefers Claude CLI reuse when it is available on the host.");
+    runtime.log("Anthropic staff told us this OpenClaw path is allowed again.");
   }
 }
 

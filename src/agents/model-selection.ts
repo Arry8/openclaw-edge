@@ -6,6 +6,8 @@ import {
   toAgentModelListLike,
 } from "../config/model-input.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { resolveRuntimeCliBackends } from "../plugins/cli-backends.runtime.js";
+import { resolvePluginSetupCliBackend } from "../plugins/setup-registry.js";
 import { sanitizeForLog, stripAnsi } from "../terminal/ansi.js";
 import {
   resolveAgentConfig,
@@ -26,30 +28,6 @@ import {
 import { normalizeProviderModelIdWithRuntime } from "./provider-model-normalization.runtime.js";
 
 let log: ReturnType<typeof createSubsystemLogger> | null = null;
-
-type CliBackendRuntimeModule = typeof import("../plugins/cli-backends.runtime.js");
-
-const CLI_BACKEND_RUNTIME_CANDIDATES = [
-  "../plugins/cli-backends.runtime.js",
-  "../plugins/cli-backends.runtime.ts",
-] as const;
-
-let cliBackendRuntimeModule: CliBackendRuntimeModule | undefined;
-
-function loadCliBackendRuntime(): CliBackendRuntimeModule | null {
-  if (cliBackendRuntimeModule) {
-    return cliBackendRuntimeModule;
-  }
-  for (const candidate of CLI_BACKEND_RUNTIME_CANDIDATES) {
-    try {
-      cliBackendRuntimeModule = require(candidate) as CliBackendRuntimeModule;
-      return cliBackendRuntimeModule;
-    } catch {
-      // Try source/runtime candidates in order.
-    }
-  }
-  return null;
-}
 
 function getLog(): ReturnType<typeof createSubsystemLogger> {
   log ??= createSubsystemLogger("model-selection");
@@ -112,8 +90,11 @@ export {
 
 export function isCliProvider(provider: string, cfg?: OpenClawConfig): boolean {
   const normalized = normalizeProviderId(provider);
-  const cliBackends = loadCliBackendRuntime()?.resolveRuntimeCliBackends() ?? [];
+  const cliBackends = resolveRuntimeCliBackends();
   if (cliBackends.some((backend) => normalizeProviderId(backend.id) === normalized)) {
+    return true;
+  }
+  if (resolvePluginSetupCliBackend({ backend: normalized })) {
     return true;
   }
   const backends = cfg?.agents?.defaults?.cliBackends ?? {};
@@ -173,6 +154,30 @@ export function parseModelRef(
   return normalizeModelRef(providerRaw, model, options);
 }
 
+export function resolvePersistedOverrideModelRef(params: {
+  defaultProvider: string;
+  overrideProvider?: string;
+  overrideModel?: string;
+}): ModelRef | null {
+  const defaultProvider = params.defaultProvider.trim();
+  const overrideProvider = params.overrideProvider?.trim();
+  const overrideModel = params.overrideModel?.trim();
+  if (!overrideModel) {
+    return null;
+  }
+  const encodedOverride = overrideProvider ? `${overrideProvider}/${overrideModel}` : overrideModel;
+  return (
+    parseModelRef(encodedOverride, defaultProvider) ?? {
+      provider: overrideProvider || defaultProvider,
+      model: overrideModel,
+    }
+  );
+}
+
+/**
+ * Runtime-first resolver for persisted model metadata.
+ * Use this when callers intentionally want the last executed model identity.
+ */
 export function resolvePersistedModelRef(params: {
   defaultProvider: string;
   runtimeProvider?: string;
@@ -194,19 +199,38 @@ export function resolvePersistedModelRef(params: {
       }
     );
   }
+  return resolvePersistedOverrideModelRef({
+    defaultProvider,
+    overrideProvider: params.overrideProvider,
+    overrideModel: params.overrideModel,
+  });
+}
 
-  const overrideProvider = params.overrideProvider?.trim();
-  const overrideModel = params.overrideModel?.trim();
-  if (!overrideModel) {
-    return null;
+/**
+ * Selected-model resolver for persisted model metadata.
+ * Use this for control/status/UI surfaces that should honor explicit session
+ * overrides before falling back to runtime identity.
+ */
+export function resolvePersistedSelectedModelRef(params: {
+  defaultProvider: string;
+  runtimeProvider?: string;
+  runtimeModel?: string;
+  overrideProvider?: string;
+  overrideModel?: string;
+}): ModelRef | null {
+  const override = resolvePersistedOverrideModelRef({
+    defaultProvider: params.defaultProvider,
+    overrideProvider: params.overrideProvider,
+    overrideModel: params.overrideModel,
+  });
+  if (override) {
+    return override;
   }
-  const encodedOverride = overrideProvider ? `${overrideProvider}/${overrideModel}` : overrideModel;
-  return (
-    parseModelRef(encodedOverride, defaultProvider) ?? {
-      provider: overrideProvider || defaultProvider,
-      model: overrideModel,
-    }
-  );
+  return resolvePersistedModelRef({
+    defaultProvider: params.defaultProvider,
+    runtimeProvider: params.runtimeProvider,
+    runtimeModel: params.runtimeModel,
+  });
 }
 
 export function inferUniqueProviderFromConfiguredModels(params: {

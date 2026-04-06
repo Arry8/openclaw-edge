@@ -1,14 +1,16 @@
 import type { AuthProfileCredential, OAuthCredential } from "../agents/auth-profiles/types.js";
 import { normalizeProviderId } from "../agents/provider-id.js";
+import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ModelProviderConfig } from "../config/types.js";
 import { resolveCatalogHookProviderPluginIds } from "./providers.js";
-import { resolvePluginProviders } from "./providers.runtime.js";
+import { isPluginProvidersLoadInFlight, resolvePluginProviders } from "./providers.runtime.js";
 import { resolvePluginCacheInputs } from "./roots.js";
 import { getActivePluginRegistryWorkspaceDirFromState } from "./runtime-state.js";
 import type {
   ProviderAuthDoctorHintContext,
   ProviderAugmentModelCatalogContext,
+  ProviderExternalAuthProfile,
   ProviderBuildMissingAuthMessageContext,
   ProviderBuildUnknownModelHintContext,
   ProviderBuiltInModelSuppressionContext,
@@ -32,6 +34,8 @@ import type {
   ProviderModernModelPolicyContext,
   ProviderPrepareExtraParamsContext,
   ProviderPrepareDynamicModelContext,
+  ProviderResolveExternalAuthProfilesContext,
+  ProviderResolveExternalOAuthProfilesContext,
   ProviderPrepareRuntimeAuthContext,
   ProviderApplyConfigDefaultsContext,
   ProviderResolveConfigApiKeyContext,
@@ -41,6 +45,7 @@ import type {
   ProviderResolveDynamicModelContext,
   ProviderResolveTransportTurnStateContext,
   ProviderResolveWebSocketSessionPolicyContext,
+  ProviderSystemPromptContributionContext,
   ProviderRuntimeModel,
   ProviderThinkingPolicyContext,
   ProviderTransportTurnState,
@@ -150,6 +155,19 @@ function resolveProviderPluginsForHooks(params: {
   if (cached) {
     return cached;
   }
+  if (
+    isPluginProvidersLoadInFlight({
+      ...params,
+      workspaceDir,
+      env,
+      activate: false,
+      cache: false,
+      bundledProviderAllowlistCompat: true,
+      bundledProviderVitestCompat: true,
+    })
+  ) {
+    return [];
+  }
   const resolved = resolvePluginProviders({
     ...params,
     workspaceDir,
@@ -206,6 +224,19 @@ export function runProviderDynamicModel(params: {
   context: ProviderResolveDynamicModelContext;
 }): ProviderRuntimeModel | undefined {
   return resolveProviderRuntimePlugin(params)?.resolveDynamicModel?.(params.context) ?? undefined;
+}
+
+export function resolveProviderSystemPromptContribution(params: {
+  provider: string;
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderSystemPromptContributionContext;
+}): ProviderSystemPromptContribution | undefined {
+  return (
+    resolveProviderRuntimePlugin(params)?.resolveSystemPromptContribution?.(params.context) ??
+    undefined
+  );
 }
 
 export async function prepareProviderDynamicModel(params: {
@@ -772,6 +803,34 @@ export function resolveProviderSyntheticAuthWithPlugin(params: {
   context: ProviderResolveSyntheticAuthContext;
 }) {
   return resolveProviderRuntimePlugin(params)?.resolveSyntheticAuth?.(params.context) ?? undefined;
+}
+
+export function resolveExternalAuthProfilesWithPlugins(params: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderResolveExternalAuthProfilesContext;
+}): ProviderExternalAuthProfile[] {
+  const matches: ProviderExternalAuthProfile[] = [];
+  for (const plugin of resolveProviderPluginsForHooks(params)) {
+    const profiles =
+      plugin.resolveExternalAuthProfiles?.(params.context) ??
+      plugin.resolveExternalOAuthProfiles?.(params.context);
+    if (!profiles || profiles.length === 0) {
+      continue;
+    }
+    matches.push(...profiles);
+  }
+  return matches;
+}
+
+export function resolveExternalOAuthProfilesWithPlugins(params: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  context: ProviderResolveExternalOAuthProfilesContext;
+}): ProviderExternalAuthProfile[] {
+  return resolveExternalAuthProfilesWithPlugins(params);
 }
 
 export function shouldDeferProviderSyntheticProfileAuthWithPlugin(params: {

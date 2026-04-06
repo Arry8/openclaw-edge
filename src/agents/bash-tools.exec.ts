@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { analyzeShellCommand } from "../infra/exec-approvals-analysis.js";
 import {
   type ExecHost,
@@ -52,7 +52,8 @@ import {
   truncateMiddle,
 } from "./bash-tools.shared.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
-import { failedTextResult, textResult } from "./tools/common.js";
+import { EXEC_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
+import { type AgentToolWithMeta, failedTextResult, textResult } from "./tools/common.js";
 
 export type { BashSandboxConfig } from "./bash-tools.shared.js";
 export type {
@@ -417,11 +418,11 @@ function analyzeInterpreterHeuristicsFromUnquoted(raw: string): {
   hasScriptHint: boolean;
 } {
   const hasPython =
-    /(?:^|\s|(?<!\\)[|&;()])(?:[A-Za-z_][A-Za-z0-9_]*=.*\s+)*python(?:3(?:\.\d+)?)?(?=$|[\s|&;()<>\n\r`$])/i.test(
+    /(?:^|\s|(?<!\\)[|&;()])(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*python(?:3(?:\.\d+)?)?(?=$|[\s|&;()<>\n\r`$])/i.test(
       raw,
     );
   const hasNode =
-    /(?:^|\s|(?<!\\)[|&;()])(?:[A-Za-z_][A-Za-z0-9_]*=.*\s+)*node(?=$|[\s|&;()<>\n\r`$])/i.test(
+    /(?:^|\s|(?<!\\)[|&;()])(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*node(?=$|[\s|&;()<>\n\r`$])/i.test(
       raw,
     );
   const hasProcessSubstitution = /(?<!\\)<\(|(?<!\\)>\(/u.test(raw);
@@ -621,7 +622,7 @@ function shouldFailClosedInterpreterPreflight(command: string): {
   };
   const hasInterpreterInvocationInSegment = (rawSegment: string): boolean => {
     const segment = extractUnquotedShellText(rawSegment) ?? rawSegment;
-    return /^\s*(?:(?:if|then|do|elif|else|while|until|time)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=.*\s+)*(?:python(?:3(?:\.\d+)?)?|node)(?=$|[\s|&;()<>\n\r`$])/i.test(
+    return /^\s*(?:(?:if|then|do|elif|else|while|until|time)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:python(?:3(?:\.\d+)?)?|node)(?=$|[\s|&;()<>\n\r`$])/i.test(
       segment,
     );
   };
@@ -1166,8 +1167,7 @@ export function describeExecTool(params?: { agentId?: string; hasCronTool?: bool
 }
 export function createExecTool(
   defaults?: ExecToolDefaults,
-  // oxlint-disable-next-line typescript/no-explicit-any
-): AgentTool<any, ExecToolDetails> {
+): AgentToolWithMeta<typeof execSchema, ExecToolDetails> {
   const defaultBackgroundMs = clampWithDefault(
     defaults?.backgroundMs ?? readEnvInt("PI_BASH_YIELD_MS"),
     10_000,
@@ -1219,6 +1219,7 @@ export function createExecTool(
   return {
     name: "exec",
     label: "exec",
+    displaySummary: EXEC_TOOL_DISPLAY_SUMMARY,
     get description() {
       return describeExecTool({ agentId, hasCronTool: defaults?.hasCronTool === true });
     },

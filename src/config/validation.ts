@@ -8,6 +8,10 @@ import {
   resolveMemorySlotDecision,
 } from "../plugins/config-state.js";
 import {
+  collectRelevantDoctorPluginIds,
+  listPluginDoctorLegacyConfigRules,
+} from "../plugins/doctor-contract-registry.js";
+import {
   loadPluginManifestRegistry,
   resolveManifestContractPluginIds,
 } from "../plugins/manifest-registry.js";
@@ -27,7 +31,7 @@ import { findDuplicateAgentDirs, formatDuplicateAgentDirError } from "./agent-di
 import { appendAllowedValuesHint, summarizeAllowedValues } from "./allowed-values.js";
 import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "./bundled-channel-config-metadata.generated.js";
 import { collectChannelSchemaMetadata } from "./channel-config-metadata.js";
-import { applyLegacyMigrations, findLegacyConfigIssues } from "./legacy.js";
+import { findLegacyConfigIssues } from "./legacy.js";
 import { materializeRuntimeConfig } from "./materialize.js";
 import type { OpenClawConfig, ConfigValidationIssue } from "./types.js";
 import { coerceSecretRef } from "./types.secrets.js";
@@ -454,7 +458,11 @@ export function validateConfigObjectRaw(
   raw: unknown,
 ): { ok: true; config: OpenClawConfig } | { ok: false; issues: ConfigValidationIssue[] } {
   const policyIssues = collectUnsupportedSecretRefPolicyIssues(raw);
-  const legacyIssues = findLegacyConfigIssues(raw);
+  const legacyIssues = findLegacyConfigIssues(
+    raw,
+    raw,
+    listPluginDoctorLegacyConfigRules({ pluginIds: collectRelevantDoctorPluginIds(raw) }),
+  );
   if (legacyIssues.length > 0) {
     return {
       ok: false,
@@ -545,13 +553,7 @@ function validateConfigObjectWithPluginsBase(
   raw: unknown,
   opts: { applyDefaults: boolean; env?: NodeJS.ProcessEnv },
 ): ValidateConfigWithPluginsResult {
-  // Config edit flows often start from raw parsed files that may still contain legacy keys.
-  // Accept known legacy inputs here by normalizing them before schema/plugin validation.
-  const migrated = applyLegacyMigrations(raw);
-  const normalizedRaw = migrated.next ?? raw;
-  const base = opts.applyDefaults
-    ? validateConfigObject(normalizedRaw)
-    : validateConfigObjectRaw(normalizedRaw);
+  const base = opts.applyDefaults ? validateConfigObject(raw) : validateConfigObjectRaw(raw);
   if (!base.ok) {
     return { ok: false, issues: base.issues, warnings: [] };
   }
@@ -771,7 +773,8 @@ function validateConfigObjectWithPluginsBase(
         schema: channelSchema,
         cacheKey: `channel:${trimmed}`,
         value: config.channels[trimmed],
-        applyDefaults: opts.applyDefaults,
+        applyDefaults: true, // Always apply defaults for AJV schema validation;
+        // writeConfigFile persists persistCandidate, not validated.config (#61841)
       });
       if (!result.ok) {
         for (const error of result.errors) {
@@ -962,7 +965,8 @@ function validateConfigObjectWithPluginsBase(
           schema: record.configSchema,
           cacheKey: record.schemaCacheKey ?? record.manifestPath ?? pluginId,
           value: entry?.config ?? {},
-          applyDefaults: opts.applyDefaults,
+          applyDefaults: true, // Always apply defaults for AJV schema validation;
+          // writeConfigFile persists persistCandidate, not validated.config (#61841)
         });
         if (!res.ok) {
           for (const error of res.errors) {

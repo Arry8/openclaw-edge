@@ -1070,7 +1070,7 @@
                       "concepts/memory-qmd",
                       "concepts/memory-honcho",
                       "concepts/memory-search",
-                      "concepts/memory-dreaming"
+                      "concepts/dreaming"
                     ]
                   },
                   "concepts/compaction"
@@ -1108,6 +1108,7 @@
                   "tools/plugin",
                   "plugins/community",
                   "plugins/bundles",
+                  "plugins/webhooks",
                   "plugins/voice-call",
                   {
                     "group": "Building Plugins",
@@ -1157,6 +1158,7 @@
               {
                 "group": "Tools",
                 "pages": [
+                  "tools/media-overview",
                   "tools/apply-patch",
                   {
                     "group": "Web Browser",
@@ -1192,12 +1194,14 @@
                   "tools/exec",
                   "tools/exec-approvals",
                   "tools/image-generation",
+                  "tools/music-generation",
                   "tools/llm-task",
                   "tools/lobster",
                   "tools/loop-detection",
                   "tools/pdf",
                   "tools/reactions",
-                  "tools/thinking"
+                  "tools/thinking",
+                  "tools/video-generation"
                 ]
               },
               {
@@ -1225,13 +1229,18 @@
               {
                 "group": "Providers",
                 "pages": [
+                  "providers/alibaba",
                   "providers/anthropic",
+                  "providers/arcee",
                   "providers/bedrock",
+                  "providers/bedrock-mantle",
                   "providers/chutes",
+                  "providers/comfy",
                   "providers/claude-max-api-proxy",
                   "providers/cloudflare-ai-gateway",
                   "providers/deepgram",
                   "providers/deepseek",
+                  "providers/fal",
                   "providers/github-copilot",
                   "providers/glm",
                   "providers/google",
@@ -1250,14 +1259,15 @@
                   "providers/openrouter",
                   "providers/perplexity-provider",
                   "providers/qianfan",
-                  "providers/qwen_modelstudio",
                   "providers/qwen",
+                  "providers/runway",
                   "providers/sglang",
                   "providers/stepfun",
                   "providers/synthetic",
                   "providers/together",
                   "providers/venice",
                   "providers/vercel-ai-gateway",
+                  "providers/vydra",
                   "providers/vllm",
                   "providers/volcengine",
                   "providers/xai",
@@ -1582,24 +1592,6 @@
               {
                 "group": "Docs meta",
                 "pages": ["start/hubs", "start/docs-directory"]
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "language": "ja",
-        "tabs": [
-          {
-            "tab": "はじめに",
-            "groups": [
-              {
-                "group": "概要",
-                "pages": ["ja-JP/index"]
-              },
-              {
-                "group": "初回セットアップ",
-                "pages": ["ja-JP/start/getting-started", "ja-JP/start/wizard"]
               }
             ]
           }

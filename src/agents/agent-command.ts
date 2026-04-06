@@ -10,14 +10,15 @@ import {
   supportsXHighThinking,
   type VerboseLevel,
 } from "../auto-reply/thinking.js";
+import { resolveCommandConfigWithSecrets } from "../cli/command-config-resolution.js";
 import { formatCliCommand } from "../cli/command-format.js";
-import { resolveCommandSecretRefsViaGateway } from "../cli/command-secret-gateway.js";
 import { getAgentRuntimeCommandSecretTargetIds } from "../cli/command-secret-targets.js";
 import { type CliDeps, createDefaultDeps } from "../cli/deps.js";
 import {
   loadConfig,
   readConfigFileSnapshotForWrite,
   setRuntimeConfigSnapshot,
+  type OpenClawConfig,
 } from "../config/config.js";
 import { resolveAgentIdFromSessionKey, type SessionEntry } from "../config/sessions.js";
 import { resolveSessionTranscriptFile } from "../config/sessions/transcript.js";
@@ -65,6 +66,7 @@ import { updateSessionStoreAfterAgentRun } from "./command/session-store.js";
 import { resolveSession } from "./command/session.js";
 import type { AgentCommandIngressOpts, AgentCommandOpts } from "./command/types.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
+import { canExecRequestNode } from "./exec-defaults.js";
 import { AGENT_LANE_SUBAGENT } from "./lanes.js";
 import { LiveSessionModelSwitchError } from "./live-model-switch.js";
 import { loadModelCatalog } from "./model-catalog.js";
@@ -126,6 +128,38 @@ async function persistSessionEntry(params: PersistSessionEntryParams): Promise<v
   });
 }
 
+async function resolveAgentRuntimeConfig(
+  runtime: RuntimeEnv,
+  params?: { runtimeTargetsChannelSecrets?: boolean },
+): Promise<{
+  loadedRaw: OpenClawConfig;
+  sourceConfig: OpenClawConfig;
+  cfg: OpenClawConfig;
+}> {
+  const loadedRaw = loadConfig();
+  const sourceConfig = await (async () => {
+    try {
+      const { snapshot } = await readConfigFileSnapshotForWrite();
+      if (snapshot.valid) {
+        return snapshot.resolved;
+      }
+    } catch {
+      // Fall back to runtime-loaded config when source snapshot is unavailable.
+    }
+    return loadedRaw;
+  })();
+  const { resolvedConfig: cfg } = await resolveCommandConfigWithSecrets({
+    config: loadedRaw,
+    commandName: "agent",
+    targetIds: getAgentRuntimeCommandSecretTargetIds({
+      includeChannelTargets: params?.runtimeTargetsChannelSecrets === true,
+    }),
+    runtime,
+  });
+  setRuntimeConfigSnapshot(cfg, sourceConfig);
+  return { loadedRaw, sourceConfig, cfg };
+}
+
 function containsControlCharacters(value: string): boolean {
   for (const char of value) {
     const code = char.codePointAt(0);
@@ -167,24 +201,9 @@ async function prepareAgentCommandExecution(
     throw new Error("Pass --to <E.164>, --session-id, or --agent to choose a session");
   }
 
-  const loadedRaw = loadConfig();
-  const sourceConfig = await (async () => {
-    try {
-      const { snapshot } = await readConfigFileSnapshotForWrite();
-      if (snapshot.valid) {
-        return snapshot.resolved;
-      }
-    } catch {
-      // Fall back to runtime-loaded config when source snapshot is unavailable.
-    }
-    return loadedRaw;
-  })();
-  const { resolvedConfig: cfg, diagnostics } = await resolveCommandSecretRefsViaGateway({
-    config: loadedRaw,
-    commandName: "agent",
-    targetIds: getAgentRuntimeCommandSecretTargetIds(),
+  const { cfg } = await resolveAgentRuntimeConfig(runtime, {
+    runtimeTargetsChannelSecrets: opts.deliver === true,
   });
-  setRuntimeConfigSnapshot(cfg, sourceConfig);
   const normalizedSpawned = normalizeSpawnedRunMetadata({
     spawnedBy: opts.spawnedBy,
     groupId: opts.groupId,
@@ -192,9 +211,6 @@ async function prepareAgentCommandExecution(
     groupSpace: opts.groupSpace,
     workspaceDir: opts.workspaceDir,
   });
-  for (const entry of diagnostics) {
-    runtime.log(`[secrets] ${entry}`);
-  }
   const agentIdOverrideRaw = opts.agentId?.trim();
   const agentIdOverride = agentIdOverrideRaw ? normalizeAgentId(agentIdOverrideRaw) : undefined;
   if (agentIdOverride) {
@@ -510,7 +526,16 @@ async function agentCommandInternal(
     const skillsSnapshot = needsSkillsSnapshot
       ? buildWorkspaceSkillSnapshot(workspaceDir, {
           config: cfg,
-          eligibility: { remote: getRemoteSkillEligibility() },
+          eligibility: {
+            remote: getRemoteSkillEligibility({
+              advertiseExecNode: canExecRequestNode({
+                cfg,
+                sessionEntry,
+                sessionKey,
+                agentId: sessionAgentId,
+              }),
+            }),
+          },
           snapshotVersion: skillsSnapshotVersion,
           skillFilter,
           agentId: sessionAgentId,
@@ -995,3 +1020,8 @@ export async function agentCommandFromIngress(
     deps,
   );
 }
+
+export const __testing = {
+  resolveAgentRuntimeConfig,
+  prepareAgentCommandExecution,
+};
