@@ -757,6 +757,29 @@ async function attemptMerge(
     return { status: "already-applied" };
   }
 
+  // Strip upstream .github/workflows/ changes — GitHub rejects pushes that
+  // modify workflow files unless the token has `workflow` scope, which causes
+  // the interval push (and final push) to fail with "refusing to allow a
+  // GitHub App to create or update workflow". Restore our own workflow files.
+  const stagedWorkflowsResult = run("git", ["diff", "--cached", "--name-only", "--", ".github/workflows/"]);
+  const workflowFiles = stagedWorkflowsResult.stdout.split("\n").filter((f) => f.trim());
+  if (workflowFiles.length > 0) {
+    for (const f of workflowFiles) {
+      const inHead = run("git", ["ls-files", "--error-unmatch", f]);
+      if (inHead.ok) {
+        run("git", ["checkout", "HEAD", "--", f]); // restore our version
+      } else {
+        run("git", ["rm", "--cached", "--force", f]); // unstage new upstream workflow
+      }
+    }
+    // Re-check if anything remains after stripping workflow changes
+    const afterStrip = run("git", ["diff", "--cached", "--quiet"]);
+    if (afterStrip.ok) {
+      abortMerge();
+      return { status: "already-applied" };
+    }
+  }
+
   const commitMsg = `merge(pr#${pr.number}): ${pr.title}`;
   const commitResult = run("git", ["commit", "--no-verify", "--no-edit", "-m", commitMsg]);
 
