@@ -35,6 +35,8 @@ describe("delivery-queue policy", () => {
       "500 Internal Server Error",
       "Call to sendMessage failed! (502: Bad Gateway)",
       "Call to sendMessage failed! (500: Internal Server Error)",
+      "Call to sendMessage failed! (429: Too Many Requests)",
+      "Call to sendMessage failed! (408: Request Timeout)",
     ])("returns false for transient error: %s", (msg) => {
       expect(isPermanentDeliveryError(msg)).toBe(false);
     });
