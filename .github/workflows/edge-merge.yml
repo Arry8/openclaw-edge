@@ -29,6 +29,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   merge:
@@ -95,6 +96,19 @@ jobs:
       - name: Push mega/latest
         if: always()
         run: git push origin mega/latest --force
+
+      - name: Disable upstream workflows
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow list --repo ${{ github.repository }} --all --json databaseId,name,state \
+            | jq -r '.[] | select(.state == "active") | select(.name != "edge-merge") | select(.name != "Dependabot Updates") | .databaseId' \
+            | while read -r id; do
+                gh workflow disable --repo ${{ github.repository }} "$id" \
+                  && echo "Disabled workflow $id" \
+                  || echo "Warning: could not disable workflow $id"
+              done
 
       - name: Upload report
         if: always()
