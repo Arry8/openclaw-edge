@@ -9,7 +9,9 @@ vi.mock("../../agents/pi-embedded.runtime.js", () => ({
   abortEmbeddedPiRun: vi.fn().mockReturnValue(false),
   isEmbeddedPiRunActive: vi.fn().mockReturnValue(false),
   isEmbeddedPiRunStreaming: vi.fn().mockReturnValue(false),
+  resolveActiveEmbeddedRunSessionId: vi.fn().mockReturnValue(undefined),
   resolveEmbeddedSessionLane: vi.fn().mockReturnValue("session:session-key"),
+  waitForEmbeddedPiRunEnd: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("../../config/sessions/group.js", () => ({
@@ -100,13 +102,21 @@ let runReplyAgent: typeof import("./agent-runner.runtime.js").runReplyAgent;
 let routeReply: typeof import("./route-reply.runtime.js").routeReply;
 let drainFormattedSystemEvents: typeof import("./session-system-events.js").drainFormattedSystemEvents;
 let resolveTypingMode: typeof import("./typing-mode.js").resolveTypingMode;
+let getActiveReplyRunCount: typeof import("./reply-run-registry.js").getActiveReplyRunCount;
+let replyRunTesting: typeof import("./reply-run-registry.js").__testing;
 let loadScopeCounter = 0;
 
+function createGatewayDrainingError(): Error {
+  const error = new Error("Gateway is draining for restart; new tasks are not accepted");
+  error.name = "GatewayDrainingError";
+  return error;
+}
+
 async function loadFreshGetReplyRunModuleForTest() {
-  ({ runPreparedReply } = await importFreshModule<typeof import("./get-reply-run.js")>(
+  return await importFreshModule<typeof import("./get-reply-run.js")>(
     import.meta.url,
     `./get-reply-run.js?scope=media-only-${loadScopeCounter++}`,
-  ));
+  );
 }
 
 function baseParams(
@@ -187,17 +197,20 @@ function baseParams(
 
 describe("runPreparedReply media-only handling", () => {
   beforeAll(async () => {
+    ({ runPreparedReply } = await import("./get-reply-run.js"));
     ({ runReplyAgent } = await import("./agent-runner.runtime.js"));
     ({ routeReply } = await import("./route-reply.runtime.js"));
     ({ drainFormattedSystemEvents } = await import("./session-system-events.js"));
     ({ resolveTypingMode } = await import("./typing-mode.js"));
+    ({ __testing: replyRunTesting, getActiveReplyRunCount } =
+      await import("./reply-run-registry.js"));
   });
 
   beforeEach(async () => {
     storeRuntimeLoads.mockClear();
     updateSessionStore.mockReset();
     vi.clearAllMocks();
-    await loadFreshGetReplyRunModuleForTest();
+    replyRunTesting.resetReplyRunRegistry();
   });
 
   it("does not load session store runtime on module import", async () => {
@@ -253,53 +266,63 @@ describe("runPreparedReply media-only handling", () => {
     expect(vi.mocked(runReplyAgent)).not.toHaveBeenCalled();
   });
 
-  it("omits auth key labels from /new and /reset confirmation messages", async () => {
+  it("does not send a standalone reset notice for reply-producing /new turns", async () => {
     await runPreparedReply(
       baseParams({
         resetTriggered: true,
       }),
     );
 
-    const resetNoticeCall = vi.mocked(routeReply).mock.calls[0]?.[0] as
-      | { payload?: { text?: string } }
-      | undefined;
-    expect(resetNoticeCall?.payload?.text).toContain("✅ New session started · model:");
-    expect(resetNoticeCall?.payload?.text).not.toContain("🔑");
-    expect(resetNoticeCall?.payload?.text).not.toContain("api-key");
-    expect(resetNoticeCall?.payload?.text).not.toContain("env:");
+    const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
+    expect(call?.resetTriggered).toBe(true);
+    expect(vi.mocked(routeReply)).not.toHaveBeenCalled();
   });
 
-  it("skips reset notice when only webchat fallback routing is available", async () => {
-    await runPreparedReply(
-      baseParams({
-        resetTriggered: true,
-        ctx: {
-          Body: "",
-          RawBody: "",
-          CommandBody: "",
-          ThreadHistoryBody: "Earlier message in this thread",
-          OriginatingChannel: undefined,
-          OriginatingTo: undefined,
-          ChatType: "group",
-        },
-        command: {
-          surface: "webchat",
-          isAuthorizedSender: true,
-          abortKey: "session-key",
-          ownerList: [],
-          senderIsOwner: false,
-          rawBodyNormalized: "",
-          commandBodyNormalized: "",
-          channel: "webchat",
-          from: undefined,
-          to: undefined,
-        } as never,
-      }),
-    );
+  it("does not emit a reset notice when /new is attempted during gateway drain", async () => {
+    vi.mocked(runReplyAgent).mockRejectedValueOnce(createGatewayDrainingError());
+
+    await expect(
+      runPreparedReply(
+        baseParams({
+          resetTriggered: true,
+        }),
+      ),
+    ).rejects.toThrow("Gateway is draining for restart; new tasks are not accepted");
 
     expect(vi.mocked(routeReply)).not.toHaveBeenCalled();
   });
 
+  it("does not register a reply operation before auth setup succeeds", async () => {
+    const { resolveSessionAuthProfileOverride } =
+      await import("../../agents/auth-profiles/session-override.js");
+    const sessionId = "reply-operation-auth-failure";
+    const activeBefore = getActiveReplyRunCount();
+    vi.mocked(resolveSessionAuthProfileOverride).mockRejectedValueOnce(new Error("auth failed"));
+
+    await expect(
+      runPreparedReply(
+        baseParams({
+          sessionId,
+        }),
+      ),
+    ).rejects.toThrow("auth failed");
+
+    expect(getActiveReplyRunCount()).toBe(activeBefore);
+  });
+  it("waits for the previous active run to clear before registering a new reply operation", async () => {
+    const queueSettings = await import("./queue/settings.js");
+    vi.mocked(queueSettings.resolveQueueSettings).mockReturnValueOnce({ mode: "interrupt" });
+
+    const result = await runPreparedReply(
+      baseParams({
+        isNewSession: false,
+        sessionId: "session-overlap",
+      }),
+    );
+
+    expect(result).toEqual({ text: "ok" });
+    expect(vi.mocked(runReplyAgent)).toHaveBeenCalledOnce();
+  });
   it("uses inbound origin channel for run messageProvider", async () => {
     await runPreparedReply(
       baseParams({
@@ -358,6 +381,37 @@ describe("runPreparedReply media-only handling", () => {
 
     const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
     expect(call?.followupRun.run.messageProvider).toBe("feishu");
+  });
+
+  it("uses the effective session account for followup originatingAccountId when AccountId is omitted", async () => {
+    await runPreparedReply(
+      baseParams({
+        ctx: {
+          Body: "",
+          RawBody: "",
+          CommandBody: "",
+          ThreadHistoryBody: "Earlier message in this thread",
+          OriginatingChannel: "discord",
+          OriginatingTo: "channel:24680",
+          ChatType: "group",
+          AccountId: undefined,
+        },
+        sessionCtx: {
+          Body: "",
+          BodyStripped: "",
+          ThreadHistoryBody: "Earlier message in this thread",
+          MediaPath: "/tmp/input.png",
+          Provider: "discord",
+          ChatType: "group",
+          OriginatingChannel: "discord",
+          OriginatingTo: "channel:24680",
+          AccountId: "work",
+        },
+      }),
+    );
+
+    const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
+    expect(call?.followupRun.originatingAccountId).toBe("work");
   });
 
   it("passes suppressTyping through typing mode resolution", async () => {

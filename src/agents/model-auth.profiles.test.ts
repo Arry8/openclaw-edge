@@ -13,9 +13,18 @@ import {
 } from "./model-auth.js";
 
 vi.mock("../plugins/provider-runtime.js", () => ({
-  buildProviderMissingAuthMessageWithPlugin: () => undefined,
+  buildProviderMissingAuthMessageWithPlugin: (params: {
+    provider: string;
+    context: { listProfileIds: (providerId: string) => string[] };
+  }) => {
+    if (params.provider === "openai" && params.context.listProfileIds("openai-codex").length > 0) {
+      return 'No API key found for provider "openai". Use openai-codex/gpt-5.4.';
+    }
+    return undefined;
+  },
   formatProviderAuthProfileApiKeyWithPlugin: async () => undefined,
   refreshProviderOAuthCredentialWithPlugin: async () => null,
+  resolveExternalAuthProfilesWithPlugins: () => [],
   resolveProviderSyntheticAuthWithPlugin: (params: {
     provider: string;
     context: { providerConfig?: { api?: string; baseUrl?: string; models?: unknown[] } };
@@ -253,6 +262,49 @@ describe("getApiKeyForModel", () => {
     );
   });
 
+  it("keeps stored provider auth ahead of env by default", async () => {
+    await withEnvAsync({ OPENAI_API_KEY: "env-openai-key" }, async () => {
+      const resolved = await resolveApiKeyForProvider({
+        provider: "openai",
+        store: {
+          version: 1,
+          profiles: {
+            "openai:default": {
+              type: "api_key",
+              provider: "openai",
+              key: "stored-openai-key",
+            },
+          },
+        },
+      });
+      expect(resolved.apiKey).toBe("stored-openai-key");
+      expect(resolved.source).toBe("profile:openai:default");
+      expect(resolved.profileId).toBe("openai:default");
+    });
+  });
+
+  it("supports env-first precedence for live auth probes", async () => {
+    await withEnvAsync({ OPENAI_API_KEY: "env-openai-key" }, async () => {
+      const resolved = await resolveApiKeyForProvider({
+        provider: "openai",
+        credentialPrecedence: "env-first",
+        store: {
+          version: 1,
+          profiles: {
+            "openai:default": {
+              type: "api_key",
+              provider: "openai",
+              key: "stored-openai-key",
+            },
+          },
+        },
+      });
+      expect(resolved.apiKey).toBe("env-openai-key");
+      expect(resolved.source).toContain("OPENAI_API_KEY");
+      expect(resolved.profileId).toBeUndefined();
+    });
+  });
+
   it("hasAvailableAuthForProvider('google') accepts GOOGLE_API_KEY fallback", async () => {
     await withEnvAsync(
       {
@@ -311,13 +363,13 @@ describe("getApiKeyForModel", () => {
     });
   });
 
-  it("resolves Model Studio API key from env", async () => {
+  it("resolves Qwen API key from env", async () => {
     await withEnvAsync(
       { [envVar("MODELSTUDIO", "API", "KEY")]: "modelstudio-test-key" },
       async () => {
         // pragma: allowlist secret
         const resolved = await resolveApiKeyForProvider({
-          provider: "modelstudio",
+          provider: "qwen",
           store: { version: 1, profiles: {} },
         });
         expect(resolved.apiKey).toBe("modelstudio-test-key");
