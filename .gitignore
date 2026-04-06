@@ -112,6 +112,7 @@ scripts/dev/ibm-wml-bridge.log
 /memory/
 .agent/*.json
 !.agent/workflows/
+.agents/
 /local/
 package-lock.json
 .claude/
