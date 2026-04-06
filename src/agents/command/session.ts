@@ -19,7 +19,6 @@ import {
   resolveStorePath,
   type SessionEntry,
 } from "../../config/sessions.js";
-<<<<<<< HEAD
 import { normalizeAgentId, normalizeMainKey } from "../../routing/session-key.js";
 import { resolveSessionIdMatchSelection } from "../../sessions/session-id-resolution.js";
 import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
