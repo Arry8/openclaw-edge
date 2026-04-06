@@ -1069,6 +1069,30 @@ describe("buildAssistantMessageFromResponse", () => {
     expect(tc.arguments).toBe("not valid json");
   });
 
+  it("preserves raw string tool-call arguments through replay round-trip", () => {
+    const inputItems = convertMessagesToInputItems([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_bad|item_bad_args",
+            name: "exec",
+            arguments: "not valid json",
+          },
+        ],
+      } as any,
+    ]);
+
+    const functionCall = inputItems.find((item) => item.type === "function_call") as
+      | { type: string; name: string; arguments: unknown }
+      | undefined;
+
+    expect(functionCall).toBeDefined();
+    expect(functionCall?.name).toBe("exec");
+    expect(functionCall?.arguments).toBe("not valid json");
+  });
+
   it("sets stopReason to 'toolUse' when tool calls are present", () => {
     const response = makeResponseObject("resp_3", undefined, "exec");
     const msg = buildAssistantMessageFromResponse(response, modelInfo);
