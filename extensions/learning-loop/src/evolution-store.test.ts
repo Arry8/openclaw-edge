@@ -209,6 +209,12 @@ describe("EvolutionStore", () => {
     expect(store.loadSkillMarkdown(skillName)).toContain("Personal agents version.");
   });
 
+  it("rejects invalid skill names before fallback skill lookups", () => {
+    const { store } = createStore();
+
+    expect(() => store.loadSkillMarkdown("../outside")).toThrow("Invalid skill name");
+  });
+
   it("filters injection-like description entries from prompt context", async () => {
     const { store } = createStore();
     const descriptionEntry = createEvolutionEntry("user_correction", "description", {

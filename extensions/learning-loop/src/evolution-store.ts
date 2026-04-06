@@ -137,9 +137,13 @@ export class EvolutionStore {
    * Load the current SKILL.md contents for a skill when present.
    */
   loadSkillMarkdown(skillName: string): string | undefined {
+    const skillMdPath = this.skillMdPath(skillName);
     try {
-      return fs.readFileSync(this.skillMdPath(skillName), "utf-8");
-    } catch {
+      return fs.readFileSync(skillMdPath, "utf-8");
+    } catch (err) {
+      if (!this.isMissingFileError(err)) {
+        throw err;
+      }
       return this.loadFallbackSkillMarkdown(skillName);
     }
   }
@@ -262,11 +266,7 @@ export class EvolutionStore {
   }
 
   private skillDirPath(skillName: string): string {
-    const normalizedSkillName = skillName.trim();
-    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(normalizedSkillName)) {
-      throw new Error(`Invalid skill name: ${skillName}`);
-    }
-
+    const normalizedSkillName = this.normalizeSkillName(skillName);
     const skillDir = resolve(this.skillsBaseDir, normalizedSkillName);
     const basePrefix = this.skillsBaseDir.endsWith(sep)
       ? this.skillsBaseDir
@@ -294,11 +294,20 @@ export class EvolutionStore {
   }
 
   private resolveFallbackSkillMdPaths(skillName: string): string[] {
+    const normalizedSkillName = this.normalizeSkillName(skillName);
     const workspaceDir = resolve(this.skillsBaseDir, "..");
     return [
-      join(workspaceDir, ".agents", "skills", skillName, "SKILL.md"),
-      join(os.homedir(), ".agents", "skills", skillName, "SKILL.md"),
+      join(workspaceDir, ".agents", "skills", normalizedSkillName, "SKILL.md"),
+      join(os.homedir(), ".agents", "skills", normalizedSkillName, "SKILL.md"),
     ];
+  }
+
+  private normalizeSkillName(skillName: string): string {
+    const normalizedSkillName = skillName.trim();
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(normalizedSkillName)) {
+      throw new Error(`Invalid skill name: ${skillName}`);
+    }
+    return normalizedSkillName;
   }
 
   private async withSkillWriteLock<T>(skillName: string, task: () => T | Promise<T>): Promise<T> {
