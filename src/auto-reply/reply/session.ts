@@ -28,6 +28,7 @@ import {
   type SessionHistoryEntry,
   type SessionScope,
 } from "../../config/sessions/types.js";
+import { canonicalizeMainSessionAlias } from "../../config/sessions/main-session.js";
 import type { TtsAutoMode } from "../../config/types.tts.js";
 import { resolveSessionEntryLabel } from "../../gateway/session-utils.fs.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
