@@ -179,7 +179,11 @@ Set `OPENCLAW_CONFIG_DIR` in a `.env` file if your data lives somewhere other th
 
 ## Automation
 
-GitHub Actions runs daily at **08:00 UTC**. Each run merges as many PRs as possible within a 60-minute timeout (~250 PRs/run). On success, `mega/latest` and `main` are updated and a release tagged `mega/YYYY-MM-DD-HHMM` is created.
+GitHub Actions runs daily at **08:00 UTC**. Each run merges as many PRs as possible within a **350-minute timeout**. On success, `mega/latest` and `main` are updated and a release tagged `mega/YYYY-MM-DD-HHMM` is created.
+
+**Required secret:** `GH_PAT` — a personal access token with `repo` + `workflow` scopes, added to the repo secrets. The default `GITHUB_TOKEN` cannot push commits that modify `.github/workflows/` files, which upstream PRs frequently do.
+
+All upstream workflows are disabled automatically on each run — only `edge-merge` and `Dependabot Updates` remain active.
 
 [![edge-merge](https://img.shields.io/github/actions/workflow/status/Arry8/openclaw-edge/edge-merge.yml?branch=mega%2Flatest&label=edge-merge&style=flat-square)](https://github.com/Arry8/openclaw-edge/actions/workflows/edge-merge.yml)
 
