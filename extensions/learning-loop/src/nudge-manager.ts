@@ -26,6 +26,14 @@ type LlmCallFn = (systemPrompt: string, userPrompt: string) => Promise<string>;
 
 export type NudgeAction = "memory_review" | "skill_review" | "both";
 
+type MemoryReviewCategory =
+  | "user_profile"
+  | "preference"
+  | "project_fact"
+  | "technical"
+  | "workflow"
+  | "other";
+
 // ============================================================================
 // Review prompts
 // ============================================================================
@@ -61,6 +69,15 @@ For each skill improvement, output a JSON array of objects with:
 - reason: Why this improvement matters
 
 If nothing warrants a skill change, output an empty array: []`;
+
+const MEMORY_REVIEW_CATEGORIES = new Set<MemoryReviewCategory>([
+  "user_profile",
+  "preference",
+  "project_fact",
+  "technical",
+  "workflow",
+  "other",
+]);
 
 // ============================================================================
 // Manager
@@ -182,11 +199,13 @@ export class NudgeManager {
 
     let stored = 0;
     for (const item of items.slice(0, 5)) {
-      const category = String(item.category ?? "other");
+      const category = this.normalizeMemoryCategory(item.category);
       const observation = String(item.observation ?? "");
       const importance = Number(item.importance ?? 0.5);
 
-      if (!observation || importance < 0.3 || looksLikeInjection(observation)) continue;
+      if (!category || !observation || importance < 0.3 || looksLikeInjection(observation)) {
+        continue;
+      }
 
       try {
         await this.graphiti.addObservation(category, observation);
@@ -256,5 +275,18 @@ export class NudgeManager {
     } catch {
       return [];
     }
+  }
+
+  private normalizeMemoryCategory(raw: unknown): MemoryReviewCategory | null {
+    const category = String(raw ?? "other")
+      .trim()
+      .toLowerCase();
+    if (!category || looksLikeInjection(category)) {
+      return null;
+    }
+    if (MEMORY_REVIEW_CATEGORIES.has(category as MemoryReviewCategory)) {
+      return category as MemoryReviewCategory;
+    }
+    return "other";
   }
 }

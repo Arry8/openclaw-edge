@@ -185,4 +185,23 @@ describe("SignalDetector", () => {
       skillName: undefined,
     });
   });
+
+  it("keeps identical failure excerpts for different skills instead of deduping them together", () => {
+    const detector = new SignalDetector();
+
+    const signals = detector.detect([
+      {
+        role: "assistant",
+        content: "permission denied while loading .agents/skills/search-skill/SKILL.md",
+      },
+      {
+        role: "assistant",
+        content: "permission denied while loading .agents/skills/deploy-skill/SKILL.md",
+      },
+    ]);
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).toMatchObject({ skillName: "search-skill" });
+    expect(signals[1]).toMatchObject({ skillName: "deploy-skill" });
+  });
 });

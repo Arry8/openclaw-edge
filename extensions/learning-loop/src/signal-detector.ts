@@ -201,7 +201,12 @@ export class SignalDetector {
       this.processedKeys.clear();
     }
 
-    const key = `${signal.type}:${signal.excerpt.slice(0, 100)}`;
+    const key = [
+      signal.type,
+      signal.skillName ?? "",
+      signal.toolName ?? "",
+      signal.excerpt.slice(0, 100),
+    ].join(":");
     if (this.processedKeys.has(key)) {
       return true;
     }
