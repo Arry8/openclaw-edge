@@ -147,6 +147,7 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
             message?: string;
             extraSystemPrompt?: string;
             images?: Array<{ type: string; data: string; mimeType: string }>;
+            senderIsOwner?: boolean;
           }
         | undefined;
     const getFirstAgentMessage = () => getFirstAgentCall()?.message ?? "";
@@ -170,6 +171,7 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
         messages: [{ role: "user", content: message }],
       });
       expect(res.status).toBe(200);
+      expect(getFirstAgentCall()?.senderIsOwner).toBe(false);
       return (await res.json()) as Record<string, unknown>;
     };
 
