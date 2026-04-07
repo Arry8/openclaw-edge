@@ -324,7 +324,10 @@ function buildCacheKey(params: {
       },
     ]),
   );
-  const scopeKey = JSON.stringify(params.onlyPluginIds ?? []);
+  const scopeKey =
+    params.onlyPluginIds === undefined
+      ? '{"mode":"unscoped"}'
+      : JSON.stringify({ mode: "scoped", ids: params.onlyPluginIds });
   const setupOnlyKey = params.includeSetupOnlyChannelPlugins === true ? "setup-only" : "runtime";
   const startupChannelMode =
     params.preferSetupRuntimeForChannelPlugins === true ? "prefer-setup" : "full";
@@ -414,7 +417,7 @@ function hasExplicitCompatibilityInputs(options: PluginLoadOptions): boolean {
     options.autoEnabledReasons !== undefined ||
     options.workspaceDir !== undefined ||
     options.env !== undefined ||
-    options.onlyPluginIds?.length ||
+    options.onlyPluginIds !== undefined ||
     options.runtimeOptions !== undefined ||
     options.pluginSdkResolution !== undefined ||
     options.coreGatewayHandlers !== undefined ||

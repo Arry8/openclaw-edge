@@ -1352,6 +1352,40 @@ module.exports = { id: "throws-after-import", register() {} };`,
       },
     },
     {
+      label: "keeps empty scoped plugin loads separate from unscoped cache entries",
+      run: () => {
+        useNoBundledPlugins();
+        const allowed = writePlugin({
+          id: "allowed-empty-cache-scope",
+          filename: "allowed-empty-cache-scope.cjs",
+          body: `module.exports = { id: "allowed-empty-cache-scope", register() {} };`,
+        });
+        const options = {
+          config: {
+            plugins: {
+              load: { paths: [allowed.file] },
+              allow: ["allowed-empty-cache-scope"],
+            },
+          },
+        };
+
+        const full = loadOpenClawPlugins(options);
+        const emptyScoped = loadOpenClawPlugins({
+          ...options,
+          onlyPluginIds: [],
+        });
+        const emptyScopedAgain = loadOpenClawPlugins({
+          ...options,
+          onlyPluginIds: [],
+        });
+
+        expect(full.plugins.map((entry) => entry.id)).toEqual(["allowed-empty-cache-scope"]);
+        expect(emptyScoped).not.toBe(full);
+        expect(emptyScoped.plugins).toHaveLength(0);
+        expect(emptyScopedAgain).toBe(emptyScoped);
+      },
+    },
+    {
       label: "can load a scoped registry without replacing the active global registry",
       run: () => {
         useNoBundledPlugins();
