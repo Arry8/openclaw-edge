@@ -454,6 +454,11 @@ export async function runPreflightCompactionIfNeeded(params: {
   return entry ?? params.sessionEntry;
 }
 
+export type MemoryFlushResult = {
+  sessionEntry?: SessionEntry;
+  performedMemoryFlush: boolean;
+};
+
 export async function runMemoryFlushIfNeeded(params: {
   cfg: OpenClawConfig;
   followupRun: FollowupRun;
@@ -469,10 +474,14 @@ export async function runMemoryFlushIfNeeded(params: {
   storePath?: string;
   isHeartbeat: boolean;
   replyOperation: ReplyOperation;
-}): Promise<SessionEntry | undefined> {
+}): Promise<MemoryFlushResult> {
+  // Track whether this run performed a memory flush so we can suppress
+  // verbose notifications and system events in the parent run context.
+  let performedMemoryFlush = false;
+
   const memoryFlushPlan = resolveMemoryFlushPlan({ cfg: params.cfg });
   if (!memoryFlushPlan) {
-    return params.sessionEntry;
+    return { sessionEntry: params.sessionEntry, performedMemoryFlush: false };
   }
 
   const memoryFlushWritable = (() => {
@@ -649,7 +658,7 @@ export async function runMemoryFlushIfNeeded(params: {
       !hasAlreadyFlushedForCurrentCompaction(entry));
 
   if (!shouldFlushMemory) {
-    return entry ?? params.sessionEntry;
+    return { sessionEntry: entry ?? params.sessionEntry, performedMemoryFlush: false };
   }
 
   logVerbose(
@@ -790,9 +799,10 @@ export async function runMemoryFlushIfNeeded(params: {
         logVerbose(`failed to persist memory flush metadata: ${String(err)}`);
       }
     }
+    performedMemoryFlush = true;
   } catch (err) {
     logVerbose(`memory flush run failed: ${String(err)}`);
   }
 
-  return activeSessionEntry;
+  return { sessionEntry: activeSessionEntry, performedMemoryFlush };
 }
