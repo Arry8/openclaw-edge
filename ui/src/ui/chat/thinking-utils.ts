@@ -49,7 +49,6 @@ export function normalizeThinkLevel(raw?: string | null): ThinkLevel | undefined
   if (["high", "ultra", "ultrathink", "thinkhardest", "highest", "max"].includes(key)) {
     return "high";
   }
-  }
   if (["think"].includes(key)) {
     return "minimal";
   }

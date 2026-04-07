@@ -102,8 +102,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow list --repo ${{ github.repository }} --all --json databaseId,name,state \
-            | jq -r '.[] | select(.state == "active") | select(.name != "edge-merge") | select(.name != "Dependabot Updates") | .databaseId' \
+          gh workflow list --repo ${{ github.repository }} --all --json id,name,state \
+            | jq -r '.[] | select(.state == "active") | select(.name != "edge-merge") | select(.name != "Dependabot Updates") | .id' \
             | while read -r id; do
                 gh workflow disable --repo ${{ github.repository }} "$id" \
                   && echo "Disabled workflow $id" \
