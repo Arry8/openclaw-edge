@@ -284,9 +284,15 @@ export async function acquireGatewayLock(
         },
         releaseSync: () => {
           try {
-            handle.close().catch(() => undefined);
+            // Use synchronous close via the underlying file descriptor to
+            // guarantee the handle is released before rmSync runs. The async
+            // handle.close() cannot complete in forced-exit paths such as
+            // process.on('exit') or the shutdown timeout timer, and on
+            // Windows the still-open handle would cause rmSync to fail with
+            // EBUSY.
+            fsSync.closeSync(handle.fd);
           } catch {
-            // best-effort
+            // best-effort — fd may already be closed
           }
           try {
             fsSync.rmSync(lockPath, { force: true });
