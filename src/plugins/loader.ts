@@ -344,7 +344,7 @@ function normalizeScopedPluginIds(ids?: string[]): string[] | undefined {
     return undefined;
   }
   const normalized = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean))).toSorted();
-  return normalized.length > 0 ? normalized : undefined;
+  return normalized;
 }
 
 function matchesScopedPluginRequest(params: {
