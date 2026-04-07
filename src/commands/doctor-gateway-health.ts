@@ -12,6 +12,11 @@ export type GatewayMemoryProbe = {
   checked: boolean;
   ready: boolean;
   error?: string;
+  fts?: {
+    enabled: boolean;
+    available: boolean;
+    error?: string;
+  };
 };
 
 export async function checkGatewayHealth(params: {
@@ -81,6 +86,7 @@ export async function probeGatewayMemoryStatus(params: {
       checked: true,
       ready: payload.embedding.ok,
       error: payload.embedding.error,
+      fts: payload.fts,
     };
   } catch (err) {
     const message = formatErrorMessage(err);

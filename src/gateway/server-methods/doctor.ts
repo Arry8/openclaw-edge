@@ -85,6 +85,11 @@ export type DoctorMemoryStatusPayload = {
     ok: boolean;
     error?: string;
   };
+  fts?: {
+    enabled: boolean;
+    available: boolean;
+    error?: string;
+  };
   dreaming?: DoctorMemoryDreamingPayload;
 };
 
@@ -567,13 +572,18 @@ export const doctorHandlers: GatewayRequestHandlers = {
 
     try {
       const status = manager.status();
+      const statusRecord = status as Record<string, unknown>;
+      const ftsRecord = asRecord(statusRecord.fts);
+      const ftsEnabled = ftsRecord?.enabled;
+      const ftsAvailable = ftsRecord?.available;
+      const ftsError = normalizeTrimmedString(ftsRecord?.error);
       let embedding = await manager.probeEmbeddingAvailability();
       if (!embedding.ok && !embedding.error) {
         embedding = { ok: false, error: "memory embeddings unavailable" };
       }
       const nowMs = Date.now();
       const dreamingConfig = resolveDreamingConfig(cfg);
-      const workspaceDir = normalizeTrimmedString((status as Record<string, unknown>).workspaceDir);
+      const workspaceDir = normalizeTrimmedString(statusRecord.workspaceDir);
       const configuredWorkspaces = resolveMemoryDreamingWorkspaces(cfg).map(
         (entry) => entry.workspaceDir,
       );
@@ -604,6 +614,15 @@ export const doctorHandlers: GatewayRequestHandlers = {
         agentId,
         provider: status.provider,
         embedding,
+        ...(typeof ftsEnabled === "boolean" && typeof ftsAvailable === "boolean"
+          ? {
+              fts: {
+                enabled: ftsEnabled,
+                available: ftsAvailable,
+                ...(ftsError ? { error: ftsError } : {}),
+              },
+            }
+          : {}),
         dreaming: {
           ...dreamingConfig,
           ...storeStats,
