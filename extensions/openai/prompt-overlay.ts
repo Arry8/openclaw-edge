@@ -1,3 +1,5 @@
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
+
 const OPENAI_PROVIDER_IDS = new Set(["openai", "openai-codex"]);
 const OPENAI_GPT5_MODEL_PREFIX = "gpt-5";
 
@@ -45,17 +47,17 @@ export const OPENAI_GPT5_EXECUTION_BIAS = `## Execution Bias
 
 Start the real work in the same turn when the next step is clear.
 Do prerequisite lookup or discovery before dependent actions.
-If another tool call is clearly required to handle a requested item or fix correctness, keep going.
-Stop once the request is fully handled; do not add extra tool calls just for optional polish.
+If another tool call would likely improve correctness or completeness, keep going instead of stopping at partial progress.
 Multi-part requests stay incomplete until every requested item is handled or clearly marked blocked.
-Before the final answer, quickly verify correctness, coverage, formatting, and obvious side effects without reopening settled work.`;
+Before the final answer, quickly verify correctness, coverage, formatting, and obvious side effects.`;
 
 export type OpenAIPromptOverlayMode = "friendly" | "off";
 
 export function resolveOpenAIPromptOverlayMode(
   pluginConfig?: Record<string, unknown>,
 ): OpenAIPromptOverlayMode {
-  return pluginConfig?.personality === "off" ? "off" : "friendly";
+  const normalized = normalizeLowercaseStringOrEmpty(pluginConfig?.personality);
+  return normalized === "off" ? "off" : "friendly";
 }
 
 export function shouldApplyOpenAIPromptOverlay(params: {
@@ -65,7 +67,7 @@ export function shouldApplyOpenAIPromptOverlay(params: {
   if (!OPENAI_PROVIDER_IDS.has(params.modelProviderId ?? "")) {
     return false;
   }
-  const normalizedModelId = params.modelId?.trim().toLowerCase() ?? "";
+  const normalizedModelId = normalizeLowercaseStringOrEmpty(params.modelId);
   return normalizedModelId.startsWith(OPENAI_GPT5_MODEL_PREFIX);
 }
 
