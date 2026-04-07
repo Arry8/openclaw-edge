@@ -370,6 +370,11 @@ operator trust.
   repo: `https://github.com/cheapestinference/openclaw-plugin-ratelimit-retry`
   install: `openclaw plugins install @cheapestinference/openclaw-ratelimit-retry`
 
+- **Memory Core Plus** — Enhanced workspace memory with closed-loop auto-recall and auto-capture. Semantically searches past memories before each LLM turn and automatically extracts durable facts from conversations.
+  npm: `memory-core-plus`
+  repo: `https://github.com/aloong-planet/openclaw-memory-core-plus`
+  install: `openclaw plugins install memory-core-plus`
+
 - **WeChat** — Connect OpenClaw to WeChat personal accounts via WeChatPadPro (iPad protocol). Supports text, image, and file exchange with keyword-triggered conversations.
   npm: `@icesword760/openclaw-wechat`
   repo: `https://github.com/icesword0760/openclaw-wechat`
