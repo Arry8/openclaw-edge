@@ -68,7 +68,6 @@ setCliRunnerExecuteTestDeps({
 setCliRunnerPrepareTestDeps({
   makeBootstrapWarn: () => () => {},
   resolveBootstrapContextForRun: hoisted.resolveBootstrapContextForRunMock,
-  resolveHeartbeatPrompt: async () => "",
   resolveOpenClawDocsPath: async () => null,
 });
 
@@ -251,8 +250,8 @@ function buildGoogleGeminiCliBackendFixture(): CliBackendPlugin {
     id: "google-gemini-cli",
     config: {
       command: "gemini",
-      args: ["--prompt", "--output-format", "json"],
-      resumeArgs: ["--resume", "{sessionId}", "--prompt", "--output-format", "json"],
+      args: ["--output-format", "json", "--prompt", "{prompt}"],
+      resumeArgs: ["--resume", "{sessionId}", "--output-format", "json", "--prompt", "{prompt}"],
       output: "json",
       input: "arg",
       modelArg: "--model",
@@ -375,7 +374,6 @@ export function restoreCliRunnerPrepareTestDeps() {
   setCliRunnerPrepareTestDeps({
     makeBootstrapWarn: () => () => {},
     resolveBootstrapContextForRun: hoisted.resolveBootstrapContextForRunMock,
-    resolveHeartbeatPrompt: async () => "",
     resolveOpenClawDocsPath: async () => null,
   });
 }
