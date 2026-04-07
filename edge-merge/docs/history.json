@@ -95391,6 +95391,1345 @@
           "src/tasks/task-registry.test.ts"
         ]
       }
+    },
+    {
+      "author": "pgondhi987",
+      "closedAt": "2026-04-04T07:57:44Z",
+      "createdAt": null,
+      "headSha": "98f62f302b148269a1b8e4738cd5b936580dd0f4",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: M",
+        "extensions: anthropic"
+      ],
+      "mergedAt": "2026-04-04T07:57:44Z",
+      "number": 59815,
+      "title": "fix(gateway): preserve caller scopes for identity-bearing gateway-auth plugin routes [AI]",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "steipete",
+      "closedAt": "2026-04-04T08:05:57Z",
+      "createdAt": null,
+      "headSha": "0e946b41135f7c22a8d4258f0747693d09048126",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T08:05:57Z",
+      "number": 60751,
+      "title": "fix: honor exec approval security and clean up stale tasks",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "Innocent-children",
+      "closedAt": "2026-04-04T08:11:48Z",
+      "createdAt": null,
+      "headSha": "9f12118dbf6a9829df59ac38c95f52a66db56a9d",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S",
+        "extensions: moonshot"
+      ],
+      "mergedAt": "2026-04-04T08:11:48Z",
+      "number": 59356,
+      "title": "fix(kimi-web_search): fix web search and add region/model selection during onboard",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "tonga54",
+      "closedAt": "2026-04-04T08:16:30Z",
+      "createdAt": null,
+      "headSha": "36dacc2266d5336a3e0f371b77a2f9bb2e8c0ea2",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: S",
+        "extensions: moonshot"
+      ],
+      "mergedAt": "2026-04-04T08:16:30Z",
+      "number": 56769,
+      "title": "fix(moonshot): inherit native chat base URL for Kimi web search",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T08:22:19Z",
+      "createdAt": null,
+      "headSha": "519732db1ee47f74ebec1ea40a1a1b854e321647",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T08:22:19Z",
+      "number": 60755,
+      "title": "fix(github-copilot): send IDE auth headers on runtime requests",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "chenxin-yan",
+      "closedAt": "2026-04-04T08:23:29Z",
+      "createdAt": null,
+      "headSha": "eec6770bc44c1f92a27dff09f84b353cc318f8ff",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T08:23:29Z",
+      "number": 57883,
+      "title": "docs: fix incorrect Kimi Coding provider ID and model refs",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "IVY-AI-gif",
+      "closedAt": "2026-04-04T08:25:33Z",
+      "createdAt": null,
+      "headSha": "37c95278d463d1339c44db17da8249d54513d499",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T08:25:33Z",
+      "number": 52395,
+      "title": "fix(usage): match streaming usage compat by baseUrl, not provider key",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/models-config.providers.ts"
+        ]
+      }
+    },
+    {
+      "author": "xydt-610",
+      "closedAt": "2026-04-04T08:29:55Z",
+      "createdAt": null,
+      "headSha": "8f17884f59e4a1d18309d88dcb323cbfe476bd47",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T08:29:55Z",
+      "number": 51418,
+      "title": "fix(media-understanding): auto-register image capability",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/media-understanding/provider-registry.ts",
+          "src/media-understanding/providers/index.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "YangManBOBO",
+      "closedAt": "2026-04-04T08:32:00Z",
+      "createdAt": null,
+      "headSha": "50d50832432ecdbb92786e9bad10c865da11db37",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T08:32:00Z",
+      "number": 60222,
+      "title": "fix(minimax): correct coding_plan usage_count as remaining quota",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "octo-patch",
+      "closedAt": "2026-04-04T08:40:57Z",
+      "createdAt": null,
+      "headSha": "7eeddd8c421fdf9dde4d8f2c771a0c1c05e7942f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S",
+        "extensions: minimax"
+      ],
+      "mergedAt": "2026-04-04T08:40:57Z",
+      "number": 54214,
+      "title": "fix(minimax): correct model pricing per official docs",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/minimax/provider-catalog.ts"
+        ]
+      }
+    },
+    {
+      "author": "haoyu-haoyu",
+      "closedAt": "2026-04-04T08:42:20Z",
+      "createdAt": null,
+      "headSha": "8f7264a56b29d26d14194c56c297c6859fe354d5",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T08:42:20Z",
+      "number": 48185,
+      "title": "fix(model): skip GLM-5 forward-compat when model is already registered",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/model-forward-compat.ts",
+          "src/agents/pi-embedded-runner/model.forward-compat.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "BradGroux",
+      "closedAt": "2026-04-04T09:34:24Z",
+      "createdAt": null,
+      "headSha": "9c32216eb8c6d137d8e897bcb04f14a6d9d271ee",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T09:34:24Z",
+      "number": 60771,
+      "title": "msteams: add typingIndicator config and prevent duplicate DM typing indicator",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "eleqtrizit",
+      "closedAt": "2026-04-04T10:13:49Z",
+      "createdAt": null,
+      "headSha": "8e5ec3a2a8d1ec99b98d8babd0934e8324e5f02a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "maintainer",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T10:13:49Z",
+      "number": 60461,
+      "title": "fix(gateway): require pairing scope for node approvals",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "jwchmodx",
+      "closedAt": "2026-04-04T10:20:51Z",
+      "createdAt": null,
+      "headSha": "5c3a250b87f5b3f551167f140f928e3ec563339f",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T10:20:51Z",
+      "number": 60254,
+      "title": "fix(minimax): invert usage_percent when no count fields are present",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "caiqinghua",
+      "closedAt": "2026-04-04T10:26:12Z",
+      "createdAt": null,
+      "headSha": "c7753f406cd3ac9157f95e5b7e4ee98588879265",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS",
+        "extensions: minimax"
+      ],
+      "mergedAt": "2026-04-04T10:26:12Z",
+      "number": 34524,
+      "title": "fix(models): support MINIMAX_API_HOST env var for CN endpoint (#34487)",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/models-config.providers.nvidia.test.ts",
+          "src/agents/models-config.providers.ts"
+        ]
+      }
+    },
+    {
+      "author": "eleqtrizit",
+      "closedAt": "2026-04-04T10:27:10Z",
+      "createdAt": null,
+      "headSha": "1408a1beea397d69adf501e759530ad12a5121d7",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T10:27:10Z",
+      "number": 60462,
+      "title": "Reject unapproved device token roles",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "Luckymingxuan",
+      "closedAt": "2026-04-04T10:27:26Z",
+      "createdAt": null,
+      "headSha": "24b043fffb3b9096c6fd4d50b086c2c4fc69dd9b",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S",
+        "extensions: byteplus",
+        "extensions: volcengine"
+      ],
+      "mergedAt": "2026-04-04T10:27:26Z",
+      "number": 58819,
+      "title": "fix(model-picker): proper model filtering for bundled providers",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "lyfuci",
+      "closedAt": "2026-04-04T10:32:05Z",
+      "createdAt": null,
+      "headSha": "9b6eddeeddd82cfc2de220bca05689a0bee9c4dd",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T10:32:05Z",
+      "number": 54940,
+      "title": "fix: normalize openai-completions usage fields for DashScope and compatible providers",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/openai-ws-stream.test.ts",
+          "src/agents/openai-ws-stream.ts"
+        ]
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T10:32:13Z",
+      "createdAt": null,
+      "headSha": "99c0c3042476bcb1f6bbd6bce47a395264bb9120",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T10:32:13Z",
+      "number": 60761,
+      "title": "fix(openrouter): gate prompt cache markers by endpoint",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "Ezio0",
+      "closedAt": "2026-04-04T10:35:28Z",
+      "createdAt": null,
+      "headSha": "c49de0cfbdd2fa322e8c0cba5209f36251f413b8",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T10:35:28Z",
+      "number": 56279,
+      "title": "fix: auto-register custom providers with media-capable models",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/media-understanding/provider-registry.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "coygeek",
+      "closedAt": "2026-04-04T10:44:43Z",
+      "createdAt": null,
+      "headSha": "00d3932338215036b25fe6dffdb90cdf72cb1358",
+      "isDraft": null,
+      "labels": [
+        "extensions: device-pair",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T10:44:43Z",
+      "number": 55996,
+      "title": "fix: /pair approve bypasses the admin scope guard for device pairing",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/device-pair/index.test.ts",
+          "extensions/device-pair/index.ts"
+        ]
+      }
+    },
+    {
+      "author": "kiranvk-2011",
+      "closedAt": "2026-04-04T10:45:53Z",
+      "createdAt": null,
+      "headSha": "32fb15d1e3c1e4fc0cd19732c45f8dd56c972e23",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T10:45:53Z",
+      "number": 60266,
+      "title": "fix: distinguish user-initiated model switches from system fallbacks in LiveSessionModelSwitchError",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "eleqtrizit",
+      "closedAt": "2026-04-04T10:48:02Z",
+      "createdAt": null,
+      "headSha": "3946b772b96f2ff98e3b6e0bb2b422c6e45cfa4f",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T10:48:02Z",
+      "number": 60469,
+      "title": "fix(browser): validate cdp websocket pivots",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "eleqtrizit",
+      "closedAt": "2026-04-04T10:51:03Z",
+      "createdAt": null,
+      "headSha": "24977ca27e14a73c026989c09482d87dec1700fa",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T10:51:02Z",
+      "number": 60477,
+      "title": "Validate browser profile CDP endpoints on create",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "mvanhorn",
+      "closedAt": "2026-04-04T10:55:38Z",
+      "createdAt": null,
+      "headSha": "15eef30df3bf920657491ecd228a8ceb8f71ee73",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T10:55:38Z",
+      "number": 60682,
+      "title": "fix(browser): remove fromSurface: false for Chrome 146+ screenshot compat",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "JithendraNara",
+      "closedAt": "2026-04-04T10:56:04Z",
+      "createdAt": null,
+      "headSha": "cbdf56aaff08677c19be1ec773d530b274055625",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "size: L",
+        "extensions: minimax"
+      ],
+      "mergedAt": "2026-04-04T10:56:04Z",
+      "number": 54648,
+      "title": "feat(tools): add MiniMax as bundled web search provider",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/minimax/index.ts",
+          "src/bundled-web-search-registry.ts",
+          "src/plugins/bundled-plugin-metadata.generated.ts",
+          "src/plugins/bundled-web-search-ids.ts",
+          "src/plugins/bundled-web-search-provider-ids.ts",
+          "src/plugins/bundled-web-search.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "pedh",
+      "closedAt": "2026-04-04T10:59:59Z",
+      "createdAt": null,
+      "headSha": "c3b06fb4a100b9067340d0d9cd9d62a7295a3a04",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T10:59:59Z",
+      "number": 60097,
+      "title": "fix(browser): disconnect Playwright CDP session on stop for attachOnly profiles",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "BrianWang1990",
+      "closedAt": "2026-04-04T11:03:57Z",
+      "createdAt": null,
+      "headSha": "ddeea56551466d6d624de73659f7b19635611d1a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T11:03:57Z",
+      "number": 60146,
+      "title": "fix(browser): clean up browser tabs/processes when cron tasks and subagents complete",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T11:07:14Z",
+      "createdAt": null,
+      "headSha": "cf4ef68c9715bd177b8792effc226d006b8ce9be",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T11:07:13Z",
+      "number": 60757,
+      "title": "fix(google): add direct cachedContent support",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "moktamd",
+      "closedAt": "2026-04-04T11:21:37Z",
+      "createdAt": null,
+      "headSha": "c82aaa25d01838a183c1fa3c4e56480cf5c61b66",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T11:21:37Z",
+      "number": 55809,
+      "title": "fix: MiniMax M2.7 streaming shows reasoning_content as visible output",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/pi-embedded-runner/extra-params.ts"
+        ]
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T11:27:22Z",
+      "createdAt": null,
+      "headSha": "fcb1293ca905712f82dd1483521f10aca5b49599",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T11:27:22Z",
+      "number": 60801,
+      "title": "fix(google-cli): parse gemini json response and stats",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "stuartsy",
+      "closedAt": "2026-04-04T11:34:42Z",
+      "createdAt": null,
+      "headSha": "d90e07bf3a93877e6558257d27b9f6a155bdf77d",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T11:34:42Z",
+      "number": 59247,
+      "title": "fix(status): hydrate cache usage in transcript fallback",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T12:11:27Z",
+      "createdAt": null,
+      "headSha": "5caa16a20d24c2274382f4e0a39061ad2babf994",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T12:11:27Z",
+      "number": 60811,
+      "title": "fix(agents): prefer cron for deferred follow-ups",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "artwalker",
+      "closedAt": "2026-04-04T12:24:16Z",
+      "createdAt": null,
+      "headSha": "bee4dfca061c91aa7ee7dadc13c1db33a1d02545",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T12:24:16Z",
+      "number": 60622,
+      "title": "fix(cron): notify user via primary delivery channel on job failure",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "ejames-dev",
+      "closedAt": "2026-04-04T13:07:10Z",
+      "createdAt": null,
+      "headSha": "a67bcaa11b22d94bf74a01962ce057356ce31fe3",
+      "isDraft": null,
+      "labels": [
+        "commands",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T13:07:10Z",
+      "number": 59911,
+      "title": "fix(doctor): avoid repeat talk normalization changes from key order",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "feniix",
+      "closedAt": "2026-04-04T13:10:44Z",
+      "createdAt": null,
+      "headSha": "637ff7d3c87c95fcda983e27a05f82e64982fc05",
+      "isDraft": null,
+      "labels": [
+        "scripts",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T13:10:44Z",
+      "number": 60557,
+      "title": "feat(plugin-sdk): export OpenClawSchema via plugin-sdk/config-schema",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "caicongyang",
+      "closedAt": "2026-04-04T13:17:38Z",
+      "createdAt": null,
+      "headSha": "71f78efd88ad75d5f906cc69e142eb40d2a4aa6c",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T13:17:38Z",
+      "number": 46032,
+      "title": "fix(gateway): preserve stored scopes when reconnecting with device token",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/gateway/client.ts"
+        ]
+      }
+    },
+    {
+      "author": "aaronagent",
+      "closedAt": "2026-04-04T13:18:39Z",
+      "createdAt": null,
+      "headSha": "655e0f3d673441b54a04f268d052f8bcec2c0237",
+      "isDraft": null,
+      "labels": [
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T13:18:39Z",
+      "number": 58294,
+      "title": "fix(cron): prevent agent default model from overriding cron payload model",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "xiwuqi",
+      "closedAt": "2026-04-04T13:32:15Z",
+      "createdAt": null,
+      "headSha": "72336da3b29eef5ff4f9252f6f6972fa6c1061c7",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T13:32:15Z",
+      "number": 50240,
+      "title": "fix: fall back on loopback pairing handshake closes",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cli/devices-cli.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "MoerAI",
+      "closedAt": "2026-04-04T13:37:53Z",
+      "createdAt": null,
+      "headSha": "8d478fc0927ce5bf7152f86b72fcc41fe5f8eb74",
+      "isDraft": null,
+      "labels": [
+        "channel: mattermost",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T13:37:53Z",
+      "number": 58271,
+      "title": "fix(mattermost): add groups property to config schema (#57618)",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "rockcent",
+      "closedAt": "2026-04-04T14:03:21Z",
+      "createdAt": null,
+      "headSha": "7f8265231c1a13e582d65c0183a02630eb969b8f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T14:03:21Z",
+      "number": 59892,
+      "title": "fix(failover): OpenRouter 403 Key limit exceeded triggers billing fallback",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "maxpetrusenko",
+      "closedAt": "2026-04-04T14:18:55Z",
+      "createdAt": null,
+      "headSha": "bbaf303de6f0a2732f173925165aa523c7e52c85",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T14:18:55Z",
+      "number": 56481,
+      "title": "fix(agents): harden subagent lifecycle — ACP field stripping, channel inheritance, heartbeat cooldown",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/agents/subagent-announce-delivery.ts",
+          "src/agents/subagent-announce.test.ts",
+          "src/agents/tools/sessions-spawn-tool.test.ts",
+          "src/agents/tools/sessions-spawn-tool.ts",
+          "src/infra/heartbeat-wake.test.ts",
+          "src/infra/heartbeat-wake.ts"
+        ]
+      }
+    },
+    {
+      "author": "jlapenna",
+      "closedAt": "2026-04-04T14:21:01Z",
+      "createdAt": null,
+      "headSha": "f5f1703a3a4fea6ca03d6bfc0fd94803bef07c16",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T14:21:01Z",
+      "number": 57258,
+      "title": "fix(pairing): support multi-role and subset scope validation in device bootstrap",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "CHANGELOG.md",
+          "src/shared/device-bootstrap-profile.ts"
+        ]
+      }
+    },
+    {
+      "author": "hughcube",
+      "closedAt": "2026-04-04T14:22:36Z",
+      "createdAt": null,
+      "headSha": "434be2b49d959de5d4fcef952464bd7647d89078",
+      "isDraft": null,
+      "labels": [
+        "extensions: google-gemini-cli-auth",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T14:22:36Z",
+      "number": 40729,
+      "title": "fix(google-gemini-cli-auth): fix Gemini CLI OAuth failures on Windows",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "extensions/google-gemini-cli-auth/oauth.ts"
+        ]
+      }
+    },
+    {
+      "author": "coygeek",
+      "closedAt": "2026-04-04T14:27:05Z",
+      "createdAt": null,
+      "headSha": "e0a128fbfaacf18ebf2a0b159fd99c4a9e4fc862",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "size: M"
+      ],
+      "mergedAt": "2026-04-04T14:27:05Z",
+      "number": 50627,
+      "title": "fix: device.token.rotate IDOR — any operator.pairing client can...",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/infra/exec-approvals-allow-always.test.ts"
+        ]
+      }
+    },
+    {
+      "author": "altaywtf",
+      "closedAt": "2026-04-04T15:09:45Z",
+      "createdAt": null,
+      "headSha": "49b904a31550f052c5ae8e9447389c0ead5410db",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T15:09:45Z",
+      "number": 60914,
+      "title": "fix(cli): route skills list output to stdout when --json is active",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "aaron-he-zhu",
+      "closedAt": "2026-04-04T15:11:46Z",
+      "createdAt": null,
+      "headSha": "92ac8a1ab3fafb5548918c22e3cfeb1c7c188e56",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T15:11:46Z",
+      "number": 59325,
+      "title": "fix(agents): classify generic provider errors for failover",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "altaywtf",
+      "closedAt": "2026-04-04T15:24:03Z",
+      "createdAt": null,
+      "headSha": "b21bad4ad31020e199f634a6f78db3c67c689a9f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T15:24:03Z",
+      "number": 60909,
+      "title": "fix(failover): scope openrouter-specific matchers",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "onutc",
+      "closedAt": "2026-04-04T15:37:17Z",
+      "createdAt": null,
+      "headSha": "d421b4b25c326bedf90afb60181af44ace0d6090",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: XS",
+        "extensions: acpx"
+      ],
+      "mergedAt": "2026-04-04T15:37:17Z",
+      "number": 60918,
+      "title": "ACPX: bump pinned version to 0.4.1",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "openperf",
+      "closedAt": "2026-04-04T16:26:11Z",
+      "createdAt": null,
+      "headSha": "9c5316c2c0c8ce390079331367f1b38c6452795f",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: L"
+      ],
+      "mergedAt": "2026-04-04T16:26:11Z",
+      "number": 58178,
+      "title": "fix(agents): handle LiveSessionModelSwitchError in subagent execution",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "openperf",
+      "closedAt": "2026-04-04T16:29:57Z",
+      "createdAt": null,
+      "headSha": "f2815d0a9d43e59989b709800e69ea88ead2426e",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T16:29:57Z",
+      "number": 60788,
+      "title": "fix(agents): restore exec host=node routing and per-call override from auto",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "openperf",
+      "closedAt": "2026-04-04T16:42:43Z",
+      "createdAt": null,
+      "headSha": "17a3539cd49d9f9335d1bf109b2b9bbf02f69e80",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T16:42:43Z",
+      "number": 58849,
+      "title": "fix(agents): keep tool_use and toolResult together when splitting messages",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "openperf",
+      "closedAt": "2026-04-04T16:46:20Z",
+      "createdAt": null,
+      "headSha": "17af56ca9789f12fc4062ad8b2999ba76b168330",
+      "isDraft": null,
+      "labels": [
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T16:46:20Z",
+      "number": 45737,
+      "title": "fix(cron): suppress NO_REPLY sentinel in direct delivery path",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": [
+          "src/cron/isolated-agent/delivery-dispatch.double-announce.test.ts",
+          "src/cron/isolated-agent/delivery-dispatch.ts"
+        ]
+      }
+    },
+    {
+      "author": "gumadeiras",
+      "closedAt": "2026-04-04T17:23:58Z",
+      "createdAt": null,
+      "headSha": "108221fdfe0e84c486df21effc9d81318df85674",
+      "isDraft": null,
+      "labels": [
+        "docs",
+        "channel: telegram",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T17:23:58Z",
+      "number": 60932,
+      "title": "core: dedupe approval not-found handling",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "hxy91819",
+      "closedAt": "2026-04-04T17:54:49Z",
+      "createdAt": null,
+      "headSha": "56ce5457863b1fd977883d24ea51d4d97159ab91",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "maintainer",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T17:54:49Z",
+      "number": 60277,
+      "title": "fix: wrap untrusted file inputs",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "oliviareid-svg",
+      "closedAt": "2026-04-04T18:02:36Z",
+      "createdAt": null,
+      "headSha": "32a3d3579f7d0ab00ae03ac9c36247da2fd29e83",
+      "isDraft": null,
+      "labels": [
+        "size: L"
+      ],
+      "mergedAt": "2026-04-04T18:02:36Z",
+      "number": 60619,
+      "title": "fix(outbound): strip leaked <tool_call> XML tags from chat bubbles",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "vincentkoc",
+      "closedAt": "2026-04-04T18:17:10Z",
+      "createdAt": null,
+      "headSha": "a1b6424edffc67c86c3a215a68798bb8eb64bb8c",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "maintainer",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T18:17:10Z",
+      "number": 60877,
+      "title": "fix(agents): prefer background completion wake over polling",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "solavrc",
+      "closedAt": "2026-04-04T19:10:08Z",
+      "createdAt": null,
+      "headSha": "a98b9719246ac7487f8eb34892354aa4e810801b",
+      "isDraft": null,
+      "labels": [
+        "cli",
+        "size: XL"
+      ],
+      "mergedAt": "2026-04-04T19:10:08Z",
+      "number": 60067,
+      "title": "feat(config): add rich description fields to JSON Schema output [AI-assisted]",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "chinar-amrutkar",
+      "closedAt": "2026-04-04T20:17:10Z",
+      "createdAt": null,
+      "headSha": "17e5720fee2e553c2e901735870a14d0629e8b02",
+      "isDraft": null,
+      "labels": [
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T20:17:10Z",
+      "number": 60910,
+      "title": "docs: add PR limits to contribution guide",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "altaywtf",
+      "closedAt": "2026-04-04T20:57:34Z",
+      "createdAt": null,
+      "headSha": "baab07721ebfcde84b9386358cb9b9a43785e0fd",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T20:57:34Z",
+      "number": 61032,
+      "title": "fix(pnpm-workspace): add acpx to `minimumReleaseAgeExclude`",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "hannasdev",
+      "closedAt": "2026-04-04T21:36:02Z",
+      "createdAt": null,
+      "headSha": "df8d953a14446a26f77e3f0fe7d5072d52abfe5a",
+      "isDraft": null,
+      "labels": [
+        "gateway",
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T21:36:02Z",
+      "number": 60778,
+      "title": "fix(avatar): check ui.assistant.avatar in resolveAvatarSource",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "coder-zhuzm",
+      "closedAt": "2026-04-04T21:59:07Z",
+      "createdAt": null,
+      "headSha": "f7757b9e34c3a902081077ad9eeec6d265fb5516",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T21:59:07Z",
+      "number": 60394,
+      "title": "Control UI: use a dedicated loading style for the Cron refresh button",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "macdao",
+      "closedAt": "2026-04-04T22:05:48Z",
+      "createdAt": null,
+      "headSha": "8b7a7eed951f9c02ecc5f36da1fa743d85318dfc",
+      "isDraft": null,
+      "labels": [
+        "app: web-ui",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T22:05:48Z",
+      "number": 60220,
+      "title": "style(UI): improve mobile chat layout",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "coolramukaka-sys",
+      "closedAt": "2026-04-04T22:21:45Z",
+      "createdAt": null,
+      "headSha": "7fe7f3c6bb847e1024ecd0e499b3f03588e6d9ec",
+      "isDraft": null,
+      "labels": [
+        "channel: msteams",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T22:21:45Z",
+      "number": 60939,
+      "title": "fix(msteams): replace deprecated HttpPlugin with httpServerAdapter",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "KimGLee",
+      "closedAt": "2026-04-04T22:30:22Z",
+      "createdAt": null,
+      "headSha": "2b48b3a4559696b1535298477d7aa487228d1ad5",
+      "isDraft": null,
+      "labels": [
+        "agents",
+        "size: S"
+      ],
+      "mergedAt": "2026-04-04T22:30:22Z",
+      "number": 60852,
+      "title": "fix(skills): unify runtime inclusion and available_skills exposure policy",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "altaywtf",
+      "closedAt": "2026-04-04T22:32:00Z",
+      "createdAt": null,
+      "headSha": "2e0d808e2ffc93075a88acb800bee412bc86bc1b",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T22:31:59Z",
+      "number": 61053,
+      "title": "fix(ci): break facade runtime init cycle",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
+    },
+    {
+      "author": "altaywtf",
+      "closedAt": "2026-04-04T23:13:46Z",
+      "createdAt": null,
+      "headSha": "6710b31fac60762e289af096e95b0b1cabbccefc",
+      "isDraft": null,
+      "labels": [
+        "maintainer",
+        "size: XS"
+      ],
+      "mergedAt": "2026-04-04T23:13:46Z",
+      "number": 61068,
+      "title": "fix(contracts): align Teams guard and MiniMax loader",
+      "tier": 0,
+      "result": {
+        "status": "conflict",
+        "conflictFiles": []
+      }
     }
   ]
 }
