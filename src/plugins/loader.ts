@@ -1495,18 +1495,28 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
         }
       }
 
-      const validatedConfig = validatePluginConfig({
-        schema: manifestRecord.configSchema,
-        cacheKey: manifestRecord.schemaCacheKey,
-        value: entry?.config,
-      });
+      // Skip schema validation when no config entry exists for this plugin in the current
+      // context (e.g. provider-resolution loads that don't carry the full user config).
+      // Validating an empty object against a schema with required fields produces spurious errors.
+      const configValue = entry?.config;
+      let resolvedPluginConfig: Record<string, unknown> | undefined = configValue as
+        | Record<string, unknown>
+        | undefined;
+      if (configValue !== undefined) {
+        const validatedConfig = validatePluginConfig({
+          schema: manifestRecord.configSchema,
+          cacheKey: manifestRecord.schemaCacheKey,
+          value: configValue,
+        });
 
-      if (!validatedConfig.ok) {
-        logger.error(
-          `[plugins] ${record.id} invalid config: ${validatedConfig.errors?.join(", ")}`,
-        );
-        pushPluginLoadError(`invalid config: ${validatedConfig.errors?.join(", ")}`);
-        continue;
+        if (!validatedConfig.ok) {
+          logger.error(
+            `[plugins] ${record.id} invalid config: ${validatedConfig.errors?.join(", ")}`,
+          );
+          pushPluginLoadError(`invalid config: ${validatedConfig.errors?.join(", ")}`);
+          continue;
+        }
+        resolvedPluginConfig = validatedConfig.value;
       }
 
       if (!shouldLoadModules) {
@@ -1663,7 +1673,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
 
       const api = createApi(record, {
         config: cfg,
-        pluginConfig: validatedConfig.value,
+        pluginConfig: resolvedPluginConfig,
         hookPolicy: entry?.hooks,
         registrationMode,
       });
@@ -1955,15 +1965,22 @@ export async function loadOpenClawPluginCliRegistry(
       continue;
     }
 
-    const validatedConfig = validatePluginConfig({
-      schema: manifestRecord.configSchema,
-      cacheKey: manifestRecord.schemaCacheKey,
-      value: entry?.config,
-    });
-    if (!validatedConfig.ok) {
-      logger.error(`[plugins] ${record.id} invalid config: ${validatedConfig.errors?.join(", ")}`);
-      pushPluginLoadError(`invalid config: ${validatedConfig.errors?.join(", ")}`);
-      continue;
+    // Skip schema validation when no config entry exists for this plugin in the current
+    // context (e.g. provider-resolution loads that don't carry the full user config).
+    const cliConfigValue = entry?.config;
+    if (cliConfigValue !== undefined) {
+      const validatedConfig = validatePluginConfig({
+        schema: manifestRecord.configSchema,
+        cacheKey: manifestRecord.schemaCacheKey,
+        value: cliConfigValue,
+      });
+      if (!validatedConfig.ok) {
+        logger.error(
+          `[plugins] ${record.id} invalid config: ${validatedConfig.errors?.join(", ")}`,
+        );
+        pushPluginLoadError(`invalid config: ${validatedConfig.errors?.join(", ")}`);
+        continue;
+      }
     }
 
     const pluginRoot = safeRealpathOrResolve(candidate.rootDir);
@@ -2071,7 +2088,7 @@ export async function loadOpenClawPluginCliRegistry(
       rootDir: record.rootDir,
       registrationMode: "cli-metadata",
       config: cfg,
-      pluginConfig: validatedConfig.value,
+      pluginConfig: cliConfigValue as Record<string, unknown> | undefined,
       runtime: {} as PluginRuntime,
       logger,
       resolvePath: (input) => resolveUserPath(input),
