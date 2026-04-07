@@ -8,9 +8,10 @@ import {
   normalizeMemoryMultimodalSettings,
   type MemoryMultimodalSettings,
 } from "../plugin-sdk/memory-core-host-multimodal.js";
+import { resolveRuntimePluginRegistry } from "../plugins/loader.js";
 import { getMemoryEmbeddingProvider } from "../plugins/memory-embedding-providers.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
-import { resolveAgentConfig } from "./agent-scope.js";
+import { resolveAgentConfig, resolveAgentWorkspaceDir } from "./agent-scope.js";
 
 export type ResolvedMemorySearchConfig = {
   enabled: boolean;
@@ -393,12 +394,33 @@ export function resolveMemorySearchConfig(
   cfg: OpenClawConfig,
   agentId: string,
 ): ResolvedMemorySearchConfig | null {
+  // Ensure built-in providers are registered before mergeConfig resolves
+  // provider adapters and their defaultModel values.
   const defaults = cfg.agents?.defaults?.memorySearch;
   const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
+
+  // 1. Fast path: check if enabled and multimodal at all before triggering side effects.
+  const isEnabled = overrides?.enabled ?? defaults?.enabled ?? true;
+  const isMultimodal = isMemoryMultimodalEnabled(
+    normalizeMemoryMultimodalSettings({
+      enabled: overrides?.multimodal?.enabled ?? defaults?.multimodal?.enabled,
+    }),
+  );
+
+  if (isEnabled && isMultimodal) {
+    // 2. Heavy path: Ensure built-in providers are registered before mergeConfig resolves
+    // provider adapters and their defaultModel values.
+    resolveRuntimePluginRegistry({
+      config: cfg,
+      workspaceDir: resolveAgentWorkspaceDir(cfg, agentId),
+    });
+  }
+
   const resolved = mergeConfig(defaults, overrides, agentId);
   if (!resolved.enabled) {
     return null;
   }
+
   const multimodalActive = isMemoryMultimodalEnabled(resolved.multimodal);
   const multimodalProvider =
     resolved.provider === "auto" ? undefined : getMemoryEmbeddingProvider(resolved.provider);
