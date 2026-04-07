@@ -395,6 +395,11 @@ operator trust.
   repo: `https://github.com/aramisfacchinetti/openclaw-a2a-plugins`
   install: `openclaw plugins install @aramisfa/openclaw-a2a-outbound`
 
+- **ETS — Email Token Saver** — Filters and compresses email before it hits your LLM. Rules-based pre-filter with 127 extractor templates, weighted scoring, local rule overrides, and SQLite run tracking. Benchmarked at 77% token reduction on real Gmail inboxes.
+  npm: `@awsoft/ets`
+  repo: `https://github.com/awsoft/ets`
+  install: `openclaw plugins install @awsoft/ets`
+
 - **WeChat** — Connect OpenClaw to WeChat personal accounts via WeChatPadPro (iPad protocol). Supports text, image, and file exchange with keyword-triggered conversations.
   npm: `@icesword760/openclaw-wechat`
   repo: `https://github.com/icesword0760/openclaw-wechat`
