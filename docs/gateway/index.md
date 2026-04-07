@@ -173,7 +173,7 @@ Fallback: SSH tunnel.
 ssh -N -L 18789:127.0.0.1:18789 user@host
 ```
 
-Then connect clients to `ws://127.0.0.1:18789` locally.
+Then connect clients locally to `ws://127.0.0.1:18789`.
 
 <Warning>
 SSH tunnels do not bypass gateway auth. For shared-secret auth, clients still
@@ -305,8 +305,12 @@ Defaults include isolated state/config and base gateway port `19001`.
 
 - First client frame must be `connect`.
 - Gateway returns `hello-ok` snapshot (`presence`, `health`, `stateVersion`, `uptimeMs`, limits/policy).
+- `hello-ok.features.methods` / `events` are a conservative discovery list, not
+  a generated dump of every callable helper route.
 - Requests: `req(method, params)` → `res(ok/payload|error)`.
-- Common events: `connect.challenge`, `agent`, `chat`, `presence`, `tick`, `health`, `heartbeat`, `shutdown`.
+- Common events include `connect.challenge`, `agent`, `chat`,
+  `session.message`, `session.tool`, `sessions.changed`, `presence`, `tick`,
+  `health`, `heartbeat`, pairing/approval lifecycle events, and `shutdown`.
 
 Agent runs are two-stage:
 

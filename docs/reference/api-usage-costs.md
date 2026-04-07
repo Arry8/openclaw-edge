@@ -26,16 +26,16 @@ OpenClaw features that can generate provider usage or paid API calls.
 **Per-message cost footer**
 
 - `/usage full` appends a usage footer to every reply, including **estimated cost** (API-key only).
-- `/usage tokens` shows tokens only; subscription-style OAuth, legacy token, and CLI flows hide dollar cost.
+- `/usage tokens` shows tokens only; subscription-style OAuth/token and CLI flows hide dollar cost.
 - Gemini CLI note: when the CLI returns JSON output, OpenClaw reads usage from
   `stats`, normalizes `stats.cached` into `cacheRead`, and derives input tokens
   from `stats.input_tokens - stats.cached` when needed.
 
-Anthropic note: starting **April 4, 2026 at 12:00 PM PT / 8:00 PM BST**,
-Anthropic says OpenClaw no longer uses included Claude subscription limits.
-Anthropic subscription-auth traffic in OpenClaw now requires **Extra Usage**
-billed separately from the subscription, but Anthropic does not expose a
-per-message dollar estimate that OpenClaw can show in `/usage full`.
+Anthropic note: Anthropic staff told us OpenClaw-style Claude CLI usage is
+allowed again, so OpenClaw treats Claude CLI reuse and `claude -p` usage as
+sanctioned for this integration unless Anthropic publishes a new policy.
+Anthropic still does not expose a per-message dollar estimate that OpenClaw can
+show in `/usage full`.
 
 **CLI usage windows (provider quotas)**
 
@@ -61,8 +61,9 @@ OpenClaw can pick up credentials from:
 
 - **Auth profiles** (per-agent, stored in `auth-profiles.json`).
 - **Environment variables** (e.g. `OPENAI_API_KEY`, `BRAVE_API_KEY`, `FIRECRAWL_API_KEY`).
-- **Config** (`models.providers.*.apiKey`, `tools.web.search.*`, `tools.web.fetch.firecrawl.*`,
-  `memorySearch.*`, `talk.providers.*.apiKey`).
+- **Config** (`models.providers.*.apiKey`, `plugins.entries.*.config.webSearch.apiKey`,
+  `plugins.entries.firecrawl.config.webFetch.apiKey`, `memorySearch.*`,
+  `talk.providers.*.apiKey`).
 - **Skills** (`skills.entries.<name>.apiKey`) which may export keys to the skill process env.
 
 ## Features that can spend keys
@@ -73,9 +74,9 @@ Every reply or tool call uses the **current model provider** (OpenAI, Anthropic,
 primary source of usage and cost.
 
 This also includes subscription-style hosted providers that still bill outside
-OpenClaw's local UI, such as **OpenAI Codex**, **Qwen Cloud Coding Plan**,
-**MiniMax Coding Plan**, **Z.AI / GLM Coding Plan**, and
-Anthropic subscription auth with **Extra Usage** enabled.
+OpenClaw's local UI, such as **OpenAI Codex**, **Alibaba Cloud Model Studio
+Coding Plan**, **MiniMax Coding Plan**, **Z.AI / GLM Coding Plan**, and
+Anthropic's OpenClaw Claude-login path with **Extra Usage** enabled.
 
 See [Models](/providers/models) for pricing config and [Token use & costs](/reference/token-use) for display.
 
@@ -149,7 +150,7 @@ See [Web tools](/tools/web).
 
 `web_fetch` can call **Firecrawl** when an API key is present:
 
-- `FIRECRAWL_API_KEY` or `tools.web.fetch.firecrawl.apiKey`
+- `FIRECRAWL_API_KEY` or `plugins.entries.firecrawl.config.webFetch.apiKey`
 
 If Firecrawl isn’t configured, the tool falls back to direct fetch + readability (no paid API).
 

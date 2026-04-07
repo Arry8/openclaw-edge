@@ -24,6 +24,11 @@ host policy sources, and the effective result.
 If the companion app UI is **not available**, any request that requires a prompt is
 resolved by the **ask fallback** (default: deny).
 
+Native chat approval clients can also expose channel-specific affordances on the
+pending approval message. For example, Matrix can seed reaction shortcuts on the
+approval prompt (`✅` allow once, `❌` deny, and `♾️` allow always when available)
+while still leaving the `/approve ...` commands in the message as a fallback.
+
 ## Where it applies
 
 Exec approvals are enforced locally on the execution host:
@@ -108,6 +113,7 @@ Important distinction:
 
 - `tools.exec.host=auto` chooses where exec runs: sandbox when available, otherwise gateway.
 - YOLO chooses how host exec is approved: `security=full` plus `ask=off`.
+- In YOLO mode, OpenClaw does not add a separate heuristic command-obfuscation approval gate on top of the configured host exec policy.
 - `auto` does not make gateway routing a free override from a sandboxed session. A per-call `host=node` request is allowed from `auto`, and `host=gateway` is only allowed from `auto` when no sandbox runtime is active. If you want a stable non-auto default, set `tools.exec.host` or use `/exec host=...` explicitly.
 
 If you want a more conservative setup, tighten either layer back to `allowlist` / `on-miss`
@@ -508,6 +514,11 @@ exec approval denial/error does not silently retry as a plugin approval.
 Some channels can also act as native approval clients. Native clients add approver DMs, origin-chat
 fanout, and channel-specific interactive approval UX on top of the shared same-chat `/approve`
 flow.
+
+When native approval cards/buttons are available, that native UI is the primary
+agent-facing path. The agent should not also echo a duplicate plain chat
+`/approve` command unless the tool result says chat approvals are unavailable or
+manual approval is the only remaining path.
 
 Generic model:
 

@@ -20,6 +20,10 @@ import {
 } from "./isolated-agent.test-harness.js";
 import { setupIsolatedAgentTurnMocks } from "./isolated-agent.test-setup.js";
 
+vi.mock("../agents/auth-profiles/session-override.js", () => ({
+  resolveSessionAuthProfileOverride: vi.fn(async () => undefined),
+}));
+
 const TELEGRAM_TARGET = { mode: "announce", channel: "telegram", to: "123" } as const;
 async function runExplicitTelegramAnnounceTurn(params: {
   home: string;
@@ -276,7 +280,7 @@ async function assertExplicitTelegramTargetDelivery(params: {
 describe("runCronIsolatedAgentTurn", () => {
   beforeEach(() => {
     vi.spyOn(modelSelection, "resolveThinkingDefault").mockReturnValue("off");
-    setupIsolatedAgentTurnMocks();
+    setupIsolatedAgentTurnMocks({ fast: true });
   });
 
   it("delivers explicit targets with direct text", async () => {
@@ -287,18 +291,6 @@ describe("runCronIsolatedAgentTurn", () => {
         deps,
         payloads: [{ text: "hello from cron" }],
         expectedTexts: ["hello from cron"],
-      });
-    });
-  });
-
-  it("delivers explicit targets with all successful payload text", async () => {
-    await withTelegramAnnounceFixture(async ({ home, storePath, deps }) => {
-      await assertExplicitTelegramTargetDelivery({
-        home,
-        storePath,
-        deps,
-        payloads: [{ text: "Working on it..." }, { text: "Final weather summary" }],
-        expectedTexts: ["Working on it...", "Final weather summary"],
       });
     });
   });

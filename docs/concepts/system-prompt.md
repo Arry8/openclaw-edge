@@ -12,14 +12,31 @@ OpenClaw builds a custom system prompt for every agent run. The prompt is **Open
 
 The prompt is assembled by OpenClaw and injected into each agent run.
 
+Provider plugins can contribute cache-aware prompt guidance without replacing
+the full OpenClaw-owned prompt. The provider runtime can:
+
+- replace a small set of named core sections (`interaction_style`,
+  `tool_call_style`, `execution_bias`)
+- inject a **stable prefix** above the prompt cache boundary
+- inject a **dynamic suffix** below the prompt cache boundary
+
+Use provider-owned contributions for model-family-specific tuning. Keep legacy
+`before_prompt_build` prompt mutation for compatibility or truly global prompt
+changes, not normal provider behavior.
+
 ## Structure
 
 The prompt is intentionally compact and uses fixed sections:
 
-- **Tooling**: current tool list + short descriptions.
+- **Tooling**: structured-tool source-of-truth reminder plus runtime tool-use guidance.
 - **Safety**: short guardrail reminder to avoid power-seeking behavior or bypassing oversight.
 - **Skills** (when available): tells the model how to load skill instructions on demand.
-- **OpenClaw Self-Update**: how to run `config.apply` and `update.run`.
+- **OpenClaw Self-Update**: how to inspect config safely with
+  `config.schema.lookup`, patch config with `config.patch`, replace the full
+  config with `config.apply`, and run `update.run` only on explicit user
+  request. The owner-only `gateway` tool also refuses to rewrite
+  `tools.exec.ask` / `tools.exec.security`, including legacy `tools.bash.*`
+  aliases that normalize to those protected exec paths.
 - **Workspace**: working directory (`agents.defaults.workspace`).
 - **Documentation**: local path to OpenClaw docs (repo or npm package) and when to read them.
 - **Workspace Files (injected)**: indicates bootstrap files are included below.
@@ -46,7 +63,16 @@ The Tooling section also includes runtime guidance for long-running work:
 - do not poll `subagents list` / `sessions_list` in a loop just to wait for
   completion
 
+When the experimental `update_plan` tool is enabled, Tooling also tells the
+model to use it only for non-trivial multi-step work, keep exactly one
+`in_progress` step, and avoid repeating the whole plan after each update.
+
 Safety guardrails in the system prompt are advisory. They guide model behavior but do not enforce policy. Use tool policy, exec approvals, sandboxing, and channel allowlists for hard enforcement; operators can disable these by design.
+
+On channels with native approval cards/buttons, the runtime prompt now tells the
+agent to rely on that native approval UI first. It should only include a manual
+`/approve` command when the tool result says chat approvals are unavailable or
+manual approval is the only path.
 
 ## Prompt modes
 

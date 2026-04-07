@@ -194,6 +194,11 @@ still requires:
 - remote debugging enabled in that browser
 - approving the first attach consent prompt in the browser
 
+Readiness here is only about local attach prerequisites. Existing-session keeps
+the current Chrome MCP route limits; advanced routes like `responsebody`, PDF
+export, download interception, and batch actions still require a managed
+browser or raw CDP profile.
+
 This check does **not** apply to Docker, sandbox, remote-browser, or other
 headless flows. Those continue to use raw CDP.
 
@@ -301,8 +306,9 @@ Doctor checks:
 ### 5) Model auth health (OAuth expiry)
 
 Doctor inspects OAuth profiles in the auth store, warns when tokens are
-expiring/expired, and can refresh them when safe. If the Anthropic Claude Code
-profile is stale, it suggests migrating to Claude CLI or an Anthropic API key.
+expiring/expired, and can refresh them when safe. If the Anthropic
+OAuth/token profile is stale, it suggests an Anthropic API key or the
+Anthropic setup-token path.
 Refresh prompts only appear when running interactively (TTY); `--non-interactive`
 skips refresh attempts.
 

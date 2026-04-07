@@ -28,7 +28,7 @@ Not every agent run creates a task. Heartbeat turns and normal interactive chat 
 - Cron tasks stay live while the cron runtime still owns the job; chat-backed CLI tasks stay live only while their owning run context is still active.
 - Completion is push-driven: detached work can notify directly or wake the
   requester session/heartbeat when it finishes, so status polling loops are
-  usually unnecessary.
+  usually the wrong shape.
 - Isolated cron runs and subagent completions best-effort clean up tracked browser tabs/processes for their child session before final cleanup bookkeeping.
 - Isolated cron delivery suppresses stale interim parent replies while
   descendant subagent work is still draining, and it prefers final descendant
@@ -77,8 +77,13 @@ openclaw tasks flow cancel <lookup>
 | Subagent orchestration | `subagent`   | Spawning a subagent via `sessions_spawn`               | `done_only`           |
 | Cron jobs (all types)  | `cron`       | Every cron execution (main-session and isolated)       | `silent`              |
 | CLI operations         | `cli`        | `openclaw agent` commands that run through the gateway | `silent`              |
+| Agent media jobs       | `cli`        | Session-backed `video_generate` runs                   | `silent`              |
 
 Main-session cron tasks use `silent` notify policy by default — they create records for tracking but do not generate notifications. Isolated cron tasks also default to `silent` but are more visible because they run in their own session.
+
+Session-backed `video_generate` runs also use `silent` notify policy. They still create task records, but completion is handed back to the original agent session as an internal wake so the agent can write the follow-up message and attach the finished video itself. If you opt into `tools.media.asyncCompletion.directSend`, async `music_generate` and `video_generate` completions try direct channel delivery first before falling back to the requester-session wake path.
+
+While a session-backed `video_generate` task is still active, the tool also acts as a guardrail: repeated `video_generate` calls in that same session return the active task status instead of starting a second concurrent generation. Use `action: "status"` when you want an explicit progress/status lookup from the agent side.
 
 **What does not create tasks:**
 
