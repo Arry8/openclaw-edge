@@ -1143,8 +1143,9 @@ async function main() {
     process.exit(1);
   }
 
-  // Auto-commit edge-merge data files if they're the only dirty files — these
-  // are always safe to commit and are commonly left dirty by interrupted runs.
+  // Auto-commit any tracked dirty files left over from an interrupted run.
+  // This covers both edge-merge data files and staged PR merge changes that
+  // were never committed (e.g. a PR that deleted or modified dist/ files).
   const AUTO_COMMIT_PATHS = [
     resolve(REPO_DIR, "edge-merge/docs/history.json"),
     resolve(REPO_DIR, "edge-merge/docs/changelog.md"),
@@ -1157,25 +1158,17 @@ async function main() {
     const dirtyTracked = dirty.stdout
       .split("\n")
       .filter((l) => l.trim() && !l.startsWith("??"));
-    // Porcelain v1: "XY PATH" where XY = 2 status chars, then a space.
-    // run() trims stdout, which strips the leading ' ' on the first line when
-    // X = ' ' (unindexed change). Detect and restore before slicing.
-    const dirtyFiles = dirtyTracked.map((l) => {
-      const line = l.length >= 3 && l[2] === " " ? l : " " + l;
-      return resolve(REPO_DIR, line.slice(3).trim());
-    });
-    const allAutoCommittable = dirtyFiles.every((f) => AUTO_COMMIT_PATHS.includes(f));
-    if (dirtyTracked.length > 0 && allAutoCommittable) {
-      // Stage both previously-staged and unstaged modifications to auto-commit paths.
+    if (dirtyTracked.length > 0) {
+      // Stage all tracked changes (including deletions) and commit.
+      run("git", ["add", "-u"]);
+      // Also stage any auto-commit paths that may be unstaged.
       run("git", ["add", ...AUTO_COMMIT_PATHS.filter((p) => existsSync(p))]);
-      const result = run("git", ["commit", "--no-verify", "-m", "chore(edge-merge): update history and changelog"]);
+      const result = run("git", ["commit", "--no-verify", "-m", "chore(edge-merge): commit leftover changes from interrupted run"]);
       if (result.ok) {
         log("Auto-committed history/changelog leftover from previous run.");
       } else {
         warn(`Auto-commit failed: ${result.stderr || result.stdout}`);
       }
-    } else if (dirtyTracked.length > 0) {
-      warn(`Dirty files not auto-committable: ${dirtyFiles.join(", ")}`);
     }
   }
 
