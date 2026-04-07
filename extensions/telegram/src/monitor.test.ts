@@ -630,7 +630,7 @@ describe("monitorTelegramProvider (grammY)", () => {
       const monitor = monitorTelegramProvider({ token: "tok", abortSignal: abort.signal });
       await vi.waitFor(() => expect(createTelegramBotCalls.length).toBeGreaterThanOrEqual(1));
 
-      vi.advanceTimersByTime(120_000);
+      vi.advanceTimersByTime(330_000);
       await monitor;
 
       expect(resolveTelegramTransportSpy).toHaveBeenCalledTimes(2);
@@ -767,8 +767,8 @@ describe("monitorTelegramProvider (grammY)", () => {
     const monitor = monitorTelegramProvider({ token: "tok", abortSignal: abort.signal });
     await vi.waitFor(() => expect(runSpy).toHaveBeenCalledTimes(1));
 
-    // Advance time past the stall threshold (90s) + watchdog interval (30s)
-    vi.advanceTimersByTime(120_000);
+    // Advance time past the stall threshold (300s) + watchdog interval (30s)
+    vi.advanceTimersByTime(330_000);
     await monitor;
 
     expect(stop.mock.calls.length).toBeGreaterThanOrEqual(1);
