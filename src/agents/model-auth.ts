@@ -335,6 +335,7 @@ export async function resolveApiKeyForProvider(params: {
   }
 
   const authOverride = resolveProviderAuthOverride(cfg, provider);
+
   if (authOverride === "aws-sdk") {
     return resolveAwsSdkAuthInfo();
   }
@@ -345,7 +346,17 @@ export async function resolveApiKeyForProvider(params: {
     provider,
     preferredProfile,
   });
-  for (const candidate of order) {
+
+  const filteredOrder =
+    authOverride === "token"
+      ? order.filter((id) => store.profiles[id]?.type === "token")
+      : authOverride === "oauth"
+        ? order.filter((id) => store.profiles[id]?.type === "oauth")
+        : order;
+
+  const finalOrder = filteredOrder.length > 0 ? filteredOrder : order;
+
+  for (const candidate of finalOrder) {
     try {
       const resolved = await resolveApiKeyForProfile({
         cfg,
