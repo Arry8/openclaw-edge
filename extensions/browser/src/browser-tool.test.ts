@@ -56,6 +56,7 @@ const browserConfigMocks = vi.hoisted(() => ({
     controlPort: 18791,
     profiles: {},
     defaultProfile: "openclaw",
+    actionTimeoutMs: 20000,
   })),
   resolveProfile: vi.fn((resolved: Record<string, unknown>, name: string) => {
     const profile = (resolved.profiles as Record<string, Record<string, unknown>> | undefined)?.[
@@ -610,6 +611,30 @@ describe("browser tool act compatibility", () => {
         kind: "press",
         key: "Enter",
         targetId: "tab-2",
+        timeoutMs: 20000,
+      },
+      expect.objectContaining({ profile: undefined }),
+    );
+  });
+
+  it("applies configured browser action timeout when act timeout is omitted", async () => {
+    configMocks.loadConfig.mockReturnValue({ browser: { actionTimeoutMs: 45000 } });
+
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "act",
+      request: {
+        kind: "wait",
+        timeMs: 20000,
+      },
+    });
+
+    expect(browserActionsMocks.browserAct).toHaveBeenCalledWith(
+      undefined,
+      {
+        kind: "wait",
+        timeMs: 20000,
+        timeoutMs: 45000,
       },
       expect.objectContaining({ profile: undefined }),
     );

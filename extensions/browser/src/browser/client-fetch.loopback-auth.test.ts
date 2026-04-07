@@ -250,6 +250,24 @@ describe("fetchBrowserJson loopback auth", () => {
     });
   });
 
+  it("uses retry-or-increase-timeout guidance for local timeout failures", async () => {
+    mocks.dispatch.mockImplementationOnce(
+      async () =>
+        await new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error("timed out")), 0);
+        }),
+    );
+
+    await expectThrownBrowserFetchError(() => fetchBrowserJson<{ ok: boolean }>("/tabs"), {
+      contains: [
+        "timed out",
+        "Retry or increase timeout before restarting the gateway",
+        "Do NOT retry the browser tool",
+      ],
+      omits: ["Restart the OpenClaw gateway"],
+    });
+  });
+
   it("keeps absolute URL failures wrapped as reachability errors", async () => {
     vi.stubGlobal(
       "fetch",
