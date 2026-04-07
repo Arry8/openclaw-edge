@@ -82,6 +82,8 @@ jobs:
             --build-interval 10
             --auto-skip-on-build-failure
             --create-release
+            --cache-prs
+            --cache-ttl 1440
           )
 
           if [ "$LIMIT" != "0" ]; then

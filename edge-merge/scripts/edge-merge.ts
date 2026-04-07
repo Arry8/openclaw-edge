@@ -31,10 +31,12 @@
 //                         (default: edge-merge/docs/changelog.md)
 //   --release-interval <n> Create a GitHub release every N successful merges
 //                         (default: 0 = only at the end when --create-release is set).
-//   --cache-prs           Cache the PR list to edge-merge/docs/pr-cache.json and reuse
-//                         it on subsequent runs within --cache-ttl minutes. Useful for
-//                         local catchup loops where the API is hit on every restart.
-//   --cache-ttl <n>       Cache TTL in minutes (default: 60). Ignored without --cache-prs.
+//   --cache-prs           Enable delta-fetch mode. On first run: full fetch of all open PRs,
+//                         saved to edge-merge/docs/pr-cache.json. On subsequent runs: only
+//                         fetches PRs updated since the last run (~50/day vs ~6500). Also
+//                         fetches recently-closed PRs: merged ones become Tier 0, abandoned
+//                         ones are removed from the cache. Strongly recommended for GHA.
+//   --cache-ttl <n>       Unused in delta mode (kept for backwards compat). Default: 60.
 //   --continuous-build    Run pnpm build continuously in a background git worktree
 //                         throughout the merge loop (non-blocking). Stops the loop if
 //                         any background build fails. When set, --build-interval is
@@ -165,7 +167,7 @@ function boolFlag(name: string): boolean {
 }
 
 const UPSTREAM = flag("--upstream", "upstream");
-const PR_STATE = flag("--state", "all") as "open" | "closed" | "all";
+const PR_STATE = flag("--state", "open") as "open" | "closed" | "all";
 const LIMIT = parseInt(flag("--limit", "0"), 10) || Infinity;
 const DRY_RUN = boolFlag("--dry-run");
 const RESUME = boolFlag("--resume");
@@ -547,43 +549,143 @@ async function fetchAllOpenPrs(): Promise<PrRecord[]> {
   return all;
 }
 
-// ── PR list cache ─────────────────────────────────────────────────────────────
+// ── PR list cache + delta-fetch ───────────────────────────────────────────────
 
-// Load cached PR list if it exists and is within TTL, otherwise fetch and save.
-async function fetchAllOpenPrsCached(): Promise<PrRecord[]> {
-  if (CACHE_PRS && existsSync(PR_CACHE_PATH)) {
-    try {
-      const cached = JSON.parse(readFileSync(PR_CACHE_PATH, "utf8")) as {
-        fetchedAt: number;
-        prs: PrRecord[];
-      };
-      const ageMs = Date.now() - cached.fetchedAt;
-      if (ageMs < CACHE_TTL_MS) {
-        const ageMins = Math.round(ageMs / 60_000);
-        log(
-          `Using cached PR list (${cached.prs.length} PRs, ${ageMins}m old). Pass --no-cache-prs to force refresh.`,
-        );
-        return cached.prs;
-      }
-      log(
-        `PR cache expired (${Math.round(ageMs / 60_000)}m old, TTL ${Math.round(CACHE_TTL_MS / 60_000)}m) — refetching.`,
-      );
-    } catch {
-      warn("Could not parse PR cache; refetching.");
+type PrCache = { fetchedAt: string; prs: PrRecord[] };
+
+function loadPrCache(): PrCache | null {
+  if (!existsSync(PR_CACHE_PATH)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(PR_CACHE_PATH, "utf8")) as {
+      fetchedAt: number | string;
+      prs: PrRecord[];
+    };
+    // Normalise legacy numeric timestamp to ISO string
+    const fetchedAt =
+      typeof raw.fetchedAt === "number"
+        ? new Date(raw.fetchedAt).toISOString()
+        : raw.fetchedAt;
+    return { fetchedAt, prs: raw.prs };
+  } catch {
+    return null;
+  }
+}
+
+function savePrCache(prs: PrRecord[]): void {
+  try {
+    writeFileSync(PR_CACHE_PATH, JSON.stringify({ fetchedAt: new Date().toISOString(), prs }, null, 2));
+    log(`PR list cached to ${PR_CACHE_PATH} (${prs.length} PRs)`);
+  } catch {
+    warn("Could not write PR cache.");
+  }
+}
+
+// Fetch only PRs updated since `since` (ISO string).
+// Returns open-PR updates, newly-merged PRs (Tier 0), and abandoned PR numbers.
+async function deltaFetch(
+  since: string,
+): Promise<{ updated: PrRecord[]; merged: PrRecord[]; abandoned: number[] }> {
+  const sinceMs = new Date(since).getTime();
+  const updated: PrRecord[] = [];
+  const merged: PrRecord[] = [];
+  const abandoned: number[] = [];
+  const jqFull =
+    ".[] | {number, title, isDraft, createdAt: .created_at, updatedAt: .updated_at, closedAt: .closed_at, mergedAt: .merged_at, headSha: .head.sha, author: .user.login, labels: [.labels[].name]}";
+
+  // Recently-updated open PRs
+  for (let page = 1; ; page++) {
+    const result = run("gh", [
+      "api",
+      `repos/openclaw/openclaw/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`,
+      "--jq",
+      jqFull,
+    ]);
+    if (!result.ok || !result.stdout) break;
+    const lines = result.stdout.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) break;
+    let hitOld = false;
+    for (const line of lines) {
+      try {
+        const pr = JSON.parse(line) as PrRecord & { updatedAt: string };
+        if (new Date(pr.updatedAt ?? pr.createdAt).getTime() < sinceMs) {
+          hitOld = true;
+          break;
+        }
+        updated.push(pr);
+      } catch { /* skip malformed */ }
     }
+    if (hitOld || lines.length < 100) break;
+    await sleep(50);
+  }
+
+  // Recently-closed PRs — split into merged (Tier 0) vs abandoned (drop from cache)
+  for (let page = 1; ; page++) {
+    const result = run("gh", [
+      "api",
+      `repos/openclaw/openclaw/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`,
+      "--jq",
+      jqFull,
+    ]);
+    if (!result.ok || !result.stdout) break;
+    const lines = result.stdout.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) break;
+    let hitOld = false;
+    for (const line of lines) {
+      try {
+        const pr = JSON.parse(line) as PrRecord & { updatedAt: string };
+        if (new Date(pr.updatedAt ?? pr.createdAt).getTime() < sinceMs) {
+          hitOld = true;
+          break;
+        }
+        if (pr.mergedAt) {
+          merged.push(pr); // merged into upstream → Tier 0 candidate
+        } else {
+          abandoned.push(pr.number); // closed without merge → remove from cache
+        }
+      } catch { /* skip malformed */ }
+    }
+    if (hitOld || lines.length < 100) break;
+    await sleep(50);
+  }
+
+  log(
+    `Delta fetch: ${updated.length} updated open, ${merged.length} newly-merged (T0), ${abandoned.length} abandoned since ${since}`,
+  );
+  return { updated, merged, abandoned };
+}
+
+function mergeDelta(
+  cached: PrRecord[],
+  updated: PrRecord[],
+  mergedPrs: PrRecord[],
+  abandoned: number[],
+): PrRecord[] {
+  const byNumber = new Map(cached.map((p) => [p.number, p]));
+  for (const n of abandoned) byNumber.delete(n);
+  for (const pr of updated) byNumber.set(pr.number, pr);
+  // Newly-merged PRs stay in the list with mergedAt set so Tier 0 logic picks them up
+  for (const pr of mergedPrs) byNumber.set(pr.number, pr);
+  return [...byNumber.values()];
+}
+
+// Main entry point for PR list retrieval.
+// With --cache-prs: delta-fetch after first full fetch.
+// Without --cache-prs: always full fetch (existing behaviour).
+async function fetchAllOpenPrsCached(): Promise<PrRecord[]> {
+  if (CACHE_PRS) {
+    const cache = loadPrCache();
+    if (cache) {
+      log(`PR cache found (${cache.prs.length} PRs, fetched ${cache.fetchedAt}). Running delta fetch...`);
+      const delta = await deltaFetch(cache.fetchedAt);
+      const result = mergeDelta(cache.prs, delta.updated, delta.merged, delta.abandoned);
+      savePrCache(result);
+      return result;
+    }
+    log("No PR cache found — performing full fetch.");
   }
 
   const prs = await fetchAllOpenPrs();
-
-  if (CACHE_PRS) {
-    try {
-      writeFileSync(PR_CACHE_PATH, JSON.stringify({ fetchedAt: Date.now(), prs }, null, 2));
-      log(`PR list cached to ${PR_CACHE_PATH}`);
-    } catch {
-      warn("Could not write PR cache.");
-    }
-  }
-
+  if (CACHE_PRS) savePrCache(prs);
   return prs;
 }
 
@@ -822,6 +924,23 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
 
 // ── History helpers ───────────────────────────────────────────────────────────
 
+// Write a file with retry on transient Windows file-lock errors (EUNKNOWN, EBUSY).
+function writeFileWithRetry(path: string, data: string, retries = 3): void {
+  for (let i = 0; i < retries; i++) {
+    try {
+      writeFileSync(path, data);
+      return;
+    } catch (e: unknown) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i < retries - 1 && (code === "EUNKNOWN" || code === "EBUSY")) {
+        Bun.sleepSync(100);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 // Append a single entry to the cumulative history file immediately.
 // Called after every successful merge so restarts resume from the exact last PR.
 function appendToHistory(entry: ReportEntry): void {
@@ -838,7 +957,7 @@ function appendToHistory(entry: ReportEntry): void {
     return;
   }
   history.entries.push(entry);
-  writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+  writeFileWithRetry(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
 
 // ── Auto-skip on build failure ────────────────────────────────────────────────
@@ -1047,7 +1166,8 @@ async function main() {
     });
     const allAutoCommittable = dirtyFiles.every((f) => AUTO_COMMIT_PATHS.includes(f));
     if (dirtyTracked.length > 0 && allAutoCommittable) {
-      run("git", ["add", ...AUTO_COMMIT_PATHS]);
+      // Stage both previously-staged and unstaged modifications to auto-commit paths.
+      run("git", ["add", ...AUTO_COMMIT_PATHS.filter((p) => existsSync(p))]);
       const result = run("git", ["commit", "--no-verify", "-m", "chore(edge-merge): update history and changelog"]);
       if (result.ok) {
         log("Auto-committed history/changelog leftover from previous run.");
