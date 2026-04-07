@@ -400,6 +400,11 @@ operator trust.
   repo: `https://github.com/awsoft/ets`
   install: `openclaw plugins install @awsoft/ets`
 
+- **WakaTime** — Track OpenClaw messages, commands, sessions, and tool usage in WakaTime.
+  npm: `@ambiguoustr/openclaw-wakatime`
+  repo: `https://github.com/ambiguoustexture/openclaw-wakatime`
+  install: `openclaw plugins install @ambiguoustr/openclaw-wakatime`
+
 - **WeChat** — Connect OpenClaw to WeChat personal accounts via WeChatPadPro (iPad protocol). Supports text, image, and file exchange with keyword-triggered conversations.
   npm: `@icesword760/openclaw-wechat`
   repo: `https://github.com/icesword0760/openclaw-wechat`
