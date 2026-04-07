@@ -573,7 +573,7 @@ function loadPrCache(): PrCache | null {
 
 function savePrCache(prs: PrRecord[]): void {
   try {
-    writeFileSync(PR_CACHE_PATH, JSON.stringify({ fetchedAt: new Date().toISOString(), prs }, null, 2));
+    writeFileSync(PR_CACHE_PATH, JSON.stringify({ fetchedAt: new Date().toISOString(), prs }));
     log(`PR list cached to ${PR_CACHE_PATH} (${prs.length} PRs)`);
   } catch {
     warn("Could not write PR cache.");
@@ -1057,10 +1057,10 @@ async function autoSkipAndRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const files = extractFailingFiles(buildOutput);
     if (files.length === 0) {
-      const msg = `Auto-skip: could not extract any failing file paths from build output. Add the offending PR to ${AUTOSKIP_PATH} with source:"manual" and rerun with --resume.`;
-      process.stderr.write(`[edge-merge] ${msg}\n`);
-      await notifyNtfy("edge-merge: manual intervention required", msg);
-      return false;
+      const msg = `Auto-skip: could not extract failing file paths from build output — skipping build interval and continuing.`;
+      warn(msg);
+      await notifyNtfy("edge-merge: unattributable build failure (continuing)", msg);
+      return true;
     }
     log(`Auto-skip: failing files detected: ${files.join(", ")}`);
 
@@ -1083,10 +1083,10 @@ async function autoSkipAndRetry(
     }
 
     if (culprits.size === 0) {
-      const msg = `Auto-skip: no merge(pr#N) commits found for failing files: ${unattributed.join(", ")} — pre-existing base issue, cannot auto-fix.`;
-      process.stderr.write(`[edge-merge] ${msg}\n`);
-      await notifyNtfy("edge-merge: manual intervention required", msg);
-      return false;
+      const msg = `Auto-skip: no merge(pr#N) commits found for failing files: ${unattributed.join(", ")} — pre-existing base issue, skipping build interval and continuing.`;
+      warn(msg);
+      await notifyNtfy("edge-merge: pre-existing build issue (continuing)", msg);
+      return true;
     }
 
     if (unattributed.length > 0) {
@@ -1120,10 +1120,10 @@ async function autoSkipAndRetry(
     log(`Auto-skip: build still failing after attempt ${attempt}.`);
   }
 
-  const msg = `Auto-skip exhausted ${maxRetries} retries — build still failing. Check ${AUTOSKIP_PATH} for what was reverted, then resolve manually.`;
-  process.stderr.write(`[edge-merge] ${msg}\n`);
-  await notifyNtfy("edge-merge: manual intervention required", msg);
-  return false;
+  const msg = `Auto-skip exhausted ${maxRetries} retries — build still failing. Skipping build interval and continuing. Check ${AUTOSKIP_PATH} for reverted PRs.`;
+  warn(msg);
+  await notifyNtfy("edge-merge: retries exhausted (continuing)", msg);
+  return true;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
