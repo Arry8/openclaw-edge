@@ -345,6 +345,11 @@ operator trust.
   repo: `https://github.com/tirpitzia/openclaw-experience-replay`
   install: `openclaw plugins install experience-replay`
 
+- **AARI Execution Firewall** — Pre-execution firewall for OpenClaw agents with ALLOW / WARN / BLOCK policy enforcement and audit trail.
+  npm: `@aari/aari-firewall`
+  repo: `https://github.com/aari-ai/openclaw-aari`
+  install: `openclaw plugins install @aari/aari-firewall`
+
 - **WeChat** — Connect OpenClaw to WeChat personal accounts via WeChatPadPro (iPad protocol). Supports text, image, and file exchange with keyword-triggered conversations.
   npm: `@icesword760/openclaw-wechat`
   repo: `https://github.com/icesword0760/openclaw-wechat`
