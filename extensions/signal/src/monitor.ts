@@ -308,7 +308,7 @@ async function deliverReplies(params: {
   for (const payload of replies) {
     const reply = resolveSendableOutboundReplyParts(payload);
     const replyTo = payload.replyToId ?? undefined;
-    const replyToAuthor = (payload as { replyToAuthor?: string }).replyToAuthor ?? undefined;
+    const replyToAuthor = payload.replyToAuthor ?? undefined;
     let sentCount = 0;
     const delivered = await deliverTextOrMediaReply({
       payload,
