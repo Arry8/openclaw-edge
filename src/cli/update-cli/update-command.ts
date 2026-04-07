@@ -14,7 +14,7 @@ import {
 import { formatConfigIssueLines } from "../../config/issue-format.js";
 import { asResolvedSourceConfig, asRuntimeConfig } from "../../config/materialize.js";
 import { resolveGatewayService } from "../../daemon/service.js";
-import { resolveGatewayProbeAuthSafeWithSecretInputs } from "../../gateway/probe-auth.js";
+import { resolveLocalGatewayProbeAuthSafeWithEnvFallback } from "../../gateway/probe-auth.js";
 import { nodeVersionSatisfiesEngine } from "../../infra/runtime-guard.js";
 import {
   channelToNpmTag,
@@ -110,23 +110,11 @@ function pickUpdateQuip(): string {
 }
 
 async function resolveUpdateRestartProbeAuth() {
-  const fallbackAuth = {
-    token: process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || undefined,
-    password: process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() || undefined,
-  };
   const cfg = await readBestEffortConfig().catch(() => undefined);
-  if (!cfg) {
-    return fallbackAuth;
-  }
-  const { auth } = await resolveGatewayProbeAuthSafeWithSecretInputs({
+  return await resolveLocalGatewayProbeAuthSafeWithEnvFallback({
     cfg,
-    mode: cfg.gateway?.mode === "remote" ? "remote" : "local",
     env: process.env,
   });
-  return {
-    token: auth.token ?? fallbackAuth.token,
-    password: auth.password ?? fallbackAuth.password,
-  };
 }
 
 function resolveGatewayInstallEntrypointCandidates(root?: string): string[] {

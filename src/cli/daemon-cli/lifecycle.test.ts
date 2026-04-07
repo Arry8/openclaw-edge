@@ -48,6 +48,7 @@ const probeGateway = vi.fn<
 >();
 const isRestartEnabled = vi.fn<(config?: { commands?: unknown }) => boolean>(() => true);
 const loadConfig = vi.fn(() => ({}));
+const resolveLocalGatewayProbeAuthSafeWithEnvFallback = vi.fn();
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: () => loadConfig(),
@@ -69,6 +70,11 @@ vi.mock("../../gateway/probe.js", () => ({
     auth?: { token?: string; password?: string };
     timeoutMs: number;
   }) => probeGateway(opts),
+}));
+
+vi.mock("../../gateway/probe-auth.js", () => ({
+  resolveLocalGatewayProbeAuthSafeWithEnvFallback: (params: unknown) =>
+    resolveLocalGatewayProbeAuthSafeWithEnvFallback(params),
 }));
 
 vi.mock("../../config/commands.js", () => ({
@@ -147,6 +153,7 @@ describe("runDaemonRestart health checks", () => {
     probeGateway.mockReset();
     isRestartEnabled.mockReset();
     loadConfig.mockReset();
+    resolveLocalGatewayProbeAuthSafeWithEnvFallback.mockReset();
 
     service.readCommand.mockResolvedValue({
       programArguments: ["openclaw", "gateway", "--port", "18789"],
@@ -178,6 +185,7 @@ describe("runDaemonRestart health checks", () => {
       configSnapshot: { commands: { restart: true } },
     });
     isRestartEnabled.mockReturnValue(true);
+    resolveLocalGatewayProbeAuthSafeWithEnvFallback.mockResolvedValue({});
     signalVerifiedGatewayPidSync.mockImplementation(() => {});
     formatGatewayPidList.mockImplementation((pids) => pids.join(", "));
   });
@@ -321,6 +329,24 @@ describe("runDaemonRestart health checks", () => {
     expect(waitForGatewayHealthyRestart).not.toHaveBeenCalled();
     expect(terminateStaleGatewayPids).not.toHaveBeenCalled();
     expect(service.restart).not.toHaveBeenCalled();
+  });
+
+  it("passes configured probe auth into unmanaged restart health checks", async () => {
+    findVerifiedGatewayListenerPidsOnPortSync.mockReturnValue([4200]);
+    resolveLocalGatewayProbeAuthSafeWithEnvFallback.mockResolvedValue({
+      token: "cfg-token",
+      password: "cfg-password",
+    });
+    mockUnmanagedRestart({ runPostRestartCheck: true });
+
+    await runDaemonRestart({ json: true });
+
+    expect(waitForGatewayHealthyListener).toHaveBeenCalledWith({
+      port: 18789,
+      attempts: 120,
+      delayMs: 500,
+      probeAuth: { token: "cfg-token", password: "cfg-password" },
+    });
   });
 
   it("fails unmanaged restart when multiple gateway listeners are present", async () => {

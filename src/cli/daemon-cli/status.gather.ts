@@ -17,7 +17,10 @@ import { auditGatewayServiceConfig } from "../../daemon/service-audit.js";
 import type { GatewayServiceRuntime } from "../../daemon/service-runtime.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import { isGatewaySecretRefUnavailableError, trimToUndefined } from "../../gateway/credentials.js";
-import { resolveGatewayProbeAuthWithSecretInputs } from "../../gateway/probe-auth.js";
+import {
+  resolveGatewayProbeAuthWithSecretInputs,
+  resolveLocalGatewayProbeAuthSafeWithEnvFallback,
+} from "../../gateway/probe-auth.js";
 import {
   inspectBestEffortPrimaryTailnetIPv4,
   resolveBestEffortGatewayBindHostForDisplay,
@@ -337,8 +340,13 @@ export async function gatherDaemonStatus(
     ? await loadGatewayTlsRuntime(daemonCfg.gateway?.tls)
     : undefined;
   let daemonProbeAuth: { token?: string; password?: string } | undefined;
+  let localRestartProbeAuth: { token?: string; password?: string } | undefined;
   let rpcAuthWarning: string | undefined;
   if (opts.probe) {
+    localRestartProbeAuth = await resolveLocalGatewayProbeAuthSafeWithEnvFallback({
+      cfg: daemonCfg,
+      env: mergedDaemonEnv as NodeJS.ProcessEnv,
+    });
     try {
       daemonProbeAuth = await resolveGatewayProbeAuthWithSecretInputs({
         cfg: daemonCfg,
@@ -383,7 +391,7 @@ export async function gatherDaemonStatus(
           service,
           port: daemonPort,
           env: serviceEnv,
-          probeAuth: daemonProbeAuth,
+          probeAuth: localRestartProbeAuth,
         }).catch(() => undefined)
       : undefined;
 
