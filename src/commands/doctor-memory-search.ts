@@ -25,6 +25,7 @@ import {
 } from "../plugins/memory-runtime.js";
 import { note } from "../terminal/note.js";
 import { resolveUserPath } from "../utils.js";
+import type { GatewayMemoryProbe } from "./doctor-gateway-health.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
 import { isRecord } from "./doctor/shared/legacy-config-record-shared.js";
 
@@ -174,16 +175,7 @@ export async function maybeRepairMemoryRecallHealth(params: {
 export async function noteMemorySearchHealth(
   cfg: OpenClawConfig,
   opts?: {
-    gatewayMemoryProbe?: {
-      checked: boolean;
-      ready: boolean;
-      error?: string;
-      fts?: {
-        enabled: boolean;
-        available: boolean;
-        error?: string;
-      };
-    };
+    gatewayMemoryProbe?: GatewayMemoryProbe;
   },
 ): Promise<void> {
   const agentId = resolveDefaultAgentId(cfg);
