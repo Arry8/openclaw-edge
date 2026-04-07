@@ -83,6 +83,18 @@
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
   }
 
+  .chat-topbar-brand__badge {
+    display: none;
+  }
+
+  .chat-topbar-brand__title {
+    font-size: 13px;
+  }
+
+  .chat-topbar-brand__sub {
+    max-width: 28vw;
+  }
+
   .sidebar,
   .sidebar--collapsed {
     width: 100%;
@@ -130,6 +142,38 @@
     scrollbar-width: none;
   }
 
+  .sidebar-chat-section {
+    margin-bottom: 18px;
+  }
+
+  .sidebar-chat-new,
+  .sidebar--collapsed .sidebar-chat-new {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    justify-content: flex-start;
+  }
+
+  .sidebar-chat-list {
+    gap: 6px;
+  }
+
+  .sidebar-chat-hub {
+    gap: 12px;
+  }
+
+  .sidebar-chat-hub__list {
+    gap: 12px;
+  }
+
+  .sidebar-chat-group {
+    gap: 6px;
+  }
+
+  .sidebar-chat-item {
+    padding: 10px 12px;
+  }
+
   .sidebar-nav::-webkit-scrollbar,
   .sidebar--collapsed .sidebar-nav::-webkit-scrollbar {
     display: none;
@@ -165,6 +209,12 @@
     padding: 0;
     margin: 0 auto;
     border-radius: var(--radius-lg);
+  }
+
+  .shell--nav-collapsed:not(.shell--nav-drawer-open) .sidebar--collapsed .sidebar-chat-new {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
   }
 
   .sidebar--collapsed .nav-item--active::before,
@@ -339,6 +389,10 @@
     gap: 2px;
   }
 
+  .content-header--chat-shell {
+    display: none;
+  }
+
   /* Show the mobile gear toggle (lives in topbar now) */
   .chat-mobile-controls-wrapper {
     display: flex;
@@ -375,6 +429,18 @@
     flex-direction: column;
     gap: 4px;
     width: 100%;
+  }
+
+  .chat-mobile-controls-wrapper .chat-controls-dropdown .chat-controls__model {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+
+  .chat-mobile-controls-wrapper .chat-controls-dropdown .chat-controls__model select {
+    width: 100%;
+    font-size: 14px;
+    padding: 10px 12px;
   }
 
   .chat-mobile-controls-wrapper .chat-controls-dropdown .chat-controls__session {
@@ -497,6 +563,20 @@
     max-width: 90%;
   }
 
+  .chat-thread-inner {
+    padding: 6px 10px 0;
+  }
+
+  .chat-group {
+    width: 100%;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .chat-group-messages {
+    max-width: 100%;
+  }
+
   .chat-bubble {
     padding: 8px 12px;
     border-radius: var(--radius-md);
@@ -515,10 +595,17 @@
 
   .agent-chat__input {
     margin: 0 8px 10px;
+    width: auto;
   }
 
   .agent-chat__toolbar {
     padding: 4px 8px;
+  }
+
+  .agent-chat__input > textarea {
+    min-height: 48px;
+    padding: 14px 16px 10px;
+    font-size: 15px;
   }
 
   .agent-chat__input-btn,
