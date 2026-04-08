@@ -10,6 +10,8 @@ type RuntimeSendOpts = {
   accountId?: string;
   messageThreadId?: string | number;
   replyToMessageId?: string | number;
+  threadTs?: string | number;
+  replyToId?: string | number;
   silent?: boolean;
   forceDocument?: boolean;
   gifPlayback?: boolean;
@@ -33,11 +35,11 @@ export function createChannelOutboundRuntimeSend(params: {
         mediaUrl: opts.mediaUrl,
         mediaLocalRoots: opts.mediaLocalRoots,
         accountId: opts.accountId,
-        threadId: opts.messageThreadId,
+        threadId: opts.messageThreadId ?? opts.threadTs,
         replyToId:
-          opts.replyToMessageId == null
+          (opts.replyToMessageId ?? opts.replyToId) == null
             ? undefined
-            : normalizeOptionalString(String(opts.replyToMessageId)),
+            : normalizeOptionalString(String(opts.replyToMessageId ?? opts.replyToId)),
         silent: opts.silent,
         forceDocument: opts.forceDocument,
         gifPlayback: opts.gifPlayback,
