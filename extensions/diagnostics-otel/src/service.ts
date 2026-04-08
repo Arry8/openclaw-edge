@@ -375,7 +375,6 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
       const recordModelUsage = (evt: Extract<DiagnosticEventPayload, { type: "model.usage" }>) => {
         const attrs = {
           "openclaw.channel": evt.channel ?? "unknown",
-          "openclaw.agent": evt.agent ?? "unknown",
           "openclaw.provider": evt.provider ?? "unknown",
           "openclaw.model": evt.model ?? "unknown",
         };
@@ -509,16 +508,13 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
 
       const addSessionIdentityAttrs = (
         spanAttrs: Record<string, string | number>,
-        evt: { sessionKey?: string; sessionId?: string; agent?: string },
+        evt: { sessionKey?: string; sessionId?: string },
       ) => {
         if (evt.sessionKey) {
           spanAttrs["openclaw.sessionKey"] = evt.sessionKey;
         }
         if (evt.sessionId) {
           spanAttrs["openclaw.sessionId"] = evt.sessionId;
-        }
-        if (evt.agent) {
-          spanAttrs["openclaw.agent"] = evt.agent;
         }
       };
 
