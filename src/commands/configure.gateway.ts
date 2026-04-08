@@ -336,6 +336,8 @@ export async function promptGatewayConfig(
     },
   };
 
+  // Let the shared helper add the Tailscale origin to allowedOrigins.
+  // This handles IPv6 correctly and reuses the already-detected tailscale binary.
   next = await maybeAddTailnetOriginToControlUiAllowedOrigins({
     config: next,
     tailscaleMode,
