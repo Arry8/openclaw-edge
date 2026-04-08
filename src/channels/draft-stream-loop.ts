@@ -42,6 +42,8 @@ export function createDraftStreamLoop(params: {
       const sent = await current;
       if (sent === false) {
         pendingText = text;
+        lastSentAt = Date.now(); // reset throttle window so schedule() respects the delay
+        schedule(); // re-schedule so pending content is retried
         return;
       }
       lastSentAt = Date.now();
