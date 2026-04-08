@@ -108,10 +108,6 @@ const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
  * subsequent lifecycle `start` / `end` can cancel premature failure announces.
  */
 const LIFECYCLE_ERROR_RETRY_GRACE_MS = 15_000;
-/** Absolute TTL for session-mode runs after cleanup completes (no archiveAtMs). */
-const SESSION_RUN_TTL_MS = 5 * 60_000; // 5 minutes
-/** Absolute TTL for orphaned pendingLifecycleError entries. */
-const PENDING_ERROR_TTL_MS = 5 * 60_000; // 5 minutes
 
 function loadSubagentRegistryRuntime() {
   subagentRegistryRuntimePromise ??= import("./subagent-registry.runtime.js");
@@ -436,8 +432,9 @@ function restoreSubagentRunsOnce() {
     }
     // Resume pending work.
     ensureListener();
-    // Always start sweeper — session-mode runs (no archiveAtMs) also need TTL cleanup.
-    startSweeper();
+    if ([...subagentRuns.values()].some((entry) => entry.archiveAtMs)) {
+      startSweeper();
+    }
     for (const runId of subagentRuns.keys()) {
       resumeSubagentRun(runId);
     }
@@ -482,25 +479,7 @@ async function sweepSubagentRuns() {
   const now = Date.now();
   let mutated = false;
   for (const [runId, entry] of subagentRuns.entries()) {
-    // Session-mode runs have no archiveAtMs — apply absolute TTL after cleanup completes.
-    // Use cleanupCompletedAt (not endedAt) to avoid interrupting deferred cleanup flows.
-    if (!entry.archiveAtMs) {
-      if (typeof entry.cleanupCompletedAt === "number" && now - entry.cleanupCompletedAt > SESSION_RUN_TTL_MS) {
-        clearPendingLifecycleError(runId);
-        void notifyContextEngineSubagentEnded({
-          childSessionKey: entry.childSessionKey,
-          reason: "swept",
-          workspaceDir: entry.workspaceDir,
-        });
-        subagentRuns.delete(runId);
-        mutated = true;
-        if (!entry.retainAttachmentsOnKeep) {
-          await safeRemoveAttachmentsDir(entry);
-        }
-      }
-      continue;
-    }
-    if (entry.archiveAtMs > now) {
+    if (!entry.archiveAtMs || entry.archiveAtMs > now) {
       continue;
     }
     clearPendingLifecycleError(runId);
@@ -527,13 +506,6 @@ async function sweepSubagentRuns() {
       // ignore
     }
   }
-  // Sweep orphaned pendingLifecycleError entries (absolute TTL).
-  for (const [runId, pending] of pendingLifecycleErrorByRunId.entries()) {
-    if (now - pending.endedAt > PENDING_ERROR_TTL_MS) {
-      clearPendingLifecycleError(runId);
-    }
-  }
-
   if (mutated) {
     persistSubagentRuns();
   }
