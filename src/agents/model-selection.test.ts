@@ -120,6 +120,7 @@ describe("model-selection", () => {
       expect(normalizeProviderId("qwen")).toBe("qwen");
       expect(normalizeProviderId("kimi-code")).toBe("kimi");
       expect(normalizeProviderId("kimi-coding")).toBe("kimi");
+      expect(normalizeProviderId("nvidia-api")).toBe("nvidia");
       expect(normalizeProviderId("bedrock")).toBe("amazon-bedrock");
       expect(normalizeProviderId("aws-bedrock")).toBe("amazon-bedrock");
       expect(normalizeProviderId("amazon-bedrock")).toBe("amazon-bedrock");
@@ -272,6 +273,12 @@ describe("model-selection", () => {
         variants: ["openai/gpt-5.4-codex-codex"],
         defaultProvider: "anthropic",
         expected: { provider: "openai", model: "gpt-5.4-codex-codex" },
+      },
+      {
+        name: "normalizes nvidia-api provider alias to nvidia and preserves nested model id",
+        variants: ["nvidia-api/meta/llama-3.2-90b-vision-instruct"],
+        defaultProvider: "openai",
+        expected: { provider: "nvidia", model: "meta/llama-3.2-90b-vision-instruct" },
       },
       {
         name: "normalizes gemini 3.1 flash-lite ids for google-vertex",

@@ -6,8 +6,9 @@ import {
   requireApiKey,
   resolveApiKeyForProvider,
 } from "../agents/model-auth.js";
-import { normalizeModelRef } from "../agents/model-selection.js";
+import { findNormalizedProviderValue, normalizeModelRef } from "../agents/model-selection.js";
 import { ensureOpenClawModelsJson } from "../agents/models-config.js";
+import { resolveModelWithRegistry } from "../agents/pi-embedded-runner/model.js";
 import { coerceImageAssistantText } from "../agents/tools/image-tool.helpers.js";
 import type {
   ImageDescriptionRequest,
@@ -49,10 +50,51 @@ async function resolveImageRuntime(params: {
   const authStorage = discoverAuthStorage(params.agentDir);
   const modelRegistry = discoverModels(authStorage, params.agentDir);
   const resolvedRef = normalizeModelRef(params.provider, params.model);
-  const model = modelRegistry.find(resolvedRef.provider, resolvedRef.model) as Model<Api> | null;
+
+  // Use the full model resolution stack (registry → inline config → plugin →
+  // ad-hoc provider config) instead of bare modelRegistry.find(), which misses
+  // user-configured custom provider models (e.g. vllm, nvidia-api, iflow).
+  let model: Model<Api> | null =
+    resolveModelWithRegistry({
+      provider: resolvedRef.provider,
+      modelId: resolvedRef.model,
+      modelRegistry,
+      cfg: params.cfg,
+      agentDir: params.agentDir,
+    }) ?? null;
+
   if (!model) {
     throw new Error(`Unknown model: ${resolvedRef.provider}/${resolvedRef.model}`);
   }
+
+  // When the model was resolved via the ad-hoc provider config fallback, the
+  // input field defaults to ["text"] because the config model lookup uses exact
+  // ID matching which can miss provider-prefixed IDs (e.g. "vllm/Qwen3.5" in
+  // config vs "Qwen3.5" after model ref parsing).  Check the user's configured
+  // model definition for explicit image support so the tool works correctly.
+  // We prefer the exact params.provider key first so that configs containing
+  // both an alias (e.g. "nvidia-api") and the canonical name ("nvidia") resolve
+  // to the correct block — findNormalizedProviderValue would pick whichever
+  // entry normalizes first, which may be the wrong one.
+  if (!model.input?.includes("image")) {
+    const providers = params.cfg?.models?.providers;
+    const providerConfig =
+      providers?.[params.provider] ?? findNormalizedProviderValue(providers, resolvedRef.provider);
+    const configuredModel = providerConfig?.models?.find(
+      (m) =>
+        m.id === resolvedRef.model ||
+        m.id === `${params.provider}/${resolvedRef.model}` ||
+        m.id === `${resolvedRef.provider}/${resolvedRef.model}`,
+    );
+    if (configuredModel?.input?.includes("image")) {
+      model = {
+        ...model,
+        input: configuredModel.input,
+        ...(configuredModel.api ? { api: configuredModel.api } : {}),
+      } as Model<Api>;
+    }
+  }
+
   if (!model.input?.includes("image")) {
     throw new Error(`Model does not support images: ${params.provider}/${params.model}`);
   }
