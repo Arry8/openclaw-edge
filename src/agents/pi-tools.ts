@@ -654,6 +654,15 @@ export function createOpenClawCodingTools(options?: {
   // Security: treat unknown/undefined as unauthorized (opt-in, not opt-out)
   const senderIsOwner = options?.senderIsOwner === true;
   const toolsByAuthorization = applyOwnerOnlyToolPolicy(toolsForModelProvider, senderIsOwner);
+  if (!senderIsOwner) {
+    const stripped = toolsForModelProvider.filter((t) => !toolsByAuthorization.includes(t));
+    if (stripped.length > 0) {
+      logWarn(
+        `Stripped ${stripped.length} owner-only tool(s) (${stripped.map((t) => t.name).join(", ")}) ` +
+          `because senderIsOwner=false. To fix, set commands.ownerAllowFrom in your config.`,
+      );
+    }
+  }
   const subagentFiltered = applyToolPolicyPipeline({
     tools: toolsByAuthorization,
     toolMeta: (tool) => getPluginToolMeta(tool),
