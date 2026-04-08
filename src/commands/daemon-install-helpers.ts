@@ -3,8 +3,6 @@ import {
   type AuthProfileStore,
 } from "../agents/auth-profiles.js";
 import { formatCliCommand } from "../cli/command-format.js";
-import { collectDurableServiceEnvVars } from "../config/state-dir-dotenv.js";
-import type { OpenClawConfig } from "../config/types.js";
 import { resolveGatewayLaunchAgentLabel } from "../daemon/constants.js";
 import { resolveGatewayProgramArguments } from "../daemon/program-args.js";
 import { buildServiceEnvironment } from "../daemon/service-env.js";
@@ -68,28 +66,6 @@ function collectAuthProfileServiceEnvVars(params: {
   return entries;
 }
 
-function buildGatewayInstallEnvironment(params: {
-  env: Record<string, string | undefined>;
-  config?: OpenClawConfig;
-  authStore?: AuthProfileStore;
-  warn?: DaemonInstallWarnFn;
-  serviceEnvironment: Record<string, string | undefined>;
-}): Record<string, string | undefined> {
-  const environment: Record<string, string | undefined> = {
-    ...collectDurableServiceEnvVars({
-      env: params.env,
-      config: params.config,
-    }),
-    ...collectAuthProfileServiceEnvVars({
-      env: params.env,
-      authStore: params.authStore,
-      warn: params.warn,
-    }),
-  };
-  Object.assign(environment, params.serviceEnvironment);
-  return environment;
-}
-
 export async function buildGatewayInstallPlan(params: {
   env: Record<string, string | undefined>;
   port: number;
@@ -97,8 +73,6 @@ export async function buildGatewayInstallPlan(params: {
   devMode?: boolean;
   nodePath?: string;
   warn?: DaemonInstallWarnFn;
-  /** Full config to extract env vars from (env vars + inline env keys). */
-  config?: OpenClawConfig;
   authStore?: AuthProfileStore;
 }): Promise<GatewayInstallPlan> {
   const { devMode, nodePath } = await resolveDaemonInstallRuntimeInputs({
@@ -132,21 +106,23 @@ export async function buildGatewayInstallPlan(params: {
     extraPathDirs: resolveDaemonNodeBinDir(nodePath),
   });
 
-  // Merge env sources into the service environment in ascending priority:
-  //   1. ~/.openclaw/.env file vars  (lowest — user secrets / fallback keys)
-  //   2. Config env vars              (openclaw.json env.vars + inline keys)
-  //   3. Auth-profile env refs        (credential store → env var lookups)
-  //   4. Service environment          (HOME, PATH, OPENCLAW_* — highest)
+  // Merge env sources in ascending priority:
+  //   1. Auth-profile env refs  (shell-only credentials for --secret-input-mode ref flows)
+  //   2. Service environment    (HOME, PATH, OPENCLAW_* — highest priority, always wins)
+  //
+  // Config env vars (openclaw.json env.vars + inline keys) are intentionally excluded —
+  // those can contain provider secrets that must never be persisted into service unit metadata.
   return {
     programArguments,
     workingDirectory,
-    environment: buildGatewayInstallEnvironment({
-      env: params.env,
-      config: params.config,
-      authStore: params.authStore,
-      warn: params.warn,
-      serviceEnvironment,
-    }),
+    environment: {
+      ...collectAuthProfileServiceEnvVars({
+        env: params.env,
+        authStore: params.authStore,
+        warn: params.warn,
+      }),
+      ...serviceEnvironment,
+    },
   };
 }
 
