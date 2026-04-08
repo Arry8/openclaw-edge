@@ -1082,22 +1082,24 @@ async function runBinarySearch(
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     const toRevert = commits.slice(lo, mid + 1);
-    const reverted: string[] = [];
+
+    // Save HEAD so we can reset back cleanly after testing
+    const savedHead = run("git", ["rev-parse", "HEAD"]).stdout.trim();
     let revertFailed = false;
     for (const c of toRevert) {
       const r = run("git", ["revert", "-m", "1", "--no-edit", c.sha]);
       if (!r.ok) { revertFailed = true; break; }
-      reverted.push(c.sha);
     }
 
     if (revertFailed) {
-      for (const sha of reverted.reverse()) run("git", ["revert", "--no-edit", sha]);
+      run("git", ["reset", "--hard", savedHead]);
       lo = mid + 1;
       continue;
     }
 
     const build = runBuildCapture();
-    for (const sha of reverted.reverse()) run("git", ["revert", "--no-edit", sha]);
+    // Always reset back — never leave revert commits in history during search
+    run("git", ["reset", "--hard", savedHead]);
 
     if (build.ok) {
       hi = mid; // reverting lo..mid fixed it — culprit is in this range
@@ -1108,19 +1110,22 @@ async function runBinarySearch(
 
   const candidate = commits[lo];
   if (!candidate) return null;
-  // Verify by reverting candidate alone
+
+  // Verify: revert candidate alone and confirm build passes
+  const savedHead = run("git", ["rev-parse", "HEAD"]).stdout.trim();
   const verify = run("git", ["revert", "-m", "1", "--no-edit", candidate.sha]);
   if (!verify.ok) {
-    run("git", ["revert", "--abort"]);
+    run("git", ["reset", "--hard", savedHead]);
     return null;
   }
   const check = runBuildCapture();
   if (check.ok) {
     log(`Auto-skip: binary search found culprit PR #${candidate.prNumber} (${candidate.sha})`);
+    // Leave this revert in place — caller will record it in autoskip and continue
     return candidate;
   }
-  // Didn't fix it alone — undo and give up
-  run("git", ["revert", "--no-edit", candidate.sha]);
+  // Didn't fix it alone — reset back and give up
+  run("git", ["reset", "--hard", savedHead]);
   return null;
 }
 
