@@ -11,7 +11,7 @@ import {
   normalizeOptionalLowercaseString,
 } from "../shared/string-coerce.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
-import { resolveAgentConfig, resolveAgentEnvVars } from "./agent-scope.js";
+import { resolveAgentConfig } from "./agent-scope.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import {
   createExecTool,
@@ -435,21 +435,6 @@ export function createOpenClawCodingTools(options?: {
     }
     return [tool];
   });
-  // Resolve agent-scoped env vars (returns undefined for scope="all" agents,
-  // letting them inherit process.env as before).
-  const agentEnvVars =
-    agentId && options?.config
-      ? (() => {
-          const agentEnvCfg = options.config?.agents?.list?.find(
-            (a) => a?.id?.toLowerCase() === agentId.toLowerCase(),
-          )?.env;
-          // Only build scoped env when agent explicitly opts into isolation
-          if (agentEnvCfg?.scope && agentEnvCfg.scope !== "all") {
-            return resolveAgentEnvVars(options.config, agentId);
-          }
-          return undefined;
-        })()
-      : undefined;
   const { cleanupMs: cleanupMsOverride, ...execDefaults } = options?.exec ?? {};
   const execTool = createExecTool({
     ...execDefaults,
@@ -465,7 +450,6 @@ export function createOpenClawCodingTools(options?: {
     safeBinTrustedDirs: options?.exec?.safeBinTrustedDirs ?? execConfig.safeBinTrustedDirs,
     safeBinProfiles: options?.exec?.safeBinProfiles ?? execConfig.safeBinProfiles,
     agentId,
-    agentEnvVars,
     cwd: workspaceRoot,
     allowBackground,
     scopeKey,
