@@ -155,9 +155,10 @@ export async function persistSessionUsageUpdate(params: {
             patch.estimatedCostUsd = entry.estimatedCostUsd;
           }
           // Missing a last-call snapshot (and promptTokens fallback) means
-          // context utilization is stale/unknown.
+          // context utilization is stale/unknown. The fallback path (accumulated
+          // usage) provides an approximation but is not a fresh snapshot.
           patch.totalTokens = totalTokens;
-          patch.totalTokensFresh = typeof totalTokens === "number";
+          patch.totalTokensFresh = hasFreshContextSnapshot && typeof totalTokens === "number";
           return applyCliSessionIdToSessionPatch(params, entry, patch);
         },
       });
