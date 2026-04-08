@@ -32,11 +32,19 @@ function hasScriptSrcAttribute(openTag: string): boolean {
   );
 }
 
-export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }): string {
+export function buildControlUiCspHeader(opts?: {
+  inlineScriptHashes?: string[];
+  extraConnectSrc?: string[];
+}): string {
   const hashes = opts?.inlineScriptHashes;
   const scriptSrc = hashes?.length
     ? `script-src 'self' ${hashes.map((h) => `'${h}'`).join(" ")}`
     : "script-src 'self'";
+  // 'self' covers same-origin HTTP/WS requests.  The Control UI also
+  // supports user-configured cross-origin gateway URLs (gatewayUrl query
+  // param), so we additionally allow wss: to permit secure WebSocket
+  // connections to remote gateways without opening the blanket ws: scheme.
+  const extraSrc = opts?.extraConnectSrc?.length ? ` ${opts.extraConnectSrc.join(" ")}` : "";
   return [
     "default-src 'self'",
     "base-uri 'none'",
@@ -46,6 +54,6 @@ export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: https:",
     "font-src 'self' https://fonts.gstatic.com",
-    "connect-src 'self' ws: wss:",
+    `connect-src 'self' wss:${extraSrc}`,
   ].join("; ");
 }
