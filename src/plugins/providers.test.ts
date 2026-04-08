@@ -673,6 +673,36 @@ describe("resolvePluginProviders", () => {
     );
   });
 
+  it("activates owning plugins for active-runtime hook alias provider refs", () => {
+    const activeRegistry = createEmptyPluginRegistry();
+    activeRegistry.providers.push({
+      pluginId: "workspace-provider",
+      provider: {
+        id: "workspace-provider",
+        label: "Workspace Provider",
+        hookAliases: ["workspace-hook-alias"],
+        auth: [],
+      },
+      source: "workspace",
+    });
+    setActivePluginRegistry(activeRegistry, undefined, "default", "/workspace/runtime");
+
+    resolvePluginProviders({
+      config: {},
+      workspaceDir: "/workspace/runtime",
+      providerRefs: ["workspace-hook-alias"],
+      activate: true,
+    });
+
+    expect(resolveRuntimePluginRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyPluginIds: ["workspace-provider"],
+        activate: true,
+        workspaceDir: "/workspace/runtime",
+      }),
+    );
+  });
+
   it.each([
     {
       provider: "minimax-portal",
