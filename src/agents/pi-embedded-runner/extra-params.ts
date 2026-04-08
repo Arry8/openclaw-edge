@@ -17,6 +17,7 @@ import {
   shouldApplySiliconFlowThinkingOffCompat,
 } from "./moonshot-stream-wrappers.js";
 import {
+  createGeminiToolCallThoughtSignatureWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIStringContentWrapper,
 } from "./openai-stream-wrappers.js";
@@ -413,6 +414,7 @@ function applyPostPluginStreamWrappers(
   // blocks. Disable thinking unless an earlier wrapper already set it.
   ctx.agent.streamFn = createMinimaxThinkingDisabledWrapper(ctx.agent.streamFn);
 
+  ctx.agent.streamFn = createGeminiToolCallThoughtSignatureWrapper(ctx.agent.streamFn);
   const rawParallelToolCalls = resolveAliasedParamValue(
     [ctx.resolvedExtraParams, ctx.override],
     "parallel_tool_calls",
