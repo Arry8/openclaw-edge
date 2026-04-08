@@ -1356,4 +1356,22 @@ describe("applyMediaUnderstanding", () => {
     expect(ctx.Body).toContain("<file");
     expect(ctx.Body).toContain("vendor-json");
   });
+
+  it("skips legacy Office binary formats carried as msword or x-cfb", async () => {
+    const oleMagic = Buffer.from("d0cf11e0a1b11ae1", "hex");
+    for (const mime of ["application/msword", "application/x-cfb"]) {
+      const filePath = await createTempMediaFile({
+        fileName: mime === "application/msword" ? "legacy.doc" : "legacy.cfb",
+        content: oleMagic,
+      });
+
+      const { ctx, result } = await applyWithDisabledMedia({
+        body: "<media:file>",
+        mediaPath: filePath,
+        mediaType: mime,
+      });
+
+      expectFileNotApplied({ ctx, result, body: "<media:file>" });
+    }
+  });
 });
