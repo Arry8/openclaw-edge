@@ -214,4 +214,24 @@ describe("setActivePluginRegistry", () => {
 
     expect(listImportedRuntimePluginIds()).toEqual(["broken-plugin"]);
   });
+
+  it("falls back to state.registry when pinned is empty but state.registry has routes (issue #52095)", () => {
+    const pinnedEmptyRegistry = createEmptyPluginRegistry();
+    const activeRegistryWithRoutes = createEmptyPluginRegistry();
+    activeRegistryWithRoutes.httpRoutes.push({
+      path: "/bluebubbles-webhook",
+      auth: "plugin",
+      match: "exact",
+      handler: () => true,
+      pluginId: "bluebubbles",
+      source: "bluebubbles-webhook",
+    });
+
+    setActivePluginRegistry(activeRegistryWithRoutes);
+    pinActivePluginHttpRouteRegistry(pinnedEmptyRegistry);
+
+    expect(resolveActivePluginHttpRouteRegistry(pinnedEmptyRegistry)).toBe(
+      activeRegistryWithRoutes,
+    );
+  });
 });
