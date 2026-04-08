@@ -117,6 +117,9 @@ export function installSessionToolResultGuard(
   const originalAppend = getRawSessionAppendMessage(sessionManager);
   (sessionManager as SessionManagerWithRawAppend)[RAW_APPEND_MESSAGE] = originalAppend;
   const pendingState = createPendingToolCallState();
+  // Track the assistant entry ID that originated current tool calls so all
+  // tool results branch from it instead of chaining sequentially.
+  let assistantEntryId: string | undefined;
   const persistMessage = (message: AgentMessage) => {
     const transformer = opts?.transformMessageForPersistence;
     return transformer ? transformer(message) : message;
@@ -166,15 +169,23 @@ export function installSessionToolResultGuard(
           }),
         );
         if (flushed) {
+          // Branch back to the assistant message so synthetic results don't chain.
+          // Done AFTER the write hook confirms persistence to avoid rewinding the
+          // leaf when the hook blocks the synthetic result.
+          if (assistantEntryId) {
+            sessionManager.branch(assistantEntryId);
+          }
           originalAppend(flushed as never);
         }
       }
     }
     pendingState.clear();
+    assistantEntryId = undefined;
   };
 
   const clearPendingToolResults = () => {
     pendingState.clear();
+    assistantEntryId = undefined;
   };
 
   const guardedAppend = (message: AgentMessage) => {
@@ -196,6 +207,7 @@ export function installSessionToolResultGuard(
 
     if (nextRole === "toolResult") {
       const id = extractToolResultId(nextMessage as Extract<AgentMessage, { role: "toolResult" }>);
+      const isPending = !!(id && pendingState.getToolName(id) !== undefined);
       const toolName = id ? pendingState.getToolName(id) : undefined;
       if (id) {
         pendingState.delete(id);
@@ -212,7 +224,18 @@ export function installSessionToolResultGuard(
         }),
       );
       if (!persisted) {
+        // P2: Clear assistantEntryId when tool result is blocked and no pending calls remain.
+        if (pendingState.size() === 0) {
+          assistantEntryId = undefined;
+        }
         return undefined;
+      }
+      // P1: Only re-parent tool results whose toolCallId is in the pending set,
+      // and only AFTER the write hook confirms the result will be persisted.
+      // Branching before persistence would move the leaf even for blocked results,
+      // dropping earlier persisted results from the active branch.
+      if (isPending && assistantEntryId) {
+        sessionManager.branch(assistantEntryId);
       }
       return originalAppend(persisted as never);
     }
@@ -263,6 +286,10 @@ export function installSessionToolResultGuard(
 
     if (toolCalls.length > 0) {
       pendingState.trackToolCalls(toolCalls);
+      // Remember the assistant entry so tool results can branch back to it.
+      if (typeof result === "string") {
+        assistantEntryId = result;
+      }
     }
 
     return result;
