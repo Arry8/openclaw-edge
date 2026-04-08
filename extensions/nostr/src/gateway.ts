@@ -1,25 +1,28 @@
 import { createChannelPairingController } from "openclaw/plugin-sdk/channel-pairing";
 import { attachChannelToResult } from "openclaw/plugin-sdk/channel-send-result";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import {
   createPreCryptoDirectDmAuthorizer,
   DEFAULT_ACCOUNT_ID,
   dispatchInboundDirectDmWithRuntime,
+  type ChannelOutboundAdapter,
   resolveInboundDirectDmAccessWithRuntime,
   type ChannelPlugin,
 } from "./channel-api.js";
 import type { MetricEvent, MetricsSnapshot } from "./metrics.js";
 import { normalizePubkey, startNostrBus, type NostrBusHandle } from "./nostr-bus.js";
-import type { OpenClawConfig } from "./runtime-api.js";
 import { getNostrRuntime } from "./runtime.js";
 import { resolveDefaultNostrAccountId, type ResolvedNostrAccount } from "./types.js";
 
 type NostrGatewayStart = NonNullable<
   NonNullable<ChannelPlugin<ResolvedNostrAccount>["gateway"]>["startAccount"]
 >;
-type NostrPairingText = NonNullable<
-  NonNullable<NonNullable<ChannelPlugin<ResolvedNostrAccount>["pairing"]>["text"]>
->;
-type NostrOutbound = NonNullable<ChannelPlugin<ResolvedNostrAccount>["outbound"]>;
+type NostrOutboundAdapter = Pick<
+  ChannelOutboundAdapter,
+  "deliveryMode" | "textChunkLimit" | "sendText"
+> & {
+  sendText: NonNullable<ChannelOutboundAdapter["sendText"]>;
+};
 
 const activeBuses = new Map<string, NostrBusHandle>();
 const metricsSnapshots = new Map<string, MetricsSnapshot>();
@@ -241,20 +244,27 @@ export const startNostrGatewayAccount: NostrGatewayStart = async (ctx) => {
   };
 };
 
-export const nostrPairingTextAdapter: Pick<
-  NostrPairingText,
-  "idLabel" | "message" | "normalizeAllowEntry" | "notify"
-> = {
+export const nostrPairingTextAdapter = {
   idLabel: "nostrPubkey",
   message: "Your pairing request has been approved!",
-  normalizeAllowEntry: (entry) => {
+  normalizeAllowEntry: (entry: string) => {
     try {
       return normalizePubkey(entry.trim().replace(/^nostr:/i, ""));
     } catch {
       return entry.trim();
     }
   },
-  notify: async ({ cfg, id, message, accountId }) => {
+  notify: async ({
+    cfg,
+    id,
+    message,
+    accountId,
+  }: {
+    cfg: OpenClawConfig;
+    id: string;
+    message: string;
+    accountId?: string;
+  }) => {
     const bus = activeBuses.get(accountId ?? resolveDefaultNostrAccountId(cfg));
     if (bus) {
       await bus.sendDm(id, message);
@@ -262,10 +272,7 @@ export const nostrPairingTextAdapter: Pick<
   },
 };
 
-export const nostrOutboundAdapter: Pick<
-  NostrOutbound,
-  "deliveryMode" | "textChunkLimit" | "sendText"
-> = {
+export const nostrOutboundAdapter: NostrOutboundAdapter = {
   deliveryMode: "direct",
   textChunkLimit: 4000,
   sendText: async ({ cfg, to, text, accountId }) => {
