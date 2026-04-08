@@ -97,6 +97,8 @@ const ERROR_PATTERNS = {
     "service unavailable",
     "deadline exceeded",
     "context deadline exceeded",
+    /\bgot status:\s*internal\b/i,
+    /["']status["']\s*:\s*["']internal["']/i,
     "connection error",
     "network error",
     "network request failed",

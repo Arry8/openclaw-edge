@@ -778,6 +778,21 @@ describe("isFailoverErrorMessage", () => {
     expect(classifyFailoverReason(sample)).toBe(null);
     expect(isFailoverErrorMessage(sample)).toBe(false);
   });
+
+  it("matches google INTERNAL status errors as timeout", () => {
+    const sample =
+      "provider=google model=gemini-3.1-flash-lite-preview got status: INTERNAL upstream failure code:500";
+    expect(isTimeoutErrorMessage(sample)).toBe(true);
+    expect(classifyFailoverReason(sample)).toBe("timeout");
+    expect(isFailoverErrorMessage(sample)).toBe(true);
+  });
+
+  it("does not treat plain status text with internal-server-error wording as timeout", () => {
+    const sample = "Proxy notice: Status: Internal Server Error";
+    expect(isTimeoutErrorMessage(sample)).toBe(false);
+    expect(classifyFailoverReason(sample)).toBe(null);
+    expect(isFailoverErrorMessage(sample)).toBe(false);
+  });
 });
 
 describe("parseImageSizeError", () => {
@@ -1105,5 +1120,22 @@ describe("classifyFailoverReason", () => {
         '{"type":"error","error":{"type":"api_error","message":"permission_error: OAuth authentication is currently not allowed for this organization"}}',
       ),
     ).toBe("auth_permanent");
+  });
+
+  it("classifies google-style INTERNAL status payloads as timeout", () => {
+    expect(
+      classifyFailoverReason(
+        'ERROR provider=google model=gemini-3.1-flash-lite-preview: got status: INTERNAL, details: {"code":500,"status":"INTERNAL"}',
+      ),
+    ).toBe("timeout");
+    expect(
+      classifyFailoverReason(
+        'got status: INTERNAL. {"error":{"code":500,"message":"Internal error encountered.","status":"INTERNAL"}}',
+      ),
+    ).toBe("timeout");
+  });
+
+  it("does not classify plain status text with internal server error wording as timeout", () => {
+    expect(classifyFailoverReason("Proxy notice: Status: Internal Server Error")).toBeNull();
   });
 });
