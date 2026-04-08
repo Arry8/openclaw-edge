@@ -647,6 +647,32 @@ describe("resolvePluginProviders", () => {
       }),
     );
   });
+
+  it("activates owning plugins for bundled hook alias provider refs", () => {
+    setOwningProviderManifestPlugins();
+
+    resolvePluginProviders({
+      config: {},
+      providerRefs: ["azure-openai-responses"],
+      activate: true,
+    });
+
+    expect(resolveRuntimePluginRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyPluginIds: ["openai"],
+        activate: true,
+        config: expect.objectContaining({
+          plugins: expect.objectContaining({
+            allow: ["openai"],
+            entries: {
+              openai: { enabled: true },
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
   it.each([
     {
       provider: "minimax-portal",
@@ -657,11 +683,31 @@ describe("resolvePluginProviders", () => {
       expectedPluginIds: ["openai"],
     },
     {
+      provider: "azure-openai-responses",
+      expectedPluginIds: ["openai"],
+    },
+    {
+      provider: "google-antigravity",
+      expectedPluginIds: ["google"],
+    },
+    {
+      provider: "google-vertex",
+      expectedPluginIds: ["google"],
+    },
+    {
+      provider: "minimax-cn",
+      expectedPluginIds: ["minimax"],
+    },
+    {
+      provider: "minimax-portal-cn",
+      expectedPluginIds: ["minimax"],
+    },
+    {
       provider: "gemini-cli",
       expectedPluginIds: undefined,
     },
   ] as const)(
-    "maps $provider to owning plugin ids via manifests",
+    "maps $provider to owning plugin ids via manifests and bundled hook aliases",
     ({ provider, expectedPluginIds }) => {
       setOwningProviderManifestPlugins();
 
