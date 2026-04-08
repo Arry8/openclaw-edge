@@ -8,6 +8,7 @@ import { setProgramContext } from "./program-context.js";
 
 export function buildProgram() {
   const program = new Command();
+  program.enablePositionalOptions();
   // Preserve Commander-computed exit codes while still aborting parse flow.
   // Without this, commands like `openclaw sessions list` can print an error
   // but still report success when exits are intercepted.
