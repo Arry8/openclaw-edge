@@ -51,7 +51,7 @@ function registerTarget(params: {
     core: params.core ?? ({} as PluginRuntime),
     secret: params.secret ?? "secret",
     path: params.path,
-    mediaMaxMb: 5,
+    mediaMaxMb: 20,
     statusSink: params.statusSink,
   });
 }
