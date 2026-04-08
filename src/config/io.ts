@@ -107,6 +107,7 @@ export { resolveShellEnvExpectedKeys } from "./shell-env-expected-keys.js";
 
 const CONFIG_HEALTH_STATE_FILENAME = "config-health.json";
 const loggedInvalidConfigs = new Set<string>();
+const loggedConfigWarnings = new Set<string>();
 
 type ConfigHealthFingerprint = {
   hash: string;
@@ -1147,7 +1148,11 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
               `- ${sanitizeTerminalText(iss.path || "<root>")}: ${sanitizeTerminalText(iss.message)}`,
           )
           .join("\n");
-        deps.logger.warn(`Config warnings:\\n${details}`);
+        const warnKey = `${configPath}:\n${details}`;
+        if (!loggedConfigWarnings.has(warnKey)) {
+          loggedConfigWarnings.add(warnKey);
+          deps.logger.warn(`Config warnings:\\n${details}`);
+        }
       }
       warnIfConfigFromFuture(validated.config, deps.logger);
       const cfg = materializeRuntimeConfig(validated.config, "load");
@@ -1461,7 +1466,11 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       const details = validated.warnings
         .map((warning) => `- ${warning.path}: ${warning.message}`)
         .join("\n");
-      deps.logger.warn(`Config warnings:\n${details}`);
+      const warnKey = `${configPath}:\n${details}`;
+      if (!loggedConfigWarnings.has(warnKey)) {
+        loggedConfigWarnings.add(warnKey);
+        deps.logger.warn(`Config warnings:\n${details}`);
+      }
     }
 
     // Restore ${VAR} env var references that were resolved during config loading.
