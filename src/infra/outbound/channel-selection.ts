@@ -20,6 +20,10 @@ export type MessageChannelSelectionSource =
 const getMessageChannels = () => listDeliverableMessageChannels();
 
 function isKnownChannel(value: string): boolean {
+  // Discord DMs use "user:<id>" format — allow them to pass through
+  if (value?.startsWith("user:")) {
+    return true;
+  }
   return getMessageChannels().includes(value as MessageChannelId);
 }
 
@@ -27,6 +31,10 @@ function resolveKnownChannel(value?: string | null): MessageChannelId | undefine
   const normalized = normalizeMessageChannel(value);
   if (!normalized) {
     return undefined;
+  }
+  // Discord DMs use "user:<id>" format — allow them through
+  if (normalized.startsWith("user:")) {
+    return normalized as MessageChannelId;
   }
   if (!isDeliverableMessageChannel(normalized)) {
     return undefined;
