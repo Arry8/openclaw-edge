@@ -46,6 +46,7 @@ const DEFAULT_MAX_HOLD_MS = 5 * 60 * 1000;
 const DEFAULT_WATCHDOG_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_GRACE_MS = 2 * 60 * 1000;
 const MAX_LOCK_HOLD_MS = 2_147_000_000;
+const LOCK_SUFFIX = ".lock";
 
 type CleanupState = {
   registered: boolean;
@@ -396,7 +397,17 @@ function shouldTreatAsOrphanSelfLock(params: {
   }
   const hasValidStarttime = isValidLockNumber(params.payload?.starttime);
   if (hasValidStarttime) {
-    return false;
+    // On Linux, getProcessStartTime always returns a value, so every lock file
+    // written by this codebase will have a valid starttime. Compare it against
+    // the current process's starttime:
+    // - If they match: the lock was written by this exact process run. Check
+    //   HELD_LOCKS to determine if it's an orphan (same as no-starttime path).
+    // - If they differ: the PID was recycled, so this lock belongs to a
+    //   different (dead) process. Let inspectLockPayload handle the staleness.
+    const currentStarttime = getProcessStartTime(process.pid);
+    if (currentStarttime === null || params.payload!.starttime !== currentStarttime) {
+      return false;
+    }
   }
   return !HELD_LOCKS.has(params.normalizedSessionFile);
 }
@@ -411,7 +422,16 @@ export async function cleanStaleLockFiles(params: {
     info?: (message: string) => void;
   };
 }): Promise<{ locks: SessionLockInspection[]; cleaned: SessionLockInspection[] }> {
-  const sessionsDir = path.resolve(params.sessionsDir);
+  // Normalize sessionsDir using realpath to match the keys stored in HELD_LOCKS.
+  // acquireSessionWriteLock uses fs.realpath before storing in HELD_LOCKS, so we
+  // need to do the same here to ensure HELD_LOCKS.has() comparisons work correctly
+  // when sessionsDir contains symlink components.
+  let sessionsDir = path.resolve(params.sessionsDir);
+  try {
+    sessionsDir = await fs.realpath(sessionsDir);
+  } catch {
+    // Fall back to resolved path if realpath fails (e.g., directory doesn't exist yet)
+  }
   const staleMs = resolvePositiveMs(params.staleMs, DEFAULT_STALE_MS);
   const removeStale = params.removeStale !== false;
   const nowMs = params.nowMs ?? Date.now();
@@ -437,9 +457,32 @@ export async function cleanStaleLockFiles(params: {
     const lockPath = path.join(sessionsDir, entry.name);
     const payload = await readLockPayload(lockPath);
     const inspected = inspectLockPayload(payload, staleMs, nowMs);
+
+    // Derive the normalized session file path for checking HELD_LOCKS.
+    // Lock files are named <session>.jsonl.lock, so strip the .lock suffix.
+    const sessionFile = lockPath.slice(0, -LOCK_SUFFIX.length);
+    const orphanSelfLock = shouldTreatAsOrphanSelfLock({
+      payload,
+      normalizedSessionFile: sessionFile,
+    });
+
+    // Treat orphan self-locks as stale during cleanup. This handles the case
+    // where the gateway process lost in-memory HELD_LOCKS state but the lock
+    // file still references the current PID (e.g., after an API failure that
+    // didn't terminate the process but cleared module-level state).
+    const effectiveInspected = orphanSelfLock
+      ? {
+          ...inspected,
+          stale: true,
+          staleReasons: inspected.staleReasons.includes("orphan-self-pid")
+            ? inspected.staleReasons
+            : [...inspected.staleReasons, "orphan-self-pid"],
+        }
+      : inspected;
+
     const lockInfo: SessionLockInspection = {
       lockPath,
-      ...inspected,
+      ...effectiveInspected,
       removed: false,
     };
 
