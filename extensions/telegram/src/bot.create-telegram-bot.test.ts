@@ -2599,4 +2599,45 @@ describe("createTelegramBot", () => {
 
     expect(replySpy).toHaveBeenCalledTimes(1);
   });
+
+  it("detects document messages as having inbound media", async () => {
+    createTelegramBot({ token: "tok" });
+    const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
+
+    // Mock globalThis.fetch so getFile does not attempt a live network call.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(Buffer.from("fake-pdf"), {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        }),
+    );
+
+    // Verify that a document message triggers getFile (media download attempt).
+    const getFileSpy = vi.fn(async () => ({ file_path: "documents/report.pdf" }));
+
+    try {
+      await handler({
+        message: {
+          chat: { id: 42, type: "private" },
+          message_id: 500,
+          date: 1736380800,
+          document: {
+            file_id: "doc1",
+            file_name: "report.pdf",
+            mime_type: "application/pdf",
+          },
+          from: { id: 999, username: "pdfuser" },
+        },
+        me: { username: "openclaw_bot" },
+        getFile: getFileSpy,
+      });
+
+      // The handler must call getFile for document attachments, proving the
+      // document field is recognized as inbound media.
+      expect(getFileSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
