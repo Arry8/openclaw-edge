@@ -585,34 +585,26 @@ export async function runExecProcess(opts: {
   };
   addSession(session);
 
-  let emitUpdateSuppressed = false;
   const emitUpdate = () => {
     if (!opts.onUpdate) {
       return;
     }
-    if (session.backgrounded || session.exited || emitUpdateSuppressed) {
+    if (session.backgrounded || session.exited) {
       return;
     }
     const tailText = session.tail || session.aggregated;
     const warningText = opts.warnings.length ? `${opts.warnings.join("\n")}\n\n` : "";
-    try {
-      opts.onUpdate({
-        content: [{ type: "text", text: warningText + (tailText || "") }],
-        details: {
-          status: "running",
-          sessionId,
-          pid: session.pid ?? undefined,
-          startedAt,
-          cwd: session.cwd,
-          tail: session.tail,
-        },
-      });
-    } catch {
-      // The agent session may have been deactivated while the tool process
-      // was still running (e.g., concurrent channel sessions racing).
-      // Suppress further updates for this process rather than crashing.
-      emitUpdateSuppressed = true;
-    }
+    opts.onUpdate({
+      content: [{ type: "text", text: warningText + (tailText || "") }],
+      details: {
+        status: "running",
+        sessionId,
+        pid: session.pid ?? undefined,
+        startedAt,
+        cwd: session.cwd,
+        tail: session.tail,
+      },
+    });
   };
 
   const handleStdout = (data: string) => {
