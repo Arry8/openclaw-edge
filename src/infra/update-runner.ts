@@ -108,6 +108,7 @@ const PREFLIGHT_TEMP_PREFIX =
   process.platform === "win32" ? "ocu-pf-" : "openclaw-update-preflight-";
 const PREFLIGHT_WORKTREE_DIRNAME = process.platform === "win32" ? "wt" : "worktree";
 const WINDOWS_PREFLIGHT_BASE_DIR = "ocu";
+const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 4096;
 
 function normalizeDir(value?: string | null) {
   if (!value) {
@@ -356,6 +357,39 @@ function normalizeTag(tag?: string) {
 
 function shouldRetryWindowsInstallIgnoringScripts(manager: "pnpm" | "bun" | "npm"): boolean {
   return process.platform === "win32" && manager === "pnpm";
+}
+
+function shouldPreferIgnoreScriptsForWindowsPreflight(manager: "pnpm" | "bun" | "npm"): boolean {
+  return process.platform === "win32" && manager === "pnpm";
+}
+
+function resolveWindowsBuildNodeOptions(baseOptions: string | undefined): string {
+  const current = baseOptions?.trim() ?? "";
+  const desired = `--max-old-space-size=${WINDOWS_BUILD_MAX_OLD_SPACE_MB}`;
+  const existingMatch = /(?:^|\s)--max-old-space-size=(\d+)(?=\s|$)/.exec(current);
+  if (!existingMatch) {
+    return current ? `${current} ${desired}` : desired;
+  }
+  const existingValue = Number(existingMatch[1]);
+  if (Number.isFinite(existingValue) && existingValue >= WINDOWS_BUILD_MAX_OLD_SPACE_MB) {
+    return current;
+  }
+  return current.replace(/(?:^|\s)--max-old-space-size=\d+(?=\s|$)/, ` ${desired}`).trim();
+}
+
+function resolveWindowsBuildEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined {
+  if (process.platform !== "win32") {
+    return env;
+  }
+  const currentNodeOptions = env?.NODE_OPTIONS ?? process.env.NODE_OPTIONS;
+  const nextNodeOptions = resolveWindowsBuildNodeOptions(currentNodeOptions);
+  if (nextNodeOptions === currentNodeOptions) {
+    return env;
+  }
+  return {
+    ...env,
+    NODE_OPTIONS: nextNodeOptions,
+  };
 }
 
 function isSupersededInstallFailure(
@@ -670,20 +704,27 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
             continue;
           }
 
+          const preflightIgnoreScripts = shouldPreferIgnoreScriptsForWindowsPreflight(
+            manager.manager,
+          );
+          const preflightIgnoreScriptsArgv = managerInstallIgnoreScriptsArgs(manager.manager);
+          const depsStepArgv =
+            preflightIgnoreScripts && preflightIgnoreScriptsArgv
+              ? preflightIgnoreScriptsArgv
+              : managerInstallArgs(manager.manager, {
+                  compatFallback: manager.fallback && manager.manager === "npm",
+                });
+          const depsStepName = preflightIgnoreScripts
+            ? `preflight deps install (ignore scripts) (${shortSha})`
+            : `preflight deps install (${shortSha})`;
           const depsStep = await runStep(
-            step(
-              `preflight deps install (${shortSha})`,
-              managerInstallArgs(manager.manager, {
-                compatFallback: manager.fallback && manager.manager === "npm",
-              }),
-              worktreeDir,
-              manager.env,
-            ),
+            step(depsStepName, depsStepArgv, worktreeDir, manager.env),
           );
           steps.push(depsStep);
           let finalDepsStep = depsStep;
           if (
             depsStep.exitCode !== 0 &&
+            !preflightIgnoreScripts &&
             shouldRetryWindowsInstallIgnoringScripts(manager.manager)
           ) {
             const retryArgv = managerInstallIgnoreScriptsArgs(manager.manager);
@@ -709,7 +750,7 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
               `preflight build (${shortSha})`,
               managerScriptArgs(manager.manager, "build"),
               worktreeDir,
-              manager.env,
+              resolveWindowsBuildEnv(manager.env),
             ),
           );
           steps.push(buildStep);
@@ -899,7 +940,12 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       }
 
       const buildStep = await runStep(
-        step("build", managerScriptArgs(manager.manager, "build"), gitRoot, manager.env),
+        step(
+          "build",
+          managerScriptArgs(manager.manager, "build"),
+          gitRoot,
+          resolveWindowsBuildEnv(manager.env),
+        ),
       );
       steps.push(buildStep);
       if (buildStep.exitCode !== 0) {
