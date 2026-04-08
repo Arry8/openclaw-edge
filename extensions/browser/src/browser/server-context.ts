@@ -190,7 +190,7 @@ export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteCon
           const reachable = await isChromeReachable(
             profile.cdpUrl,
             200,
-            profile.cdpIsLoopback ? undefined : current.resolved.ssrfPolicy,
+            current.resolved.ssrfPolicy,
           );
           if (reachable) {
             running = true;
