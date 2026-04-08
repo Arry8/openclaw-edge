@@ -45,21 +45,35 @@ export async function sendChunkedTelegramReplyText<
   replyQuoteText?: string;
   quoteOnlyOnFirstChunk?: boolean;
   markDelivered?: (progress: TProgress) => void;
+  /** Optional predicate — return true to silently skip a chunk without marking delivered. */
+  shouldSkipChunk?: (chunk: TChunk) => boolean;
+  /**
+   * Called for each non-skipped chunk. Return `false` to indicate the chunk
+   * was silently skipped at the send layer (e.g. `sendTelegramText` returned
+   * `undefined`) — in that case `markDelivered` is not called and the chunk
+   * does not count toward `sentChunkCount`. Returning `void` or `true` (or
+   * any other truthy value) marks the chunk as delivered.
+   */
   sendChunk: (opts: {
     chunk: TChunk;
+    /** True for the first chunk that is actually sent (skipped chunks are not counted). */
     isFirstChunk: boolean;
     replyToMessageId?: number;
     replyMarkup?: TReplyMarkup;
     replyQuoteText?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean | void>;
 }): Promise<void> {
   const applyDelivered = params.markDelivered ?? markDelivered;
+  let sentChunkCount = 0;
   for (let i = 0; i < params.chunks.length; i += 1) {
     const chunk = params.chunks[i];
     if (!chunk) {
       continue;
     }
-    const isFirstChunk = i === 0;
+    if (params.shouldSkipChunk?.(chunk)) {
+      continue;
+    }
+    const isFirstChunk = sentChunkCount === 0;
     const replyToMessageId = resolveReplyToForSend({
       replyToId: params.replyToId,
       replyToMode: params.replyToMode,
@@ -69,14 +83,18 @@ export async function sendChunkedTelegramReplyText<
       Boolean(replyToMessageId) &&
       Boolean(params.replyQuoteText) &&
       (params.quoteOnlyOnFirstChunk !== true || isFirstChunk);
-    await params.sendChunk({
+    const sent = await params.sendChunk({
       chunk,
       isFirstChunk,
       replyToMessageId,
       replyMarkup: isFirstChunk ? params.replyMarkup : undefined,
       replyQuoteText: shouldAttachQuote ? params.replyQuoteText : undefined,
     });
-    markReplyApplied(params.progress, replyToMessageId);
-    applyDelivered(params.progress);
+    // Only mark delivered when sendChunk did not signal a silent skip (false).
+    if (sent !== false) {
+      markReplyApplied(params.progress, replyToMessageId);
+      applyDelivered(params.progress);
+      sentChunkCount += 1;
+    }
   }
 }

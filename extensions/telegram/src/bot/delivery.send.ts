@@ -8,7 +8,7 @@ import { buildInlineKeyboard } from "../send.js";
 import { buildTelegramThreadParams, type TelegramThreadSpec } from "./helpers.js";
 
 const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity/i;
-const EMPTY_TEXT_ERR_RE = /message text is empty/i;
+const EMPTY_TEXT_ERR_RE = /message text is empty|text must be non-empty/i;
 const THREAD_NOT_FOUND_RE = /message thread not found/i;
 const GrammyErrorCtor: typeof GrammyError | undefined =
   typeof GrammyError === "function" ? GrammyError : undefined;
@@ -112,7 +112,7 @@ export async function sendTelegramText(
     silent?: boolean;
     replyMarkup?: ReturnType<typeof buildInlineKeyboard>;
   },
-): Promise<number> {
+): Promise<number | undefined> {
   const baseParams = buildTelegramSendParams({
     replyToMessageId: opts?.replyToMessageId,
     thread: opts?.thread,
@@ -138,14 +138,21 @@ export async function sendTelegramText(
           ...effectiveParams,
         }),
     });
-    runtime.log?.(`telegram sendMessage ok chat=${chatId} message=${res.message_id} (plain)`);
+    runtime.log?.(`telegram sendMessage ok message=${res.message_id} (plain)`);
     return res.message_id;
   };
 
-  // Markdown can render to empty HTML for syntax-only chunks; recover with plain text.
+  // Mask chat ID for logging — Telegram chat IDs are stable user/group identifiers (PII).
+  const chatRef = `[chatId]`;
+
+  // Markdown can render to empty HTML for syntax-only chunks; if plain fallback is also
+  // empty (e.g. a whitespace-only trailing chunk), silently skip rather than 400-erroring.
   if (!htmlText.trim()) {
     if (!hasFallbackText) {
-      throw new Error("telegram sendMessage failed: empty formatted text and empty plain fallback");
+      runtime.log?.(
+        `telegram sendMessage skipped: empty formatted text and empty plain fallback (chat=${chatRef})`,
+      );
+      return undefined;
     }
     return await sendPlainFallback();
   }
@@ -157,7 +164,9 @@ export async function sendTelegramText(
       requestParams: baseParams,
       shouldLog: (err) => {
         const errText = formatErrorMessage(err);
-        return !PARSE_ERR_RE.test(errText) && !EMPTY_TEXT_ERR_RE.test(errText);
+        // Suppress log noise for empty-text errors only; parse errors should still be logged
+        // so callers can observe the failure (only empty-text gets silent-skip treatment).
+        return !EMPTY_TEXT_ERR_RE.test(errText);
       },
       send: (effectiveParams) =>
         bot.api.sendMessage(chatId, htmlText, {
@@ -167,12 +176,28 @@ export async function sendTelegramText(
           ...effectiveParams,
         }),
     });
-    runtime.log?.(`telegram sendMessage ok chat=${chatId} message=${res.message_id}`);
+    runtime.log?.(`telegram sendMessage ok chat=${chatRef} message=${res.message_id}`);
     return res.message_id;
   } catch (err) {
     const errText = formatErrorMessage(err);
-    if (PARSE_ERR_RE.test(errText) || EMPTY_TEXT_ERR_RE.test(errText)) {
+    if (EMPTY_TEXT_ERR_RE.test(errText)) {
       if (!hasFallbackText) {
+        // Telegram rejected the text as empty — silently skip this chunk.
+        runtime.log?.(
+          `telegram sendMessage skipped: Telegram rejected empty text (chat=${chatRef})`,
+        );
+        return undefined;
+      }
+      runtime.log?.(`telegram formatted send failed (empty text); retrying without formatting`);
+      return await sendPlainFallback();
+    }
+    if (PARSE_ERR_RE.test(errText)) {
+      // Parse error: fall back to plain text if available; otherwise re-throw so callers
+      // can observe the failure (parse errors are not silently swallowed).
+      if (!hasFallbackText) {
+        runtime.log?.(
+          `telegram sendMessage parse error, no plain fallback — propagating: ${errText}`,
+        );
         throw err;
       }
       runtime.log?.(`telegram formatted send failed; retrying without formatting: ${errText}`);
