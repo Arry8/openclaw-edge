@@ -95,6 +95,7 @@ type DeliverLaneTextParams = {
   infoKind: string;
   previewButtons?: TelegramInlineButtons;
   allowPreviewUpdateForNonFinal?: boolean;
+  allowRefinalize?: boolean;
 };
 
 type TryUpdatePreviewParams = {
@@ -480,6 +481,7 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
     infoKind,
     previewButtons,
     allowPreviewUpdateForNonFinal = false,
+    allowRefinalize = false,
   }: DeliverLaneTextParams): Promise<LaneDeliveryResult> => {
     const lane = params.lanes[laneName];
     const reply = resolveSendableOutboundReplyParts(payload, { text });
@@ -506,7 +508,7 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
           return archivedResult;
         }
       }
-      if (canEditViaPreview && params.activePreviewLifecycleByLane[laneName] === "transient") {
+      if (canEditViaPreview && (params.activePreviewLifecycleByLane[laneName] === "transient" || allowRefinalize)) {
         await params.flushDraftLane(lane);
         if (laneName === "answer") {
           const archivedResultAfterFlush = await consumeArchivedAnswerPreviewForFinal({
