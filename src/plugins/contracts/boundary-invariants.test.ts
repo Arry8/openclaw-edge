@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(SRC_ROOT, "..");
 
+function normalizeRepoRelativePath(file: string): string {
+  return file.replaceAll("\\", "/");
+}
+
 const ALLOWED_BUNDLED_CAPABILITY_METADATA_CONSUMERS = new Set([
   "src/media-generation/provider-capabilities.contract.test.ts",
   "src/plugins/bundled-capability-metadata.test.ts",
@@ -39,7 +43,7 @@ describe("plugin contract boundary invariants", () => {
     const files = globSync("src/**/*.ts", {
       cwd: REPO_ROOT,
       nodir: true,
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       if (ALLOWED_BUNDLED_CAPABILITY_METADATA_CONSUMERS.has(file)) {
         return false;
@@ -56,7 +60,7 @@ describe("plugin contract boundary invariants", () => {
       cwd: REPO_ROOT,
       nodir: true,
       ignore: ["src/**/*.test.ts"],
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       const source = readFileSync(resolve(REPO_ROOT, file), "utf8");
       return source.includes("contracts/inventory/bundled-capability-metadata");
@@ -69,7 +73,7 @@ describe("plugin contract boundary invariants", () => {
     const files = globSync("src/**/*.test.ts", {
       cwd: REPO_ROOT,
       nodir: true,
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       if (ALLOWED_EXTENSION_PATH_STRING_TESTS.has(file)) {
         return false;
@@ -89,7 +93,7 @@ describe("plugin contract boundary invariants", () => {
     const files = globSync("src/plugins/contracts/**/*.test.ts", {
       cwd: REPO_ROOT,
       nodir: true,
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       if (ALLOWED_CONTRACT_BUNDLED_PATH_HELPERS.has(file)) {
         return false;
@@ -106,7 +110,7 @@ describe("plugin contract boundary invariants", () => {
       cwd: REPO_ROOT,
       nodir: true,
       ignore: ["src/channels/**/*.test.ts"],
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       if (ALLOWED_CHANNEL_BUNDLED_METADATA_CONSUMERS.has(file)) {
         return false;
@@ -123,7 +127,7 @@ describe("plugin contract boundary invariants", () => {
       cwd: REPO_ROOT,
       nodir: true,
       ignore: ["src/**/*.test.ts"],
-    });
+    }).map(normalizeRepoRelativePath);
     const offenders = files.filter((file) => {
       const source = readFileSync(resolve(REPO_ROOT, file), "utf8");
       return /extensions\/\$\{|\.\.\/\.\.\/\.\.\/\.\.\/extensions\//u.test(source);
