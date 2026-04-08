@@ -115,8 +115,11 @@ export function createDiscordMessageHandler(
         return false;
       }
       const baseText = resolveDiscordMessageText(message, { includeForwarded: false });
+      const hasForwardedContent = Boolean(
+        (message as { message_snapshots?: unknown[] }).message_snapshots?.length,
+      );
       return shouldDebounceTextInbound({
-        text: baseText,
+        text: baseText || (hasForwardedContent ? resolveDiscordMessageText(message, { includeForwarded: true }) : ""),
         cfg: params.cfg,
         hasMedia: Boolean(
           (message.attachments && message.attachments.length > 0) ||
@@ -150,7 +153,7 @@ export function createDiscordMessageHandler(
         return;
       }
       const combinedBaseText = entries
-        .map((entry) => resolveDiscordMessageText(entry.data.message, { includeForwarded: false }))
+        .map((entry) => resolveDiscordMessageText(entry.data.message, { includeForwarded: true }))
         .filter(Boolean)
         .join("\n");
       const syntheticMessage = {
