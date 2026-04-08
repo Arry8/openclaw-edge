@@ -12,6 +12,7 @@ import { allowListMatches, normalizeAllowListLower, normalizeSlackSlug } from ".
 export type SlackChannelConfigResolved = {
   allowed: boolean;
   requireMention: boolean;
+  threadRequireExplicitMention?: boolean;
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -23,6 +24,7 @@ export type SlackChannelConfigResolved = {
 export type SlackChannelConfigEntry = {
   enabled?: boolean;
   requireMention?: boolean;
+  thread?: { requireExplicitMention?: boolean };
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -143,9 +145,14 @@ export function resolveSlackChannelConfig(params: {
   const users = firstDefined(resolved.users, fallback?.users);
   const skills = firstDefined(resolved.skills, fallback?.skills);
   const systemPrompt = firstDefined(resolved.systemPrompt, fallback?.systemPrompt);
+  const threadRequireExplicitMention = firstDefined(
+    resolved.thread?.requireExplicitMention,
+    fallback?.thread?.requireExplicitMention,
+  );
   const result: SlackChannelConfigResolved = {
     allowed,
     requireMention,
+    threadRequireExplicitMention,
     allowBots,
     users,
     skills,
