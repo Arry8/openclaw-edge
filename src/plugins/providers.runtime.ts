@@ -145,6 +145,9 @@ function resolveRuntimeProviderPluginLoadState(
     env: base.env,
     onlyPluginIds: base.requestedPluginIds,
   });
+  if (providerPluginIds.length === 0) {
+    return undefined;
+  }
   const loadOptions = buildPluginRuntimeLoadOptionsFromValues(
     {
       config,
@@ -206,6 +209,9 @@ export function resolvePluginProviders(params: {
     }));
   }
   const loadState = resolveRuntimeProviderPluginLoadState(params, base);
+  if (!loadState) {
+    return [];
+  }
   const registry = resolveRuntimePluginRegistry(loadState.loadOptions);
   if (!registry) {
     return [];
