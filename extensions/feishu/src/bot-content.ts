@@ -306,6 +306,16 @@ export function normalizeFeishuCommandProbeBody(text: string): string {
     .trim();
 }
 
+/** Safely parse message content JSON for passing to download heuristics. */
+function safeParsedContent(content: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseMediaKeys(
   content: string,
   messageType: string,
@@ -457,6 +467,7 @@ export async function resolveFeishuMediaList(params: {
       messageId,
       fileKey,
       type: toMessageResourceType(messageType),
+      content: safeParsedContent(content),
       accountId,
     });
     const contentType =
