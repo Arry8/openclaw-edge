@@ -1361,7 +1361,8 @@ export function createExecTool(
     parameters: execSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
       const params = args as {
-        command: string;
+        command?: string;
+        cmd?: string;
         workdir?: string;
         env?: Record<string, string>;
         yieldMs?: number;
@@ -1374,6 +1375,10 @@ export function createExecTool(
         ask?: string;
         node?: string;
       };
+
+      if (!params.command && typeof params.cmd === "string") {
+        params.command = params.cmd;
+      }
 
       if (!params.command) {
         throw new Error("Provide a command to start.");
