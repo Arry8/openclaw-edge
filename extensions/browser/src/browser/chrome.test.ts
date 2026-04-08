@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { WebSocketServer } from "ws";
 import { SsrFBlockedError } from "../infra/net/ssrf.js";
 import {
+  clearStaleChromeSingletonLocks,
   decorateOpenClawProfile,
   ensureProfileCleanExit,
   findChromeExecutableMac,
@@ -409,6 +410,34 @@ describe("browser chrome helpers", () => {
         await expect(isChromeCdpReady(baseUrl, 300, 150)).resolves.toBe(false);
       },
     });
+  });
+
+  it("clears stale singleton artifacts when the lock points at another host", async () => {
+    const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "openclaw-chrome-locks-"));
+    try {
+      await fsp.writeFile(path.join(userDataDir, "SingletonCookie"), "cookie");
+      await fsp.writeFile(path.join(userDataDir, "SingletonSocket"), "socket");
+      await fsp.symlink("remote-host-535", path.join(userDataDir, "SingletonLock"));
+
+      expect(clearStaleChromeSingletonLocks(userDataDir, "local-host")).toBe(true);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonLock"))).toBe(false);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonSocket"))).toBe(false);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonCookie"))).toBe(false);
+    } finally {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps singleton artifacts when the lock points at the current host process", async () => {
+    const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "openclaw-chrome-locks-live-"));
+    try {
+      await fsp.symlink(`${os.hostname()}-${process.pid}`, path.join(userDataDir, "SingletonLock"));
+
+      expect(clearStaleChromeSingletonLocks(userDataDir, os.hostname())).toBe(false);
+      expect(fs.lstatSync(path.join(userDataDir, "SingletonLock")).isSymbolicLink()).toBe(true);
+    } finally {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    }
   });
 
   it("probes WebSocket URLs via handshake instead of HTTP", async () => {
