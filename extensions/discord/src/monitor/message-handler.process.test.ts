@@ -910,4 +910,20 @@ describe("processDiscordMessage draft streaming", () => {
 
     expect(draftStream.update).not.toHaveBeenCalled();
   });
+
+  it("suppresses isReasoning partial payloads from draft stream", async () => {
+    const draftStream = createMockDraftStreamForTest();
+
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.replyOptions?.onPartialReply?.({
+        text: "Internal commentary that should not be visible",
+        isReasoning: true,
+      });
+      return createNoQueuedDispatchResult();
+    });
+
+    await runInPartialStreamMode();
+
+    expect(draftStream.update).not.toHaveBeenCalled();
+  });
 });
