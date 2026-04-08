@@ -61,11 +61,15 @@ function looksLikeAuthClose(code: number | undefined, reason: string | undefined
   }
   const normalized = normalizeLowercaseStringOrEmpty(reason);
   return (
+    !normalized ||
+    normalized.includes("connect failed") ||
     normalized.includes("auth") ||
     normalized.includes("token") ||
     normalized.includes("password") ||
     normalized.includes("scope") ||
-    normalized.includes("role")
+    normalized.includes("role") ||
+    normalized.includes("device") ||
+    normalized.includes("pair")
   );
 }
 
