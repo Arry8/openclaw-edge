@@ -130,6 +130,7 @@ export type ExecApprovalForwarderDeps = {
 };
 
 const DEFAULT_MODE = "session" as const;
+const VALID_MODES = new Set<string>(["session", "targets", "both"]);
 const SYNTHETIC_APPROVAL_REQUEST_ID = "__approval-routing__";
 let execApprovalForwarderRuntimePromise: Promise<
   typeof import("./exec-approval-forwarder.runtime.js")
@@ -141,6 +142,10 @@ function loadExecApprovalForwarderRuntime() {
 }
 
 function normalizeMode(mode?: ExecApprovalForwardingConfig["mode"]) {
+  if (mode != null && !VALID_MODES.has(mode)) {
+    log.warn(`Invalid approval forwarding mode "${mode}", falling back to "${DEFAULT_MODE}"`);
+    return DEFAULT_MODE;
+  }
   return mode ?? DEFAULT_MODE;
 }
 
