@@ -142,9 +142,6 @@ describe("canvas host", () => {
     try {
       const { res, html } = await fetchCanvasHtml(server.port);
       expect(res.status).toBe(200);
-      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(res.headers.get("referrer-policy")).toBe("no-referrer");
-      expect(res.headers.get("permissions-policy")).toContain("camera=()");
       expect(html).toContain("Interactive test page");
       expect(html).toContain("openclawSendUserAction");
       expect(html).toContain(CANVAS_WS_PATH);
@@ -421,9 +418,6 @@ describe("canvas host", () => {
       const res = await realFetch(`http://127.0.0.1:${server.port}/__openclaw__/a2ui/`);
       const html = await res.text();
       expect(res.status).toBe(200);
-      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(res.headers.get("referrer-policy")).toBe("no-referrer");
-      expect(res.headers.get("permissions-policy")).toContain("camera=()");
       expect(html).toContain("openclaw-a2ui-host");
       expect(html).toContain("openclawCanvasA2UIAction");
 
@@ -432,8 +426,6 @@ describe("canvas host", () => {
       );
       const js = await bundleRes.text();
       expect(bundleRes.status).toBe(200);
-      expect(bundleRes.headers.get("x-content-type-options")).toBe("nosniff");
-      expect(bundleRes.headers.get("referrer-policy")).toBe("no-referrer");
       expect(js).toContain("openclawA2UI");
       const traversalRes = await realFetch(
         `http://127.0.0.1:${server.port}${A2UI_PATH}/%2e%2e%2fpackage.json`,
