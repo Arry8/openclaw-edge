@@ -160,8 +160,6 @@ export type ToolLoopDetectionDetectorConfig = {
   knownPollNoProgress?: boolean;
   /** Enable warning/blocking for no-progress ping-pong alternating patterns. */
   pingPong?: boolean;
-  /** Enable blocking when the LLM repeatedly calls tools that do not exist (default: true). */
-  unknownTool?: boolean;
 };
 
 export type ToolLoopDetectionConfig = {
@@ -175,8 +173,6 @@ export type ToolLoopDetectionConfig = {
   criticalThreshold?: number;
   /** Global no-progress breaker threshold (default: 30). */
   globalCircuitBreakerThreshold?: number;
-  /** Consecutive unknown-tool errors before critical block (default: 3). */
-  unknownToolCriticalThreshold?: number;
   /** Detector toggles. */
   detectors?: ToolLoopDetectionDetectorConfig;
 };
