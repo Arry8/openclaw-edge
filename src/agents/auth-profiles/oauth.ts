@@ -2,7 +2,7 @@ import {
   getOAuthApiKey,
   getOAuthProviders,
   type OAuthCredentials,
-  type OAuthProviderId,
+  type OAuthProvider,
 } from "@mariozechner/pi-ai/oauth";
 import { loadConfig, type OpenClawConfig } from "../../config/config.js";
 import { coerceSecretRef } from "../../config/types.secrets.js";
@@ -55,10 +55,10 @@ function listOAuthProviderIds(): string[] {
 
 const OAUTH_PROVIDER_IDS = new Set<string>(listOAuthProviderIds());
 
-const isOAuthProvider = (provider: string): provider is OAuthProviderId =>
+const isOAuthProvider = (provider: string): provider is OAuthProvider =>
   OAUTH_PROVIDER_IDS.has(provider);
 
-const resolveOAuthProvider = (provider: string): OAuthProviderId | null =>
+const resolveOAuthProvider = (provider: string): OAuthProvider | null =>
   isOAuthProvider(provider) ? provider : null;
 
 /** Bearer-token auth modes that are interchangeable (oauth tokens and raw tokens). */
