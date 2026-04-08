@@ -129,6 +129,7 @@ export const HooksGmailSchema = z
       .describe("Gmail labels to exclude from webhook notifications")
       .optional(),
     allowUnsafeExternalContent: z.boolean().optional(),
+    excludeLabels: z.array(z.string()).optional(),
     serve: z
       .object({
         bind: z.string().optional(),
