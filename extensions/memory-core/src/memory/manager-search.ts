@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
+import { extractKeywords } from "openclaw/plugin-sdk/memory-core-host-engine-qmd";
 import {
   cosineSimilarity,
   parseEmbedding,
@@ -9,6 +10,81 @@ const vectorToBlob = (embedding: number[]): Buffer =>
   Buffer.from(new Float32Array(embedding).buffer);
 const FTS_QUERY_TOKEN_RE = /[\p{L}\p{N}_]+/gu;
 const SHORT_CJK_TRIGRAM_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u3131-\u3163]/u;
+
+/**
+ * Extract a relevant snippet window around the query match in the text.
+ * If the query is found, returns a window centered on the match.
+ * Otherwise falls back to the beginning of the text.
+ */
+function extractRelevantSnippet(
+  text: string,
+  query: string,
+  maxChars: number,
+): { snippet: string; offsetLines: number; snippetLines: number; anchorFound: boolean } {
+  if (text.length <= maxChars) {
+    return {
+      snippet: text,
+      offsetLines: 0,
+      snippetLines: (text.match(/\n/g) || []).length,
+      anchorFound: true,
+    };
+  }
+
+  // Use the same tokenizer as the search engine so CJK terms and
+  // conversational queries produce correct anchor terms.
+  const lowerText = text.toLowerCase();
+  const queryTerms = extractKeywords(query).sort((a, b) => b.length - a.length);
+
+  let matchIndex = -1;
+
+  // Find the first matching term
+  for (const term of queryTerms) {
+    const idx = lowerText.indexOf(term);
+    if (idx !== -1) {
+      matchIndex = idx;
+      break;
+    }
+  }
+
+  // If no match found, fall back to beginning
+  if (matchIndex === -1) {
+    const fallback = truncateUtf16Safe(text, maxChars);
+    return {
+      snippet: fallback,
+      offsetLines: 0,
+      snippetLines: (fallback.match(/\n/g) || []).length,
+      anchorFound: false,
+    };
+  }
+
+  // Calculate window start, trying to center the match
+  const halfWindow = Math.floor(maxChars / 2);
+  let windowStart = Math.max(0, matchIndex - halfWindow);
+  let windowEnd = Math.min(text.length, windowStart + maxChars);
+
+  // Adjust if we're near the end
+  if (windowEnd === text.length && windowEnd - windowStart < maxChars) {
+    windowStart = Math.max(0, windowEnd - maxChars);
+  }
+
+  // Try to start at a line boundary for cleaner output
+  if (windowStart > 0) {
+    const lineStart = text.lastIndexOf("\n", windowStart);
+    if (lineStart !== -1 && windowStart - lineStart < 100) {
+      windowStart = lineStart + 1;
+      // Recalculate windowEnd to maintain maxChars length after snap
+      windowEnd = Math.min(text.length, windowStart + maxChars);
+    }
+  }
+
+  // Count lines before the window to adjust startLine/endLine display
+  const textBeforeWindow = text.substring(0, windowStart);
+  const offsetLines = (textBeforeWindow.match(/\n/g) || []).length;
+
+  const snippet = truncateUtf16Safe(text.substring(windowStart, windowEnd), maxChars);
+  const snippetLines = (snippet.match(/\n/g) || []).length;
+  return { snippet, offsetLines, snippetLines, anchorFound: true };
+}
 
 export type SearchSource = string;
 
@@ -76,6 +152,7 @@ export async function searchVector(params: {
   vectorTable: string;
   providerModel: string;
   queryVec: number[];
+  queryText: string;
   limit: number;
   snippetMaxChars: number;
   ensureVectorReady: (dimensions: number) => Promise<boolean>;
@@ -111,15 +188,37 @@ export async function searchVector(params: {
       source: SearchSource;
       dist: number;
     }>;
-    return rows.map((row) => ({
-      id: row.id,
-      path: row.path,
-      startLine: row.start_line,
-      endLine: row.end_line,
-      score: 1 - row.dist,
-      snippet: truncateUtf16Safe(row.text, params.snippetMaxChars),
-      source: row.source,
-    }));
+    return rows.map((row) => {
+      const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
+        row.text,
+        params.queryText,
+        params.snippetMaxChars,
+      );
+      // Session chunks use sparse remapped line numbers (from JSONL lineMap)
+      // that are not contiguous, so applying a text-based offset can produce
+      // synthetic line numbers that don't exist.  Keep original range for sessions.
+      const isSessionSource = row.source === "sessions";
+      const adjustedStart = isSessionSource
+        ? row.start_line
+        : Math.min(row.start_line + offsetLines, row.end_line);
+      // When no anchor was found the snippet is a fallback window; preserve
+      // the chunk's full line span so semantic matches later in the text are
+      // not excluded.  Always clamp to the chunk's original end_line to
+      // guard against synthetic newlines inflating the count.
+      const endLine =
+        !isSessionSource && anchorFound
+          ? Math.min(adjustedStart + snippetLines, row.end_line)
+          : row.end_line;
+      return {
+        id: row.id,
+        path: row.path,
+        startLine: adjustedStart,
+        endLine,
+        score: 1 - row.dist,
+        snippet,
+        source: row.source,
+      };
+    });
   }
 
   const candidates = listChunks({
@@ -136,15 +235,31 @@ export async function searchVector(params: {
   return scored
     .toSorted((a, b) => b.score - a.score)
     .slice(0, params.limit)
-    .map((entry) => ({
-      id: entry.chunk.id,
-      path: entry.chunk.path,
-      startLine: entry.chunk.startLine,
-      endLine: entry.chunk.endLine,
-      score: entry.score,
-      snippet: truncateUtf16Safe(entry.chunk.text, params.snippetMaxChars),
-      source: entry.chunk.source,
-    }));
+    .map((entry) => {
+      const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
+        entry.chunk.text,
+        params.queryText,
+        params.snippetMaxChars,
+      );
+      // Session chunks use sparse remapped line numbers; skip offset adjustment.
+      const isSessionSource = entry.chunk.source === "sessions";
+      const adjustedStart = isSessionSource
+        ? entry.chunk.startLine
+        : Math.min(entry.chunk.startLine + offsetLines, entry.chunk.endLine);
+      const endLine =
+        !isSessionSource && anchorFound
+          ? Math.min(adjustedStart + snippetLines, entry.chunk.endLine)
+          : entry.chunk.endLine;
+      return {
+        id: entry.chunk.id,
+        path: entry.chunk.path,
+        startLine: adjustedStart,
+        endLine,
+        score: entry.score,
+        snippet,
+        source: entry.chunk.source,
+      };
+    });
 }
 
 export function listChunks(params: {
@@ -249,14 +364,28 @@ export async function searchKeyword(params: {
 
   return rows.map((row) => {
     const textScore = plan.matchQuery ? params.bm25RankToScore(row.rank) : 1;
+    const { snippet, offsetLines, snippetLines, anchorFound } = extractRelevantSnippet(
+      row.text,
+      params.query,
+      params.snippetMaxChars,
+    );
+    // Session chunks use sparse remapped line numbers; skip offset adjustment.
+    const isSessionSource = row.source === "sessions";
+    const adjustedStart = isSessionSource
+      ? row.start_line
+      : Math.min(row.start_line + offsetLines, row.end_line);
+    const endLine =
+      !isSessionSource && anchorFound
+        ? Math.min(adjustedStart + snippetLines, row.end_line)
+        : row.end_line;
     return {
       id: row.id,
       path: row.path,
-      startLine: row.start_line,
-      endLine: row.end_line,
+      startLine: adjustedStart,
+      endLine,
       score: textScore,
       textScore,
-      snippet: truncateUtf16Safe(row.text, params.snippetMaxChars),
+      snippet,
       source: row.source,
     };
   });
