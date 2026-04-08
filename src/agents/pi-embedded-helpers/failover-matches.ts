@@ -63,6 +63,8 @@ const ERROR_PATTERNS = {
     "throttled",
     "throttling",
     "usage limit",
+    "limit exhausted",
+    /weekly\/monthly limit/i,
     /\btpm\b/i,
     "tokens per minute",
     "tokens per day",
