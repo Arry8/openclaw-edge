@@ -37,8 +37,13 @@ final class GatewayConnectionController {
     private(set) var pendingTrustPrompt: TrustPrompt?
 
     private let discovery = GatewayDiscoveryModel()
+    /// Reused instance — avoids creating CLLocationManager on the main thread
+    /// each time currentPermissions() is called, which triggers a UI-thread warning.
+    private let locationManager = CLLocationManager()
     private weak var appModel: NodeAppModel?
     private var didAutoConnect = false
+    private var autoConnectGeneration: Int = 0
+    private var refreshRegistrationGeneration: Int = 0
     private var pendingServiceResolvers: [String: GatewayServiceResolver] = [:]
     private var pendingTrustConnect: (url: URL, stableID: String, isManual: Bool)?
 
@@ -233,15 +238,29 @@ final class GatewayConnectionController {
         guard let cfg = appModel.activeGatewayConnectConfig else { return }
         guard appModel.gatewayAutoReconnectEnabled else { return }
 
-        let refreshedConfig = GatewayConnectConfig(
-            url: cfg.url,
-            stableID: cfg.stableID,
-            tls: cfg.tls,
-            token: cfg.token,
-            bootstrapToken: cfg.bootstrapToken,
-            password: cfg.password,
-            nodeOptions: self.makeConnectOptions(stableID: cfg.stableID))
-        appModel.applyGatewayConnectConfig(refreshedConfig)
+        self.refreshRegistrationGeneration &+= 1
+        let generation = self.refreshRegistrationGeneration
+
+        Task { [weak self, weak appModel] in
+            guard let self, let appModel else { return }
+            let refreshedConfig = GatewayConnectConfig(
+                url: cfg.url,
+                stableID: cfg.stableID,
+                tls: cfg.tls,
+                token: cfg.token,
+                bootstrapToken: cfg.bootstrapToken,
+                password: cfg.password,
+                nodeOptions: await self.makeConnectOptions(stableID: cfg.stableID))
+
+            guard generation == self.refreshRegistrationGeneration,
+                  appModel.gatewayAutoReconnectEnabled,
+                  let latestConfig = appModel.activeGatewayConnectConfig,
+                  latestConfig.effectiveStableID == cfg.effectiveStableID,
+                  latestConfig.url == cfg.url
+            else { return }
+
+            appModel.applyGatewayConnectConfig(refreshedConfig)
+        }
     }
 
     func clearPendingTrustPrompt() {
@@ -467,10 +486,28 @@ final class GatewayConnectionController {
         password: String?)
     {
         guard let appModel else { return }
-        let connectOptions = self.makeConnectOptions(stableID: gatewayStableID)
 
-        Task { [weak appModel] in
-            guard let appModel else { return }
+        self.autoConnectGeneration &+= 1
+        let generation = self.autoConnectGeneration
+
+        // Mark explicit/manual connect intent immediately so the post-await guard can still reject
+        // a later user Disconnect without blocking a brand-new connect that starts from a
+        // disconnected state.
+        appModel.gatewayAutoReconnectEnabled = true
+
+        Task { [weak self, weak appModel] in
+            guard let self, let appModel else { return }
+            let connectOptions = await self.makeConnectOptions(stableID: gatewayStableID)
+
+            guard generation == self.autoConnectGeneration,
+                  appModel.gatewayAutoReconnectEnabled
+            else { return }
+
+            // `startAutoConnect` is also the entry point for explicit user-driven connect/switch
+            // actions. Those flows must be able to replace an existing config and must work even
+            // if a prior Disconnect temporarily set `gatewayAutoReconnectEnabled = false`.
+            // Generation matching plus the autoReconnect flag rejects stale work after a later
+            // user Disconnect while still allowing fresh explicit reconnect/switch attempts.
             await MainActor.run {
                 appModel.gatewayStatusText = "Connecting…"
             }
@@ -746,7 +783,7 @@ final class GatewayConnectionController {
         "manual|\(host.lowercased())|\(port)"
     }
 
-    private func makeConnectOptions(stableID: String?) -> GatewayConnectOptions {
+    private func makeConnectOptions(stableID: String?) async -> GatewayConnectOptions {
         let defaults = UserDefaults.standard
         let displayName = self.resolvedDisplayName(defaults: defaults)
         let resolvedClientId = self.resolvedClientId(defaults: defaults, stableID: stableID)
@@ -756,7 +793,7 @@ final class GatewayConnectionController {
             scopes: [],
             caps: self.currentCaps(),
             commands: self.currentCommands(),
-            permissions: self.currentPermissions(),
+            permissions: await self.currentPermissions(),
             clientId: resolvedClientId,
             clientMode: "node",
             clientDisplayName: displayName)
@@ -892,13 +929,15 @@ final class GatewayConnectionController {
         return commands
     }
 
-    private func currentPermissions() -> [String: Bool] {
+    private func currentPermissions() async -> [String: Bool] {
+        let speechRecognitionStatus = await Self.currentSpeechRecognitionStatus()
+
         var permissions: [String: Bool] = [:]
         permissions["camera"] = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
         permissions["microphone"] = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        permissions["speechRecognition"] = SFSpeechRecognizer.authorizationStatus() == .authorized
+        permissions["speechRecognition"] = speechRecognitionStatus == .authorized
         permissions["location"] = Self.isLocationAuthorized(
-            status: CLLocationManager().authorizationStatus)
+            status: self.locationManager.authorizationStatus)
             && CLLocationManager.locationServicesEnabled()
         permissions["screenRecording"] = RPScreenRecorder.shared().isAvailable
 
@@ -924,6 +963,14 @@ final class GatewayConnectionController {
         permissions["watchReachable"] = watchStatus.reachable
 
         return permissions
+    }
+
+    private nonisolated static func currentSpeechRecognitionStatus() async
+        -> SFSpeechRecognizerAuthorizationStatus
+    {
+        await Task.detached(priority: .utility) {
+            SFSpeechRecognizer.authorizationStatus()
+        }.value
     }
 
     private static func isLocationAuthorized(status: CLAuthorizationStatus) -> Bool {
@@ -958,8 +1005,8 @@ extension GatewayConnectionController {
         self.currentCommands()
     }
 
-    func _test_currentPermissions() -> [String: Bool] {
-        self.currentPermissions()
+    func _test_currentPermissions() async -> [String: Bool] {
+        await self.currentPermissions()
     }
 
     func _test_platformString() -> String {
@@ -1003,6 +1050,33 @@ extension GatewayConnectionController {
 
     func _test_resolveManualPort(host: String, port: Int, useTLS: Bool) -> Int? {
         self.resolveManualPort(host: host, port: port, useTLS: useTLS)
+    }
+
+    func _test_startAutoConnect(
+        url: URL,
+        gatewayStableID: String,
+        tls: GatewayTLSParams? = nil,
+        token: String? = nil,
+        bootstrapToken: String? = nil,
+        password: String? = nil
+    ) async {
+        self.startAutoConnect(
+            url: url,
+            gatewayStableID: gatewayStableID,
+            tls: tls,
+            token: token,
+            bootstrapToken: bootstrapToken,
+            password: password)
+
+        for _ in 0..<100 {
+            if let cfg = self.appModel?.activeGatewayConnectConfig,
+               cfg.url == url,
+               cfg.effectiveStableID == gatewayStableID
+            {
+                return
+            }
+            await Task.yield()
+        }
     }
 }
 #endif
