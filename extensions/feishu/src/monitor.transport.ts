@@ -198,7 +198,30 @@ export async function monitorWebhook({
           return;
         }
 
-        // Reject invalid signatures before any JSON parsing to keep the auth boundary strict.
+        // Feishu's initial URL verification sends an encrypted body but does NOT
+        // include X-Lark-Signature headers (per Feishu's official docs). Handle
+        // encrypted challenge requests before signature validation so the webhook
+        // handshake can complete. The encryptKey decryption itself authenticates the
+        // sender — only a party that knows the encryptKey can produce a valid
+        // encrypted payload (#58905).
+        const earlyPayload = parseFeishuWebhookPayload(rawBody);
+        if (account.encryptKey && earlyPayload && typeof earlyPayload.encrypt === "string") {
+          try {
+            const { isChallenge, challenge } = Lark.generateChallenge(earlyPayload, {
+              encryptKey: account.encryptKey,
+            });
+            if (isChallenge) {
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify(challenge));
+              return;
+            }
+          } catch {
+            // Malformed encrypted payload — fall through to normal signature validation.
+          }
+        }
+
+        // Reject invalid signatures before further processing to keep the auth boundary strict.
         if (
           !isFeishuWebhookSignatureValid({
             headers: req.headers,
@@ -210,7 +233,7 @@ export async function monitorWebhook({
           return;
         }
 
-        const payload = parseFeishuWebhookPayload(rawBody);
+        const payload = earlyPayload ?? parseFeishuWebhookPayload(rawBody);
         if (!payload) {
           respondText(res, 400, "Invalid JSON");
           return;
