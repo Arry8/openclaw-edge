@@ -459,12 +459,18 @@ function jobToForm(job: CronJob, prev: CronFormState): CronFormState {
     staggerUnit: "seconds",
     sessionTarget: job.sessionTarget,
     wakeMode: job.wakeMode,
-    payloadKind: job.payload.kind,
-    payloadText: job.payload.kind === "systemEvent" ? job.payload.text : job.payload.message,
-    payloadModel: job.payload.kind === "agentTurn" ? (job.payload.model ?? "") : "",
-    payloadThinking: job.payload.kind === "agentTurn" ? (job.payload.thinking ?? "") : "",
+    // falls back to agentTurn for legacy/incomplete jobs with undefined payload
+    payloadKind: job.payload?.kind ?? "agentTurn",
+    payloadText:
+      job.payload?.kind === "systemEvent"
+        ? job.payload.text
+        : job.payload?.kind === "agentTurn"
+          ? job.payload.message
+          : "",
+    payloadModel: job.payload?.kind === "agentTurn" ? (job.payload.model ?? "") : "",
+    payloadThinking: job.payload?.kind === "agentTurn" ? (job.payload.thinking ?? "") : "",
     payloadLightContext:
-      job.payload.kind === "agentTurn" ? job.payload.lightContext === true : false,
+      job.payload?.kind === "agentTurn" ? job.payload.lightContext === true : false,
     deliveryMode: job.delivery?.mode ?? "none",
     deliveryChannel: job.delivery?.channel ?? CRON_CHANNEL_LAST,
     deliveryTo: job.delivery?.to ?? "",
@@ -498,7 +504,7 @@ function jobToForm(job: CronJob, prev: CronFormState): CronFormState {
     failureAlertAccountId:
       failureAlert && typeof failureAlert === "object" ? (failureAlert.accountId ?? "") : "",
     timeoutSeconds:
-      job.payload.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
+      job.payload?.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
         ? String(job.payload.timeoutSeconds)
         : "",
   };
@@ -650,7 +656,7 @@ export async function addCronJob(state: CronState) {
       : undefined;
     if (payload.kind === "agentTurn") {
       const existingLightContext =
-        editingJob?.payload.kind === "agentTurn" ? editingJob.payload.lightContext : undefined;
+        editingJob?.payload?.kind === "agentTurn" ? editingJob.payload.lightContext : undefined;
       if (
         !form.payloadLightContext &&
         state.cronEditingJobId &&
