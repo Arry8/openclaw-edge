@@ -10,6 +10,12 @@ const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const HTTP_URL_RE = /^https?:\/\//i;
 const DATA_URL_RE = /^data:/i;
 const SANDBOX_CONTAINER_WORKDIR = "/workspace";
+/**
+ * Matches a Windows drive letter at the start of a path (e.g. `C:\`, `D:/`).
+ * On POSIX hosts, `path.isAbsolute` does not recognize Windows drive letters,
+ * so this regex serves as a cross-platform fallback.
+ */
+const WIN_DRIVE_LETTER_RE = /^[A-Za-z]:[/\\]/;
 
 function normalizeUnicodeSpaces(str: string): string {
   return str.replace(UNICODE_SPACES, " ");
@@ -32,8 +38,13 @@ function expandPath(filePath: string): string {
 
 function resolveToCwd(filePath: string, cwd: string): string {
   const expanded = expandPath(filePath);
-  if (path.isAbsolute(expanded)) {
+  if (WIN_DRIVE_LETTER_RE.test(expanded)) {
+    // On POSIX, path.resolve would prepend cwd to a Windows drive-letter path.
+    // Return unchanged — it is already absolute on the remote OS.
     return expanded;
+  }
+  if (path.isAbsolute(expanded)) {
+    return path.resolve(expanded);
   }
   return path.resolve(cwd, expanded);
 }
@@ -189,7 +200,8 @@ async function resolveAllowedTmpMediaPath(params: {
   candidate: string;
   sandboxRoot: string;
 }): Promise<string | undefined> {
-  const candidateIsAbsolute = path.isAbsolute(expandPath(params.candidate));
+  const expanded = expandPath(params.candidate);
+  const candidateIsAbsolute = path.isAbsolute(expanded) || WIN_DRIVE_LETTER_RE.test(expanded);
   if (!candidateIsAbsolute) {
     return undefined;
   }

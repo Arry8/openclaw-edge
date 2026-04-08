@@ -491,6 +491,13 @@ function mapContainerPathToWorkspaceRoot(params: {
   return path.resolve(params.root, ...relative.split("/").filter(Boolean));
 }
 
+/**
+ * Matches a Windows drive letter at the start of a path (e.g. `C:\`, `D:/`).
+ * On POSIX hosts, `path.isAbsolute` does not recognize Windows drive letters,
+ * so this regex serves as a cross-platform fallback.
+ */
+const WIN_DRIVE_LETTER_RE = /^[A-Za-z]:[/\\]/;
+
 export function resolveToolPathAgainstWorkspaceRoot(params: {
   filePath: string;
   root: string;
@@ -498,6 +505,11 @@ export function resolveToolPathAgainstWorkspaceRoot(params: {
 }): string {
   const mapped = mapContainerPathToWorkspaceRoot(params);
   const candidate = mapped.startsWith("@") ? mapped.slice(1) : mapped;
+  if (WIN_DRIVE_LETTER_RE.test(candidate)) {
+    // On POSIX, path.resolve would prepend cwd to a Windows drive-letter path.
+    // Return the candidate unchanged — it is already absolute on the remote OS.
+    return candidate;
+  }
   return path.isAbsolute(candidate)
     ? path.resolve(candidate)
     : path.resolve(params.root, candidate || ".");
