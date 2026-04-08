@@ -19805,6 +19805,13 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 description:
                   "Renewal cadence in minutes for Gmail watch subscriptions to prevent expiration. Set below provider expiration windows and monitor renew failures in logs.",
               },
+              excludeLabels: {
+                type: "array",
+                items: {
+                  type: "string",
+                },
+                description: "Gmail labels to exclude from webhook notifications",
+              },
               allowUnsafeExternalContent: {
                 type: "boolean",
                 title: "Gmail Hook Allow Unsafe External Content",
