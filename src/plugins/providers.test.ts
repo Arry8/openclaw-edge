@@ -511,6 +511,18 @@ describe("resolvePluginProviders", () => {
     });
   });
 
+  it("does not load unrelated plugins when explicit provider refs resolve to no owning plugin", () => {
+    const providers = resolvePluginProviders({
+      config: {},
+      providerRefs: ["openai-compatible"],
+      activate: false,
+      cache: false,
+    });
+
+    expectResolvedProviders(providers, []);
+    expect(resolveRuntimePluginRegistryMock).not.toHaveBeenCalled();
+  });
+
   it("loads all discovered provider plugins in setup mode", () => {
     resolvePluginProviders({
       config: {
