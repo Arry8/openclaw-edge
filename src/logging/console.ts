@@ -71,19 +71,20 @@ function resolveConsoleSettings(): ConsoleSettings {
     return { level: "silent", style: normalizeConsoleStyle(undefined) };
   }
 
-  let cfg: OpenClawConfig["logging"] | undefined =
-    (loggingState.overrideSettings as LoggerSettings | null) ?? readLoggingConfig();
-  if (!cfg && !shouldSkipMutatingLoggingConfigRead()) {
-    if (loggingState.resolvingConsoleSettings) {
-      cfg = undefined;
-    } else {
-      loggingState.resolvingConsoleSettings = true;
-      try {
-        cfg = loadConfigFallback();
-      } finally {
-        loggingState.resolvingConsoleSettings = false;
-      }
+  // Guard: prevent recursive calls to patched console.* from re-entering
+  // when loadConfig() or loadConfigFallback() themselves emit warnings.
+  if (loggingState.resolvingConsoleSettings) {
+    return { level: envLevel ?? "info", style: normalizeConsoleStyle(undefined) };
+  }
+  loggingState.resolvingConsoleSettings = true;
+  let cfg: OpenClawConfig["logging"] | undefined;
+  try {
+    cfg = (loggingState.overrideSettings as LoggerSettings | null) ?? readLoggingConfig();
+    if (!cfg && !shouldSkipMutatingLoggingConfigRead()) {
+      cfg = loadConfigFallback();
     }
+  } finally {
+    loggingState.resolvingConsoleSettings = false;
   }
   const level = envLevel ?? normalizeConsoleLevel(cfg?.consoleLevel);
   const style = normalizeConsoleStyle(cfg?.consoleStyle);
@@ -242,6 +243,16 @@ export function enableConsoleCapture(): void {
     (...args: unknown[]) => {
       const formatted = util.format(...args);
       if (shouldSuppressConsoleMessage(formatted)) {
+        return;
+      }
+      // Safe path: during config resolution, bypass all config-dependent logic
+      // and write directly to stderr to prevent re-entrant getConsoleSettings() calls.
+      if (loggingState.resolvingConsoleSettings) {
+        try {
+          process.stderr.write(`${formatted}\n`);
+        } catch (err) {
+          if (!isEpipeError(err)) throw err;
+        }
         return;
       }
       const trimmed = stripAnsi(formatted).trimStart();
