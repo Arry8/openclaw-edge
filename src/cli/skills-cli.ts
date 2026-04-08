@@ -1,5 +1,9 @@
 import type { Command } from "commander";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import {
+  resolveAgentIdByWorkspacePath,
+  resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
+} from "../agents/agent-scope.js";
 import {
   installSkillFromClawHub,
   readTrackedClawHubSkillSlugs,
@@ -24,9 +28,13 @@ type SkillStatusReport = Awaited<
   ReturnType<(typeof import("../agents/skills-status.js"))["buildWorkspaceSkillStatus"]>
 >;
 
+function resolveActiveAgentId(config: ReturnType<typeof loadConfig>): string {
+  return resolveAgentIdByWorkspacePath(config, process.cwd()) ?? resolveDefaultAgentId(config);
+}
+
 async function loadSkillsStatusReport(): Promise<SkillStatusReport> {
   const config = loadConfig();
-  const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+  const workspaceDir = resolveAgentWorkspaceDir(config, resolveActiveAgentId(config));
   const { buildWorkspaceSkillStatus } = await import("../agents/skills-status.js");
   return buildWorkspaceSkillStatus(workspaceDir, { config });
 }
@@ -43,7 +51,7 @@ async function runSkillsAction(render: (report: SkillStatusReport) => string): P
 
 function resolveActiveWorkspaceDir(): string {
   const config = loadConfig();
-  return resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+  return resolveAgentWorkspaceDir(config, resolveActiveAgentId(config));
 }
 
 /**
