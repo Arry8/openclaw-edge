@@ -151,6 +151,9 @@ explicitly promotes one as public.
     | `plugin-sdk/approval-auth-runtime` | Approver resolution and same-chat action-auth helpers |
     | `plugin-sdk/approval-client-runtime` | Native exec approval profile/filter helpers |
     | `plugin-sdk/approval-delivery-runtime` | Native approval capability/delivery adapters |
+    | `plugin-sdk/approval-gateway-runtime` | Shared approval gateway-resolution helper |
+    | `plugin-sdk/approval-handler-adapter-runtime` | Lightweight native approval adapter loading helpers for hot channel entrypoints |
+    | `plugin-sdk/approval-handler-runtime` | Broader approval handler runtime helpers; prefer the narrower adapter/gateway seams when they are enough |
     | `plugin-sdk/approval-native-runtime` | Native approval target + account-binding helpers |
     | `plugin-sdk/approval-reply-runtime` | Exec/plugin approval reply payload helpers |
     | `plugin-sdk/command-auth-native` | Native command auth + native session-target helpers |
@@ -172,6 +175,7 @@ explicitly promotes one as public.
     | --- | --- |
     | `plugin-sdk/runtime` | Broad runtime/logging/backup/plugin-install helpers |
     | `plugin-sdk/runtime-env` | Narrow runtime env, logger, timeout, retry, and backoff helpers |
+    | `plugin-sdk/channel-runtime-context` | Generic channel runtime-context registration and lookup helpers |
     | `plugin-sdk/runtime-store` | `createPluginRuntimeStore` |
     | `plugin-sdk/plugin-runtime` | Shared plugin command/hook/http/interactive helpers |
     | `plugin-sdk/hook-runtime` | Shared webhook/internal hook pipeline helpers |
@@ -386,6 +390,7 @@ AI CLI backend such as `codex-cli`.
 | Method                                     | What it registers                     |
 | ------------------------------------------ | ------------------------------------- |
 | `api.registerContextEngine(id, factory)`   | Context engine (one active at a time) |
+| `api.registerMemoryCapability(capability)` | Unified memory capability             |
 | `api.registerMemoryPromptSection(builder)` | Memory prompt section builder         |
 | `api.registerMemoryFlushPlan(resolver)`    | Memory flush plan resolver            |
 | `api.registerMemoryRuntime(runtime)`       | Memory runtime adapter                |
@@ -396,8 +401,13 @@ AI CLI backend such as `codex-cli`.
 | ---------------------------------------------- | ---------------------------------------------- |
 | `api.registerMemoryEmbeddingProvider(adapter)` | Memory embedding adapter for the active plugin |
 
+- `registerMemoryCapability` is the preferred exclusive memory-plugin API.
+- `registerMemoryCapability` may also expose `publicArtifacts.listArtifacts(...)`
+  so companion plugins can consume exported memory artifacts through
+  `openclaw/plugin-sdk/memory-host-core` instead of reaching into a specific
+  memory plugin's private layout.
 - `registerMemoryPromptSection`, `registerMemoryFlushPlan`, and
-  `registerMemoryRuntime` are exclusive to memory plugins.
+  `registerMemoryRuntime` are legacy-compatible exclusive memory-plugin APIs.
 - `registerMemoryEmbeddingProvider` lets the active memory plugin register one
   or more embedding adapter ids (for example `openai`, `gemini`, or a custom
   plugin-defined id).

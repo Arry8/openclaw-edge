@@ -15,10 +15,17 @@ import {
   NODE_SYSTEM_RUN_COMMANDS,
 } from "../infra/node-commands.js";
 import { normalizePluginGatewayMethodScope } from "../shared/gateway-method-policy.js";
-import { normalizeOptionalString } from "../shared/string-coerce.js";
+import {
+  normalizeOptionalString,
+  normalizeStringifiedOptionalString,
+} from "../shared/string-coerce.js";
 import { resolveUserPath } from "../utils.js";
 import { buildPluginApi } from "./api-builder.js";
 import { registerPluginCommand, validatePluginCommandDefinition } from "./command-registration.js";
+import {
+  getRegisteredCompactionProvider,
+  registerCompactionProvider,
+} from "./compaction-provider.js";
 import type { PluginActivationSource } from "./config-state.js";
 import { normalizePluginHttpPath } from "./http-path.js";
 import { findOverlappingPluginHttpRoute } from "./http-route-overlap.js";
@@ -30,6 +37,7 @@ import {
   registerMemoryEmbeddingProvider,
 } from "./memory-embedding-providers.js";
 import {
+  registerMemoryCapability,
   registerMemoryCorpusSupplement,
   registerMemoryFlushPlanResolver,
   registerMemoryPromptSupplement,
@@ -507,8 +515,8 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
   };
 
   const describeHttpRouteOwner = (entry: PluginHttpRouteRegistration): string => {
-    const plugin = entry.pluginId?.trim() || "unknown-plugin";
-    const source = entry.source?.trim() || "unknown-source";
+    const plugin = normalizeOptionalString(entry.pluginId) || "unknown-plugin";
+    const source = normalizeOptionalString(entry.source) || "unknown-source";
     return `${plugin} (${source})`;
   };
 
@@ -606,7 +614,8 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
         ? (registration as OpenClawPluginChannelRegistration)
         : { plugin: registration as ChannelPlugin };
     const plugin = normalized.plugin;
-    const id = typeof plugin?.id === "string" ? plugin.id.trim() : String(plugin?.id ?? "").trim();
+    const id =
+      normalizeOptionalString(plugin?.id) ?? normalizeStringifiedOptionalString(plugin?.id) ?? "";
     if (!id) {
       pushDiagnostic({
         level: "error",
@@ -1295,6 +1304,50 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                     message: `context engine already registered: ${id} (${result.existingOwner})`,
                   });
                 }
+              },
+              registerCompactionProvider: (
+                provider: Parameters<OpenClawPluginApi["registerCompactionProvider"]>[0],
+              ) => {
+                const existing = getRegisteredCompactionProvider(provider.id);
+                if (existing) {
+                  const ownerDetail = existing.ownerPluginId
+                    ? ` (owner: ${existing.ownerPluginId})`
+                    : "";
+                  pushDiagnostic({
+                    level: "error",
+                    pluginId: record.id,
+                    source: record.source,
+                    message: `compaction provider already registered: ${provider.id}${ownerDetail}`,
+                  });
+                  return;
+                }
+                registerCompactionProvider(provider, { ownerPluginId: record.id });
+              },
+              registerMemoryCapability: (capability) => {
+                if (!hasKind(record.kind, "memory")) {
+                  pushDiagnostic({
+                    level: "error",
+                    pluginId: record.id,
+                    source: record.source,
+                    message: "only memory plugins can register a memory capability",
+                  });
+                  return;
+                }
+                if (
+                  Array.isArray(record.kind) &&
+                  record.kind.length > 1 &&
+                  !record.memorySlotSelected
+                ) {
+                  pushDiagnostic({
+                    level: "warn",
+                    pluginId: record.id,
+                    source: record.source,
+                    message:
+                      "dual-kind plugin not selected for memory slot; skipping memory capability registration",
+                  });
+                  return;
+                }
+                registerMemoryCapability(record.id, capability);
               },
               registerMemoryPromptSection: (builder) => {
                 if (!hasKind(record.kind, "memory")) {
