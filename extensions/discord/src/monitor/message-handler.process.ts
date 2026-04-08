@@ -494,7 +494,9 @@ export async function processDiscordMessage(
     ReplyToSender: filteredReplyContext?.sender,
     ParentSessionKey: autoThreadContext?.ParentSessionKey ?? threadKeys.parentSessionKey,
     MessageThreadId: threadChannel?.id ?? autoThreadContext?.createdThreadId ?? undefined,
-    ThreadStarterBody: threadStarterBody,
+    // Only include thread starter body for NEW sessions (existing sessions already have it
+    // in their transcript). Matches the Slack adapter guard from PR #32133.
+    ThreadStarterBody: !previousTimestamp ? threadStarterBody : undefined,
     ThreadLabel: threadLabel,
     Timestamp: resolveTimestampMs(message.timestamp),
     ...mediaPayload,
