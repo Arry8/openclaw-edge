@@ -145,7 +145,7 @@ export function createTelegramDraftStream(params: {
       ? true
       : requestedPreviewTransport === "message"
         ? false
-        : params.thread?.scope === "dm";
+        : true;
   const threadParams = buildTelegramThreadParams(params.thread);
   const replyToMessageId = normalizeTelegramReplyToMessageId(params.replyToMessageId);
   const replyParams =
