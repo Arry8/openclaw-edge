@@ -55,6 +55,8 @@ type BrowserProxyRequest = (opts: {
   profile?: string;
 }) => Promise<unknown>;
 
+const SNAPSHOT_STALE_TARGET_RETRY_DELAYS_MS = [150, 300, 450] as const;
+
 function wrapBrowserExternalJson(params: {
   kind: "snapshot" | "console" | "tabs";
   payload: unknown;
@@ -129,6 +131,77 @@ function isChromeStaleTargetError(profile: string | undefined, err: unknown): bo
   }
   const msg = String(err);
   return msg.includes("404:") && msg.includes("tab not found");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractTabTargetIds(tabs: unknown[]): string[] {
+  const targetIds: string[] = [];
+  for (const tab of tabs) {
+    const targetId =
+      tab && typeof tab === "object" && "targetId" in tab
+        ? (tab as { targetId?: unknown }).targetId
+        : undefined;
+    if (typeof targetId !== "string") {
+      continue;
+    }
+    const trimmed = targetId.trim();
+    if (trimmed) {
+      targetIds.push(trimmed);
+    }
+  }
+  return targetIds;
+}
+
+async function readTabsForSnapshotRetry(params: {
+  baseUrl?: string;
+  profile?: string;
+  proxyRequest: BrowserProxyRequest | null;
+}): Promise<string[]> {
+  const tabs = params.proxyRequest
+    ? ((
+        (await params.proxyRequest({
+          method: "GET",
+          path: "/tabs",
+          profile: params.profile,
+        })) as { tabs?: unknown[] }
+      ).tabs ?? [])
+    : await browserToolActionDeps.browserTabs(params.baseUrl, { profile: params.profile });
+  return extractTabTargetIds(tabs);
+}
+
+async function callSnapshot(params: {
+  baseUrl?: string;
+  profile?: string;
+  proxyRequest: BrowserProxyRequest | null;
+  snapshotQuery: {
+    format?: "ai" | "aria";
+    targetId?: string;
+    limit?: number;
+    maxChars?: number;
+    refs?: "aria" | "role";
+    interactive?: boolean;
+    compact?: boolean;
+    depth?: number;
+    selector?: string;
+    frame?: string;
+    labels?: boolean;
+    mode?: "efficient";
+  };
+}) {
+  return params.proxyRequest
+    ? ((await params.proxyRequest({
+        method: "GET",
+        path: "/snapshot",
+        profile: params.profile,
+        query: params.snapshotQuery,
+      })) as Awaited<ReturnType<typeof browserSnapshot>>)
+    : await browserToolActionDeps.browserSnapshot(params.baseUrl, {
+        ...params.snapshotQuery,
+        profile: params.profile,
+      });
 }
 
 function stripTargetIdFromActRequest(
@@ -232,17 +305,55 @@ export async function executeSnapshotAction(params: {
     labels,
     mode,
   };
-  const snapshot = proxyRequest
-    ? ((await proxyRequest({
-        method: "GET",
-        path: "/snapshot",
+  const snapshot = await (async (): Promise<Awaited<ReturnType<typeof browserSnapshot>>> => {
+    try {
+      return await callSnapshot({
+        baseUrl,
         profile,
-        query: snapshotQuery,
-      })) as Awaited<ReturnType<typeof browserSnapshot>>)
-    : await browserToolActionDeps.browserSnapshot(baseUrl, {
-        ...snapshotQuery,
-        profile,
+        proxyRequest,
+        snapshotQuery,
       });
+    } catch (err) {
+      const requestedTargetId = typeof targetId === "string" && targetId ? targetId : undefined;
+      if (!requestedTargetId || !isChromeStaleTargetError(profile, err)) {
+        throw err;
+      }
+
+      let resolvedTargetId: string | undefined = requestedTargetId;
+      for (const delayMs of SNAPSHOT_STALE_TARGET_RETRY_DELAYS_MS) {
+        await sleep(delayMs);
+        const tabTargetIds = await readTabsForSnapshotRetry({
+          baseUrl,
+          profile,
+          proxyRequest,
+        }).catch((): string[] => []);
+        if (tabTargetIds.includes(requestedTargetId)) {
+          resolvedTargetId = requestedTargetId;
+        } else if (tabTargetIds.length === 1) {
+          resolvedTargetId = tabTargetIds[0];
+        }
+
+        try {
+          return await callSnapshot({
+            baseUrl,
+            profile,
+            proxyRequest,
+            snapshotQuery: {
+              ...snapshotQuery,
+              targetId: resolvedTargetId,
+            },
+          });
+        } catch {
+          // Continue bounded retries.
+        }
+      }
+
+      throw new Error(
+        `Chrome tab not found (stale targetId?). Retry action=tabs profile="${profile}" and use one of the returned targetIds.`,
+        { cause: err },
+      );
+    }
+  })();
   if (snapshot.format === "ai") {
     const extractedText = snapshot.snapshot ?? "";
     const wrappedSnapshot = wrapExternalContent(extractedText, {

@@ -829,3 +829,59 @@ describe("browser tool act stale target recovery", () => {
     expect(browserActionsMocks.browserAct).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("browser tool snapshot stale target recovery", () => {
+  registerBrowserToolAfterEachReset();
+
+  it("retries snapshot and resolves to single active tab when targetId is stale", async () => {
+    browserClientMocks.browserSnapshot
+      .mockRejectedValueOnce(new Error("404: tab not found"))
+      .mockResolvedValueOnce({
+        ok: true,
+        format: "ai",
+        targetId: "fresh-tab",
+        url: "https://example.com",
+        snapshot: "ok",
+      });
+    browserClientMocks.browserTabs.mockResolvedValueOnce([{ targetId: "fresh-tab" }]);
+
+    const tool = createBrowserTool();
+    const result = await tool.execute?.("call-1", {
+      action: "snapshot",
+      profile: "user",
+      targetId: "stale-tab",
+      snapshotFormat: "ai",
+    });
+
+    expect(browserClientMocks.browserSnapshot).toHaveBeenCalledTimes(2);
+    expect(browserClientMocks.browserSnapshot).toHaveBeenNthCalledWith(
+      1,
+      undefined,
+      expect.objectContaining({ profile: "user", targetId: "stale-tab" }),
+    );
+    expect(browserClientMocks.browserSnapshot).toHaveBeenNthCalledWith(
+      2,
+      undefined,
+      expect.objectContaining({ profile: "user", targetId: "fresh-tab" }),
+    );
+    expect(result?.details).toMatchObject({ ok: true, targetId: "fresh-tab" });
+  });
+
+  it("throws actionable error when snapshot retries are exhausted", async () => {
+    browserClientMocks.browserSnapshot.mockRejectedValue(new Error("404: tab not found"));
+    browserClientMocks.browserTabs.mockResolvedValue([
+      { targetId: "tab-1" },
+      { targetId: "tab-2" },
+    ]);
+
+    const tool = createBrowserTool();
+    await expect(
+      tool.execute?.("call-1", {
+        action: "snapshot",
+        profile: "user",
+        targetId: "stale-tab",
+        snapshotFormat: "ai",
+      }),
+    ).rejects.toThrow(/Chrome tab not found/i);
+  });
+});
