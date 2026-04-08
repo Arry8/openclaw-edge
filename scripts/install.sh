@@ -2366,6 +2366,16 @@ main() {
     install_homebrew
 
     # Step 2: Node.js
+    # Source nvm if available so its managed Node appears on PATH.
+    # In a curl|bash context, .bashrc/.zshrc are not sourced, so nvm's
+    # PATH modifications are missing and the system Node is found instead.
+    if [[ -z "${NVM_DIR:-}" && -d "${HOME}/.nvm" ]]; then
+        export NVM_DIR="${HOME}/.nvm"
+    fi
+    if [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]]; then
+        . "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+    fi
+
     if ! check_node; then
         install_node
     fi
