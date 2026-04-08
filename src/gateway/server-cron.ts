@@ -44,6 +44,7 @@ export type GatewayCronState = {
   cron: CronService;
   storePath: string;
   cronEnabled: boolean;
+  runLogPrune: { maxBytes: number; keepLines: number };
 };
 
 const CRON_WEBHOOK_TIMEOUT_MS = 10_000;
@@ -533,5 +534,5 @@ export function buildGatewayCronService(params: {
     },
   });
 
-  return { cron, storePath, cronEnabled };
+  return { cron, storePath, cronEnabled, runLogPrune };
 }
