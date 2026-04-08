@@ -1,3 +1,323 @@
+## 2026-04-08 12:14 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `b9cc8fa341df` on `mega/latest`  
+**Build:** passed  
+**Duration:** 36m
+
+### Fixes (10)
+
+- [#34538](https://github.com/openclaw/openclaw/pull/34538) fix(restart): increase launchctl/systemctl spawn timeout — Thanks @zhangjunmengyang
+- [#34565](https://github.com/openclaw/openclaw/pull/34565) fix(feishu): strip reaction suffix from message_id before API calls — Thanks @smartchainark
+- [#34617](https://github.com/openclaw/openclaw/pull/34617) fix(discord): add User-Agent header to REST API requests — Thanks @funmerlin
+- [#34733](https://github.com/openclaw/openclaw/pull/34733) fix(tokens): catch pre-underscore prefix in silent reply detection — Thanks @ninjaa
+- [#34823](https://github.com/openclaw/openclaw/pull/34823) fix(typing): suppress typing indicator for NO_REPLY runs (#33951) — Thanks @yinfangchen
+- [#34933](https://github.com/openclaw/openclaw/pull/34933) fix(ui): set selected attribute on option elements to fix model select initial value — Thanks @littleben
+- [#34962](https://github.com/openclaw/openclaw/pull/34962) fix(macOS): enable undo/redo in webchat composer text input — Thanks @tylerbittner
+- [#35117](https://github.com/openclaw/openclaw/pull/35117) fix(googlechat): accept Workspace Add-on JWT issuers in project-number auth path — Thanks @zhuowater
+- [#35259](https://github.com/openclaw/openclaw/pull/35259) fix(skills): handle numeric skill names in bundled-context — Thanks @haroldfabla2-hue
+- [#35291](https://github.com/openclaw/openclaw/pull/35291) fix(auth-profiles): sync runtime snapshot and rotate profiles on /new — Thanks @Hua688
+
+---
+## 2026-04-08 12:12 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `39231139d20b` on `mega/latest`  
+**Build:** passed  
+**Duration:** 34m
+
+### Fixes (10)
+
+- [#33973](https://github.com/openclaw/openclaw/pull/33973) fix(heartbeat): trim whitespace from activeHours time strings — Thanks @Kay-051
+- [#33977](https://github.com/openclaw/openclaw/pull/33977) fix(hooks): clean up previous gmail watcher on restart to prevent state leak — Thanks @cike128
+- [#33979](https://github.com/openclaw/openclaw/pull/33979) fix(process): guard draining flag against generation change in pump finally — Thanks @cike128
+- [#33981](https://github.com/openclaw/openclaw/pull/33981) fix(channels): reschedule flush after send failure to avoid losing pending text — Thanks @cike128
+- [#34048](https://github.com/openclaw/openclaw/pull/34048) fix(media): cap inbound extracted file blocks (#14231) — Thanks @AaronWander
+- [#34131](https://github.com/openclaw/openclaw/pull/34131) fix the regular expression error of the exe file path when using brow… — Thanks @wochuideng
+- [#34136](https://github.com/openclaw/openclaw/pull/34136) fix(install): check for git before installing — Thanks @tony980130
+- [#34229](https://github.com/openclaw/openclaw/pull/34229) fix(inbound-meta): skip sender metadata for Control UI / webchat (#34153) — Thanks @yinfangchen
+- [#34234](https://github.com/openclaw/openclaw/pull/34234) fix(whatsapp): use fresh config per-message instead of stale handler snapshot (#33974) — Thanks @yinfangchen
+- [#34277](https://github.com/openclaw/openclaw/pull/34277) fix(doctor): verify Telegram privacy-mode warning using API probe state — Thanks @Severn17
+
+---
+## 2026-04-08 12:10 — 2 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `af7e228b132c` on `mega/latest`  
+**Build:** passed  
+**Duration:** 33m
+
+### Fixes (2)
+
+- [#33820](https://github.com/openclaw/openclaw/pull/33820) fix(gateway): hot-reload agents.defaults.models changes — Thanks @Mylszd
+- [#33869](https://github.com/openclaw/openclaw/pull/33869) fix(workspace): ensure memory/ dir exists — Thanks @simonwong
+
+---
+## 2026-04-08 12:09 — 8 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `8c02bcf0ce81` on `mega/latest`  
+**Build:** passed  
+**Duration:** 31m
+
+### Fixes (8)
+
+- [#33111](https://github.com/openclaw/openclaw/pull/33111) fix(status): show configured fallback models in /status output — Thanks @AnCoSONG
+- [#33254](https://github.com/openclaw/openclaw/pull/33254) fix(plugins): suppress duplicate warning for same package at different paths — Thanks @Yuandiaodiaodiao
+- [#33283](https://github.com/openclaw/openclaw/pull/33283) fix(slug-generator): use full model resolution path for auth inheritance — Thanks @Yuandiaodiaodiao
+- [#33302](https://github.com/openclaw/openclaw/pull/33302) fix(cron): guard armTimer against watchdog clearance during tick execution (#18121) — Thanks @BinHPdev
+- [#33409](https://github.com/openclaw/openclaw/pull/33409) fix(cli): clarify wildcard entries in approvals output — Thanks @jameslcowan
+- [#33464](https://github.com/openclaw/openclaw/pull/33464) fix(telegram): frame STT audio transcripts as untrusted content — Thanks @smartchainark
+- [#33523](https://github.com/openclaw/openclaw/pull/33523) fix(macos): use user login shell in restart-mac.sh for nvm/fnm compat — Thanks @Nachx639
+- [#33701](https://github.com/openclaw/openclaw/pull/33701) fix(heartbeat): avoid followup chaining when replies routed via messaging tool — Thanks @Mylszd
+
+---
+## 2026-04-08 12:06 — 1 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `3e049447d7ff` on `mega/latest`  
+**Build:** passed  
+**Duration:** 28m
+
+### Fixes (1)
+
+- [#32946](https://github.com/openclaw/openclaw/pull/32946) fix(tui): serialize loadHistory calls to prevent race conditions — Thanks @faionfaion
+
+---
+## 2026-04-08 12:04 — 9 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `2f742f0c6163` on `mega/latest`  
+**Build:** passed  
+**Duration:** 27m
+
+### Fixes (9)
+
+- [#32436](https://github.com/openclaw/openclaw/pull/32436) fix(cron): timezone dropdown suggestions and add Asia/Shanghai — Thanks @BUGKillerKing
+- [#32505](https://github.com/openclaw/openclaw/pull/32505) fix(telegram): allow sendMessageDraft for all private chats (Bot API 9.5) — Thanks @2233admin
+- [#32521](https://github.com/openclaw/openclaw/pull/32521) fix(exec-approval): support safe slug prefix resolution for /approve — Thanks @dfrench12
+- [#32551](https://github.com/openclaw/openclaw/pull/32551) fix(daemon): fix backslash escape in systemd env parser — Thanks @PinoHouse
+- [#32589](https://github.com/openclaw/openclaw/pull/32589) fix(agents): use agents.defaults.workspace for default subagents (#29367) — Thanks @BlueBirdBack
+- [#32680](https://github.com/openclaw/openclaw/pull/32680) fix(CLI): validate channels status timeout input — Thanks @bbblending
+- [#32728](https://github.com/openclaw/openclaw/pull/32728) fix(feishu): skip debounce for group @Bot command messages — Thanks @Lanfei
+- [#32734](https://github.com/openclaw/openclaw/pull/32734) fix(gateway): isolate channels.status probe/audit per-account failures — Thanks @bbblending
+- [#32771](https://github.com/openclaw/openclaw/pull/32771) fix(memory): broaden temporal decay regex to match dates in subdirs and suffixes — Thanks @haosenwang1018
+
+---
+## 2026-04-08 12:03 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `f122c5f60997` on `mega/latest`  
+**Build:** passed  
+**Duration:** 25m
+
+### Fixes (10)
+
+- [#30271](https://github.com/openclaw/openclaw/pull/30271) fix(control-ui): prevent infinite render loop in cron form name field — Thanks @pushkarsingh32
+- [#30310](https://github.com/openclaw/openclaw/pull/30310) fix(channels): include default account when base config has tokens  [claude, human developer oversight] — Thanks @zeroaltitude
+- [#30388](https://github.com/openclaw/openclaw/pull/30388) fix(bootstrap): skip [MISSING] marker for BOOTSTRAP.md after onboarding deletion — Thanks @yoshikouki
+- [#30856](https://github.com/openclaw/openclaw/pull/30856) fix(macos): Prevent duplicate menu bar icons on macOS 26.3 when using wss: to gateway on local net with self-signed cert — Thanks @afalk42
+- [#31020](https://github.com/openclaw/openclaw/pull/31020) fix(queue): strip inbound metadata from queued prompts in collect mode — Thanks @theotarr
+- [#31232](https://github.com/openclaw/openclaw/pull/31232) fix(signal): ignore system messages (expiration timer, group permission changes) — Thanks @minupla
+- [#31909](https://github.com/openclaw/openclaw/pull/31909) fix(agents): ensure parallel tool results have correct parentId — Thanks @jduartedj
+- [#32026](https://github.com/openclaw/openclaw/pull/32026) fix(signal): drop bare emoji reaction envelopes before dispatch — Thanks @minupla
+- [#32246](https://github.com/openclaw/openclaw/pull/32246) fix(cron): narrow agentEntry type to fix TS2339 — Thanks @shawnduggan
+- [#32433](https://github.com/openclaw/openclaw/pull/32433) fix(fs-safe): honor umask/default ACLs for created files — Thanks @KimGLee
+
+---
+## 2026-04-08 12:01 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `c62d50899a13` on `mega/latest`  
+**Build:** passed  
+**Duration:** 23m
+
+### Fixes (10)
+
+- [#17684](https://github.com/openclaw/openclaw/pull/17684) fix(skills): update notion skill for API 2025-09-03 — Thanks @chug2k
+- [#25357](https://github.com/openclaw/openclaw/pull/25357) fix(tools): log warning when ownerOnly tools are stripped — Thanks @simonemacario
+- [#27061](https://github.com/openclaw/openclaw/pull/27061) fix(skill-creator): reject empty name and description in skill valida… — Thanks @akaponym-byte
+- [#29161](https://github.com/openclaw/openclaw/pull/29161) fix(gateway): add handshake lock to prevent concurrent WS handshake race (#19168) — Thanks @BlueBirdBack
+- [#29513](https://github.com/openclaw/openclaw/pull/29513) fix bug: exec tool accepts cmd alias and empty args (#29458) — Thanks @AaronWander
+- [#29540](https://github.com/openclaw/openclaw/pull/29540) fix(canvas-host): serve .js and .css files with correct MIME types in… — Thanks @DoncicX
+- [#29764](https://github.com/openclaw/openclaw/pull/29764) fix(iris): force SMS delivery for DM replies + wire Ollama think parameter — Thanks @kseungyong
+- [#30026](https://github.com/openclaw/openclaw/pull/30026) fix(deps): restore node-domexception for google auth [AI-assisted] — Thanks @adamya-singh
+- [#30060](https://github.com/openclaw/openclaw/pull/30060) fix(windows): prevent conhost.exe zombie leak + fix agentEntry type narrowing — Thanks @edincampara
+- [#30213](https://github.com/openclaw/openclaw/pull/30213) fix(auto-reply): increase transient HTTP retry delay to 30s — Thanks @mcekinci
+
+---
+## 2026-04-08 11:59 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `3eb26bd747aa` on `mega/latest`  
+**Build:** passed  
+**Duration:** 21m
+
+### Security / Crash (10)
+
+- [#60869](https://github.com/openclaw/openclaw/pull/60869) fix: accept redactSensitive:all as valid config value, prevent crash-loop — Thanks @lml2468
+- [#61471](https://github.com/openclaw/openclaw/pull/61471) feat(skills): Add Advanced Security Scanner and AI Test Generator — Thanks @AbdullahTariq25
+- [#61504](https://github.com/openclaw/openclaw/pull/61504) fix(security): prevent external content marker sanitization bypass via Unicode padding — Thanks @garagon
+- [#61517](https://github.com/openclaw/openclaw/pull/61517) fix(ollama): use SSRF-guarded fetch in streaming path — Thanks @garagon
+- [#61725](https://github.com/openclaw/openclaw/pull/61725) fix(task-registry): prevent NOT NULL crash on requester_session_key in legacy DBs — Thanks @akramcodez
+- [#62011](https://github.com/openclaw/openclaw/pull/62011) feat: agent env.scope isolation for collaborator security — Thanks @Bosy10
+- [#62726](https://github.com/openclaw/openclaw/pull/62726) fix(agents): prevent gateway crash on concurrent channel sessions (#62670) — Thanks @pruthvishetty
+- [#62973](https://github.com/openclaw/openclaw/pull/62973) security: prompt injection defense at message and tool result boundaries — Thanks @sarkarsaurabh27
+- [#63041](https://github.com/openclaw/openclaw/pull/63041) fix: detect and abort infinite loop when agent repeatedly calls non-existent tools — Thanks @yizhi94
+- [#63074](https://github.com/openclaw/openclaw/pull/63074) fix(security): classify dangerous Windows sandbox binds first — Thanks @luoyanglang
+
+---
+## 2026-04-08 11:58 — 1 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `8d21f4c0b946` on `mega/latest`  
+**Build:** passed  
+**Duration:** 20m
+
+### Security / Crash (1)
+
+- [#60833](https://github.com/openclaw/openclaw/pull/60833) fix(browser): SSRF policy blocks loopback CDP control-plane connections — Thanks @GodsBoy
+
+---
+## 2026-04-08 11:56 — 9 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `6b56548e3d27` on `mega/latest`  
+**Build:** passed  
+**Duration:** 19m
+
+### Security / Crash (9)
+
+- [#58954](https://github.com/openclaw/openclaw/pull/58954) docs(security): clarify hardening triage boundaries — Thanks @vincentkoc
+- [#59478](https://github.com/openclaw/openclaw/pull/59478) docs: fix Node.js minimum version in SECURITY.md (22.12.0 → 22.14.0) — Thanks @alkor2000
+- [#59500](https://github.com/openclaw/openclaw/pull/59500) fix: extend CA bundle auto-injection to all 8 Node version managers — Thanks @alkor2000
+- [#59631](https://github.com/openclaw/openclaw/pull/59631) fix(sandbox browser): preserve browser SSRF policy in sandbox bridge — Thanks @sandpile
+- [#60147](https://github.com/openclaw/openclaw/pull/60147) security: update vendored A2UI lockfiles to eliminate known CVEs — Thanks @lokinhh
+- [#60456](https://github.com/openclaw/openclaw/pull/60456) Expand skill scanner with additional security detection rules — Thanks @frankentini
+- [#60507](https://github.com/openclaw/openclaw/pull/60507) feat(security): add destructive-commands.ts — catalog of HIL-required exec patterns for agentic workloads — Thanks @bryanbaer
+- [#60605](https://github.com/openclaw/openclaw/pull/60605) contrib(scripts): add clawhub-safe-install wrapper with security scanning — Thanks @yhyatt
+- [#60684](https://github.com/openclaw/openclaw/pull/60684) feat(security): add exec.denylist config to block dangerous command patterns — Thanks @mvanhorn
+
+---
+## 2026-04-08 11:55 — 1 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `cc491f08ebd6` on `mega/latest`  
+**Build:** passed  
+**Duration:** 17m
+
+### Security / Crash (1)
+
+- [#58949](https://github.com/openclaw/openclaw/pull/58949) fix(security): make safeEqualSecret timing-safe for empty/null inputs — Thanks @ViagraFixesMyBug
+
+---
+## 2026-04-08 11:53 — 9 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `af11e4a75f31` on `mega/latest`  
+**Build:** passed  
+**Duration:** 15m
+
+### Security / Crash (9)
+
+- [#55139](https://github.com/openclaw/openclaw/pull/55139) fix: prevent infinite recursion in resolveConsoleSettings() during startup — Thanks @keepmind9
+- [#55176](https://github.com/openclaw/openclaw/pull/55176) fix: allow RFC2544 benchmark IPs in image tool SSRF guard — Thanks @karanuppal
+- [#56923](https://github.com/openclaw/openclaw/pull/56923) fix(security): include dangerous commands in known commands list — Thanks @chziyue
+- [#57088](https://github.com/openclaw/openclaw/pull/57088) fix(cron): add defensive prune before reading run log to prevent OOM — Thanks @karanuppal
+- [#57919](https://github.com/openclaw/openclaw/pull/57919) fix: register exit handler for gateway lock cleanup on early crash (closes #57032) — Thanks @jamie8johnson
+- [#58172](https://github.com/openclaw/openclaw/pull/58172) docs(security): add ATR threat detection rule mapping for OpenClaw security threats — Thanks @eeee2345
+- [#58311](https://github.com/openclaw/openclaw/pull/58311) fix(infra): eliminate TOCTOU race in security-critical file reads — Thanks @aaronagent
+- [#58312](https://github.com/openclaw/openclaw/pull/58312) test(security): add unit tests for safeEqualSecret timing-safe comparison — Thanks @aaronagent
+- [#58698](https://github.com/openclaw/openclaw/pull/58698) feat(security): Add runtime security modules for enhanced protection — Thanks @ThomasLWang
+
+---
+## 2026-04-08 11:51 — 1 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `28cd3368d310` on `mega/latest`  
+**Build:** passed  
+**Duration:** 14m
+
+### Security / Crash (1)
+
+- [#54386](https://github.com/openclaw/openclaw/pull/54386) fix(skill-creator): default to workspace skills directory to prevent data loss on upgrade — Thanks @ymrdf
+
+---
+## 2026-04-08 11:50 — 9 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `da50030b730c` on `mega/latest`  
+**Build:** passed  
+**Duration:** 12m
+
+### Security / Crash (9)
+
+- [#48958](https://github.com/openclaw/openclaw/pull/48958) fix: prevent phantom image injection from memory context into agent prompt — Thanks @LittleBreak
+- [#49120](https://github.com/openclaw/openclaw/pull/49120) fix(security): reject private/internal hosts in cron webhook URLs — Thanks @frankentini
+- [#49234](https://github.com/openclaw/openclaw/pull/49234) fix(hooks): suppress system event injection when deliver is false — Thanks @BrennerSpear
+- [#50041](https://github.com/openclaw/openclaw/pull/50041) security: clarify fail-open denyCommands audit warning — Thanks @MatrixAdventurer
+- [#50515](https://github.com/openclaw/openclaw/pull/50515) security: sanitize control characters in channel error logging — Thanks @teddytennant
+- [#50521](https://github.com/openclaw/openclaw/pull/50521) security: reject null bytes in archive entry paths — Thanks @teddytennant
+- [#50525](https://github.com/openclaw/openclaw/pull/50525) security: add periodic cleanup to control plane rate limiter — Thanks @teddytennant
+- [#51311](https://github.com/openclaw/openclaw/pull/51311) fix(ios): guard sendPing continuation against double-resume crash — Thanks @yuntan
+- [#52619](https://github.com/openclaw/openclaw/pull/52619) fix(cron): catch schedule errors in createJob to prevent Gateway crash — Thanks @artwalker
+
+---
+## 2026-04-08 11:47 — 1 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `9fdc161be236` on `mega/latest`  
+**Build:** passed  
+**Duration:** 9m
+
+### Security / Crash (1)
+
+- [#48930](https://github.com/openclaw/openclaw/pull/48930) fix(ui): defer fs.constants eval to prevent browser bundle crash — Thanks @Valentinws
+
+---
+## 2026-04-08 11:46 — 9 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `83f70f8f6c29` on `mega/latest`  
+**Build:** passed  
+**Duration:** 8m
+
+### Security / Crash (9)
+
+- [#44736](https://github.com/openclaw/openclaw/pull/44736) fix(sandbox): detect silent data loss in write_atomic on fakeowner/network mounts, fix #44657 — Thanks @haoruilee
+- [#44892](https://github.com/openclaw/openclaw/pull/44892) fix(link-understanding): prevent command injection via URL templates (CWE-78) — Thanks @kvenux
+- [#45228](https://github.com/openclaw/openclaw/pull/45228) docs(subagents): fix bootstrap file injection list (5 files, not 2) — Thanks @qiuyuemartin-max
+- [#45383](https://github.com/openclaw/openclaw/pull/45383) fix(security): wrap inbound media file content to prevent prompt injection (#11207) — Thanks @kirs-hi
+- [#45526](https://github.com/openclaw/openclaw/pull/45526) fix(skills): validate frontmatter archive field against argument injection — Thanks @MastrXplorer
+- [#47652](https://github.com/openclaw/openclaw/pull/47652) fix(feishu): isolate per-account credential resolution to prevent full plugin crash — Thanks @alex-xuweilong
+- [#48133](https://github.com/openclaw/openclaw/pull/48133) security(firecrawl): validate scraped URL to prevent SSRF + cap cache size — Thanks @kn1ghtc
+- [#48200](https://github.com/openclaw/openclaw/pull/48200) fix(imessage): prevent infinite loop when running on personal account — Thanks @JacobWonder
+- [#48565](https://github.com/openclaw/openclaw/pull/48565) feat(rag): local RAG pipeline for workspace context injection — Thanks @oshoulson
+
+---
+## 2026-04-08 11:44 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `ec38a41b0a90` on `mega/latest`  
+**Build:** passed  
+**Duration:** 6m
+
+### Security / Crash (10)
+
+- [#41446](https://github.com/openclaw/openclaw/pull/41446) security: add config/ to .gitignore to prevent credential leaks — Thanks @john-ver
+- [#41922](https://github.com/openclaw/openclaw/pull/41922) feat(skills): Add hive-resurrection - Auto-recovery for OpenClaw crash monitoring — Thanks @ainclaw
+- [#42111](https://github.com/openclaw/openclaw/pull/42111) fix(tui): strip security notice wrappers from session preview text — Thanks @rstar327
+- [#42208](https://github.com/openclaw/openclaw/pull/42208) security: enforce human approval for destructive tools in external content sessions — Thanks @kenpkz
+- [#42211](https://github.com/openclaw/openclaw/pull/42211) security: add mandatory injection-resistant system preamble for all agent sessions — Thanks @kenpkz
+- [#42673](https://github.com/openclaw/openclaw/pull/42673) Fixing Merge-Patch Recursion and Array Length Risks — Thanks @zhangjl-mh
+- [#42770](https://github.com/openclaw/openclaw/pull/42770) Canvas: add baseline security headers — Thanks @yzxlr
+- [#42906](https://github.com/openclaw/openclaw/pull/42906) fix(security): block non-self messages in WhatsApp self-chat mode — Thanks @LakshmanTurlapati
+- [#43212](https://github.com/openclaw/openclaw/pull/43212) docs(security): add Security Defaults Audit and Hardening Guide — Thanks @chengjialu8888
+- [#44098](https://github.com/openclaw/openclaw/pull/44098) fix(security): add default pidsLimit for sandbox containers — Thanks @Jackey0903
+
+---
+## 2026-04-08 11:43 — 10 PRs merged
+
+**Base:** `773c029b2004` → **Head:** `c5abc24a6cc7` on `mega/latest`  
+**Build:** passed  
+**Duration:** 5m
+
+### Security / Crash (10)
+
+- [#27454](https://github.com/openclaw/openclaw/pull/27454) fix(telegram): prevent crash loop on oversized file attachments — Thanks @efe-arv
+- [#31193](https://github.com/openclaw/openclaw/pull/31193) docs: add missing security fix to CHANGELOG and browser relay security guide — Thanks @ShuJunLuo
+- [#34521](https://github.com/openclaw/openclaw/pull/34521) fix(video-frames): validate --index to prevent ffmpeg filter injection — Thanks @yan5ui
+- [#36332](https://github.com/openclaw/openclaw/pull/36332) fix(hooks): suppress system event injection when deliver is false [AI-assisted] — Thanks @cioclawcode
+- [#38390](https://github.com/openclaw/openclaw/pull/38390) fix(core): Gracefully handle malformed tool calls to prevent Silent Gateway DoS — Thanks @bidaiAI
+- [#38664](https://github.com/openclaw/openclaw/pull/38664) docs: Add security scan workflow template (Trivy + KICS + TruffleHog) — Thanks @Nefas11
+- [#38846](https://github.com/openclaw/openclaw/pull/38846) security(windows): enhance command argument validation — Thanks @JnyRoad
+- [#39509](https://github.com/openclaw/openclaw/pull/39509) feat(plugins): keyword-context — on-demand reference doc injection — Thanks @teodorangel
+- [#39653](https://github.com/openclaw/openclaw/pull/39653) fix(security): reject hostname ws:// targets in allowPrivateWs mode — Thanks @zhuowater
+- [#40849](https://github.com/openclaw/openclaw/pull/40849) web-tools: allow per-call SSRF policy overrides in web-guarded-fetch — Thanks @GymPupil
+
+---
 ## 2026-04-08 11:13 — 1 PRs merged
 
 **Base:** `391830c72070` → **Head:** `f8b8dbdf3961` on `mega/latest`  

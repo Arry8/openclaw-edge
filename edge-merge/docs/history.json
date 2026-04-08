@@ -1,16 +1,4 @@
 {
-  "generatedAt": "2026-04-08T12:20:30.911Z",
-  "baseCommit": "773c029b2004baef4bc1f34635c48778b4cda90d",
-  "baseBranch": "mega/latest",
-  "upstreamRemote": "https://github.com/openclaw/openclaw.git",
-  "totalPrs": 6463,
-  "attempted": 567,
-  "merged": 138,
-  "conflicted": 418,
-  "skipped": 2,
-  "fetchFailed": 0,
-  "durationMs": 2533250,
-  "buildFailedAtPr": 37968,
   "entries": [
     {
       "author": "sfo2001",
@@ -2782,8 +2770,8 @@
       "title": "fix: add null checks in Feishu plugin webhook parsing to prevent Gateway crash",
       "tier": 1,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "823756c7d7743214c8d7a9f13600124b2ca45218"
       }
     },
     {
@@ -3492,8 +3480,8 @@
       "title": "fix(gateway): add TTL cleanup for 3 Maps that grow unbounded causing OOM",
       "tier": 1,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "be6503df41fa2b8c676d013a58ee552d677d77f0"
       }
     },
     {
@@ -3779,8 +3767,8 @@
       "title": "feat(security): add YARA-based skill security scanner",
       "tier": 1,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "1e14e34ef23a9141091c0cddd6f3910039547090"
       }
     },
     {
@@ -4843,8 +4831,8 @@
       "title": "fix: 4 security/reliability patches from code review",
       "tier": 1,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "1ad3a5a61feff0314bc5d56f5291d877cf79f990"
       }
     },
     {
@@ -7096,8 +7084,8 @@
       "title": "fix(acp): reap failed startup identity reconciliations",
       "tier": 2,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "8a16cdd326fcff3e1464feabdf3c117d9521b1ef"
       }
     },
     {
@@ -7673,8 +7661,8 @@
       "title": "fix(auto-reply): trim static thread metadata in inbound context (#33042)",
       "tier": 2,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "dce1c78656433c6fb5d0de75e56dfc2a27619d38"
       }
     },
     {
@@ -8189,8 +8177,8 @@
       "title": "fix(feishu): prefetch bot open_id in single-account startup path",
       "tier": 2,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "df97fb0d4dcbaf8762bd7802ddb696af2d95eed7"
       }
     },
     {
@@ -11263,8 +11251,8 @@
       "title": "fix(sessions): always cleanup .deleted files during maintenance",
       "tier": 2,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "9f1f73c1e90030d58486440c954e257d9210db00"
       }
     },
     {
@@ -11327,8 +11315,8 @@
       "title": "fix(sessions): preserve activity timestamps in updateLastRoute",
       "tier": 2,
       "result": {
-        "status": "reverted",
-        "conflictFiles": []
+        "status": "merged",
+        "commitSha": "df94d978b30708ab7e40c69cd06d68fe4edb16b0"
       }
     },
     {

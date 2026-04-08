@@ -1,0 +1,56 @@
+[
+  {
+    "number": 48125,
+    "reason": "extensions/feishu/src/card-action.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T11:45:04.959Z"
+  },
+  {
+    "number": 52731,
+    "reason": "src/infra/agent-events.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T11:49:11.548Z"
+  },
+  {
+    "number": 55875,
+    "reason": "src/security/skill-scanner.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T11:52:25.386Z"
+  },
+  {
+    "number": 60779,
+    "reason": "src/gateway/auth.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T11:55:29.522Z"
+  },
+  {
+    "number": 32523,
+    "reason": "src/gateway/server-startup.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:03:36.010Z"
+  },
+  {
+    "number": 33500,
+    "reason": "extensions/feishu/src/monitor.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:08:00.659Z"
+  },
+  {
+    "number": 33061,
+    "reason": "src/auto-reply/reply/inbound-meta.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:08:00.753Z"
+  },
+  {
+    "number": 36650,
+    "reason": "src/config/sessions/store.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:16:24.048Z"
+  },
+  {
+    "number": 36629,
+    "reason": "src/cron/session-reaper.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:16:24.145Z"
+  }
+]
