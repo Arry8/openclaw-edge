@@ -27,6 +27,7 @@ const OPENROUTER_CACHE_TTL_MODEL_PREFIXES = [
   "moonshotai/",
   "zai/",
 ] as const;
+const OPENROUTER_AUTO_MODEL_IDS = new Set(["auto", "openrouter/auto"]);
 
 export default definePluginEntry({
   id: "openrouter",
@@ -57,6 +58,18 @@ export default definePluginEntry({
 
     function isOpenRouterCacheTtlModel(modelId: string): boolean {
       return OPENROUTER_CACHE_TTL_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix));
+    }
+
+    function resolveOpenRouterDefaultThinkingLevel(modelId: string) {
+      const normalizedModelId = modelId.trim().toLowerCase();
+      if (!normalizedModelId) {
+        return undefined;
+      }
+      if (OPENROUTER_AUTO_MODEL_IDS.has(normalizedModelId)) {
+        return "minimal" as const;
+      }
+      const capabilities = getOpenRouterModelCapabilities(modelId);
+      return capabilities?.reasoning ? ("low" as const) : undefined;
     }
 
     api.registerProvider({
@@ -110,6 +123,7 @@ export default definePluginEntry({
       isModernModelRef: () => true,
       wrapStreamFn: wrapOpenRouterProviderStream,
       isCacheTtlEligible: (ctx) => isOpenRouterCacheTtlModel(ctx.modelId),
+      resolveDefaultThinkingLevel: ({ modelId }) => resolveOpenRouterDefaultThinkingLevel(modelId),
     });
     api.registerMediaUnderstandingProvider(openrouterMediaUnderstandingProvider);
   },
