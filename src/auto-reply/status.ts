@@ -18,6 +18,7 @@ import { resolveChannelModelOverride } from "../channels/model-overrides.js";
 import { getChannelPlugin } from "../channels/plugins/index.js";
 import { isCommandFlagEnabled } from "../config/commands.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveAgentModelFallbackValues } from "../config/model-input.js";
 import {
   resolveMainSessionKey,
   resolveSessionFilePath,
@@ -806,11 +807,21 @@ export function buildStatusMessage(args: StatusArgs): string {
     : null;
 
   const showFallbackAuth = activeAuthLabelValue && activeAuthLabelValue !== selectedAuthLabelValue;
-  const fallbackLine = fallbackState.active
-    ? `↪️ Fallback: ${activeModelLabel}${
-        showFallbackAuth ? ` · 🔑 ${activeAuthLabelValue}` : ""
-      } (${fallbackState.reason ?? "selected model unavailable"})`
-    : null;
+  let fallbackLine: string | null = null;
+  if (fallbackState.active) {
+    fallbackLine = `↪️ Fallback: ${activeModelLabel}${
+      showFallbackAuth ? ` · 🔑 ${activeAuthLabelValue}` : ""
+    } (${fallbackState.reason ?? "selected model unavailable"})`;
+  } else {
+    const configuredFallbacks = resolveAgentModelFallbackValues(
+      contextConfig?.agents?.defaults?.model,
+    )
+      .map((f) => String(f).trim())
+      .filter(Boolean);
+    if (configuredFallbacks.length > 0) {
+      fallbackLine = `↪️ Fallbacks: ${configuredFallbacks.join(", ")}`;
+    }
+  }
   const commit = resolveCommitHash({ moduleUrl: import.meta.url });
   const versionLine = `🦞 OpenClaw ${VERSION}${commit ? ` (${commit})` : ""}`;
   const usagePair = formatUsagePair(inputTokens, outputTokens);
