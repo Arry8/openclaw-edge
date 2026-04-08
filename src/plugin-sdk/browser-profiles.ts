@@ -7,6 +7,7 @@ export {
   DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME,
   DEFAULT_UPLOAD_DIR,
   resolveBrowserConfig,
+  resolveBrowserSsrFPolicy,
   resolveProfile,
 } from "../../extensions/browser/browser-profiles.js";
 export type {
