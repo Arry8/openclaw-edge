@@ -636,7 +636,7 @@ describe("processDiscordMessage session routing", () => {
     });
   });
 
-  it("stores group lastRoute with channel target", async () => {
+  it("skips group lastRoute updates to preserve session freshness checks", async () => {
     const ctx = await createBaseContext({
       baseSessionKey: "agent:main:discord:channel:c1",
       route: BASE_CHANNEL_ROUTE,
@@ -644,12 +644,7 @@ describe("processDiscordMessage session routing", () => {
 
     await processDiscordMessage(ctx as any);
 
-    expect(getLastRouteUpdate()).toEqual({
-      sessionKey: "agent:main:discord:channel:c1",
-      channel: "discord",
-      to: "channel:c1",
-      accountId: "default",
-    });
+    expect(getLastRouteUpdate()).toBeUndefined();
   });
 
   it("prefers bound session keys and sets MessageThreadId for bound thread messages", async () => {
@@ -683,12 +678,7 @@ describe("processDiscordMessage session routing", () => {
       SessionKey: "agent:main:subagent:child",
       MessageThreadId: "thread-1",
     });
-    expect(getLastRouteUpdate()).toEqual({
-      sessionKey: "agent:main:subagent:child",
-      channel: "discord",
-      to: "channel:thread-1",
-      accountId: "default",
-    });
+    expect(getLastRouteUpdate()).toBeUndefined();
   });
 });
 
