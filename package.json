@@ -1,6 +1,6 @@
 {
   "name": "openclaw",
-  "version": "2026.4.6",
+  "version": "2026.4.7",
   "description": "Multi-channel AI gateway with extensible messaging integrations",
   "keywords": [],
   "homepage": "https://github.com/openclaw/openclaw#readme",
@@ -115,6 +115,14 @@
     "./plugin-sdk/approval-delivery-runtime": {
       "types": "./dist/plugin-sdk/approval-delivery-runtime.d.ts",
       "default": "./dist/plugin-sdk/approval-delivery-runtime.js"
+    },
+    "./plugin-sdk/approval-gateway-runtime": {
+      "types": "./dist/plugin-sdk/approval-gateway-runtime.d.ts",
+      "default": "./dist/plugin-sdk/approval-gateway-runtime.js"
+    },
+    "./plugin-sdk/approval-handler-adapter-runtime": {
+      "types": "./dist/plugin-sdk/approval-handler-adapter-runtime.d.ts",
+      "default": "./dist/plugin-sdk/approval-handler-adapter-runtime.js"
     },
     "./plugin-sdk/approval-handler-runtime": {
       "types": "./dist/plugin-sdk/approval-handler-runtime.d.ts",

@@ -4242,6 +4242,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                   },
                   provider: {
                     type: "string",
+                    title: "Compaction Provider",
+                    description:
+                      "Id of a registered compaction provider plugin used for summarization. When set and the provider is registered, its summarize() method is called instead of the built-in summarizeInStages pipeline. Falls back to built-in on provider failure. Leave unset to use the default built-in summarization.",
                   },
                   reserveTokens: {
                     type: "integer",
@@ -26901,6 +26904,6 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       tags: ["advanced", "url-secret"],
     },
   },
-  version: "2026.4.6",
+  version: "2026.4.7",
   generatedAt: "2026-03-22T21:17:33.302Z",
 };
