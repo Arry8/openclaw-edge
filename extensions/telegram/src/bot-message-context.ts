@@ -321,9 +321,14 @@ export const buildTelegramMessageContext = async ({
     agentId: route.agentId,
   });
   const baseRequireMention = resolveGroupRequireMention(chatId);
+  // Resolution priority (most specific wins):
+  //   1. Per-topic config — explicit topic-level override is the most granular
+  //   2. Activation override — /activate or /deactivate session state
+  //   3. Per-group config — group-level setting from config file
+  //   4. Base — global requireMention default
   const requireMention = firstDefined(
-    activationOverride,
     topicConfig?.requireMention,
+    activationOverride,
     (groupConfig as TelegramGroupConfig | undefined)?.requireMention,
     baseRequireMention,
   );
