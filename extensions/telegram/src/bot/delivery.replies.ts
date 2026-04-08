@@ -123,7 +123,6 @@ async function deliverTextReply(params: {
     replyMarkup: params.replyMarkup,
     replyQuoteText: params.replyQuoteText,
     markDelivered,
-    shouldSkipChunk: (chunk) => !chunk.html?.trim() && !chunk.text?.trim(),
     sendChunk: async ({ chunk, replyToMessageId, replyMarkup, replyQuoteText }) => {
       const messageId = await sendTelegramText(
         params.bot,
@@ -141,12 +140,6 @@ async function deliverTextReply(params: {
           replyMarkup,
         },
       );
-      // sendTelegramText returns undefined when the send was silently skipped
-      // (empty text after fallback). Signal to sendChunkedTelegramReplyText
-      // that delivered state should not be marked for this chunk.
-      if (messageId == null) {
-        return false;
-      }
       if (firstDeliveredMessageId == null) {
         firstDeliveredMessageId = messageId;
       }
@@ -177,27 +170,16 @@ async function sendPendingFollowUpText(params: {
     replyToMode: params.replyToMode,
     replyMarkup: params.replyMarkup,
     markDelivered,
-    shouldSkipChunk: (chunk) => !chunk.html?.trim() && !chunk.text?.trim(),
     sendChunk: async ({ chunk, replyToMessageId, replyMarkup }) => {
-      const messageId = await sendTelegramText(
-        params.bot,
-        params.chatId,
-        chunk.html,
-        params.runtime,
-        {
-          replyToMessageId,
-          thread: params.thread,
-          textMode: "html",
-          plainText: chunk.text,
-          linkPreview: params.linkPreview,
-          silent: params.silent,
-          replyMarkup,
-        },
-      );
-      // Return false when silently skipped to suppress delivered marking.
-      if (messageId == null) {
-        return false;
-      }
+      await sendTelegramText(params.bot, params.chatId, chunk.html, params.runtime, {
+        replyToMessageId,
+        thread: params.thread,
+        textMode: "html",
+        plainText: chunk.text,
+        linkPreview: params.linkPreview,
+        silent: params.silent,
+        replyMarkup,
+      });
     },
   });
 }
@@ -230,37 +212,27 @@ async function sendTelegramVoiceFallbackText(opts: {
   replyQuoteText?: string;
 }): Promise<number | undefined> {
   let firstDeliveredMessageId: number | undefined;
-<<<<<<< HEAD
   const chunks = filterEmptyTelegramTextChunks(opts.chunkText(opts.text));
   let appliedReplyTo = false;
-=======
-  const chunks = opts.chunkText(opts.text);
-  let sentAnyChunk = false;
->>>>>>> 577dc1a325 (fix(telegram): silently skip empty-text chunks to prevent 400 delivery failures)
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i];
-    if (!chunk || (!chunk.html?.trim() && !chunk.text?.trim())) {
-      continue;
-    }
-    // Only apply reply reference, quote text, and buttons to the first sent chunk.
-    const replyToForChunk = !sentAnyChunk ? opts.replyToId : undefined;
+    // Only apply reply reference, quote text, and buttons to the first chunk.
+    const replyToForChunk = !appliedReplyTo ? opts.replyToId : undefined;
     const messageId = await sendTelegramText(opts.bot, opts.chatId, chunk.html, opts.runtime, {
       replyToMessageId: replyToForChunk,
-      replyQuoteText: !sentAnyChunk ? opts.replyQuoteText : undefined,
+      replyQuoteText: !appliedReplyTo ? opts.replyQuoteText : undefined,
       thread: opts.thread,
       textMode: "html",
       plainText: chunk.text,
       linkPreview: opts.linkPreview,
       silent: opts.silent,
-      replyMarkup: !sentAnyChunk ? opts.replyMarkup : undefined,
+      replyMarkup: !appliedReplyTo ? opts.replyMarkup : undefined,
     });
-    // sendTelegramText returns undefined when silently skipped — only count
-    // the chunk as sent when a real messageId was returned.
-    if (messageId != null) {
-      if (firstDeliveredMessageId == null) {
-        firstDeliveredMessageId = messageId;
-      }
-      sentAnyChunk = true;
+    if (firstDeliveredMessageId == null) {
+      firstDeliveredMessageId = messageId;
+    }
+    if (replyToForChunk) {
+      appliedReplyTo = true;
     }
   }
   return firstDeliveredMessageId;
