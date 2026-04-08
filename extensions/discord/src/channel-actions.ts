@@ -160,7 +160,7 @@ function describeDiscordMessageTool({
     capabilities: ["interactive", "components"],
     schema: {
       properties: {
-        components: Type.Optional(createDiscordMessageToolComponentsSchema()),
+        components: createDiscordMessageToolComponentsSchema(),
       },
     },
   };
