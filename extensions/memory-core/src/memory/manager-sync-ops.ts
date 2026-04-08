@@ -86,6 +86,8 @@ const IGNORED_MEMORY_WATCH_DIR_NAMES = new Set([
   "venv",
   ".tox",
   "__pycache__",
+  "dist",
+  "build",
 ]);
 
 const log = createSubsystemLogger("memory");
@@ -385,6 +387,7 @@ export abstract class MemoryManagerSyncOps {
         stabilityThreshold: this.settings.sync.watchDebounceMs,
         pollInterval: 100,
       },
+      depth: 2,
     });
     const markDirty = () => {
       this.dirty = true;
