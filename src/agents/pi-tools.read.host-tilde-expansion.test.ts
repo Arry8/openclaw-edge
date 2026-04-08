@@ -49,6 +49,10 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
 const { createHostWorkspaceEditTool, createHostWorkspaceWriteTool } =
   await import("./pi-tools.read.js");
 
+// Tilde expansion tests require tmpdir to be under $HOME (true on macOS/Linux,
+// may not hold in Docker containers or root-run CI).
+const tmpdirUnderHome = os.tmpdir().startsWith(os.homedir());
+
 describe("host tool tilde expansion (non-workspace mode)", () => {
   let tmpDir = "";
 
@@ -61,16 +65,12 @@ describe("host tool tilde expansion (non-workspace mode)", () => {
     }
   });
 
-  it("edit readFile expands ~ to home directory", async () => {
+  it.runIf(tmpdirUnderHome)("edit readFile expands ~ to home directory", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tilde-edit-"));
     const testFile = path.join(tmpDir, "test.txt");
     await fs.writeFile(testFile, "hello", "utf8");
 
     const homeRelative = testFile.replace(os.homedir(), "~");
-    // Only run when the file is actually under $HOME (common on macOS/Linux)
-    if (!testFile.startsWith(os.homedir())) {
-      return;
-    }
 
     createHostWorkspaceEditTool(tmpDir, { workspaceOnly: false });
     expect(mocks.editOps).toBeDefined();
@@ -79,15 +79,12 @@ describe("host tool tilde expansion (non-workspace mode)", () => {
     expect(content.toString("utf8")).toBe("hello");
   });
 
-  it("edit access expands ~ to home directory", async () => {
+  it.runIf(tmpdirUnderHome)("edit access expands ~ to home directory", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tilde-edit-"));
     const testFile = path.join(tmpDir, "test.txt");
     await fs.writeFile(testFile, "hello", "utf8");
 
     const homeRelative = testFile.replace(os.homedir(), "~");
-    if (!testFile.startsWith(os.homedir())) {
-      return;
-    }
 
     createHostWorkspaceEditTool(tmpDir, { workspaceOnly: false });
     expect(mocks.editOps).toBeDefined();
@@ -95,14 +92,11 @@ describe("host tool tilde expansion (non-workspace mode)", () => {
     await expect(mocks.editOps!.access(homeRelative)).resolves.toBeUndefined();
   });
 
-  it("write writeFile expands ~ to home directory", async () => {
+  it.runIf(tmpdirUnderHome)("write writeFile expands ~ to home directory", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tilde-write-"));
     const testFile = path.join(tmpDir, "tilde-write-test.txt");
 
     const homeRelative = testFile.replace(os.homedir(), "~");
-    if (!testFile.startsWith(os.homedir())) {
-      return;
-    }
 
     createHostWorkspaceWriteTool(tmpDir, { workspaceOnly: false });
     expect(mocks.writeOps).toBeDefined();
@@ -112,14 +106,11 @@ describe("host tool tilde expansion (non-workspace mode)", () => {
     expect(content).toBe("written via tilde");
   });
 
-  it("write mkdir expands ~ to home directory", async () => {
+  it.runIf(tmpdirUnderHome)("write mkdir expands ~ to home directory", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tilde-mkdir-"));
     const newDir = path.join(tmpDir, "subdir");
 
     const homeRelative = newDir.replace(os.homedir(), "~");
-    if (!newDir.startsWith(os.homedir())) {
-      return;
-    }
 
     createHostWorkspaceWriteTool(tmpDir, { workspaceOnly: false });
     expect(mocks.writeOps).toBeDefined();
