@@ -358,6 +358,7 @@ export function wrapWebContent(
   content: string,
   source: "web_search" | "web_fetch" = "web_search",
 ): string {
-  // Include security warning for both web_search and web_fetch — both can carry injected content.
-  return wrapExternalContent(content, { source, includeWarning: true });
+  const includeWarning = source === "web_fetch";
+  // Marker sanitization happens in wrapExternalContent
+  return wrapExternalContent(content, { source, includeWarning });
 }
