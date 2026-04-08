@@ -45,4 +45,34 @@ describe("shared/string-normalization", () => {
     expect(normalizeAtHashSlug("###__Room  Name__")).toBe("room-name");
     expect(normalizeAtHashSlug("@@@___")).toBe("");
   });
+
+  it("preserves CJK characters in normalizeHyphenSlug", () => {
+    // Chinese
+    expect(normalizeHyphenSlug("技术讨论组")).toBe("技术讨论组");
+    expect(normalizeHyphenSlug("  AI 助手群  ")).toBe("ai-助手群");
+    // Japanese
+    expect(normalizeHyphenSlug("友達グループ")).toBe("友達グループ");
+    // Korean
+    expect(normalizeHyphenSlug("개발자 모임")).toBe("개발자-모임");
+    // Mixed Latin and CJK
+    expect(normalizeHyphenSlug("Team 技术讨论")).toBe("team-技术讨论");
+    expect(normalizeHyphenSlug("#OpenClaw中文群")).toBe("#openclaw中文群");
+  });
+
+  it("preserves Cyrillic and Arabic characters in normalizeHyphenSlug", () => {
+    // Cyrillic (Russian)
+    expect(normalizeHyphenSlug("Команда разработки")).toBe("команда-разработки");
+    // Arabic
+    expect(normalizeHyphenSlug("فريق التطوير")).toBe("فريق-التطوير");
+  });
+
+  it("preserves CJK characters in normalizeAtHashSlug", () => {
+    // Chinese
+    expect(normalizeAtHashSlug("#技术频道")).toBe("技术频道");
+    expect(normalizeAtHashSlug("@中文群组")).toBe("中文群组");
+    // Japanese
+    expect(normalizeAtHashSlug("#日本語チャンネル")).toBe("日本語チャンネル");
+    // Korean
+    expect(normalizeAtHashSlug("#한국어채널")).toBe("한국어채널");
+  });
 });
