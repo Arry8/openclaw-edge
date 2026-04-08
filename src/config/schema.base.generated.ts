@@ -20693,6 +20693,12 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                       type: "string",
                     },
                   },
+                  authHeader: {
+                    type: "string",
+                  },
+                  authValue: {
+                    type: "string",
+                  },
                 },
                 required: ["userHeader"],
                 additionalProperties: false,
@@ -22901,6 +22907,17 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       label: "Gateway Trusted Proxy Auth",
       help: "Trusted-proxy auth header mapping for upstream identity providers that inject user claims. Use only with known proxy CIDRs and strict header allowlists to prevent spoofed identity headers.",
       tags: ["network"],
+    },
+    "gateway.auth.trustedProxy.authHeader": {
+      label: "Gateway Trusted Proxy Auth Header",
+      help: "Optional reverse-proxy authenticity header name that must match gateway.auth.trustedProxy.authValue exactly. Set this when allowing loopback proxies so direct localhost processes cannot spoof identity headers.",
+      tags: ["network"],
+    },
+    "gateway.auth.trustedProxy.authValue": {
+      label: "Gateway Trusted Proxy Auth Value",
+      help: "Shared secret value expected in gateway.auth.trustedProxy.authHeader for trusted-proxy requests. Store securely and rotate periodically; use alongside tight trustedProxies CIDRs.",
+      tags: ["security", "network"],
+      sensitive: true,
     },
     "gateway.trustedProxies": {
       label: "Gateway Trusted Proxy CIDRs",

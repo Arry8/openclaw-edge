@@ -127,6 +127,18 @@ export type GatewayTrustedProxyConfig = {
    * Example: ["nick@example.com", "admin@company.org"]
    */
   allowUsers?: string[];
+  /**
+   * Optional header name that must match authValue exactly.
+    * Use this to prove requests came from your reverse proxy and are not forged
+    * by another local process.
+   * Example: "x-gateway-proxy-auth"
+   */
+  authHeader?: string;
+  /**
+   * Optional shared secret value expected in authHeader.
+   * If either authHeader or authValue is set, both must be set.
+   */
+  authValue?: string;
 };
 
 export type GatewayAuthConfig = {
