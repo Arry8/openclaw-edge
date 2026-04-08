@@ -158,6 +158,7 @@ export type NextcloudTalkInboundMessage = {
   senderName: string;
   text: string;
   mediaType: string;
+  mediaUrls?: string[];
   timestamp: number;
   isGroupChat: boolean;
 };
