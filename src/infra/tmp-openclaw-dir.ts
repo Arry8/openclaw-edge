@@ -3,6 +3,7 @@ import { tmpdir as getOsTmpDir } from "node:os";
 import path from "node:path";
 
 export const POSIX_OPENCLAW_TMP_DIR = "/tmp/openclaw";
+const TMP_DIR_ACCESS_MODE = fs.constants.W_OK | fs.constants.X_OK;
 
 type ResolvePreferredOpenClawTmpDirOptions = {
   accessSync?: (path: string, mode?: number) => void;
@@ -33,8 +34,6 @@ function isNodeErrorWithCode(err: unknown, code: string): err is MaybeNodeError 
 export function resolvePreferredOpenClawTmpDir(
   options: ResolvePreferredOpenClawTmpDirOptions = {},
 ): string {
-  // Evaluated here (not at module load) so this file is safe to import in browser bundles.
-  const TMP_DIR_ACCESS_MODE = fs.constants.W_OK | fs.constants.X_OK;
   const accessSync = options.accessSync ?? fs.accessSync;
   const chmodSync = options.chmodSync ?? fs.chmodSync;
   const lstatSync = options.lstatSync ?? fs.lstatSync;
