@@ -221,6 +221,7 @@ export function createGatewayReloadHandlers(params: {
 
       deferGatewayRestartUntilIdle({
         getPendingCount: () => getActiveCounts().totalActive,
+        reason: `config-reload: ${reasons}`,
         maxWaitMs: nextConfig.gateway?.reload?.deferralTimeoutMs,
         hooks: {
           onReady: () => {
@@ -246,7 +247,7 @@ export function createGatewayReloadHandlers(params: {
     } else {
       // No active operations or pending replies, restart immediately
       params.logReload.warn(`config change requires gateway restart (${reasons})`);
-      const emitted = emitGatewayRestart();
+      const emitted = emitGatewayRestart(`config-reload: ${reasons}`);
       if (!emitted) {
         params.logReload.info("gateway restart already scheduled; skipping duplicate signal");
       }
