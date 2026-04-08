@@ -476,6 +476,7 @@ export async function runDiscordGatewayLifecycle(params: {
       gatewaySupervisor: params.gatewaySupervisor,
       onGatewayEvent: handleGatewayEvent,
       registerForceStop: statusObserver.registerForceStop,
+      runtime: params.runtime,
     });
   } catch (err) {
     if (!sawDisallowedIntents && !params.isDisallowedIntentsError(err)) {
