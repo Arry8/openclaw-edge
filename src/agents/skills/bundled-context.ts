@@ -31,9 +31,8 @@ export function resolveBundledSkillsContext(
   }
   const result = loadSkillsFromDirSafe({ dir, source: "openclaw-bundled" });
   for (const skill of result.skills) {
-    const name = String(skill.name ?? "");
-    if (name.trim()) {
-      names.add(name);
+    if (skill.name.trim()) {
+      names.add(skill.name);
     }
   }
   cachedBundledContext = { dir, names: new Set(names) };
