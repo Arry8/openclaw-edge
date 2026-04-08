@@ -37,9 +37,8 @@ function resolveTimeoutMs(params: {
 export async function fetchWithWebToolsNetworkGuard(
   params: WebToolGuardedFetchOptions,
 ): Promise<GuardedFetchResult> {
-  const { timeoutSeconds, useEnvProxy, policy, ...rest } = params;
+  const { timeoutSeconds, useEnvProxy, ...rest } = params;
   const resolved = {
-    policy: policy ?? WEB_TOOLS_TRUSTED_NETWORK_SSRF_POLICY,
     ...rest,
     timeoutMs: resolveTimeoutMs({ timeoutMs: rest.timeoutMs, timeoutSeconds }),
   };
