@@ -734,17 +734,54 @@ export function buildStatusMessage(args: StatusArgs): string {
       })
     : undefined;
   const hasUsage = typeof inputTokens === "number" || typeof outputTokens === "number";
-  const cost =
-    showCost && hasUsage
+  const storedCost =
+    typeof entry?.estimatedCostUsd === "number" && entry.estimatedCostUsd > 0
+      ? entry.estimatedCostUsd
+      : undefined;
+  // Compute per-component costs for line-level breakdown
+  const tokenOnlyCost =
+    showCost && hasUsage && costConfig
       ? estimateUsageCost({
-          usage: {
-            input: inputTokens ?? undefined,
-            output: outputTokens ?? undefined,
-          },
+          usage: { input: inputTokens ?? undefined, output: outputTokens ?? undefined },
           cost: costConfig,
         })
       : undefined;
-  const costLabel = showCost && hasUsage ? formatUsd(cost) : undefined;
+  const cacheOnlyCost =
+    showCost && costConfig
+      ? estimateUsageCost({
+          usage: { cacheRead: cacheRead ?? undefined, cacheWrite: cacheWrite ?? undefined },
+          cost: costConfig,
+        })
+      : undefined;
+  // When showing per-component breakdown, use consistent 4-decimal precision
+  // so the parts visibly add up. Total-only (no cache) uses standard formatUsd.
+  const hasCache = (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
+  const formatComponentUsd = (v?: number) =>
+    v !== undefined && Number.isFinite(v) ? `$${v.toFixed(4)}` : undefined;
+  const tokenOnlyCostLabel = hasCache ? formatComponentUsd(tokenOnlyCost) : undefined;
+  const cacheOnlyCostLabel = hasCache ? formatComponentUsd(cacheOnlyCost) : undefined;
+  // When showing a per-component breakdown (hasCache), sum the components so the parts always
+  // add up to the total — both are from the same turn. For the no-cache path, prefer the
+  // accumulated storedCost (session total) or fall back to a full recalculation.
+  const totalCostLabel = (() => {
+    if (!showCost || !hasUsage) return undefined;
+    if (hasCache) {
+      if (tokenOnlyCost === undefined && cacheOnlyCost === undefined) return undefined;
+      const sum = (tokenOnlyCost ?? 0) + (cacheOnlyCost ?? 0);
+      return formatComponentUsd(sum);
+    }
+    const fallback =
+      showCost && hasUsage
+        ? estimateUsageCost({
+            usage: {
+              input: inputTokens ?? undefined,
+              output: outputTokens ?? undefined,
+            },
+            cost: costConfig,
+          })
+        : undefined;
+    return formatUsd(storedCost ?? fallback);
+  })();
 
   const selectedAuthLabel = selectedAuthLabelValue ? ` · 🔑 ${selectedAuthLabelValue}` : "";
   const channelModelNote = (() => {
@@ -825,10 +862,18 @@ export function buildStatusMessage(args: StatusArgs): string {
   const commit = resolveCommitHash({ moduleUrl: import.meta.url });
   const versionLine = `🦞 OpenClaw ${VERSION}${commit ? ` (${commit})` : ""}`;
   const usagePair = formatUsagePair(inputTokens, outputTokens);
-  const cacheLine = formatCacheLine(inputTokens, cacheRead, cacheWrite);
-  const costLine = costLabel ? `💵 Cost: ${costLabel}` : null;
+  const rawCacheLine = formatCacheLine(inputTokens, cacheRead, cacheWrite);
+  // When cache exists: token line gets token cost, cache line gets cache cost, separate total line
+  // When no cache: token line is plain, separate total cost line
   const usageCostLine =
-    usagePair && costLine ? `${usagePair} · ${costLine}` : (usagePair ?? costLine);
+    hasCache && tokenOnlyCostLabel
+      ? `${usagePair} · 💵 ${tokenOnlyCostLabel}`
+      : usagePair;
+  const cacheLine =
+    hasCache && cacheOnlyCostLabel
+      ? `${rawCacheLine} · 💵 ${cacheOnlyCostLabel}`
+      : rawCacheLine;
+  const totalCostLine = totalCostLabel ? `💵 Cost: ${totalCostLabel}` : null;
   const mediaLine = formatMediaUnderstandingLine(args.mediaDecisions);
   const voiceLine = formatVoiceModeLine(args.config, args.sessionEntry);
 
@@ -840,6 +885,7 @@ export function buildStatusMessage(args: StatusArgs): string {
     fallbackLine,
     usageCostLine,
     cacheLine,
+    totalCostLine,
     `📚 ${contextLine}`,
     mediaLine,
     args.usageLine,
