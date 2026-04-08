@@ -151,6 +151,18 @@ export function createDiscordMonitorClient(params: {
     discordConfig: params.discordConfig,
     getAutoPresenceController: () => autoPresenceController,
   });
+
+  // Polyfill registerListener for carbon >=0.14 compatibility: v0.14.0 has a `listeners` array
+  // on Client but no registerListener() method (added later in carbon main, not yet published).
+  // VoicePlugin and GatewayPlugin both call client.registerListener() during Client construction.
+  type CarbonClientProto = { listeners: unknown[]; registerListener?: (listener: unknown) => void };
+  const carbonClientProto = Client.prototype as unknown as CarbonClientProto;
+  if (!carbonClientProto.registerListener) {
+    carbonClientProto.registerListener = function (this: CarbonClientProto, listener: unknown) {
+      this.listeners.push(listener);
+    };
+  }
+
   const client = params.createClient(
     {
       baseUrl: "http://localhost",
