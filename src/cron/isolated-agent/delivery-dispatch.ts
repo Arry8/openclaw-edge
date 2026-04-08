@@ -354,6 +354,37 @@ async function retryTransientDirectCronDelivery<T>(params: {
   }
 }
 
+/**
+ * Patterns that identify raw error output from model providers or runtime
+ * exceptions.  When any of these match the synthesized text of a cron run,
+ * announce delivery is suppressed to avoid posting error JSON dumps to
+ * user-facing channels.
+ *
+ * See: https://github.com/openclaw/openclaw/issues/42243
+ */
+const RAW_ERROR_OUTPUT_PATTERNS: readonly RegExp[] = [
+  /^\s*\{[\s\S]*"(?:type|error|code)":\s*"(?:error|server_error|invalid_request)/,
+  /^\s*(?:TypeError|RangeError|SyntaxError|ReferenceError):/,
+  /^\s*\{[\s\S]*"(?:message|error)":\s*"An error occurred/,
+  /\berror"?:\s*\{[\s\S]*"(?:type|code)":\s*"(?:server_error|invalid_request|rate_limit)/,
+];
+
+/**
+ * Returns `true` when `text` looks like a raw error response rather than
+ * useful agent output.  Used to prevent error JSON dumps from being
+ * delivered to user-facing channels via announce mode.
+ *
+ * Only inspects short texts (<=5000 chars) -- large outputs are assumed to
+ * be real content that happens to mention an error keyword.
+ */
+export function isLikelyRawErrorOutput(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 5000) {
+    return false;
+  }
+  return RAW_ERROR_OUTPUT_PATTERNS.some((re) => re.test(trimmed));
+}
+
 export async function dispatchCronDelivery(
   params: DispatchCronDeliveryParams,
 ): Promise<DispatchCronDeliveryState> {
@@ -438,6 +469,19 @@ export async function dispatchCronDelivery(
       );
       if (payloadsForDelivery.length === 0) {
         return await finishSilentReplyDelivery();
+      }
+      // Guard: never deliver raw error output (provider JSON errors, runtime
+      // exceptions) to user-facing channels.  Runs AFTER subagent orchestration
+      // so interim error-shaped parent messages don't suppress valid final output.
+      // See: https://github.com/openclaw/openclaw/issues/42243
+      const allPayloadsAreErrors = payloadsForDelivery.every(
+        (p) => typeof p.text === "string" && isLikelyRawErrorOutput(p.text),
+      );
+      if (allPayloadsAreErrors) {
+        logWarn(
+          `[cron:${params.job.id}] suppressed delivery of raw error output (${payloadsForDelivery.length} payloads)`,
+        );
+        return null;
       }
       if (params.isAborted()) {
         return params.withRunSession({
