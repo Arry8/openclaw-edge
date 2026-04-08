@@ -6,7 +6,8 @@ describe("buildBareSessionResetPrompt", () => {
   it("includes the core session startup instruction", () => {
     const prompt = buildBareSessionResetPrompt();
     expect(prompt).toContain("Run your Session Startup sequence");
-    expect(prompt).toContain("read the required files before responding to the user");
+    expect(prompt).toContain("already in context before rereading files");
+    expect(prompt).toContain("missing from context or truncated");
   });
 
   it("appends current time line so agents know the date", () => {
