@@ -275,10 +275,6 @@ export async function configureGatewayForSetup(
           mode: "token",
           token: gatewayTokenInput,
         },
-        remote: {
-          ...nextConfig.gateway?.remote,
-          token: gatewayTokenInput,
-        },
       },
     };
   }
