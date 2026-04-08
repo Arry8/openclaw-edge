@@ -92,6 +92,7 @@ const ERROR_PATTERNS = {
     "connection reset",
   ],
   timeout: [
+    "terminated",
     "timeout",
     "timed out",
     "service unavailable",
