@@ -63,6 +63,8 @@ export type EmbeddedPiSubscribeState = {
   compactionRetryResolve?: () => void;
   compactionRetryReject?: (reason?: unknown) => void;
   compactionRetryPromise: Promise<void> | null;
+  /** Resolves when compaction cleanup completes during unsubscribe */
+  compactionCleanupResolve?: () => void;
   unsubscribed: boolean;
 
   messagingToolSentTexts: string[];
