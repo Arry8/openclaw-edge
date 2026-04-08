@@ -440,7 +440,7 @@ function readAllowFromStateForPathSyncWithExists(
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code !== "ENOENT") {
-      return { entries: [], exists: false };
+      throw err;
     }
   }
 
@@ -460,7 +460,7 @@ function readAllowFromStateForPathSyncWithExists(
     if (code === "ENOENT") {
       return { entries: [], exists: false };
     }
-    return { entries: [], exists: false };
+    throw err;
   }
   // stat is guaranteed non-null here: resolveAllowFromReadCacheOrMissing returns early when stat is null.
   try {
