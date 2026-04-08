@@ -37,21 +37,49 @@ function expectConfigUnchanged(
 }
 
 describe("applyDefaultModelChoice", () => {
-  it("ensures allowlist entry exists when returning an agent override", async () => {
+  it("does not override agent model when inherited default exists", async () => {
     const defaultModel = "vercel-ai-gateway/anthropic/claude-opus-4.6";
     const noteAgentModel = vi.fn(async () => {});
     const applied = await applyDefaultModelChoice({
-      config: {},
+      config: {
+        agents: {
+          defaults: {
+            model: "claude-3.5-sonnet",
+          },
+        },
+      },
       setDefaultModel: false,
       defaultModel,
-      // Simulate a provider function that does not explicitly add the entry.
       applyProviderConfig: (config: OpenClawConfig) => config,
       applyDefaultConfig: (config: OpenClawConfig) => config,
       noteAgentModel,
       prompter: makePrompter(),
     });
 
-    expect(noteAgentModel).toHaveBeenCalledWith(defaultModel);
+    // When setDefaultModel is false and inherited default exists,
+    // agent should inherit from agents.defaults.model instead of
+    // baking in the provider's defaultModel. See issue #24170.
+    expect(noteAgentModel).not.toHaveBeenCalled();
+    expect(applied.agentModelOverride).toBeUndefined();
+    expect(applied.config.agents?.defaults?.models?.[defaultModel]).toEqual({});
+  });
+
+  it("returns agentModelOverride when no inherited default exists", async () => {
+    const defaultModel = "vercel-ai-gateway/anthropic/claude-opus-4.6";
+    const noteAgentModel = vi.fn(async () => {});
+    const applied = await applyDefaultModelChoice({
+      config: {},
+      setDefaultModel: false,
+      defaultModel,
+      applyProviderConfig: (config: OpenClawConfig) => config,
+      applyDefaultConfig: (config: OpenClawConfig) => config,
+      noteAgentModel,
+      prompter: makePrompter(),
+    });
+
+    // When no inherited default model exists, we must return the provider's
+    // default as agentModelOverride to avoid creating an agent with no model.
+    expect(noteAgentModel).not.toHaveBeenCalled();
     expect(applied.agentModelOverride).toBe(defaultModel);
     expect(applied.config.agents?.defaults?.models?.[defaultModel]).toEqual({});
   });

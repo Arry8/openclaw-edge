@@ -11,6 +11,16 @@ import {
   setupAuthTestEnv,
 } from "./test-wizard-helpers.js";
 
+// Under --isolate=false, vi.mock calls from sibling test files
+// (auth-choice.apply.plugin-provider.test.ts, auth-choice.test.ts) leak into
+// this file. Re-declare real implementations so this file stays green.
+vi.mock("../plugins/provider-auth-choice.runtime.js", async (importOriginal) => {
+  return await importOriginal();
+});
+vi.mock("../agents/auth-profiles.js", async (importOriginal) => {
+  return await importOriginal();
+});
+
 function createPrompter(overrides: Partial<WizardPrompter>): WizardPrompter {
   return createWizardPrompter(overrides, { defaultSelect: "" });
 }
@@ -78,7 +88,9 @@ describe("applyAuthChoice (moonshot)", () => {
     );
     expect(result.config.models?.providers?.moonshot?.baseUrl).toBe("https://api.moonshot.cn/v1");
     expect(result.config.models?.providers?.moonshot?.models?.[0]?.input).toContain("image");
-    expect(result.agentModelOverride).toBe("moonshot/kimi-k2.5");
+    // When setDefaultModel is false, agent should inherit from agents.defaults.model
+    // instead of baking in the provider's defaultModel. See issue #24170.
+    expect(result.agentModelOverride).toBeUndefined();
 
     const parsed = await readAuthProfiles();
     expect(parsed.profiles?.["moonshot:default"]?.key).toBe("sk-moonshot-cn-test");
