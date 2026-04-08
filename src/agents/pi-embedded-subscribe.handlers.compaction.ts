@@ -70,13 +70,6 @@ export function handleAutoCompactionEnd(
     ctx.maybeResolveCompactionWait();
     clearStaleAssistantUsageOnSessionMessages(ctx);
   }
-
-  // Signal that compaction cleanup is complete (used during unsubscribe)
-  if (ctx.state.compactionCleanupResolve) {
-    ctx.state.compactionCleanupResolve();
-    ctx.state.compactionCleanupResolve = undefined;
-  }
-
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "compaction",
