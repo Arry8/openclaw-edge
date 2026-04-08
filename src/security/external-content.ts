@@ -227,21 +227,17 @@ function replaceMarkers(content: string): string {
   }
   replacements.sort((a, b) => a.start - b.start);
 
-  // Apply replacements to the folded string (not the original) so that
-  // match positions are consistent. The folded string only differs by
-  // stripped invisible characters (ZWSP, ZWNJ, ZWJ, WJ, BOM, soft
-  // hyphen) which have no semantic value for LLM consumption.
   let cursor = 0;
   let output = "";
   for (const replacement of replacements) {
     if (replacement.start < cursor) {
       continue;
     }
-    output += folded.slice(cursor, replacement.start);
+    output += content.slice(cursor, replacement.start);
     output += replacement.value;
     cursor = replacement.end;
   }
-  output += folded.slice(cursor);
+  output += content.slice(cursor);
   return output;
 }
 
