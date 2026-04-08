@@ -492,7 +492,7 @@ export class GatewayBrowserClient {
   }
 
   private async sendConnect() {
-    if (this.connectSent) {
+    if (this.closed || this.connectSent) {
       return;
     }
     this.connectSent = true;
