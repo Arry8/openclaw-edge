@@ -141,7 +141,7 @@ function parseGatewayCloseCode(message: string): number | undefined {
 }
 
 function createGatewayStatusObserver(params: {
-  gateway?: Pick<MutableDiscordGateway, "isConnected">;
+  gateway?: Pick<MutableDiscordGateway, "isConnected" | "ws">;
   abortSignal?: AbortSignal;
   runtime: RuntimeEnv;
   pushStatus: (patch: Parameters<DiscordMonitorStatusSink>[0]) => void;
@@ -151,8 +151,31 @@ function createGatewayStatusObserver(params: {
   let queuedForceStopError: unknown;
   let readyPollId: ReturnType<typeof setInterval> | undefined;
   let readyTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  let trackedSocket: MutableDiscordGateway["ws"] | undefined;
 
   const shouldStop = () => params.abortSignal?.aborted || params.isLifecycleStopping();
+  const onSocketMessage = () => {
+    if (shouldStop()) {
+      return;
+    }
+    params.pushStatus({ lastEventAt: Date.now() });
+  };
+  const detachSocketLivenessListener = () => {
+    if (!trackedSocket) {
+      return;
+    }
+    trackedSocket.removeListener("message", onSocketMessage);
+    trackedSocket = undefined;
+  };
+  const attachSocketLivenessListener = () => {
+    const nextSocket = params.gateway?.ws;
+    if (!nextSocket || nextSocket === trackedSocket) {
+      return;
+    }
+    detachSocketLivenessListener();
+    nextSocket.on("message", onSocketMessage);
+    trackedSocket = nextSocket;
+  };
   const clearReadyWatch = () => {
     if (readyPollId) {
       clearInterval(readyPollId);
@@ -227,11 +250,13 @@ function createGatewayStatusObserver(params: {
     const at = Date.now();
     const message = String(msg);
     if (message.includes("Gateway websocket opened")) {
+      attachSocketLivenessListener();
       params.pushStatus({ connected: false, lastEventAt: at });
       startReadyWatch();
       return;
     }
     if (message.includes("Gateway websocket closed")) {
+      detachSocketLivenessListener();
       clearReadyWatch();
       const code = parseGatewayCloseCode(message);
       params.pushStatus({
@@ -257,6 +282,7 @@ function createGatewayStatusObserver(params: {
   return {
     onGatewayDebug,
     clearReadyWatch,
+    attachSocketLivenessListener,
     registerForceStop: (handler: (err: unknown) => void) => {
       forceStopHandler = handler;
       if (queuedForceStopError !== undefined) {
@@ -267,6 +293,7 @@ function createGatewayStatusObserver(params: {
     },
     dispose: () => {
       clearReadyWatch();
+      detachSocketLivenessListener();
       forceStopHandler = undefined;
       queuedForceStopError = undefined;
     },
@@ -382,6 +409,7 @@ export async function runDiscordGatewayLifecycle(params: {
     pushStatus,
     isLifecycleStopping: () => lifecycleStopping,
   });
+  statusObserver.attachSocketLivenessListener();
   gatewayEmitter?.on("debug", statusObserver.onGatewayDebug);
 
   let sawDisallowedIntents = false;
