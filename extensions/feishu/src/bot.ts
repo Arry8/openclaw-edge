@@ -847,6 +847,12 @@ export async function handleFeishuMessage(params: {
     });
     const mediaPayload = buildAgentMediaPayload(mediaList);
 
+    // Replace raw media JSON (e.g. {"image_key":"..."}) with human-readable
+    // placeholder so the LLM does not see confusing API-internal keys.
+    if (mediaList.length > 0) {
+      ctx.content = mediaList.map((m) => m.placeholder).join(" ");
+    }
+
     // Fetch quoted/replied message content if parentId exists
     let quotedMessageInfo: Awaited<ReturnType<typeof getMessageFeishu>> = null;
     let quotedContent: string | undefined;
