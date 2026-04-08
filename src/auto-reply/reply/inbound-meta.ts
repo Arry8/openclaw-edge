@@ -163,7 +163,8 @@ export function buildInboundUserContextPrefix(
     tag: normalizeOptionalString(ctx.SenderTag),
     e164: normalizeOptionalString(ctx.SenderE164),
   };
-  if (senderInfo?.label) {
+  // Skip sender metadata for webchat / Control UI (#34153).
+  if (senderInfo?.label && shouldIncludeConversationInfo) {
     blocks.push(
       ["Sender (untrusted metadata):", "```json", JSON.stringify(senderInfo, null, 2), "```"].join(
         "\n",
