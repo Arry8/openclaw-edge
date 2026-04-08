@@ -30,11 +30,12 @@
   ],
   "configSchema": {
     "type": "object",
-    "additionalProperties": true,
+    "additionalProperties": false,
     "properties": {
       "baseUrl": {
         "type": "string"
       }
     }
+  }
   }
 }
