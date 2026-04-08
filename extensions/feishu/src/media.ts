@@ -630,11 +630,15 @@ export function detectFileType(
   }
 }
 
-function resolveFeishuOutboundMediaKind(params: { fileName: string; contentType?: string }): {
+function resolveFeishuOutboundMediaKind(params: {
+  fileName: string;
+  contentType?: string;
+  audioAsVoice?: boolean;
+}): {
   fileType?: "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
   msgType: "image" | "file" | "audio" | "media";
 } {
-  const { fileName, contentType } = params;
+  const { fileName, contentType, audioAsVoice } = params;
   const ext = normalizeLowercaseStringOrEmpty(path.extname(fileName));
   const mimeKind = mediaKindFromMime(contentType);
 
@@ -652,6 +656,13 @@ function resolveFeishuOutboundMediaKind(params: { fileName: string; contentType?
     contentType === "audio/opus"
   ) {
     return { fileType: "opus", msgType: "audio" };
+  }
+
+  // When audioAsVoice is set (TTS output), send non-opus audio as a voice
+  // message instead of a generic file attachment.  The Feishu audio msg_type
+  // accepts uploaded files regardless of codec, so this works for mp3/wav/etc.
+  if (audioAsVoice && (mimeKind === "audio" || [".mp3", ".wav", ".m4a", ".aac"].includes(ext))) {
+    return { fileType: detectFileType(fileName), msgType: "audio" };
   }
 
   if (
@@ -691,6 +702,8 @@ export async function sendMediaFeishu(params: {
   replyToMessageId?: string;
   replyInThread?: boolean;
   accountId?: string;
+  /** When true, send audio as a voice message bubble instead of a file attachment. */
+  audioAsVoice?: boolean;
   /** Allowed roots for local path reads; required for local filePath to work. */
   mediaLocalRoots?: readonly string[];
 }): Promise<SendMediaResult> {
@@ -703,6 +716,7 @@ export async function sendMediaFeishu(params: {
     replyToMessageId,
     replyInThread,
     accountId,
+    audioAsVoice,
     mediaLocalRoots,
   } = params;
   const account = resolveFeishuRuntimeAccount({ cfg, accountId });
@@ -731,7 +745,7 @@ export async function sendMediaFeishu(params: {
     throw new Error("Either mediaUrl or mediaBuffer must be provided");
   }
 
-  const routing = resolveFeishuOutboundMediaKind({ fileName: name, contentType });
+  const routing = resolveFeishuOutboundMediaKind({ fileName: name, contentType, audioAsVoice });
 
   if (routing.msgType === "image") {
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer, accountId });
