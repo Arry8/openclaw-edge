@@ -8,8 +8,6 @@ import type {
   Tool,
   Usage,
 } from "@mariozechner/pi-ai";
-import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
-import { buildOllamaBaseUrlSsrFPolicy } from "./provider-models.js";
 import { createAssistantMessageEventStream, streamSimple } from "@mariozechner/pi-ai";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type {
@@ -604,7 +602,6 @@ export function createOllamaStreamFn(
     const stream = createAssistantMessageEventStream();
 
     const run = async () => {
-      let release: (() => Promise<void>) | undefined;
       try {
         const ollamaMessages = convertToOllamaMessages(
           context.messages ?? [],
@@ -640,19 +637,12 @@ export function createOllamaStreamFn(
           headers.Authorization = `Bearer ${options.apiKey}`;
         }
 
-        const fetchResult = await fetchWithSsrFGuard({
-          url: chatUrl,
-          init: {
-            method: "POST",
-            headers,
-            body: JSON.stringify(body),
-            signal: options?.signal,
-          },
-          policy: buildOllamaBaseUrlSsrFPolicy(chatUrl),
-          auditContext: "ollama-stream",
+        const response = await fetch(chatUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: options?.signal,
         });
-        const response = fetchResult.response;
-        release = fetchResult.release;
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
@@ -755,7 +745,6 @@ export function createOllamaStreamFn(
           }),
         });
       } finally {
-        await release?.();
         stream.end();
       }
     };
