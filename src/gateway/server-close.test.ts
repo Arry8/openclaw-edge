@@ -1,10 +1,49 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RestartSentinelPayload } from "../infra/restart-sentinel.js";
+import { createGatewayCloseHandler } from "./server-close.js";
 
-const mocks = {
-  logWarn: vi.fn(),
+type TestGatewayHookEvent = {
+  type?: string;
+  action?: string;
+  context?: Record<string, unknown>;
 };
-const WEBSOCKET_CLOSE_GRACE_MS = 1_000;
-const WEBSOCKET_CLOSE_FORCE_CONTINUE_MS = 250;
+
+type TestRestartSentinelRecord = {
+  payload: Record<string, unknown>;
+};
+
+const { triggerInternalHook, readRestartSentinel, writeRestartSentinel, subsystemLoggerWarn } =
+  vi.hoisted(() => ({
+    triggerInternalHook: vi.fn(
+      async (_event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => undefined,
+    ),
+    readRestartSentinel: vi.fn<() => Promise<TestRestartSentinelRecord | null>>(async () => null),
+    writeRestartSentinel: vi.fn<(payload: RestartSentinelPayload) => Promise<string>>(
+      async () => "sentinel.json",
+    ),
+    subsystemLoggerWarn: vi.fn(),
+  }));
+
+vi.mock("../hooks/internal-hooks.js", async () => {
+  const actual = await vi.importActual<typeof import("../hooks/internal-hooks.js")>(
+    "../hooks/internal-hooks.js",
+  );
+  return {
+    ...actual,
+    triggerInternalHook,
+  };
+});
+
+vi.mock("../infra/restart-sentinel.js", async () => {
+  const actual = await vi.importActual<typeof import("../infra/restart-sentinel.js")>(
+    "../infra/restart-sentinel.js",
+  );
+  return {
+    ...actual,
+    readRestartSentinel,
+    writeRestartSentinel,
+  };
+});
 
 vi.mock("../channels/plugins/index.js", () => ({
   listChannelPlugins: () => [],
@@ -16,158 +55,474 @@ vi.mock("../hooks/gmail-watcher.js", () => ({
 
 vi.mock("../logging/subsystem.js", () => ({
   createSubsystemLogger: vi.fn(() => ({
-    warn: mocks.logWarn,
+    warn: subsystemLoggerWarn,
   })),
 }));
 
-const { createGatewayCloseHandler } = await import("./server-close.js");
+function createCloseHarness(params?: {
+  lifecycleUnsub?: () => void;
+  broadcast?: (event: string, payload: unknown) => void;
+  stallWssClose?: boolean;
+  omitLogger?: boolean;
+}) {
+  const tickInterval = setInterval(() => undefined, 60_000);
+  const healthInterval = setInterval(() => undefined, 60_000);
+  const dedupeCleanup = setInterval(() => undefined, 60_000);
+  const stopTaskRegistryMaintenance = vi.fn();
+  const loggerWarn = vi.fn();
+  const stalledSocketTerminate = vi.fn();
+  const close = createGatewayCloseHandler({
+    bonjourStop: null,
+    tailscaleCleanup: null,
+    canvasHost: null,
+    canvasHostServer: null,
+    stopChannel: vi.fn(async () => undefined),
+    pluginServices: null,
+    cron: { stop: vi.fn() },
+    heartbeatRunner: { stop: vi.fn() } as never,
+    updateCheckStop: null,
+    nodePresenceTimers: new Map(),
+    broadcast: params?.broadcast ?? vi.fn(),
+    tickInterval,
+    healthInterval,
+    dedupeCleanup,
+    mediaCleanup: null,
+    agentUnsub: null,
+    heartbeatUnsub: null,
+    transcriptUnsub: null,
+    lifecycleUnsub: params?.lifecycleUnsub ?? null,
+    stopTaskRegistryMaintenance,
+    ...(params?.omitLogger ? {} : { logger: { warn: loggerWarn } }),
+    chatRunState: { clear: vi.fn() },
+    clients: new Set(),
+    configReloader: { stop: vi.fn(async () => undefined) },
+    wss: {
+      close: (cb: () => void) => {
+        if (!params?.stallWssClose) {
+          cb();
+        }
+      },
+      clients: new Set([{ terminate: stalledSocketTerminate }]),
+    } as never,
+    httpServer: {
+      close: (cb: (err?: Error | null) => void) => cb(null),
+      closeIdleConnections: vi.fn(),
+    } as never,
+  });
+  return {
+    close,
+    stopTaskRegistryMaintenance,
+    loggerWarn,
+    stalledSocketTerminate,
+    dispose() {
+      clearInterval(tickInterval);
+      clearInterval(healthInterval);
+      clearInterval(dedupeCleanup);
+    },
+  };
+}
 
 describe("createGatewayCloseHandler", () => {
   beforeEach(() => {
-    vi.useRealTimers();
-    mocks.logWarn.mockClear();
+    triggerInternalHook.mockReset();
+    triggerInternalHook.mockResolvedValue(undefined);
+    readRestartSentinel.mockReset();
+    readRestartSentinel.mockResolvedValue(null);
+    writeRestartSentinel.mockReset();
+    writeRestartSentinel.mockResolvedValue("sentinel.json");
+    subsystemLoggerWarn.mockReset();
   });
 
   it("unsubscribes lifecycle listeners during shutdown", async () => {
     const lifecycleUnsub = vi.fn();
-    const stopTaskRegistryMaintenance = vi.fn();
-    const close = createGatewayCloseHandler({
-      bonjourStop: null,
-      tailscaleCleanup: null,
-      canvasHost: null,
-      canvasHostServer: null,
-      stopChannel: vi.fn(async () => undefined),
-      pluginServices: null,
-      cron: { stop: vi.fn() },
-      heartbeatRunner: { stop: vi.fn() } as never,
-      updateCheckStop: null,
-      stopTaskRegistryMaintenance,
-      nodePresenceTimers: new Map(),
-      broadcast: vi.fn(),
-      tickInterval: setInterval(() => undefined, 60_000),
-      healthInterval: setInterval(() => undefined, 60_000),
-      dedupeCleanup: setInterval(() => undefined, 60_000),
-      mediaCleanup: null,
-      agentUnsub: null,
-      heartbeatUnsub: null,
-      transcriptUnsub: null,
-      lifecycleUnsub,
-      chatRunState: { clear: vi.fn() },
-      clients: new Set(),
-      configReloader: { stop: vi.fn(async () => undefined) },
-      wss: { close: (cb: () => void) => cb() } as never,
-      httpServer: {
-        close: (cb: (err?: Error | null) => void) => cb(null),
-        closeIdleConnections: vi.fn(),
-      } as never,
-    });
-
-    await close({ reason: "test shutdown" });
-
-    expect(lifecycleUnsub).toHaveBeenCalledTimes(1);
-    expect(stopTaskRegistryMaintenance).toHaveBeenCalledTimes(1);
+    const harness = createCloseHarness({ lifecycleUnsub });
+    try {
+      await harness.close({ reason: "test shutdown", initiator: "SIGTERM" });
+      expect(lifecycleUnsub).toHaveBeenCalledTimes(1);
+      expect(harness.stopTaskRegistryMaintenance).toHaveBeenCalledTimes(1);
+    } finally {
+      harness.dispose();
+    }
   });
 
-  it("terminates lingering websocket clients when websocket close exceeds the grace window", async () => {
+  it("continues shutdown when websocket close callback stalls", async () => {
     vi.useFakeTimers();
+    const harness = createCloseHarness({ stallWssClose: true });
 
-    let closeCallback: (() => void) | null = null;
-    const terminate = vi.fn(() => {
-      closeCallback?.();
+    let settled = false;
+    const closePromise = harness.close().then(() => {
+      settled = true;
     });
-    const close = createGatewayCloseHandler({
-      bonjourStop: null,
-      tailscaleCleanup: null,
-      canvasHost: null,
-      canvasHostServer: null,
-      stopChannel: vi.fn(async () => undefined),
-      pluginServices: null,
-      cron: { stop: vi.fn() },
-      heartbeatRunner: { stop: vi.fn() } as never,
-      updateCheckStop: null,
-      stopTaskRegistryMaintenance: null,
-      nodePresenceTimers: new Map(),
-      broadcast: vi.fn(),
-      tickInterval: setInterval(() => undefined, 60_000),
-      healthInterval: setInterval(() => undefined, 60_000),
-      dedupeCleanup: setInterval(() => undefined, 60_000),
-      mediaCleanup: null,
-      agentUnsub: null,
-      heartbeatUnsub: null,
-      transcriptUnsub: null,
-      lifecycleUnsub: null,
-      chatRunState: { clear: vi.fn() },
-      clients: new Set(),
-      configReloader: { stop: vi.fn(async () => undefined) },
-      wss: {
-        clients: new Set([{ terminate }]),
-        close: (cb: () => void) => {
-          closeCallback = cb;
-        },
-      } as never,
-      httpServer: {
-        close: (cb: (err?: Error | null) => void) => cb(null),
-        closeIdleConnections: vi.fn(),
-      } as never,
-    });
+    await vi.advanceTimersByTimeAsync(2_100);
+    await Promise.resolve();
+    expect(settled).toBe(true);
+    expect(harness.stalledSocketTerminate).toHaveBeenCalledTimes(1);
+    expect(harness.loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("forcing client termination"),
+    );
+    expect(harness.stopTaskRegistryMaintenance).toHaveBeenCalledTimes(1);
 
-    const closePromise = close({ reason: "test shutdown" });
-    await vi.advanceTimersByTimeAsync(WEBSOCKET_CLOSE_GRACE_MS);
     await closePromise;
-
-    expect(terminate).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.logWarn.mock.calls.some(([message]) =>
-        String(message).includes("websocket server close exceeded 1000ms"),
-      ),
-    ).toBe(true);
+    harness.dispose();
   });
 
-  it("continues shutdown when websocket close hangs without tracked clients", async () => {
+  it("emits gateway shutdown + pre-restart hooks with lifecycle metadata", async () => {
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 123,
+        initiator: "SIGUSR1",
+        restartId: "restart-123",
+        correlationId: "corr-123",
+      });
+
+      const hookCalls = triggerInternalHook.mock.calls as Array<
+        [TestGatewayHookEvent, { perHandlerTimeoutMs?: number }?]
+      >;
+      const shutdownEvent = hookCalls.find(
+        (call) => call[0]?.type === "gateway" && call[0]?.action === "shutdown",
+      )?.[0];
+      const preRestartEvent = hookCalls.find(
+        (call) => call[0]?.type === "gateway" && call[0]?.action === "pre-restart",
+      )?.[0];
+
+      expect(shutdownEvent?.context).toMatchObject({
+        reason: "gateway restarting",
+        restartExpectedMs: 123,
+        initiator: "SIGUSR1",
+        restartId: "restart-123",
+        correlationId: "corr-123",
+      });
+      expect(preRestartEvent?.context).toMatchObject({
+        reason: "gateway restarting",
+        restartExpectedMs: 123,
+        initiator: "SIGUSR1",
+        restartId: "restart-123",
+        correlationId: "corr-123",
+      });
+      expect(Array.isArray(preRestartEvent?.context?.outbox)).toBe(true);
+      expect(triggerInternalHook.mock.calls[0]?.[1]).toBeUndefined();
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("continues shutdown when a lifecycle hook stalls", async () => {
     vi.useFakeTimers();
+    triggerInternalHook
+      .mockImplementationOnce(async () => await new Promise<undefined>(() => {}))
+      .mockResolvedValue(undefined);
 
-    const close = createGatewayCloseHandler({
-      bonjourStop: null,
-      tailscaleCleanup: null,
-      canvasHost: null,
-      canvasHostServer: null,
-      stopChannel: vi.fn(async () => undefined),
-      pluginServices: null,
-      cron: { stop: vi.fn() },
-      heartbeatRunner: { stop: vi.fn() } as never,
-      updateCheckStop: null,
-      stopTaskRegistryMaintenance: null,
-      nodePresenceTimers: new Map(),
-      broadcast: vi.fn(),
-      tickInterval: setInterval(() => undefined, 60_000),
-      healthInterval: setInterval(() => undefined, 60_000),
-      dedupeCleanup: setInterval(() => undefined, 60_000),
-      mediaCleanup: null,
-      agentUnsub: null,
-      heartbeatUnsub: null,
-      transcriptUnsub: null,
-      lifecycleUnsub: null,
-      chatRunState: { clear: vi.fn() },
-      clients: new Set(),
-      configReloader: { stop: vi.fn(async () => undefined) },
-      wss: {
-        clients: new Set(),
-        close: () => undefined,
-      } as never,
-      httpServer: {
-        close: (cb: (err?: Error | null) => void) => cb(null),
-        closeIdleConnections: vi.fn(),
-      } as never,
+    const harness = createCloseHarness();
+    try {
+      let settled = false;
+      const closePromise = harness
+        .close({ reason: "gateway restarting", restartExpectedMs: 123 })
+        .then(() => {
+          settled = true;
+        });
+
+      await vi.advanceTimersByTimeAsync(1_600);
+      await Promise.resolve();
+
+      expect(settled).toBe(true);
+      expect(triggerInternalHook).toHaveBeenCalledTimes(2);
+      expect(harness.loggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("shutdown hook timed out after 1500ms"),
+      );
+
+      await closePromise;
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("falls back to subsystem logging when shutdown hook stalls without params.logger", async () => {
+    vi.useFakeTimers();
+    triggerInternalHook
+      .mockImplementationOnce(async () => await new Promise<undefined>(() => {}))
+      .mockResolvedValue(undefined);
+
+    const harness = createCloseHarness({ omitLogger: true });
+    try {
+      let settled = false;
+      const closePromise = harness.close().then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(1_600);
+      await Promise.resolve();
+
+      expect(settled).toBe(true);
+      expect(subsystemLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("shutdown hook timed out after 1500ms"),
+      );
+
+      await closePromise;
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("persists hook outbox tasks into restart sentinel", async () => {
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            message: "Gateway is back after restart",
+            sessionKey: "agent:main:main",
+          });
+        }
+      },
+    );
+
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+        initiator: "SIGUSR1",
+        restartId: "restart-abc",
+      });
+
+      expect(writeRestartSentinel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "restart",
+          status: "ok",
+          restartId: "restart-abc",
+          correlationId: "restart-abc",
+          initiator: "SIGUSR1",
+          suppressPrimaryNotice: true,
+          outbox: [
+            expect.objectContaining({
+              kind: "message",
+              message: "Gateway is back after restart",
+              sessionKey: "agent:main:main",
+            }),
+          ],
+        }),
+      );
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("preserves legacy top-level routing fields for normalized message outbox tasks", async () => {
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            message: "Gateway is back after restart",
+            sessionKey: "agent:main:main",
+            channel: "telegram",
+            to: "119707338",
+            accountId: "default",
+          });
+        }
+      },
+    );
+
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+      });
+
+      const payload = writeRestartSentinel.mock.calls.at(-1)?.[0];
+      expect(payload?.outbox).toEqual([
+        expect.objectContaining({
+          kind: "message",
+          message: "Gateway is back after restart",
+          sessionKey: "agent:main:main",
+          deliveryContext: {
+            channel: "telegram",
+            to: "119707338",
+            accountId: "default",
+          },
+        }),
+      ]);
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("preserves nested deliveryContext threadId for normalized message outbox tasks", async () => {
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            message: "Gateway is back after restart",
+            sessionKey: "agent:main:main",
+            deliveryContext: {
+              channel: "telegram",
+              to: "119707338",
+              accountId: "default",
+              threadId: "20",
+            },
+          });
+        }
+      },
+    );
+
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+      });
+
+      const payload = writeRestartSentinel.mock.calls.at(-1)?.[0];
+      expect(payload?.outbox).toEqual([
+        expect.objectContaining({
+          kind: "message",
+          message: "Gateway is back after restart",
+          sessionKey: "agent:main:main",
+          deliveryContext: {
+            channel: "telegram",
+            to: "119707338",
+            accountId: "default",
+            threadId: "20",
+          },
+        }),
+      ]);
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("ignores malformed existing sentinel outbox entries when deciding notice suppression", async () => {
+    readRestartSentinel.mockResolvedValue({
+      payload: {
+        kind: "restart",
+        status: "ok",
+        ts: Date.now(),
+        sessionKey: "agent:main:main",
+        suppressPrimaryNotice: true,
+        outbox: [null],
+      },
     });
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            message: "Gateway is back after restart",
+            sessionKey: "agent:main:main",
+          });
+        }
+      },
+    );
 
-    const closePromise = close({ reason: "test shutdown" });
-    await vi.advanceTimersByTimeAsync(WEBSOCKET_CLOSE_GRACE_MS + WEBSOCKET_CLOSE_FORCE_CONTINUE_MS);
-    await closePromise;
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+      });
 
-    expect(
-      mocks.logWarn.mock.calls.some(([message]) =>
-        String(message).includes("websocket server close still pending after 250ms force window"),
-      ),
-    ).toBe(true);
+      const payload = writeRestartSentinel.mock.calls.at(-1)?.[0];
+      expect(payload?.suppressPrimaryNotice).toBe(true);
+      expect(payload?.outbox).toEqual([
+        expect.objectContaining({
+          kind: "message",
+          message: "Gateway is back after restart",
+          sessionKey: "agent:main:main",
+        }),
+      ]);
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("does not suppress the primary notice when persisted outbox is not deliverable", async () => {
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            message: "Gateway is back after restart",
+          });
+        }
+      },
+    );
+
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+      });
+
+      const payload = writeRestartSentinel.mock.calls.at(-1)?.[0];
+      expect(payload?.outbox).toEqual([
+        expect.objectContaining({
+          kind: "message",
+          message: "Gateway is back after restart",
+        }),
+      ]);
+      expect(payload?.suppressPrimaryNotice).toBeUndefined();
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("preserves numeric thread ids while normalizing persisted outbox tasks", async () => {
+    triggerInternalHook.mockImplementation(
+      async (event: TestGatewayHookEvent, _opts?: { perHandlerTimeoutMs?: number }) => {
+        if (event.type === "gateway" && event.action === "pre-restart") {
+          const outbox = event.context?.outbox as Array<Record<string, unknown>>;
+          outbox.push({
+            kind: "notify-session",
+            message: "notify after restart",
+            sessionKey: "agent:main:main",
+            threadId: 20,
+          });
+          outbox.push({
+            message: "message after restart",
+            sessionKey: "agent:main:main",
+            deliveryContext: {
+              channel: "telegram",
+              to: "119707338",
+              accountId: "default",
+              threadId: 21,
+            },
+          });
+        }
+      },
+    );
+
+    const harness = createCloseHarness();
+    try {
+      await harness.close({
+        reason: "gateway restarting",
+        restartExpectedMs: 1500,
+      });
+
+      const payload = writeRestartSentinel.mock.calls.at(-1)?.[0];
+      expect(payload?.outbox).toEqual([
+        expect.objectContaining({
+          kind: "notify-session",
+          message: "notify after restart",
+          threadId: "20",
+        }),
+        expect.objectContaining({
+          kind: "message",
+          message: "message after restart",
+          deliveryContext: expect.objectContaining({
+            channel: "telegram",
+            to: "119707338",
+            accountId: "default",
+            threadId: "21",
+          }),
+        }),
+      ]);
+    } finally {
+      harness.dispose();
+    }
   });
 });

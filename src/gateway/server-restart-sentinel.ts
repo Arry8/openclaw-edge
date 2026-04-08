@@ -13,6 +13,7 @@ import {
   consumeRestartSentinel,
   formatRestartSentinelMessage,
   summarizeRestartSentinel,
+  type RestartOutboxTask,
 } from "../infra/restart-sentinel.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -117,12 +118,100 @@ async function deliverRestartSentinelNotice(params: {
   }
 }
 
+function executePersistedRestartOutbox(params: {
+  tasks: RestartOutboxTask[] | undefined;
+  fallbackSessionKey?: string;
+}) {
+  const { tasks, fallbackSessionKey } = params;
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return;
+  }
+  for (const rawTask of tasks) {
+    if (!rawTask || typeof rawTask !== "object") {
+      continue;
+    }
+    const task = rawTask as Record<string, unknown>;
+    const message = typeof task.message === "string" ? task.message.trim() : "";
+    const sessionKeyRaw =
+      typeof task.sessionKey === "string" && task.sessionKey.trim().length > 0
+        ? task.sessionKey.trim()
+        : fallbackSessionKey?.trim();
+    if (!message || !sessionKeyRaw) {
+      continue;
+    }
+    const deliveryContextRaw = task.deliveryContext;
+    const deliveryContext =
+      deliveryContextRaw && typeof deliveryContextRaw === "object"
+        ? (deliveryContextRaw as {
+            channel?: unknown;
+            to?: unknown;
+            accountId?: unknown;
+            threadId?: unknown;
+          })
+        : undefined;
+    const dcChannel =
+      deliveryContext && typeof deliveryContext.channel === "string"
+        ? deliveryContext.channel
+        : undefined;
+    const dcTo =
+      deliveryContext && typeof deliveryContext.to === "string" ? deliveryContext.to : undefined;
+    const dcAccountId =
+      deliveryContext && typeof deliveryContext.accountId === "string"
+        ? deliveryContext.accountId
+        : undefined;
+    const dcThreadId =
+      deliveryContext && typeof deliveryContext.threadId === "string"
+        ? deliveryContext.threadId
+        : undefined;
+    const taskChannel = typeof task.channel === "string" ? task.channel : undefined;
+    const taskTo = typeof task.to === "string" ? task.to : undefined;
+    const taskAccountId = typeof task.accountId === "string" ? task.accountId : undefined;
+    const taskThreadId = typeof task.threadId === "string" ? task.threadId : undefined;
+
+    const hasDeliveryContext =
+      dcChannel ||
+      dcTo ||
+      dcAccountId ||
+      dcThreadId ||
+      taskChannel ||
+      taskTo ||
+      taskAccountId ||
+      taskThreadId;
+
+    enqueueSystemEvent(message, {
+      sessionKey: sessionKeyRaw,
+      ...(hasDeliveryContext
+        ? {
+            deliveryContext: {
+              ...(dcChannel ? { channel: dcChannel } : {}),
+              ...(dcTo ? { to: dcTo } : {}),
+              ...(dcAccountId ? { accountId: dcAccountId } : {}),
+              ...(dcThreadId ? { threadId: dcThreadId } : {}),
+              ...(taskChannel ? { channel: taskChannel } : {}),
+              ...(taskTo ? { to: taskTo } : {}),
+              ...(taskAccountId ? { accountId: taskAccountId } : {}),
+              ...(taskThreadId ? { threadId: taskThreadId } : {}),
+            },
+          }
+        : {}),
+    });
+    requestHeartbeatNow({ reason: "hook:gateway.restart.outbox", sessionKey: sessionKeyRaw });
+  }
+}
+
 export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   const sentinel = await consumeRestartSentinel();
   if (!sentinel) {
     return;
   }
   const payload = sentinel.payload;
+  executePersistedRestartOutbox({
+    tasks: payload.outbox,
+    fallbackSessionKey: payload.sessionKey,
+  });
+  if (payload.suppressPrimaryNotice) {
+    return;
+  }
   const sessionKey = payload.sessionKey?.trim();
   const message = formatRestartSentinelMessage(payload);
   const summary = summarizeRestartSentinel(payload);
