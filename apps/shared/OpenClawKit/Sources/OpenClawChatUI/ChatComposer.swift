@@ -146,6 +146,8 @@ struct OpenClawChatComposer: View {
         .pickerStyle(.menu)
         .controlSize(.small)
         .frame(maxWidth: 160, alignment: .leading)
+        .lineLimit(1)
+        .truncationMode(.tail)
         .help("Session")
     }
 
