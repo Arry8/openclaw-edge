@@ -1,1 +1,0 @@
-- Auth/profile rotation: sync runtime auth store snapshot after disk writes so auth profile round-robin actually rotates in gateway mode instead of always picking the same profile. (#32444)
