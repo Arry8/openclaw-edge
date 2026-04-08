@@ -220,6 +220,13 @@ export async function generateVoiceResponse(
   // Resolve model from config
   const { provider, model } = resolveVoiceResponseModel({ voiceConfig, agentRuntime });
 
+  // Pin the session to the voice responseModel to prevent LiveSessionModelSwitchError
+  if (voiceConfig.responseModel && sessionEntry) {
+    (sessionEntry as Record<string, unknown>).providerOverride = provider;
+    (sessionEntry as Record<string, unknown>).modelOverride = model;
+    await agentRuntime.session.saveSessionStore(storePath, sessionStore);
+  }
+
   // Resolve thinking level
   const thinkLevel = agentRuntime.resolveThinkingDefault({ cfg, provider, model });
 
