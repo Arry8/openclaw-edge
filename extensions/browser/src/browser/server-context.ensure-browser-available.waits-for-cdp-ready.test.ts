@@ -17,7 +17,10 @@ function setupEnsureBrowserAvailableHarness() {
   const isChromeCdpReady = vi.mocked(chromeModule.isChromeCdpReady);
   isChromeReachable.mockResolvedValue(false);
 
-  const state = makeBrowserServerState();
+  // Use the triggering config: dangerouslyAllowPrivateNetwork:false was the bug report scenario.
+  const state = makeBrowserServerState({
+    resolvedOverrides: { ssrfPolicy: { dangerouslyAllowPrivateNetwork: false } },
+  });
   const ctx = createBrowserRouteContext({ getState: () => state });
   const profile = ctx.forProfile("openclaw");
 
@@ -71,21 +74,19 @@ describe("browser server-context ensureBrowserAvailable", () => {
 
     await expect(profile.ensureBrowserAvailable()).resolves.toBeUndefined();
 
+    // Loopback profiles pass undefined for ssrfPolicy (control-plane bypass);
+    // non-loopback profiles would pass the configured ssrfPolicy.
     expect(isChromeReachable).toHaveBeenNthCalledWith(
       1,
       "http://127.0.0.1:18800",
       PROFILE_HTTP_REACHABILITY_TIMEOUT_MS,
-      {
-        allowPrivateNetwork: true,
-      },
+      undefined,
     );
     expect(isChromeReachable).toHaveBeenNthCalledWith(
       2,
       "http://127.0.0.1:18800",
       PROFILE_ATTACH_RETRY_TIMEOUT_MS,
-      {
-        allowPrivateNetwork: true,
-      },
+      undefined,
     );
     expect(launchOpenClawChrome).not.toHaveBeenCalled();
     expect(stopOpenClawChrome).not.toHaveBeenCalled();
