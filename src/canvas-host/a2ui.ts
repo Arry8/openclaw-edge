@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setDefaultSecurityHeaders } from "../gateway/http-common.js";
 import { detectMime } from "../media/mime.js";
 import { lowercasePreservingWhitespace } from "../shared/string-coerce.js";
 import { resolveFileWithinRoot } from "./file-resolver.js";
@@ -155,6 +156,8 @@ export async function handleA2uiHttpRequest(
   if (!basePath) {
     return false;
   }
+
+  setDefaultSecurityHeaders(res);
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.statusCode = 405;
