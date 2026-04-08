@@ -307,14 +307,14 @@ export async function handleDiscordMessagingAction(
         Array.isArray(rawComponents) || typeof rawComponents === "function"
           ? (rawComponents as DiscordSendComponents)
           : undefined;
-      const content = readStringParam(params, "content", {
-        required: !asVoice && !componentSpec && !components,
-        allowEmpty: true,
-      });
       const mediaUrl =
         readStringParam(params, "mediaUrl", { trim: false }) ??
         readStringParam(params, "path", { trim: false }) ??
         readStringParam(params, "filePath", { trim: false });
+      const content = readStringParam(params, "content", {
+        required: !asVoice && !componentSpec && !components && !mediaUrl,
+        allowEmpty: true,
+      });
       const filename = readStringParam(params, "filename");
       const replyTo = readStringParam(params, "replyTo");
       const rawEmbeds = params.embeds;

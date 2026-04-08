@@ -91,6 +91,39 @@ export async function handleDiscordMessageAction(
     );
   }
 
+  if (action === "upload-file") {
+    const to = readStringParam(params, "to", { required: true });
+    const mediaUrl =
+      readStringParam(params, "filePath", { trim: false }) ??
+      readStringParam(params, "path", { trim: false }) ??
+      readStringParam(params, "media", { trim: false });
+    if (!mediaUrl) {
+      throw new Error("upload-file requires filePath, path, or media");
+    }
+    const content = readStringParam(params, "message") ?? readStringParam(params, "content");
+    const filename = readStringParam(params, "filename");
+    const replyTo = readStringParam(params, "replyTo");
+    const silent = readBooleanParam(params, "silent") === true;
+    const sessionKey = readStringParam(params, "__sessionKey");
+    const agentId = readStringParam(params, "__agentId");
+    return await handleDiscordAction(
+      {
+        action: "sendMessage",
+        accountId: accountId ?? undefined,
+        to,
+        content: content ?? "",
+        mediaUrl,
+        filename: filename ?? undefined,
+        replyTo: replyTo ?? undefined,
+        silent,
+        __sessionKey: sessionKey ?? undefined,
+        __agentId: agentId ?? undefined,
+      },
+      cfg,
+      actionOptions,
+    );
+  }
+
   if (action === "poll") {
     const to = readStringParam(params, "to", { required: true });
     const question = readStringParam(params, "pollQuestion", {
