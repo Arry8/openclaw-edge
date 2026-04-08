@@ -37,25 +37,27 @@ sections:
 
 ```json5
 {
-  models: {
-    providers: {
+  plugins: {
+    entries: {
       comfy: {
-        mode: "local",
-        baseUrl: "http://127.0.0.1:8188",
-        image: {
-          workflowPath: "./workflows/flux-api.json",
-          promptNodeId: "6",
-          outputNodeId: "9",
-        },
-        video: {
-          workflowPath: "./workflows/video-api.json",
-          promptNodeId: "12",
-          outputNodeId: "21",
-        },
-        music: {
-          workflowPath: "./workflows/music-api.json",
-          promptNodeId: "3",
-          outputNodeId: "18",
+        config: {
+          mode: "local",
+          baseUrl: "http://127.0.0.1:8188",
+          image: {
+            workflowPath: "./workflows/flux-api.json",
+            promptNodeId: "6",
+            outputNodeId: "9",
+          },
+          video: {
+            workflowPath: "./workflows/video-api.json",
+            promptNodeId: "12",
+            outputNodeId: "21",
+          },
+          music: {
+            workflowPath: "./workflows/music-api.json",
+            promptNodeId: "3",
+            outputNodeId: "18",
+          },
         },
       },
     },
@@ -90,12 +92,14 @@ Existing top-level image config still works:
 
 ```json5
 {
-  models: {
-    providers: {
+  plugins: {
+    entries: {
       comfy: {
-        workflowPath: "./workflows/flux-api.json",
-        promptNodeId: "6",
-        outputNodeId: "9",
+        config: {
+          workflowPath: "./workflows/flux-api.json",
+          promptNodeId: "6",
+          outputNodeId: "9",
+        },
       },
     },
   },
@@ -124,15 +128,17 @@ Reference-image editing example:
 
 ```json5
 {
-  models: {
-    providers: {
+  plugins: {
+    entries: {
       comfy: {
-        image: {
-          workflowPath: "./workflows/edit-api.json",
-          promptNodeId: "6",
-          inputImageNodeId: "7",
-          inputImageInputName: "image",
-          outputNodeId: "9",
+        config: {
+          image: {
+            workflowPath: "./workflows/edit-api.json",
+            promptNodeId: "6",
+            inputImageNodeId: "7",
+            inputImageInputName: "image",
+            outputNodeId: "9",
+          },
         },
       },
     },
@@ -177,7 +183,7 @@ Use `mode: "cloud"` plus one of:
 
 - `COMFY_API_KEY`
 - `COMFY_CLOUD_API_KEY`
-- `models.providers.comfy.apiKey`
+- `plugins.entries.comfy.config.apiKey`
 
 Cloud mode still uses the same `image`, `video`, and `music` workflow sections.
 

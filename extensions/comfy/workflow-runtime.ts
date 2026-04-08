@@ -1,9 +1,6 @@
 import fs from "node:fs/promises";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
-import {
-  isProviderApiKeyConfigured,
-  type AuthProfileStore,
-} from "openclaw/plugin-sdk/provider-auth";
+import { type AuthProfileStore } from "openclaw/plugin-sdk/provider-auth";
 import { resolveApiKeyForProvider } from "openclaw/plugin-sdk/provider-auth-runtime";
 import {
   assertOkOrThrowHttpError,
@@ -132,7 +129,7 @@ function mergeSsrFPolicies(...policies: Array<SsrFPolicy | undefined>): SsrFPoli
 }
 
 export function getComfyConfig(cfg?: OpenClawConfig): ComfyProviderConfig {
-  const raw = cfg?.models?.providers?.comfy;
+  const raw = cfg?.plugins?.entries?.comfy?.config;
   return isRecord(raw) ? raw : {};
 }
 
@@ -160,10 +157,24 @@ export function resolveComfyMode(config: ComfyProviderConfig): ComfyMode {
   return normalizeOptionalString(config.mode) === "cloud" ? "cloud" : "local";
 }
 
+function resolveComfyApiKey(config: ComfyProviderConfig): string | undefined {
+  const configKey = normalizeOptionalString(config.apiKey);
+  if (configKey) {
+    return configKey;
+  }
+  for (const envVar of ["COMFY_API_KEY", "COMFY_CLOUD_API_KEY"]) {
+    const value = normalizeOptionalString(process.env[envVar]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function getRequiredConfigString(config: ComfyProviderConfig, key: string): string {
   const value = normalizeOptionalString(config[key]);
   if (!value) {
-    throw new Error(`models.providers.comfy.${key} is required`);
+    throw new Error(`plugins.entries.comfy.config.${key} is required`);
   }
   return value;
 }
@@ -186,7 +197,9 @@ async function loadComfyWorkflow(config: ComfyProviderConfig): Promise<ComfyWork
     return source.workflow;
   }
   if (!source.workflowPath) {
-    throw new Error("models.providers.comfy.<capability>.workflow or workflowPath is required");
+    throw new Error(
+      "plugins.entries.comfy.config.<capability>.workflow or workflowPath is required",
+    );
   }
 
   const resolvedPath = resolveUserPath(source.workflowPath);
@@ -564,10 +577,7 @@ export function isComfyCapabilityConfigured(params: {
   if (resolveComfyMode(capabilityConfig) === "local") {
     return true;
   }
-  return isProviderApiKeyConfigured({
-    provider: "comfy",
-    agentDir: params.agentDir,
-  });
+  return Boolean(resolveComfyApiKey(capabilityConfig));
 }
 
 export async function runComfyWorkflow(params: {
@@ -605,14 +615,21 @@ export async function runComfyWorkflow(params: {
     value: params.prompt,
   });
 
+  const pluginApiKey = resolveComfyApiKey(capabilityConfig);
   const resolvedAuth =
     mode === "cloud"
-      ? await resolveApiKeyForProvider({
-          provider: "comfy",
-          cfg: params.cfg,
-          agentDir: params.agentDir,
-          store: params.authStore,
-        })
+      ? pluginApiKey
+        ? {
+            apiKey: pluginApiKey,
+            source: "plugins.entries.comfy.config.apiKey" as const,
+            mode: "api-key" as const,
+          }
+        : await resolveApiKeyForProvider({
+            provider: "comfy",
+            cfg: params.cfg,
+            agentDir: params.agentDir,
+            store: params.authStore,
+          })
       : null;
   if (mode === "cloud" && !resolvedAuth?.apiKey) {
     throw new Error("Comfy Cloud API key missing");
@@ -649,7 +666,7 @@ export async function runComfyWorkflow(params: {
   if (params.inputImage) {
     if (!inputImageNodeId) {
       throw new Error(
-        "Comfy edit requests require models.providers.comfy.<capability>.inputImageNodeId to be configured",
+        "Comfy edit requests require plugins.entries.comfy.config.<capability>.inputImageNodeId to be configured",
       );
     }
     const uploadedName = await uploadInputImage({
