@@ -231,7 +231,8 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
         await streamingStartPromise;
       }
       if (streaming?.isActive()) {
-        await streaming.update(combined);
+        // Fire-and-forget: don't block the queue waiting for the HTTP round-trip.
+        void streaming.update(combined);
       }
     });
   };
