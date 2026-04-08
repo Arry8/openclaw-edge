@@ -52,5 +52,11 @@
     "reason": "src/cron/session-reaper.ts (auto-skip attempt 1)",
     "source": "auto",
     "revertedAt": "2026-04-08T12:16:24.145Z"
+  },
+  {
+    "number": 39338,
+    "reason": "src/config/types.models.ts — adds audio/video to schema but ModelInputType not updated (manual)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T12:55:04.797Z"
   }
 ]
