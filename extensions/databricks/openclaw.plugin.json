@@ -36,6 +36,8 @@
         "type": "string"
       }
     }
-  }
+  },
+  "install": {
+    "npmSpec": "@openclaw/databricks"
   }
 }

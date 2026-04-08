@@ -294,6 +294,8 @@ export default definePluginEntry({
               let buffer = "";
               let doneSent = false;
 
+              const toolCallIndexMap = new Map<number, number>();
+
               while (true) {
                 const { done, value } = await reader.read();
                 if (done || doneSent) {
@@ -337,19 +339,24 @@ export default definePluginEntry({
                   if (delta?.tool_calls) {
                     for (const toolCall of delta.tool_calls) {
                       const contentList = output.content as Array<Record<string, unknown>>;
-                      let currentBlock = contentList.length > 0 ? contentList[contentList.length - 1] : null;
+                      const sseIndex = typeof toolCall.index === "number" ? toolCall.index : 0;
                       
-                      if (!currentBlock || currentBlock.type !== "toolCall" || (toolCall.id && currentBlock.id !== toolCall.id)) {
-                        currentBlock = {
+                      let contentIndex = toolCallIndexMap.get(sseIndex);
+                      if (contentIndex === undefined) {
+                        const newBlock = {
                           type: "toolCall",
                           id: toolCall.id || "",
                           name: toolCall.function?.name || "",
                           arguments: {},
                           partialArgs: "",
                         };
-                        contentList.push(currentBlock);
-                        stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
+                        contentList.push(newBlock);
+                        contentIndex = contentList.length - 1;
+                        toolCallIndexMap.set(sseIndex, contentIndex);
+                        stream.push({ type: "toolcall_start", contentIndex, partial: output });
                       }
+
+                      const currentBlock = contentList[contentIndex] as Record<string, unknown>;
 
                       if (toolCall.id) {
                         currentBlock.id = toolCall.id;
@@ -359,10 +366,9 @@ export default definePluginEntry({
                       }
                       if (toolCall.function?.arguments) {
                         currentBlock.partialArgs = (currentBlock.partialArgs as string) + toolCall.function.arguments;
-                        // Use try-catch for partial JSON parsing if needed, but here we just emit delta.
                         stream.push({
                           type: "toolcall_delta",
-                          contentIndex: blockIndex(),
+                          contentIndex,
                           delta: toolCall.function.arguments,
                           partial: output,
                         });

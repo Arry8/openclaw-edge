@@ -113,6 +113,57 @@ describe("Databricks plugin", () => {
       expect(events).toContainEqual(expect.objectContaining({ type: "done", reason: "toolUse" }));
     });
 
+    it("handles interleaved parallel tool calls using index", async () => {
+      const api = { registerProvider: vi.fn() } as any;
+      plugin.register(api);
+      const wrapStreamFn = api.registerProvider.mock.calls[0][0].wrapStreamFn;
+
+      const model = { id: "test", baseUrl: "https://test.com", api: "openai-completions" } as any;
+      const context = { messages: [{ role: "user", content: "parallel tools" }] } as any;
+      const options = { apiKey: "token" } as any;
+
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            // Start Tool 0
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c0","function":{"name":"f0","arguments":""}}]},"finish_reason":null}]}\n'));
+            // Start Tool 1
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c1","function":{"name":"f1","arguments":""}}]},"finish_reason":null}]}\n'));
+            // Delta for Tool 0
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"a\\":1}"}}]},"finish_reason":null}]}\n'));
+            // Delta for Tool 1
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"b\\":2}"}}]},"finish_reason":null}]}\n'));
+            controller.enqueue(encoder.encode('data: [DONE]\n'));
+            controller.close();
+          }
+        });
+        return new Response(stream, { status: 200 });
+      }));
+
+      const streamFn = wrapStreamFn({} as ProviderWrapStreamFnContext);
+      const eventStream = await streamFn(model, context, options);
+      
+      const events: any[] = [];
+      for await (const event of (eventStream as any)) {
+        events.push(event);
+      }
+
+      const toolStartEvents = events.filter(e => e.type === "toolcall_start");
+      expect(toolStartEvents).toHaveLength(2);
+      expect(toolStartEvents[0].contentIndex).toBe(0);
+      expect(toolStartEvents[1].contentIndex).toBe(1);
+
+      const toolDeltaEvents = events.filter(e => e.type === "toolcall_delta");
+      expect(toolDeltaEvents).toHaveLength(2);
+      // Tool 0 delta
+      expect(toolDeltaEvents[0].contentIndex).toBe(0);
+      expect(toolDeltaEvents[0].delta).toBe('{"a":1}');
+      // Tool 1 delta
+      expect(toolDeltaEvents[1].contentIndex).toBe(1);
+      expect(toolDeltaEvents[1].delta).toBe('{"b":2}');
+    });
+
     it("includes systemPrompt and maps toolResult role", async () => {
       const api = { registerProvider: vi.fn() } as any;
       plugin.register(api);
