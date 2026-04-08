@@ -1282,7 +1282,6 @@ export const IrcConfigSchema = IrcAccountSchemaBase.extend({
 export const IMessageAccountSchemaBase = z
   .object({
     name: z.string().optional(),
-    accountHandle: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,
     enabled: z.boolean().optional(),
