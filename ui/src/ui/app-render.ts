@@ -35,6 +35,7 @@ import {
   openConfigFile,
   runUpdate,
   saveConfig,
+  setDefaultAgentInConfig,
   updateConfigFormValue,
   removeConfigFormValue,
 } from "./controllers/config.ts";
@@ -1426,7 +1427,7 @@ export function renderApp(state: AppViewState) {
                   if (!configValue) {
                     return;
                   }
-                  updateConfigFormValue(state, ["agents", "defaultId"], agentId);
+                  setDefaultAgentInConfig(state, agentId);
                 },
               }),
             )
