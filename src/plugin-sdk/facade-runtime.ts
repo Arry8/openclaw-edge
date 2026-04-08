@@ -7,16 +7,19 @@ import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
 import { resolveBundledPluginPublicSurfacePath } from "../plugins/public-surface-runtime.js";
 import { resolveLoaderPackageRoot } from "../plugins/sdk-alias.js";
 import {
-  loadBundledPluginPublicSurfaceModuleSync as loadBundledPluginPublicSurfaceModuleSyncLight,
-  loadFacadeModuleAtLocationSync as loadFacadeModuleAtLocationSyncShared,
-  resetFacadeLoaderStateForTest,
-  type FacadeModuleLocation,
-} from "./facade-loader.js";
-export {
-  createLazyFacadeArrayValue,
-  createLazyFacadeObjectValue,
-  listImportedBundledPluginFacadeIds,
-} from "./facade-loader.js";
+  normalizePluginsConfig,
+  resolveEffectivePluginActivationState,
+} from "../plugins/config-state.js";
+import { discoverOpenClawPlugins } from "../plugins/discovery.js";
+import { loadPluginManifest } from "../plugins/manifest.js";
+import { checkMinHostVersion } from "../plugins/min-host-version.js";
+import {
+  buildPluginLoaderAliasMap,
+  buildPluginLoaderJitiOptions,
+  resolveLoaderPackageRoot,
+  shouldPreferNativeJiti,
+} from "../plugins/sdk-alias.js";
+import { resolveCompatibilityHostVersion } from "../version.js";
 
 const OPENCLAW_PACKAGE_ROOT =
   resolveLoaderPackageRoot({
@@ -38,6 +41,11 @@ function createFacadeResolutionKey(params: { dirName: string; artifactBasename: 
   const bundledPluginsDir = resolveBundledPluginsDir();
   return `${params.dirName}::${params.artifactBasename}::${bundledPluginsDir ? path.resolve(bundledPluginsDir) : "<default>"}`;
 }
+
+const bundledFacadeIdentityCache = new Map<
+  string,
+  { id: string; origin: "bundled"; enabledByDefault?: boolean } | null
+>();
 
 function resolveSourceFirstPublicSurfacePath(params: {
   bundledPluginsDir?: string;
@@ -165,45 +173,128 @@ type BundledPluginPublicSurfaceParams = {
 type FacadeActivationCheckRuntimeModule = typeof import("./facade-activation-check.runtime.js");
 type JitiLoader = ReturnType<(typeof import("jiti"))["createJiti"]>;
 
-const nodeRequire = createRequire(import.meta.url);
-const FACADE_ACTIVATION_CHECK_RUNTIME_CANDIDATES = [
-  "./facade-activation-check.runtime.js",
-  "./facade-activation-check.runtime.ts",
-] as const;
+  bundledFacadeIdentityCache.clear();
 
-let facadeActivationCheckRuntimeModule: FacadeActivationCheckRuntimeModule | undefined;
-let facadeActivationCheckRuntimeJiti: JitiLoader | undefined;
+  const autoEnabled = applyPluginAutoEnable({
+    config: rawConfig,
+    env: process.env,
+  });
+  const config = autoEnabled.config;
+  const resolved = {
+    rawConfig,
+    config,
+    normalizedPluginsConfig: normalizePluginsConfig(config?.plugins),
+    sourceNormalizedPluginsConfig: normalizePluginsConfig(rawConfig?.plugins),
+    autoEnabledReasons: autoEnabled.autoEnabledReasons,
+  };
+  cachedBoundaryRawConfig = rawConfig;
+  cachedBoundaryResolvedConfig = resolved;
+  return resolved;
+}
 
-function getFacadeActivationCheckRuntimeJiti(): JitiLoader {
-  if (facadeActivationCheckRuntimeJiti) {
-    return facadeActivationCheckRuntimeJiti;
+function resolveBundledFacadeIdentityByDirName(dirName: string): {
+  id: string;
+  origin: "bundled";
+  enabledByDefault?: boolean;
+} | null {
+  const cached = bundledFacadeIdentityCache.get(dirName);
+  if (cached !== undefined || bundledFacadeIdentityCache.has(dirName)) {
+    return cached ?? null;
   }
-  const { createJiti } = nodeRequire("jiti") as typeof import("jiti");
-  facadeActivationCheckRuntimeJiti = createJiti(import.meta.url, { tryNative: false });
-  return facadeActivationCheckRuntimeJiti;
+  const { config } = getFacadeBoundaryResolvedConfig();
+  const normalized = normalizePluginsConfig(config.plugins);
+  const discovery = discoverOpenClawPlugins({
+    extraPaths: normalized.loadPaths,
+    cache: true,
+    env: process.env,
+  });
+
+  const candidate = discovery.candidates.find(
+    (entry) => entry.origin === "bundled" && path.basename(entry.rootDir) === dirName,
+  );
+
+  if (!candidate) {
+    return null;
+  }
+
+  const minHostVersionCheck = checkMinHostVersion({
+    currentVersion: resolveCompatibilityHostVersion(process.env),
+    minHostVersion: candidate.packageManifest?.install?.minHostVersion,
+  });
+  if (!minHostVersionCheck.ok) {
+    bundledFacadeIdentityCache.set(dirName, null);
+    return null;
+  }
+
+  const manifestRes = loadPluginManifest(candidate.rootDir, false);
+  if (!manifestRes.ok) {
+    bundledFacadeIdentityCache.set(dirName, null);
+    return null;
+  }
+
+  return {
+    id: manifestRes.manifest.id,
+    origin: "bundled" as const,
+    enabledByDefault: manifestRes.manifest.enabledByDefault === true ? true : undefined,
+  };
+}
+
+function resolveTrackedFacadePluginId(dirName: string): string {
+  return resolveBundledFacadeIdentityByDirName(dirName)?.id ?? dirName;
 }
 
 function loadFacadeActivationCheckRuntime(): FacadeActivationCheckRuntimeModule {
   if (facadeActivationCheckRuntimeModule) {
     return facadeActivationCheckRuntimeModule;
   }
-  for (const candidate of FACADE_ACTIVATION_CHECK_RUNTIME_CANDIDATES) {
-    try {
-      facadeActivationCheckRuntimeModule = nodeRequire(
-        candidate,
-      ) as FacadeActivationCheckRuntimeModule;
-      return facadeActivationCheckRuntimeModule;
-    } catch {
-      // Try source/runtime candidates in order.
-    }
+
+  const {
+    rawConfig,
+    config,
+    normalizedPluginsConfig,
+    sourceNormalizedPluginsConfig,
+    autoEnabledReasons,
+  } = getFacadeBoundaryResolvedConfig();
+
+  const manifestIdentity = resolveBundledFacadeIdentityByDirName(params.dirName);
+  if (!manifestIdentity) {
+    return {
+      allowed: false,
+      reason: `no bundled plugin manifest found for ${params.dirName}`,
+    };
   }
-  const jiti = getFacadeActivationCheckRuntimeJiti();
-  for (const candidate of FACADE_ACTIVATION_CHECK_RUNTIME_CANDIDATES) {
-    try {
-      facadeActivationCheckRuntimeModule = jiti(candidate) as FacadeActivationCheckRuntimeModule;
-      return facadeActivationCheckRuntimeModule;
-    } catch {
-      // Try source/runtime candidates in order.
+
+  const activationState = resolveEffectivePluginActivationState({
+    id: manifestIdentity.id,
+    origin: manifestIdentity.origin,
+    config: normalizedPluginsConfig,
+    rootConfig: config,
+    enabledByDefault: manifestIdentity.enabledByDefault,
+    sourceConfig: sourceNormalizedPluginsConfig,
+    sourceRootConfig: rawConfig,
+    autoEnabledReason: autoEnabledReasons[manifestIdentity.id]?.[0],
+  });
+  if (activationState.enabled) {
+    return {
+      allowed: true,
+      pluginId: manifestIdentity.id,
+    };
+  }
+
+  return {
+    allowed: false,
+    pluginId: manifestIdentity.id,
+    reason: activationState.reason ?? "plugin runtime is not activated",
+  };
+}
+
+function createLazyFacadeValueLoader<T>(load: () => T): () => T {
+  let loaded = false;
+  let value: T;
+  return () => {
+    if (!loaded) {
+      value = load();
+      loaded = true;
     }
   }
   throw new Error("Unable to load facade activation check runtime");
