@@ -282,7 +282,7 @@ export class QmdMemoryManager implements MemorySearchManager {
   private attemptedNullByteCollectionRepair = false;
   private attemptedDuplicateDocumentRepair = false;
   private readonly sessionWarm = new Set<string>();
-  private collectionPatternFlag: QmdCollectionPatternFlag | null = "--glob";
+  private collectionPatternFlag: QmdCollectionPatternFlag | null = "--mask";
 
   private constructor(params: {
     cfg: OpenClawConfig;
@@ -467,6 +467,15 @@ export class QmdMemoryManager implements MemorySearchManager {
         log.warn(`qmd collection add failed for ${collection.name}: ${message}`);
       }
     }
+
+    const resolvedManagedCollectionNames = this.computeManagedCollectionNames().filter((name) =>
+      existing.has(name),
+    );
+    this.managedCollectionNames.splice(
+      0,
+      this.managedCollectionNames.length,
+      ...resolvedManagedCollectionNames,
+    );
   }
 
   private async listCollectionsBestEffort(): Promise<Map<string, ListedCollection>> {
