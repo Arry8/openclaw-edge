@@ -136,7 +136,12 @@ export function resolveEffectiveMessagesConfig(
     channel?: string;
     accountId?: string;
   },
-): { messagePrefix: string; responsePrefix?: string } {
+): {
+  messagePrefix: string;
+  responsePrefix?: string;
+  modelEmojiMap?: Record<string, string>;
+  thinkEmoji?: [string, string];
+} {
   return {
     messagePrefix: resolveMessagePrefix(cfg, agentId, {
       hasAllowFrom: opts?.hasAllowFrom,
@@ -146,6 +151,8 @@ export function resolveEffectiveMessagesConfig(
       channel: opts?.channel,
       accountId: opts?.accountId,
     }),
+    modelEmojiMap: cfg.messages?.modelEmojiMap,
+    thinkEmoji: cfg.messages?.thinkEmoji,
   };
 }
 

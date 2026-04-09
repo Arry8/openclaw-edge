@@ -208,6 +208,8 @@ export const MessagesSchema = z
       .optional(),
     suppressToolErrors: z.boolean().optional(),
     tts: TtsConfigSchema,
+    modelEmojiMap: z.record(z.string(), z.string()).optional(),
+    thinkEmoji: z.tuple([z.string(), z.string()]).optional(),
   })
   .strict()
   .optional();
