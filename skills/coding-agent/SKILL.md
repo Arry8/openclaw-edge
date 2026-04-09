@@ -38,7 +38,7 @@ For **Codex, Pi, OpenCode, and Cursor Agent**, PTY is still required (interactiv
 
 ```bash
 # ✅ Correct for Codex/Pi/OpenCode
-bash pty:true command:"codex exec 'Your prompt'"
+bash pty:true command:"codex exec --yolo 'Your prompt'"
 ```
 
 For **Claude Code** (`claude` CLI), use `--print --permission-mode bypassPermissions` instead.
@@ -87,10 +87,10 @@ For quick prompts/chats, create a temp git repo and run:
 
 ```bash
 # Quick chat (Codex needs a git repo!)
-SCRATCH=$(mktemp -d) && cd $SCRATCH && git init && codex exec "Your prompt here"
+SCRATCH=$(mktemp -d) && cd $SCRATCH && git init && codex exec --yolo "Your prompt here"
 
 # Or in a real project - with PTY!
-bash pty:true workdir:~/Projects/myproject command:"codex exec 'Add error handling to the API calls'"
+bash pty:true workdir:~/Projects/myproject command:"codex exec --yolo 'Add error handling to the API calls'"
 ```
 
 **Why git init?** Codex refuses to run outside a trusted git directory. Creating a temp repo solves this for scratch work.
@@ -103,7 +103,7 @@ For longer tasks, use background mode with PTY:
 
 ```bash
 # Start agent in target directory (with PTY!)
-bash pty:true workdir:~/project background:true command:"codex exec --full-auto 'Build a snake game'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Build a snake game'"
 # Returns sessionId for tracking
 
 # Monitor progress
@@ -138,14 +138,16 @@ process action:kill sessionId:XXX
 | `--full-auto`   | Sandboxed but auto-approves in workspace           |
 | `--yolo`        | NO sandbox, NO approvals (fastest, most dangerous) |
 
+**Default stance:** when the workspace or user explicitly says to always use `--yolo`, obey literally and prefer `codex exec --yolo` for non-interactive Codex runs. Do not launch plain `codex` or plain `codex exec` without `--yolo` in that case.
+
 ### Building/Creating
 
 ```bash
-# Quick one-shot (auto-approves) - remember PTY!
-bash pty:true workdir:~/project command:"codex exec --full-auto 'Build a dark mode toggle'"
+# Quick one-shot (default to yolo) - remember PTY!
+bash pty:true workdir:~/project command:"codex exec --yolo 'Build a dark mode toggle'"
 
 # Background for longer work
-bash pty:true workdir:~/project background:true command:"codex --yolo 'Refactor the auth module'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Refactor the auth module'"
 ```
 
 ### Reviewing PRs
@@ -173,8 +175,8 @@ bash pty:true workdir:/tmp/pr-130-review command:"codex review --base main"
 git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 
 # Deploy the army - one Codex per PR (all with PTY!)
-bash pty:true workdir:~/project background:true command:"codex exec 'Review PR #86. git diff origin/main...origin/pr/86'"
-bash pty:true workdir:~/project background:true command:"codex exec 'Review PR #87. git diff origin/main...origin/pr/87'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Review PR #86. git diff origin/main...origin/pr/86'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Review PR #87. git diff origin/main...origin/pr/87'"
 
 # Monitor all
 process action:list
@@ -587,8 +589,8 @@ Directory structure (created automatically by `context-snapshot.sh`):
    - If an agent fails/hangs, respawn it or ask the user for direction, but don't silently take over.
 3. **Be patient** - don't kill sessions because they're "slow"
 4. **Monitor with process:log** - check progress without interfering
-5. **--full-auto for building** - auto-approves changes
-6. **vanilla for reviewing** - no special flags needed
+5. **Default to `--yolo` when the workspace/user says so** - prefer `codex exec --yolo` for non-interactive builds and implementation runs
+6. **Use review flags intentionally** - only drop `--yolo` if the user explicitly wants a safer/non-yolo path
 7. **Parallel is OK** - run many Codex processes at once for batch work
 8. **NEVER start Codex inside your OpenClaw state directory** (`$OPENCLAW_STATE_DIR`, default `~/.openclaw`) - it'll read your soul docs and get weird ideas about the org chart!
 9. **NEVER checkout branches in ~/Projects/openclaw/** - that's the LIVE OpenClaw instance!
