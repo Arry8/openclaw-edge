@@ -147,7 +147,10 @@ export async function setupChannels(
   const preloadConfiguredExternalPlugins = () => {
     // Keep setup memory bounded by snapshot-loading only configured external plugins.
     const workspaceDir = resolveWorkspaceDir();
-    for (const entry of listChannelPluginCatalogEntries({ workspaceDir })) {
+    for (const entry of listChannelPluginCatalogEntries({
+      workspaceDir,
+      excludeWorkspace: true,
+    })) {
       const channel = entry.id as ChannelChoice;
       if (getVisibleChannelPlugin(channel)) {
         continue;

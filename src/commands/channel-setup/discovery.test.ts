@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginAutoEnableResult } from "../../config/plugin-auto-enable.js";
 
 const loadPluginManifestRegistry = vi.hoisted(() => vi.fn());
-const listChannelPluginCatalogEntries = vi.hoisted(() => vi.fn((): unknown[] => []));
+const listChannelPluginCatalogEntries = vi.hoisted(() => vi.fn((_args?: unknown): unknown[] => []));
 const listChatChannels = vi.hoisted(() => vi.fn((): Array<Record<string, string>> => []));
 const applyPluginAutoEnable = vi.hoisted(() =>
   vi.fn<(args: { config: unknown; env?: NodeJS.ProcessEnv }) => PluginAutoEnableResult>(
@@ -24,7 +24,7 @@ vi.mock("../../config/plugin-auto-enable.js", () => ({
 }));
 
 vi.mock("../../channels/plugins/catalog.js", () => ({
-  listChannelPluginCatalogEntries: (_args?: unknown) => listChannelPluginCatalogEntries(),
+  listChannelPluginCatalogEntries: (args?: unknown) => listChannelPluginCatalogEntries(args),
 }));
 
 vi.mock("../../channels/registry.js", () => ({
@@ -115,5 +115,117 @@ describe("listManifestInstalledChannelIds", () => {
     });
 
     expect(resolved.entries.map((entry) => entry.id)).toEqual(["telegram"]);
+  });
+
+  it("keeps trusted workspace entries in installed discovery results", () => {
+    loadPluginManifestRegistry.mockReturnValue({
+      plugins: [{ id: "matrix-plugin", channels: ["matrix"] }],
+      diagnostics: [],
+    });
+    listChannelPluginCatalogEntries.mockReturnValue([
+      {
+        id: "matrix",
+        pluginId: "matrix-plugin",
+        origin: "workspace",
+        meta: {
+          id: "matrix",
+          label: "Matrix",
+          selectionLabel: "Matrix",
+          docsPath: "/channels/matrix",
+          blurb: "homeserver",
+        },
+      },
+    ]);
+
+    const resolved = resolveChannelSetupEntries({
+      cfg: {
+        plugins: {
+          enabled: true,
+          allow: ["matrix-plugin"],
+        },
+      } as never,
+      installedPlugins: [],
+      workspaceDir: "/tmp/workspace",
+      env: { OPENCLAW_HOME: "/tmp/home" } as NodeJS.ProcessEnv,
+    });
+
+    expect(resolved.installedCatalogEntries.map((entry) => entry.id)).toEqual(["matrix"]);
+    expect(resolved.installableCatalogEntries).toEqual([]);
+  });
+
+  it("filters untrusted workspace entries out of installed discovery results", () => {
+    loadPluginManifestRegistry.mockReturnValue({
+      plugins: [{ id: "matrix-plugin", channels: ["matrix"] }],
+      diagnostics: [],
+    });
+    listChannelPluginCatalogEntries.mockReturnValue([
+      {
+        id: "matrix",
+        pluginId: "matrix-plugin",
+        origin: "workspace",
+        meta: {
+          id: "matrix",
+          label: "Matrix",
+          selectionLabel: "Matrix",
+          docsPath: "/channels/matrix",
+          blurb: "homeserver",
+        },
+      },
+    ]);
+
+    const resolved = resolveChannelSetupEntries({
+      cfg: {} as never,
+      installedPlugins: [],
+      workspaceDir: "/tmp/workspace",
+      env: { OPENCLAW_HOME: "/tmp/home" } as NodeJS.ProcessEnv,
+    });
+
+    expect(resolved.installedCatalogEntries).toEqual([]);
+  });
+
+  it("never offers workspace entries as installable setup options", () => {
+    listChannelPluginCatalogEntries.mockReturnValue([
+      {
+        id: "matrix",
+        pluginId: "matrix-plugin",
+        origin: "workspace",
+        meta: {
+          id: "matrix",
+          label: "Matrix",
+          selectionLabel: "Matrix",
+          docsPath: "/channels/matrix",
+          blurb: "homeserver",
+        },
+      },
+      {
+        id: "telegram",
+        pluginId: "@openclaw/telegram-plugin",
+        origin: "bundled",
+        meta: {
+          id: "telegram",
+          label: "Telegram",
+          selectionLabel: "Telegram",
+          docsPath: "/channels/telegram",
+          blurb: "bot token",
+        },
+      },
+    ]);
+
+    const resolved = resolveChannelSetupEntries({
+      cfg: {
+        plugins: {
+          enabled: true,
+          allow: ["matrix-plugin"],
+        },
+      } as never,
+      installedPlugins: [],
+      workspaceDir: "/tmp/workspace",
+      env: { OPENCLAW_HOME: "/tmp/home" } as NodeJS.ProcessEnv,
+    });
+
+    expect(resolved.installableCatalogEntries.map((entry) => entry.id)).toEqual(["telegram"]);
+    expect(listChannelPluginCatalogEntries).toHaveBeenCalledWith({
+      workspaceDir: "/tmp/workspace",
+    });
   });
 });

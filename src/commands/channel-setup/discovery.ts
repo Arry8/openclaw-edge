@@ -10,6 +10,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
 import { loadPluginManifestRegistry } from "../../plugins/manifest-registry.js";
 import type { ChannelChoice } from "../onboard-types.js";
+import { isTrustedWorkspaceChannelCatalogEntry } from "./workspace-trust.js";
 
 type ChannelCatalogEntry = {
   id: ChannelChoice;
@@ -80,12 +81,14 @@ export function resolveChannelSetupEntries(params: {
     (entry) =>
       !installedPluginIds.has(entry.id) &&
       manifestInstalledIds.has(entry.id as ChannelChoice) &&
+      isTrustedWorkspaceChannelCatalogEntry(entry, params.cfg) &&
       shouldShowChannelInSetup(entry.meta),
   );
   const installableCatalogEntries = catalogEntries.filter(
     (entry) =>
       !installedPluginIds.has(entry.id) &&
       !manifestInstalledIds.has(entry.id as ChannelChoice) &&
+      entry.origin !== "workspace" &&
       shouldShowChannelInSetup(entry.meta),
   );
 

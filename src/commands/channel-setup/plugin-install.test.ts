@@ -455,6 +455,10 @@ describe("ensureChannelSetupPluginInstalled", () => {
         includeSetupOnlyChannelPlugins: true,
       }),
     );
+    expect(getChannelPluginCatalogEntry).toHaveBeenCalledWith("telegram", {
+      workspaceDir: "/tmp/openclaw-workspace",
+      excludeWorkspace: true,
+    });
   });
 
   it("keeps full reloads when the active plugin registry is already populated", () => {
@@ -547,6 +551,10 @@ describe("ensureChannelSetupPluginInstalled", () => {
         activate: false,
       }),
     );
+    expect(getChannelPluginCatalogEntry).toHaveBeenCalledWith("telegram", {
+      workspaceDir: "/tmp/openclaw-workspace",
+      excludeWorkspace: true,
+    });
   });
 
   it("does not scope by raw channel id when no trusted plugin mapping exists", () => {
@@ -565,6 +573,10 @@ describe("ensureChannelSetupPluginInstalled", () => {
         onlyPluginIds: expect.anything(),
       }),
     );
+    expect(getChannelPluginCatalogEntry).toHaveBeenCalledWith("telegram", {
+      workspaceDir: "/tmp/openclaw-workspace",
+      excludeWorkspace: true,
+    });
   });
 
   it("scopes snapshots by a unique discovered manifest match when catalog mapping is missing", () => {

@@ -276,6 +276,7 @@ function resolveScopedChannelPluginId(params: {
   return (
     getChannelPluginCatalogEntry(params.channel, {
       workspaceDir: params.workspaceDir,
+      excludeWorkspace: true,
     })?.pluginId ?? resolveUniqueManifestScopedChannelPluginId(params)
   );
 }
