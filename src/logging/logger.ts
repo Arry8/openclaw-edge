@@ -197,16 +197,30 @@ function buildLogger(settings: ResolvedSettings): TsLogger<LogObj> {
     return logger;
   }
 
-  fs.mkdirSync(path.dirname(settings.file), { recursive: true });
-  // Clean up stale rolling logs when using a dated log filename.
-  if (isRollingPath(settings.file)) {
-    pruneOldRollingLogs(path.dirname(settings.file));
+  const useRolling = isRollingPath(settings.file);
+  const rollingDir = path.dirname(settings.file);
+  let currentFile = settings.file;
+  fs.mkdirSync(rollingDir, { recursive: true });
+  if (useRolling) {
+    pruneOldRollingLogs(rollingDir);
   }
-  let currentFileBytes = getCurrentLogFileBytes(settings.file);
+  let currentFileBytes = getCurrentLogFileBytes(currentFile);
   let warnedAboutSizeCap = false;
 
   logger.attachTransport((logObj: LogObj) => {
     try {
+      // When using date-rolling filenames, detect midnight crossover and switch
+      // files automatically so long-lived child loggers stay on the right file.
+      if (useRolling) {
+        const todayFile = rollingPathForToday(rollingDir);
+        if (todayFile !== currentFile) {
+          currentFile = todayFile;
+          currentFileBytes = getCurrentLogFileBytes(currentFile);
+          warnedAboutSizeCap = false;
+          pruneOldRollingLogs(rollingDir);
+        }
+      }
+
       const time = formatTimestamp(logObj.date ?? new Date(), { style: "long" });
       const line = JSON.stringify({ ...logObj, time });
       const payload = `${line}\n`;
@@ -219,16 +233,16 @@ function buildLogger(settings: ResolvedSettings): TsLogger<LogObj> {
             time: formatTimestamp(new Date(), { style: "long" }),
             level: "warn",
             subsystem: "logging",
-            message: `log file size cap reached; suppressing writes file=${settings.file} maxFileBytes=${settings.maxFileBytes}`,
+            message: `log file size cap reached; suppressing writes file=${currentFile} maxFileBytes=${settings.maxFileBytes}`,
           });
-          appendLogLine(settings.file, `${warningLine}\n`);
+          appendLogLine(currentFile, `${warningLine}\n`);
           process.stderr.write(
-            `[openclaw] log file size cap reached; suppressing writes file=${settings.file} maxFileBytes=${settings.maxFileBytes}\n`,
+            `[openclaw] log file size cap reached; suppressing writes file=${currentFile} maxFileBytes=${settings.maxFileBytes}\n`,
           );
         }
         return;
       }
-      if (appendLogLine(settings.file, payload)) {
+      if (appendLogLine(currentFile, payload)) {
         currentFileBytes = nextBytes;
       }
     } catch {
@@ -390,9 +404,13 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function defaultRollingPathForToday(): string {
+function rollingPathForToday(dir: string): string {
   const today = formatLocalDate(new Date());
-  return path.join(DEFAULT_LOG_DIR, `${LOG_PREFIX}-${today}${LOG_SUFFIX}`);
+  return path.join(dir, `${LOG_PREFIX}-${today}${LOG_SUFFIX}`);
+}
+
+function defaultRollingPathForToday(): string {
+  return rollingPathForToday(DEFAULT_LOG_DIR);
 }
 
 function isRollingPath(file: string): boolean {
