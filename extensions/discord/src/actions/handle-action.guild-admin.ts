@@ -198,6 +198,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
       integer: true,
     });
     const availableTags = parseAvailableTags(actionParams.availableTags);
+    const appliedTags = readStringArrayParam(actionParams, "appliedTags");
     return await handleDiscordAction(
       {
         action: "channelEdit",
@@ -213,6 +214,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
         locked,
         autoArchiveDuration: autoArchiveDuration ?? undefined,
         availableTags,
+        appliedTags: appliedTags ?? undefined,
       },
       cfg,
     );
