@@ -307,7 +307,7 @@ export async function createVoiceCallRuntime(params: {
           log.warn(`[voice-call] Failed to initialize telephony TTS: ${formatErrorMessage(err)}`);
         }
       } else {
-        log.warn("[voice-call] Telephony TTS unavailable; streaming TTS disabled");
+        log.warn("Telephony TTS unavailable; streaming TTS disabled");
       }
 
       const mediaHandler = webhookServer.getMediaStreamHandler();
