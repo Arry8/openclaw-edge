@@ -22,6 +22,14 @@ export type StickerContextMetadata = {
   isVideo?: boolean;
 } & Record<string, unknown>;
 
+export type AnimationContextMetadata = {
+  fileName?: string;
+  fileId?: string;
+  fileUniqueId?: string;
+  mimeType?: string;
+  duration?: number;
+} & Record<string, unknown>;
+
 export type MsgContext = {
   Body?: string;
   /**
@@ -108,6 +116,8 @@ export type MsgContext = {
   MediaTypes?: string[];
   /** Telegram sticker metadata (emoji, set name, file IDs, cached description). */
   Sticker?: StickerContextMetadata;
+  /** Telegram animation metadata (filename, file IDs, mime type, duration). */
+  Animation?: AnimationContextMetadata;
   /** True when current-turn sticker media is present in MediaPaths (false for cached-description path). */
   StickerMediaIncluded?: boolean;
   OutputDir?: string;
