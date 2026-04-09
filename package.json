@@ -1098,6 +1098,7 @@
     "check:host-env-policy:swift": "node scripts/generate-host-env-security-policy-swift.mjs --check",
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
     "check:no-conflict-markers": "node scripts/check-no-conflict-markers.mjs",
+    "clean:dist": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
     "config:channels:check": "node --import tsx scripts/generate-bundled-channel-config-metadata.ts --check",
     "config:channels:gen": "node --import tsx scripts/generate-bundled-channel-config-metadata.ts --write",
     "config:docs:check": "node --import tsx scripts/generate-config-doc-baseline.ts --check",
