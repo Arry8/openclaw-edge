@@ -481,18 +481,7 @@ export function repairToolUseResultPairing(
 
     const toolCalls = extractToolCallsFromAssistant(assistant);
     if (toolCalls.length === 0) {
-      // If stopReason claims "toolUse" but no actual toolCall blocks exist,
-      // correct the stopReason to prevent downstream code from creating
-      // phantom toolResult entries with empty toolCallId. This can happen
-      // when a fallback model returns stopReason "toolUse" with only
-      // thinking + text content. (Fixes #21985)
-      if (stopReason === "toolUse") {
-        const corrected = { ...assistant, stopReason: "stop" };
-        changed = true;
-        out.push(corrected as AgentMessage);
-      } else {
-        out.push(msg);
-      }
+      out.push(msg);
       continue;
     }
 
