@@ -630,7 +630,14 @@ export async function finalizeSetupWizard(
   }
 
   await prompter.note(
-    'What now: https://openclaw.ai/showcase ("What People Are Building").',
+    [
+      'What now: https://openclaw.ai/showcase ("What People Are Building").',
+      "",
+      "For observability (community tool, requires Python):",
+      "  curl -fsSL https://clawmetry.com/install.sh | bash",
+      "See live agent activity, token costs, and memory.",
+      "Source: https://github.com/vivekchand/clawmetry",
+    ].join("\n"),
     "What now",
   );
 
