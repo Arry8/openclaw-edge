@@ -1,5 +1,6 @@
 import { isRestartEnabled } from "../../config/commands.js";
 import { readBestEffortConfig, resolveGatewayPort } from "../../config/config.js";
+import { resolveGatewayLaunchAgentLabel } from "../../daemon/constants.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import { probeGateway } from "../../gateway/probe.js";
 import {
@@ -54,6 +55,37 @@ function formatRestartFailure(params: {
 }
 
 async function resolveGatewayLifecyclePort(service = resolveGatewayService()) {
+  // Priority: use OPENCLAW_PROFILE from CLI to determine which profile's service to operate on
+  const profile = process.env.OPENCLAW_PROFILE?.trim();
+
+  if (profile) {
+    // Build service-specific environment for the target profile
+    // When --profile is explicitly specified, derive label from profile
+    // (this takes precedence over any existing OPENCLAW_LAUNCHD_LABEL)
+    const label = resolveGatewayLaunchAgentLabel(profile);
+    const targetEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      OPENCLAW_PROFILE: profile,
+      OPENCLAW_LAUNCHD_LABEL: label,
+    };
+
+    // Read the target profile's service configuration
+    const command = await service.readCommand(targetEnv).catch(() => null);
+    const serviceEnv = command?.environment ?? undefined;
+    const mergedEnv = {
+      ...targetEnv,
+      ...(serviceEnv ?? undefined),
+    } as NodeJS.ProcessEnv;
+
+    const portFromArgs = parsePortFromArgs(command?.programArguments);
+    if (portFromArgs !== null) {
+      return portFromArgs;
+    }
+    // Fall through to config-based resolution if port not found in service command
+    return resolveGatewayPort(await readBestEffortConfig(), mergedEnv);
+  }
+
+  // Fallback: use current process environment (backward compatible)
   const command = await service.readCommand(process.env).catch(() => null);
   const serviceEnv = command?.environment ?? undefined;
   const mergedEnv = {
