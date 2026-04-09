@@ -204,6 +204,15 @@ Low-effort wrappers, unclear ownership, or unmaintained packages may be declined
 
 ## Related
 
+- **WeChat** — Connect OpenClaw to WeChat personal accounts via WeChatPadPro (iPad protocol). Supports text, image, and file exchange with keyword-triggered conversations.
+  npm: `@icesword760/openclaw-wechat`
+  repo: `https://github.com/icesword0760/openclaw-wechat`
+  install: `openclaw plugins install @icesword760/openclaw-wechat`
+
+- **MAX** — Connect OpenClaw to MAX messenger (max.ru) via Bot API. Supports DMs and group chats with streaming replies and typing indicators.
+  npm: `@olegbalbekov/openclaw-max`
+  repo: `https://github.com/olegbalbekov/openclaw-max`
+  install: `openclaw plugins install @olegbalbekov/openclaw-max`
 - [Install and Configure Plugins](/tools/plugin) — how to install any plugin
 - [Building Plugins](/plugins/building-plugins) — create your own
 - [Plugin Manifest](/plugins/manifest) — manifest schema
