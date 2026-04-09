@@ -18,9 +18,9 @@ function parseJsonBody(call: number): Record<string, unknown> {
 
 function buildComfyConfig(config: Record<string, unknown>): OpenClawConfig {
   return {
-    models: {
-      providers: {
-        comfy: config,
+    plugins: {
+      entries: {
+        comfy: { config },
       },
     },
   } as unknown as OpenClawConfig;
