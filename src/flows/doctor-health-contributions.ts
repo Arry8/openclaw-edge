@@ -20,6 +20,7 @@ import { maybeRepairBundledPluginRuntimeDeps } from "../commands/doctor-bundled-
 import { noteClaudeCliHealth } from "../commands/doctor-claude-cli.js";
 import { doctorShellCompletion } from "../commands/doctor-completion.js";
 import { maybeRepairLegacyCronStore } from "../commands/doctor-cron.js";
+import { noteDiskSpace } from "../commands/doctor-disk-space.js";
 import { maybeRepairGatewayDaemon } from "../commands/doctor-gateway-daemon-flow.js";
 import { checkGatewayHealth, probeGatewayMemoryStatus } from "../commands/doctor-gateway-health.js";
 import {
@@ -267,6 +268,10 @@ async function runBundledPluginRuntimeDepsHealth(ctx: DoctorHealthFlowContext): 
     runtime: ctx.runtime,
     prompter: ctx.prompter,
   });
+}
+
+async function runDiskSpaceHealth(ctx: DoctorHealthFlowContext): Promise<void> {
+  noteDiskSpace(ctx.cfg);
 }
 
 async function runStateIntegrityHealth(ctx: DoctorHealthFlowContext): Promise<void> {
@@ -539,6 +544,11 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       id: "doctor:bundled-plugin-runtime-deps",
       label: "Bundled plugin runtime deps",
       run: runBundledPluginRuntimeDepsHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:disk-space",
+      label: "Disk space",
+      run: runDiskSpaceHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:state-integrity",
