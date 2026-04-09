@@ -908,6 +908,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/prodia: {}
+
   extensions/qa-channel:
     devDependencies:
       '@openclaw/plugin-sdk':
