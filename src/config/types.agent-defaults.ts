@@ -40,6 +40,12 @@ export type AgentContextPruningConfig = {
     headChars?: number;
     tailChars?: number;
   };
+  fileBlocks?: {
+    enabled?: boolean;
+    maxChars?: number;
+    headChars?: number;
+    tailChars?: number;
+  };
   hardClear?: {
     enabled?: boolean;
     placeholder?: string;
