@@ -42,6 +42,18 @@ describe("buildMinimaxSpeechProvider", () => {
       process.env.MINIMAX_API_KEY = "sk-env";
       expect(provider.isConfigured({ providerConfig: {}, timeoutMs: 30000 })).toBe(true);
     });
+
+    it("does not throw for unresolved SecretRef-style apiKey objects in provider config", () => {
+      delete process.env.MINIMAX_API_KEY;
+      expect(
+        provider.isConfigured({
+          providerConfig: {
+            apiKey: { source: "env", provider: "default", id: "MINIMAX_API_KEY" },
+          },
+          timeoutMs: 30000,
+        }),
+      ).toBe(false);
+    });
   });
 
   describe("resolveConfig", () => {
@@ -210,13 +222,16 @@ describe("buildMinimaxSpeechProvider", () => {
 
   describe("synthesize", () => {
     const savedFetch = globalThis.fetch;
+    const savedEnv = { ...process.env };
 
     beforeEach(() => {
       vi.stubGlobal("fetch", vi.fn());
+      process.env = { ...savedEnv };
     });
 
     afterEach(() => {
       globalThis.fetch = savedFetch;
+      process.env = { ...savedEnv };
       vi.restoreAllMocks();
     });
 
@@ -254,6 +269,54 @@ describe("buildMinimaxSpeechProvider", () => {
       expect(body.voice_setting.vol).toBe(1);
       expect(body.voice_setting.pitch).toBe(0);
       expect(body.audio_setting.sample_rate).toBe(32000);
+    });
+
+    it("resolves env-style apiKey from provider config", async () => {
+      process.env.MINIMAX_API_KEY = "sk-env-resolved";
+      const hexAudio = Buffer.from("env-audio").toString("hex");
+      const mockFetch = vi.mocked(globalThis.fetch);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { audio: hexAudio } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const result = await provider.synthesize({
+        text: "Hello env key",
+        cfg: {} as never,
+        providerConfig: { apiKey: "env:MINIMAX_API_KEY", baseUrl: "https://api.minimaxi.com" },
+        target: "audio-file",
+        timeoutMs: 30000,
+      });
+
+      expect(result.audioBuffer.toString()).toBe("env-audio");
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer sk-env-resolved" });
+    });
+
+    it("ignores invalid env-style apiKey names and falls back to MINIMAX_API_KEY", async () => {
+      process.env.MINIMAX_API_KEY = "sk-env-fallback";
+      const hexAudio = Buffer.from("env-fallback-audio").toString("hex");
+      const mockFetch = vi.mocked(globalThis.fetch);
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { audio: hexAudio } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const result = await provider.synthesize({
+        text: "Hello invalid env key",
+        cfg: {} as never,
+        providerConfig: { apiKey: "env:my-api-key", baseUrl: "https://api.minimaxi.com" },
+        target: "audio-file",
+        timeoutMs: 30000,
+      });
+
+      expect(result.audioBuffer.toString()).toBe("env-fallback-audio");
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer sk-env-fallback" });
     });
 
     it("applies overrides", async () => {
