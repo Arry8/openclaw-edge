@@ -230,14 +230,6 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
-    id: "discord",
-    label: "discord",
-    description: "Discord actions: send/delete messages, react, manage channels, moderate users",
-    sectionId: "messaging",
-    profiles: ["messaging", "full"],
-    includeInOpenClawGroup: true,
-  },
-  {
     id: "cron",
     label: "cron",
     description: CRON_TOOL_DISPLAY_SUMMARY,
