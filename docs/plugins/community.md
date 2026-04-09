@@ -25,6 +25,19 @@ OpenClaw checks ClawHub first and falls back to npm automatically.
 
 ## Listed plugins
 
+### Berry Shield
+
+Runtime security plugin for OpenClaw with layered protection for risky actions,
+`1:1` (one code per action) and `1:N` (one code for related actions) confirmation,
+output redaction, audit evidence, and a dedicated `bshield` CLI.
+
+- **npm:** `@f4bioo/berry-shield`
+- **repo:** [github.com/F4bioo/berry-shield](https://github.com/F4bioo/berry-shield)
+
+```bash
+openclaw plugins install @f4bioo/berry-shield
+```
+
 ### Codex App Server Bridge
 
 Independent OpenClaw bridge for Codex App Server conversations. Bind a chat to
