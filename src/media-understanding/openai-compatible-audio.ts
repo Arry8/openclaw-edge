@@ -66,6 +66,7 @@ export async function transcribeOpenAiCompatibleAudio(
     fetchFn,
     allowPrivateNetwork,
     dispatcherPolicy,
+    pinDns: false,
   });
 
   try {
