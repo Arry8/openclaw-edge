@@ -12,12 +12,6 @@ const TtsToolSchema = Type.Object({
   channel: Type.Optional(
     Type.String({ description: "Optional channel id to pick output format (e.g. telegram)." }),
   ),
-  voiceId: Type.Optional(
-    Type.String({
-      description:
-        "Optional ElevenLabs voice ID override. Use to give different agents distinct voices.",
-    }),
-  ),
 });
 
 export function createTtsTool(opts?: {
@@ -34,13 +28,11 @@ export function createTtsTool(opts?: {
       const params = args as Record<string, unknown>;
       const text = readStringParam(params, "text", { required: true });
       const channel = readStringParam(params, "channel");
-      const voiceId = readStringParam(params, "voiceId");
       const cfg = opts?.config ?? loadConfig();
       const result = await textToSpeech({
         text,
         cfg,
         channel: channel ?? opts?.agentChannel,
-        overrides: voiceId ? { elevenlabs: { voiceId } } : undefined,
       });
 
       if (result.success && result.audioPath) {
