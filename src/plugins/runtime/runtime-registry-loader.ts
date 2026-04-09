@@ -96,10 +96,12 @@ export function ensurePluginRegistryLoaded(options?: {
     }
     return;
   }
+  const shouldPassScopedPluginIds =
+    scopedLoad || scope === "configured-channels" || scope === "channels";
   loadOpenClawPlugins(
     buildPluginRuntimeLoadOptions(context, {
       throwOnLoadError: true,
-      ...(expectedChannelPluginIds.length > 0 ? { onlyPluginIds: expectedChannelPluginIds } : {}),
+      ...(shouldPassScopedPluginIds ? { onlyPluginIds: expectedChannelPluginIds } : {}),
     }),
   );
   if (!scopedLoad) {

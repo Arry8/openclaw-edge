@@ -12,7 +12,7 @@ vi.mock("./manifest-registry.js", () => ({
   loadPluginManifestRegistry,
 }));
 
-import { resolveGatewayStartupPluginIds } from "./channel-plugin-ids.js";
+import { resolveChannelPluginIds, resolveGatewayStartupPluginIds } from "./channel-plugin-ids.js";
 
 function createManifestRegistryFixture() {
   return {
@@ -241,5 +241,40 @@ describe("resolveGatewayStartupPluginIds", () => {
       activationSourceConfig: rawConfig,
       expected: ["demo-channel", "browser"],
     });
+  });
+});
+
+describe("resolveChannelPluginIds", () => {
+  beforeEach(() => {
+    listPotentialConfiguredChannelIds.mockReset().mockImplementation((config: OpenClawConfig) => {
+      if (Object.prototype.hasOwnProperty.call(config, "channels")) {
+        return Object.keys(config.channels ?? {});
+      }
+      return ["demo-channel"];
+    });
+    loadPluginManifestRegistry.mockReset().mockReturnValue(createManifestRegistryFixture());
+  });
+
+  it("skips disabled channel plugins in channel scope", () => {
+    const config = {
+      plugins: {
+        entries: {
+          "demo-channel": {
+            enabled: true,
+          },
+          "demo-other-channel": {
+            enabled: false,
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    expect(
+      resolveChannelPluginIds({
+        config,
+        workspaceDir: "/tmp",
+        env: process.env,
+      }),
+    ).toEqual(["demo-channel"]);
   });
 });
