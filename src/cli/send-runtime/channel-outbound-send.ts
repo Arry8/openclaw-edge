@@ -6,7 +6,6 @@ import { normalizeOptionalString } from "../../shared/string-coerce.js";
 type RuntimeSendOpts = {
   cfg?: ReturnType<typeof loadConfig>;
   mediaUrl?: string;
-  mediaUrls?: readonly string[];
   mediaLocalRoots?: readonly string[];
   accountId?: string;
   messageThreadId?: string | number;
@@ -24,19 +23,14 @@ export function createChannelOutboundRuntimeSend(params: {
   return {
     sendMessage: async (to: string, text: string, opts: RuntimeSendOpts = {}) => {
       const outbound = await loadChannelOutboundAdapter(params.channelId);
-      const hasMedia =
-        Boolean(opts.mediaUrl) ||
-        (Array.isArray(opts.mediaUrls) && opts.mediaUrls.length > 0);
-      const sendFn = hasMedia && outbound?.sendMedia ? outbound.sendMedia : outbound?.sendText;
-      if (!sendFn) {
+      if (!outbound?.sendText) {
         throw new Error(params.unavailableMessage);
       }
-      return await sendFn({
+      return await outbound.sendText({
         cfg: opts.cfg ?? loadConfig(),
         to,
         text,
         mediaUrl: opts.mediaUrl,
-        mediaUrls: opts.mediaUrls,
         mediaLocalRoots: opts.mediaLocalRoots,
         accountId: opts.accountId,
         threadId: opts.messageThreadId,
