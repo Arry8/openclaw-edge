@@ -755,6 +755,7 @@ export function createAgentEventHandler({
     clientRunId: string,
     sourceRunId: string,
     seq: number,
+    opts?: { suppressIncompleteNarration?: boolean },
   ) => {
     const { text, shouldSuppressSilent } = resolveBufferedChatTextState(clientRunId, sourceRunId);
     const shouldSuppressSilentLeadFragment = isSilentReplyLeadFragment(text);
@@ -762,11 +763,15 @@ export function createAgentEventHandler({
       clientRunId,
       sourceRunId,
     );
+    // Skip colon-ending narration so it merges with subsequent tool output
+    // instead of being flushed as an orphaned fragment before the tool card.
+    const isIncompleteNarration = opts?.suppressIncompleteNarration && text.endsWith(":");
     if (
       !text ||
       shouldSuppressSilent ||
       shouldSuppressSilentLeadFragment ||
-      shouldSuppressHeartbeatStreaming
+      shouldSuppressHeartbeatStreaming ||
+      isIncompleteNarration
     ) {
       return;
     }
@@ -920,7 +925,9 @@ export function createAgentEventHandler({
       // Flush pending assistant text before tool-start events so clients can
       // render complete pre-tool text above tool cards (not truncated by delta throttle).
       if (toolPhase === "start" && isControlUiVisible && sessionKey && !isAborted) {
-        flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq);
+        flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq, {
+          suppressIncompleteNarration: true,
+        });
       }
       // Always broadcast tool events to registered WS recipients with
       // tool-events capability, regardless of verboseLevel. The verbose
