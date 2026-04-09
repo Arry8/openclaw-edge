@@ -3,6 +3,12 @@ name: openclaw-pr-maintainer
 description: Maintainer workflow for reviewing, triaging, preparing, closing, or landing OpenClaw pull requests and related issues. Use when Codex needs to validate bug-fix claims, search for related issues or PRs, apply or recommend close/reason labels, prepare GitHub comments safely, check review-thread follow-up, or perform maintainer-style PR decision making before merge or closure.
 ---
 
+```bash
+# preamble: check for openclaw updates (reads cached state, no network call)
+_UPD=$(openclaw update hint 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+```
+
 # OpenClaw PR Maintainer
 
 Use this skill for maintainer-facing GitHub workflow, not for ordinary code changes.

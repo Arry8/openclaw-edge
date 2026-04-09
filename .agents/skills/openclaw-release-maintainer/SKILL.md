@@ -3,6 +3,12 @@ name: openclaw-release-maintainer
 description: Maintainer workflow for OpenClaw releases, prereleases, changelog release notes, and publish validation. Use when Codex needs to prepare or verify stable or beta release steps, align version naming, assemble release notes, check release auth requirements, or validate publish-time commands and artifacts.
 ---
 
+```bash
+# preamble: check for openclaw updates (reads cached state, no network call)
+_UPD=$(openclaw update hint 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+```
+
 # OpenClaw Release Maintainer
 
 Use this skill for release and publish-time workflow. Keep ordinary development changes and GHSA-specific advisory work outside this skill.

@@ -3,6 +3,12 @@ name: security-triage
 description: Triage GitHub security advisories for OpenClaw with high-confidence close/keep decisions, exact tag and commit verification, trust-model checks, optional hardening notes, and a final reply ready to post and copy to clipboard.
 ---
 
+```bash
+# preamble: check for openclaw updates (reads cached state, no network call)
+_UPD=$(openclaw update hint 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+```
+
 # Security Triage
 
 Use when reviewing OpenClaw security advisories, drafts, or GHSA reports.
