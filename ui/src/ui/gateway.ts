@@ -213,6 +213,30 @@ export type GatewayBrowserClientOptions = {
 // 4008 = application-defined code (browser rejects 1008 "Policy Violation")
 const CONNECT_FAILED_CLOSE_CODE = 4008;
 
+/**
+ * Reconnect backoff: initial delay (ms) before the first reconnect attempt.
+ * Resets to this value after a successful connection.
+ */
+const INITIAL_BACKOFF_MS = 800;
+
+/**
+ * Reconnect backoff: maximum delay (ms) between reconnect attempts.
+ * Prevents unbounded growth during prolonged disconnections.
+ */
+const MAX_BACKOFF_MS = 15_000;
+
+/**
+ * Reconnect backoff: exponential growth multiplier applied after each failed attempt.
+ * e.g. 800 → 1360 → 2312 → ... → capped at MAX_BACKOFF_MS.
+ */
+const BACKOFF_MULTIPLIER = 1.7;
+
+/**
+ * Delay (ms) between WebSocket open and sending the connect handshake.
+ * Provides a window for the server to send a challenge nonce before the
+ * client initiates authentication.
+ */
+const CONNECT_QUEUE_DELAY_MS = 750;
 function buildGatewayConnectAuth(
   selectedAuth: SelectedConnectAuth,
 ): GatewayConnectAuth | undefined {
@@ -281,6 +305,7 @@ export class GatewayBrowserClient {
   private connectNonce: string | null = null;
   private connectSent = false;
   private connectTimer: number | null = null;
+  private backoffMs = INITIAL_BACKOFF_MS;
   private backoffMs = 800;
   private pendingConnectError: GatewayErrorInfo | undefined;
   private pendingDeviceTokenRetry = false;
@@ -347,7 +372,7 @@ export class GatewayBrowserClient {
       return;
     }
     const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
+    this.backoffMs = Math.min(this.backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS);
     window.setTimeout(() => this.connect(), delay);
   }
 
@@ -431,6 +456,24 @@ export class GatewayBrowserClient {
     };
   }
 
+    void this.request<GatewayHelloOk>("connect", params)
+      .then((hello) => {
+        if (hello?.auth?.deviceToken && deviceIdentity) {
+          storeDeviceAuthToken({
+            deviceId: deviceIdentity.deviceId,
+            role: hello.auth.role ?? role,
+            token: hello.auth.deviceToken,
+            scopes: hello.auth.scopes ?? [],
+          });
+        }
+        this.backoffMs = INITIAL_BACKOFF_MS;
+        this.opts.onHello?.(hello);
+      })
+      .catch(() => {
+        if (canFallbackToShared && deviceIdentity) {
+          clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
+        }
+        this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
   private handleConnectHello(hello: GatewayHelloOk, plan: ConnectPlan) {
     this.pendingDeviceTokenRetry = false;
     this.deviceTokenRetryBudgetUsed = false;
@@ -618,6 +661,6 @@ export class GatewayBrowserClient {
     }
     this.connectTimer = window.setTimeout(() => {
       void this.sendConnect();
-    }, 750);
+    }, CONNECT_QUEUE_DELAY_MS);
   }
 }
