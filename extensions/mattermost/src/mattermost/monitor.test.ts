@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../runtime-api.js";
 import { resolveMattermostAccount } from "./accounts.js";
 import {
+  canFinalizeMattermostPreviewInPlace,
   evaluateMattermostMentionGate,
   resolveMattermostReactionChannelId,
   resolveMattermostEffectiveReplyToId,
   resolveMattermostReplyRootId,
   resolveMattermostThreadSessionContext,
+  shouldFinalizeMattermostPreviewAfterDispatch,
+  shouldClearMattermostDraftPreview,
   type MattermostMentionGateInput,
   type MattermostRequireMentionResolverInput,
 } from "./monitor.js";
@@ -160,6 +163,84 @@ describe("resolveMattermostReplyRootId", () => {
 
   it("falls back to undefined when neither reply target is available", () => {
     expect(resolveMattermostReplyRootId({})).toBeUndefined();
+  });
+});
+
+describe("canFinalizeMattermostPreviewInPlace", () => {
+  it("allows in-place finalization when the final reply target matches the preview thread", () => {
+    expect(
+      canFinalizeMattermostPreviewInPlace({
+        previewRootId: "thread-root-456",
+        threadRootId: "thread-root-456",
+        replyToId: "child-post-789",
+      }),
+    ).toBe(true);
+  });
+
+  it("prevents in-place finalization when a top-level preview would become a threaded reply", () => {
+    expect(
+      canFinalizeMattermostPreviewInPlace({
+        replyToId: "child-post-789",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldClearMattermostDraftPreview", () => {
+  it("clears a stale preview when no final reply was delivered", () => {
+    expect(
+      shouldClearMattermostDraftPreview({
+        finalizedViaPreviewPost: false,
+        finalReplyDelivered: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the preview when the final reply was delivered normally", () => {
+    expect(
+      shouldClearMattermostDraftPreview({
+        finalizedViaPreviewPost: false,
+        finalReplyDelivered: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the preview when it already became the final reply", () => {
+    expect(
+      shouldClearMattermostDraftPreview({
+        finalizedViaPreviewPost: true,
+        finalReplyDelivered: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldFinalizeMattermostPreviewAfterDispatch", () => {
+  it("reuses the preview only for a single eligible final payload", () => {
+    expect(
+      shouldFinalizeMattermostPreviewAfterDispatch({
+        finalCount: 1,
+        canFinalizeInPlace: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("falls back to normal sends for multi-payload finals", () => {
+    expect(
+      shouldFinalizeMattermostPreviewAfterDispatch({
+        finalCount: 2,
+        canFinalizeInPlace: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("falls back to normal sends when the final cannot be edited into the preview", () => {
+    expect(
+      shouldFinalizeMattermostPreviewAfterDispatch({
+        finalCount: 1,
+        canFinalizeInPlace: false,
+      }),
+    ).toBe(false);
   });
 });
 

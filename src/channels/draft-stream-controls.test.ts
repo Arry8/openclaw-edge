@@ -95,6 +95,26 @@ describe("draft-stream-controls", () => {
     expect(sendOrEditStreamMessage).not.toHaveBeenCalled();
   });
 
+  it("seal drops pending updates and ignores later ones", async () => {
+    const sendOrEditStreamMessage = vi.fn(async () => true);
+    const controls = createFinalizableDraftStreamControlsForState({
+      throttleMs: 1000,
+      state: { stopped: false, final: false },
+      sendOrEditStreamMessage,
+    });
+
+    controls.update("initial");
+    await controls.loop.flush();
+    sendOrEditStreamMessage.mockClear();
+
+    controls.update("stale pending");
+    await controls.seal();
+    controls.update("late update");
+    await controls.loop.flush();
+
+    expect(sendOrEditStreamMessage).not.toHaveBeenCalled();
+  });
+
   it("lifecycle clear marks stopped, clears id, and deletes preview message", async () => {
     const state = { stopped: false, final: false };
     let messageId: string | undefined = "m-4";
