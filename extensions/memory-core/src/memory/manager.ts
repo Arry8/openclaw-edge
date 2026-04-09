@@ -380,10 +380,21 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       return this.selectScoredResults(sorted, maxResults, minScore, 0);
     }
 
+    // Extract meaningful keywords for better FTS matching on conversational queries
+    // (e.g. "that thing we discussed about the API" → "discussed API").
+    // In hybrid mode, vector search handles semantics; FTS benefits from focused keywords.
+    // Note: unlike FTS-only mode which searches each keyword independently (OR semantics),
+    // hybrid mode AND-joins the extracted keywords via buildFtsQuery for higher precision,
+    // since vector search already provides broad semantic recall.
+    const keywords = extractKeywords(cleaned, {
+      ftsTokenizer: this.settings.store.fts.tokenizer,
+    });
+    const keywordQuery = keywords.length > 0 ? keywords.join(" ") : cleaned;
+
     // If FTS isn't available, hybrid mode cannot use keyword search; degrade to vector-only.
     const keywordResults =
       hybrid.enabled && this.fts.enabled && this.fts.available
-        ? await this.searchKeyword(cleaned, candidates).catch(() => [])
+        ? await this.searchKeyword(keywordQuery, candidates).catch(() => [])
         : [];
 
     const queryVec = await this.embedQueryWithTimeout(cleaned);
