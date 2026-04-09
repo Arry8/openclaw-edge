@@ -242,7 +242,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     label: "cron",
     description: CRON_TOOL_DISPLAY_SUMMARY,
     sectionId: "automation",
-    profiles: ["coding"],
+    profiles: [],
     includeInOpenClawGroup: true,
   },
   {
