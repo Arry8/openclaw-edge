@@ -1429,6 +1429,7 @@ export function createExecTool(
         security?: string;
         ask?: string;
         node?: string;
+        onComplete?: string;
       };
 
       if (!params.command && typeof params.cmd === "string") {
@@ -1443,7 +1444,8 @@ export function createExecTool(
       const pendingMaxOutput = DEFAULT_PENDING_MAX_OUTPUT;
       const warnings: string[] = [];
       let execCommandOverride: string | undefined;
-      const backgroundRequested = params.background === true;
+      const onCompleteNotify = params.onComplete === "notify";
+      const backgroundRequested = params.background === true || onCompleteNotify;
       const yieldRequested = typeof params.yieldMs === "number";
       if (!allowBackground && (backgroundRequested || yieldRequested)) {
         warnings.push("Warning: background execution is disabled; running synchronously.");
@@ -1755,6 +1757,9 @@ export function createExecTool(
       // before we execute and burn tokens in cron loops.
       await validateScriptFileForShellBleed({ command: params.command, workdir });
 
+      const effectiveNotifyOnExit = onCompleteNotify || notifyOnExit;
+      const effectiveNotifyOnExitEmptySuccess = onCompleteNotify || notifyOnExitEmptySuccess;
+
       const run = await runExecProcess({
         command: params.command,
         execCommand: execCommandOverride,
@@ -1766,8 +1771,9 @@ export function createExecTool(
         warnings,
         maxOutput,
         pendingMaxOutput,
-        notifyOnExit,
-        notifyOnExitEmptySuccess,
+        notifyOnExit: effectiveNotifyOnExit,
+        notifyOnExitEmptySuccess: effectiveNotifyOnExitEmptySuccess,
+        explicitOnComplete: onCompleteNotify,
         scopeKey: defaults?.scopeKey,
         sessionKey: notifySessionKey,
         timeoutSec: effectiveTimeout,
@@ -1792,6 +1798,9 @@ export function createExecTool(
       }
 
       return new Promise<AgentToolResult<ExecToolDetails>>((resolve, reject) => {
+        const onCompleteHint = onCompleteNotify
+          ? " A notification will arrive when the process exits. No need to poll."
+          : "";
         const resolveRunning = () =>
           resolve({
             content: [
@@ -1799,7 +1808,7 @@ export function createExecTool(
                 type: "text",
                 text: `${getWarningText()}Command still running (session ${run.session.id}, pid ${
                   run.session.pid ?? "n/a"
-                }). Use process (list/poll/log/write/kill/clear/remove) for follow-up.`,
+                }). Use process (list/poll/log/write/kill/clear/remove) for follow-up.${onCompleteHint}`,
               },
             ],
             details: {
