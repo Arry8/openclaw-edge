@@ -705,7 +705,7 @@ export async function sendMediaFeishu(params: {
   /** When true, send audio as a voice message bubble instead of a file attachment. */
   audioAsVoice?: boolean;
   /** Allowed roots for local path reads; required for local filePath to work. */
-  mediaLocalRoots?: readonly string[];
+  mediaLocalRoots?: readonly string[] | "any";
 }): Promise<SendMediaResult> {
   const {
     cfg,
@@ -724,6 +724,8 @@ export async function sendMediaFeishu(params: {
     throw new Error(`Feishu account "${account.accountId}" not configured`);
   }
   const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
+  // Use mediaLocalRoots from params if provided, otherwise fall back to config
+  const effectiveMediaLocalRoots = mediaLocalRoots ?? account.config?.mediaLocalRoots;
 
   let buffer: Buffer;
   let name: string;
@@ -736,7 +738,7 @@ export async function sendMediaFeishu(params: {
     const loaded = await getFeishuRuntime().media.loadWebMedia(mediaUrl, {
       maxBytes: mediaMaxBytes,
       optimizeImages: false,
-      localRoots: mediaLocalRoots?.length ? mediaLocalRoots : undefined,
+      localRoots: effectiveMediaLocalRoots === "any" ? "any" : effectiveMediaLocalRoots?.length ? effectiveMediaLocalRoots : undefined,
     });
     buffer = loaded.buffer;
     name = fileName ?? loaded.fileName ?? "file";
