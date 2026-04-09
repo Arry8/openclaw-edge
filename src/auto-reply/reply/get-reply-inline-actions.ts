@@ -385,6 +385,7 @@ export async function handleInlineActions(params: {
       elevated: {
         enabled: elevatedEnabled,
         allowed: elevatedAllowed,
+        defaultLevel: resolvedElevatedLevel,
         failures: elevatedFailures,
       },
       sessionEntry,

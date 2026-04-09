@@ -37,6 +37,7 @@ export type HandleCommandsParams = {
   elevated: {
     enabled: boolean;
     allowed: boolean;
+    defaultLevel?: ElevatedLevel;
     failures: Array<{ gate: string; key: string }>;
   };
   sessionEntry?: SessionEntry;
