@@ -49,6 +49,8 @@ export type ApplyMediaUnderstandingResult = {
 };
 
 const CAPABILITY_ORDER: MediaUnderstandingCapability[] = ["image", "audio", "video"];
+const EMPTY_VOICE_NOTE_PLACEHOLDER =
+  "[Voice note was empty or contained only silence — no speech detected]";
 const EXTRA_TEXT_MIMES = [
   "application/xml",
   "text/xml",
@@ -299,6 +301,71 @@ function resolveTextMimeFromName(name?: string): string | undefined {
   return TEXT_EXT_MIME.get(ext);
 }
 
+function buildSyntheticSkippedAudioOutputs(
+  decisions: MediaUnderstandingDecision[],
+): MediaUnderstandingOutput[] {
+  const audioDecision = decisions.find((decision) => decision.capability === "audio");
+  if (!audioDecision) {
+    return [];
+  }
+  return audioDecision.attachments.flatMap((attachment) => {
+    const hasTooSmallAttempt = attachment.attempts.some((attempt) =>
+      attempt.reason?.trim().startsWith("tooSmall"),
+    );
+    if (!hasTooSmallAttempt) {
+      return [];
+    }
+    return [
+      {
+        kind: "audio.transcription" as const,
+        attachmentIndex: attachment.attachmentIndex,
+        text: EMPTY_VOICE_NOTE_PLACEHOLDER,
+        provider: "openclaw",
+        model: "synthetic-empty-audio",
+      },
+    ];
+  });
+}
+
+function mergeAudioOutputsPreservingAttachmentOrder(params: {
+  outputs: MediaUnderstandingOutput[];
+  syntheticOutputs: MediaUnderstandingOutput[];
+}): MediaUnderstandingOutput[] {
+  const { outputs, syntheticOutputs } = params;
+  if (syntheticOutputs.length === 0) {
+    return outputs;
+  }
+  if (outputs.length === 0) {
+    return syntheticOutputs;
+  }
+
+  const merged = [...outputs];
+  for (const synthetic of syntheticOutputs) {
+    const insertAt = merged.findIndex(
+      (existing) => synthetic.attachmentIndex < existing.attachmentIndex,
+    );
+    if (insertAt === -1) {
+      merged.push(synthetic);
+    } else {
+      merged.splice(insertAt, 0, synthetic);
+    }
+  }
+  return merged;
+}
+
+function mediaOutputCapabilityRank(output: MediaUnderstandingOutput): number {
+  if (output.kind.startsWith("image.")) {
+    return 0;
+  }
+  if (output.kind === "audio.transcription") {
+    return 1;
+  }
+  if (output.kind.startsWith("video.")) {
+    return 2;
+  }
+  return CAPABILITY_ORDER.length;
+}
+
 function isBinaryMediaMime(mime?: string): boolean {
   if (!mime) {
     return false;
@@ -516,6 +583,45 @@ export async function applyMediaUnderstanding(params: {
       decisions.push(entry.decision);
     }
 
+    const audioOutputAttachmentIndexes = new Set(
+      outputs
+        .filter((output) => output.kind === "audio.transcription")
+        .map((output) => output.attachmentIndex),
+    );
+    const syntheticSkippedAudioOutputs = buildSyntheticSkippedAudioOutputs(decisions).filter(
+      (output) => !audioOutputAttachmentIndexes.has(output.attachmentIndex),
+    );
+
+    // Merge synthetic placeholders into the audio outputs only — sorted by
+    // attachmentIndex within the audio slice — then splice them back into
+    // their original position in the outputs array. This preserves:
+    //  1. Cross-capability ordering (image → audio → video from CAPABILITY_ORDER)
+    //  2. Per-capability `attachments.prefer` ordering for non-audio outputs
+    //  3. Correct attachment-index ordering for audio (real + synthetic mixed)
+    if (syntheticSkippedAudioOutputs.length > 0) {
+      const firstAudioIdx = outputs.findIndex((o) => o.kind === "audio.transcription");
+      if (firstAudioIdx >= 0) {
+        const before = outputs.slice(0, firstAudioIdx);
+        const existingAudio = outputs.filter((o) => o.kind === "audio.transcription");
+        const afterLastAudio = outputs.slice(
+          outputs.reduce((last, o, i) => (o.kind === "audio.transcription" ? i : last), firstAudioIdx) + 1,
+        );
+        const mergedAudio = mergeAudioOutputsPreservingAttachmentOrder({
+          outputs: existingAudio,
+          syntheticOutputs: syntheticSkippedAudioOutputs,
+        });
+        outputs.length = 0;
+        outputs.push(...before, ...mergedAudio, ...afterLastAudio);
+      } else {
+        const insertIndex = outputs.findIndex((output) => mediaOutputCapabilityRank(output) > 1);
+        if (insertIndex === -1) {
+          outputs.push(...syntheticSkippedAudioOutputs);
+        } else {
+          outputs.splice(insertIndex, 0, ...syntheticSkippedAudioOutputs);
+        }
+      }
+    }
+
     if (decisions.length > 0) {
       ctx.MediaUnderstandingDecisions = [...(ctx.MediaUnderstandingDecisions ?? []), ...decisions];
     }
@@ -549,9 +655,19 @@ export async function applyMediaUnderstanding(params: {
       }
       ctx.MediaUnderstanding = [...(ctx.MediaUnderstanding ?? []), ...outputs];
     }
+    // Only skip file extraction for attachments that have a real (non-synthetic)
+    // audio transcription. Synthetic placeholders should not prevent file extraction
+    // for tiny audio-MIME files that could be recovered as text via forcedTextMime.
+    const syntheticAudioIndexes = new Set(
+      syntheticSkippedAudioOutputs.map((o) => o.attachmentIndex),
+    );
     const audioAttachmentIndexes = new Set(
       outputs
-        .filter((output) => output.kind === "audio.transcription")
+        .filter(
+          (output) =>
+            output.kind === "audio.transcription" &&
+            !syntheticAudioIndexes.has(output.attachmentIndex),
+        )
         .map((output) => output.attachmentIndex),
     );
     const fileBlocks = await extractFileBlocks({
