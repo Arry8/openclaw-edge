@@ -52,6 +52,7 @@ import {
   resolveAndApplyOutboundThreadId,
 } from "./message-action-threading.js";
 import type { MessagePollResult, MessageSendResult } from "./message.js";
+import { maybeCrossSessionInject } from "./cross-session-inject.js";
 import {
   applyCrossContextDecoration,
   buildCrossContextDecoration,
@@ -570,6 +571,20 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
     replyToId: replyToId ?? undefined,
     threadId: resolvedThreadId ?? undefined,
   });
+
+  // Cross-session injection: record the outbound message in the target peer's
+  // session transcript so the agent has context when the target replies.
+  if (agentId && !dryRun) {
+    void maybeCrossSessionInject({
+      cfg,
+      channel,
+      agentId,
+      accountId,
+      targetPeerId: to,
+      text: message,
+      mediaUrls: mirrorMediaUrls,
+    });
+  }
 
   return {
     kind: "send",
