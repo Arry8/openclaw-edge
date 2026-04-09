@@ -13,6 +13,7 @@ export type GatewayReloadPlan = {
   restartCron: boolean;
   restartHeartbeat: boolean;
   restartHealthMonitor: boolean;
+  regenerateModelsJson: boolean;
   restartChannels: Set<ChannelKind>;
   restartChannelAccounts: Map<ChannelKind, Set<string>>;
   noopPaths: string[];
@@ -30,6 +31,7 @@ type ReloadAction =
   | "restart-cron"
   | "restart-heartbeat"
   | "restart-health-monitor"
+  | "regenerate-models-json"
   | `restart-channel:${ChannelId}`;
 
 const BASE_RELOAD_RULES: ReloadRule[] = [
@@ -77,7 +79,7 @@ const BASE_RELOAD_RULES: ReloadRule[] = [
   {
     prefix: "models",
     kind: "hot",
-    actions: ["restart-heartbeat"],
+    actions: ["restart-heartbeat", "regenerate-models-json"],
   },
   {
     prefix: "agents.list",
@@ -207,6 +209,7 @@ export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPla
     restartCron: false,
     restartHeartbeat: false,
     restartHealthMonitor: false,
+    regenerateModelsJson: false,
     restartChannels: new Set(),
     restartChannelAccounts: new Map(),
     noopPaths: [],
@@ -240,6 +243,9 @@ export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPla
         break;
       case "restart-health-monitor":
         plan.restartHealthMonitor = true;
+        break;
+      case "regenerate-models-json":
+        plan.regenerateModelsJson = true;
         break;
       default:
         break;
