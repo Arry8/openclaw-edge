@@ -5,8 +5,8 @@ import { expandHomePrefix } from "./home-dir.js";
 const GLOB_REGEX_CACHE_LIMIT = 512;
 const globRegexCache = new Map<string, RegExp>();
 
-function normalizeMatchTarget(value: string, platform?: NodeJS.Platform): string {
-  if ((platform ?? process.platform) === "win32") {
+function normalizeMatchTarget(value: string): string {
+  if (process.platform === "win32") {
     const stripped = value.replace(/^\\\\[?.]\\/, "");
     return normalizeLowercaseStringOrEmpty(stripped.replace(/\\/g, "/"));
   }
@@ -25,9 +25,8 @@ function escapeRegExpLiteral(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function compileGlobRegex(pattern: string, platform?: NodeJS.Platform): RegExp {
-  const effectivePlatform = platform ?? process.platform;
-  const cacheKey = `${effectivePlatform}:${pattern}`;
+function compileGlobRegex(pattern: string): RegExp {
+  const cacheKey = `${process.platform}:${pattern}`;
   const cached = globRegexCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -58,7 +57,7 @@ function compileGlobRegex(pattern: string, platform?: NodeJS.Platform): RegExp {
   }
   regex += "$";
 
-  const compiled = new RegExp(regex, effectivePlatform === "win32" ? "i" : "");
+  const compiled = new RegExp(regex, process.platform === "win32" ? "i" : "");
   if (globRegexCache.size >= GLOB_REGEX_CACHE_LIMIT) {
     globRegexCache.clear();
   }
@@ -66,26 +65,21 @@ function compileGlobRegex(pattern: string, platform?: NodeJS.Platform): RegExp {
   return compiled;
 }
 
-export function matchesExecAllowlistPattern(
-  pattern: string,
-  target: string,
-  platform?: NodeJS.Platform,
-): boolean {
+export function matchesExecAllowlistPattern(pattern: string, target: string): boolean {
   const trimmed = pattern.trim();
   if (!trimmed) {
     return false;
   }
 
-  const effectivePlatform = platform ?? process.platform;
   const expanded = trimmed.startsWith("~") ? expandHomePrefix(trimmed) : trimmed;
   const hasWildcard = /[*?]/.test(expanded);
   let normalizedPattern = expanded;
   let normalizedTarget = target;
-  if (effectivePlatform === "win32" && !hasWildcard) {
+  if (process.platform === "win32" && !hasWildcard) {
     normalizedPattern = tryRealpath(expanded) ?? expanded;
     normalizedTarget = tryRealpath(target) ?? target;
   }
-  normalizedPattern = normalizeMatchTarget(normalizedPattern, effectivePlatform);
-  normalizedTarget = normalizeMatchTarget(normalizedTarget, effectivePlatform);
-  return compileGlobRegex(normalizedPattern, effectivePlatform).test(normalizedTarget);
+  normalizedPattern = normalizeMatchTarget(normalizedPattern);
+  normalizedTarget = normalizeMatchTarget(normalizedTarget);
+  return compileGlobRegex(normalizedPattern).test(normalizedTarget);
 }
