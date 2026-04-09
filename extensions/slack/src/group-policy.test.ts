@@ -23,10 +23,46 @@ const cfg = {
   },
 } as any;
 
+const cfgWithMixedCaseChannelId = {
+  channels: {
+    slack: {
+      botToken: "xoxb-test",
+      appToken: "xapp-test",
+      channels: {
+        C123Abc456: {
+          requireMention: false,
+          tools: { allow: ["message.send"] },
+        },
+        "*": {
+          requireMention: true,
+          tools: { deny: ["exec"] },
+        },
+      },
+    },
+  },
+} as any;
+
 describe("slack group policy", () => {
   it("uses matched channel requireMention and wildcard fallback", () => {
     expect(resolveSlackGroupRequireMention({ cfg, groupChannel: "#alerts" })).toBe(false);
     expect(resolveSlackGroupRequireMention({ cfg, groupChannel: "#missing" })).toBe(true);
+  });
+
+  it("matches channel IDs case-insensitively like other Slack channel config lookups", () => {
+    expect(
+      resolveSlackGroupRequireMention({
+        cfg: cfgWithMixedCaseChannelId,
+        groupId: "C123ABC456",
+      }),
+    ).toBe(false);
+
+    expect(
+      resolveSlackGroupToolPolicy({
+        cfg: cfgWithMixedCaseChannelId,
+        groupId: "C123ABC456",
+        senderId: "user:bob",
+      }),
+    ).toEqual({ allow: ["message.send"] });
   });
 
   it("resolves sender override, then channel tools, then wildcard tools", () => {

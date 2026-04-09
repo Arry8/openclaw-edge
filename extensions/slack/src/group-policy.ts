@@ -28,17 +28,22 @@ function resolveSlackChannelPolicyEntry(
     return undefined;
   }
   const channelId = params.groupId?.trim();
+  const matchedChannelIdKey = channelId
+    ? Object.keys(channelMap).find(
+        (key) => key !== "*" && key.toLowerCase() === channelId.toLowerCase(),
+      )
+    : undefined;
   const groupChannel = params.groupChannel;
   const channelName = groupChannel?.replace(/^#/, "");
   const normalizedName = normalizeHyphenSlug(channelName);
   const candidates = [
-    channelId ?? "",
+    matchedChannelIdKey ?? channelId ?? "",
     channelName ? `#${channelName}` : "",
     channelName ?? "",
     normalizedName,
   ].filter(Boolean);
   for (const candidate of candidates) {
-    if (candidate && channelMap[candidate]) {
+    if (channelMap[candidate]) {
       return channelMap[candidate];
     }
   }
