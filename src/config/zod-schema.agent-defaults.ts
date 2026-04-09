@@ -46,6 +46,7 @@ export const AgentDefaultsSchema = z
     repoRoot: z.string().optional(),
     systemPromptOverride: z.string().optional(),
     skipBootstrap: z.boolean().optional(),
+    skipOptionalBootstrapFiles: z.array(z.string()).optional(),
     contextInjection: z.union([z.literal("always"), z.literal("continuation-skip")]).optional(),
     bootstrapMaxChars: z.number().int().positive().optional(),
     bootstrapTotalMaxChars: z.number().int().positive().optional(),
