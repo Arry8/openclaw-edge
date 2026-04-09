@@ -26,16 +26,18 @@ interface SessionData {
   tools?: Array<{ name: string; description?: string; parameters?: unknown }>;
 }
 
-function loadTemplate(fileName: string): string {
-  return fs.readFileSync(path.join(EXPORT_HTML_DIR, fileName), "utf-8");
+async function loadTemplate(fileName: string): Promise<string> {
+  return await fs.promises.readFile(path.join(EXPORT_HTML_DIR, fileName), "utf-8");
 }
 
-function generateHtml(sessionData: SessionData): string {
-  const template = loadTemplate("template.html");
-  const templateCss = loadTemplate("template.css");
-  const templateJs = loadTemplate("template.js");
-  const markedJs = loadTemplate(path.join("vendor", "marked.min.js"));
-  const hljsJs = loadTemplate(path.join("vendor", "highlight.min.js"));
+async function generateHtml(sessionData: SessionData): Promise<string> {
+  const [template, templateCss, templateJs, markedJs, hljsJs] = await Promise.all([
+    loadTemplate("template.html"),
+    loadTemplate("template.css"),
+    loadTemplate("template.js"),
+    loadTemplate(path.join("vendor", "marked.min.js")),
+    loadTemplate(path.join("vendor", "highlight.min.js")),
+  ]);
 
   // Use pi-mono dark theme colors (matching their theme/dark.json)
   const themeVars = `
@@ -139,7 +141,9 @@ export async function buildExportSessionReply(params: HandleCommandsParams): Pro
     };
   }
 
-  if (!fs.existsSync(sessionFile)) {
+  try {
+    await fs.promises.access(sessionFile);
+  } catch {
     return { text: `❌ Session file not found: ${sessionFile}` };
   }
 
@@ -166,7 +170,7 @@ export async function buildExportSessionReply(params: HandleCommandsParams): Pro
   };
 
   // 5. Generate HTML
-  const html = generateHtml(sessionData);
+  const html = await generateHtml(sessionData);
 
   // 6. Determine output path
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -181,12 +185,14 @@ export async function buildExportSessionReply(params: HandleCommandsParams): Pro
 
   // Ensure directory exists
   const outputDir = path.dirname(outputPath);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  try {
+    await fs.promises.access(outputDir);
+  } catch {
+    await fs.promises.mkdir(outputDir, { recursive: true });
   }
 
   // 7. Write file
-  fs.writeFileSync(outputPath, html, "utf-8");
+  await fs.promises.writeFile(outputPath, html, "utf-8");
 
   const relativePath = path.relative(params.workspaceDir, outputPath);
   const displayPath = relativePath.startsWith("..") ? outputPath : relativePath;
