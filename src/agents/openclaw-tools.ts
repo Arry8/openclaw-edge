@@ -21,6 +21,7 @@ import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
+import { createSessionsBroadcastTool } from "./tools/sessions-broadcast-tool.js";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendConcurrentTool } from "./tools/sessions-send-concurrent-tool.js";
@@ -272,6 +273,12 @@ export function createOpenClawTools(
       sandboxed: options?.sandboxed,
       config: resolvedConfig,
       callGateway: openClawToolsDeps.callGateway,
+    }),
+    createSessionsBroadcastTool({
+      agentSessionKey: options?.agentSessionKey,
+      agentChannel: options?.agentChannel,
+      sandboxed: options?.sandboxed,
+      config: options?.config,
     }),
     createSessionsYieldTool({
       sessionId: options?.sessionId,
