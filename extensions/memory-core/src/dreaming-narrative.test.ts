@@ -327,4 +327,37 @@ describe("generateAndAppendDreamNarrative", () => {
 
     expect(subagent.deleteSession).toHaveBeenCalled();
   });
+
+  it("isolates narrative sessions across workspaces even at the same timestamp", async () => {
+    const firstWorkspaceDir = await createTempWorkspace();
+    const secondWorkspaceDir = await createTempWorkspace();
+    const subagent = createMockSubagent("A quiet memory took shape.");
+    const logger = createMockLogger();
+    const nowMs = Date.parse("2026-04-05T03:00:00Z");
+
+    await generateAndAppendDreamNarrative({
+      subagent,
+      workspaceDir: firstWorkspaceDir,
+      data: { phase: "light", snippets: ["first workspace fragment"] },
+      nowMs,
+      logger,
+    });
+    await generateAndAppendDreamNarrative({
+      subagent,
+      workspaceDir: secondWorkspaceDir,
+      data: { phase: "light", snippets: ["second workspace fragment"] },
+      nowMs,
+      logger,
+    });
+
+    const firstSessionKey = subagent.run.mock.calls[0]?.[0]?.sessionKey;
+    const secondSessionKey = subagent.run.mock.calls[1]?.[0]?.sessionKey;
+    expect(firstSessionKey).toBeTypeOf("string");
+    expect(secondSessionKey).toBeTypeOf("string");
+    expect(firstSessionKey).not.toBe(secondSessionKey);
+    expect(firstSessionKey).toContain("dreaming-narrative-light-");
+    expect(secondSessionKey).toContain("dreaming-narrative-light-");
+    expect(subagent.deleteSession.mock.calls[0]?.[0]?.sessionKey).toBe(firstSessionKey);
+    expect(subagent.deleteSession.mock.calls[1]?.[0]?.sessionKey).toBe(secondSessionKey);
+  });
 });
