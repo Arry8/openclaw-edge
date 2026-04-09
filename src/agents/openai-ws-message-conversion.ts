@@ -532,7 +532,10 @@ export function buildAssistantMessageFromResponse(
           try {
             return JSON.parse(item.arguments) as Record<string, unknown>;
           } catch {
-            return {} as Record<string, unknown>;
+            // Preserve the raw string so callers can inspect/retry — silent {} replacement
+            // causes irrecoverable data loss. Downstream convertMessagesToInputItems already
+            // handles `typeof block.arguments === "string"`.
+            return item.arguments as unknown as Record<string, unknown>;
           }
         })(),
       });
