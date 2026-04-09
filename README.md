@@ -205,6 +205,10 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
   </a>
 </p>
 
+## Tech stack used
+
+![Stack Fingerprint](https://stackfingerprint.vercel.app/api/card?repo=openclaw/openclaw&theme=ember&layout=classic&size=md&icons=color&pills=round)
+
 ## Everything we built so far
 
 ### Core platform
