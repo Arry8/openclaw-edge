@@ -40,6 +40,14 @@ openclaw plugins install openclaw-codex-app-server
 
 ### DingTalk
 
+## Listed plugins
+
+- **Scientify** — AI-powered research workflow automation: 6-phase pipeline (literature survey → deep analysis → implementation plan → code → review → experiments), with arXiv/OpenAlex/GitHub search tools and persistent workspace management.
+  npm: `scientify`
+  repo: `https://github.com/tsingyuai/scientify`
+  install: `openclaw plugins install scientify`
+
+## Candidate format
 Enterprise robot integration using Stream mode. Supports text, images, and
 file messages via any DingTalk client.
 
