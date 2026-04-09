@@ -167,7 +167,12 @@ export function createProfileAvailability({
     );
   };
 
-  const ensureBrowserAvailable = async (): Promise<void> => {
+  // Singleton guard: concurrent callers share the same in-flight launch attempt
+  // instead of racing through isHttpReachable → launchOpenClawChrome independently,
+  // which can cause PortInUseError when two tasks trigger lazy-start simultaneously.
+  let inflightLaunch: Promise<void> | null = null;
+
+  const ensureBrowserAvailableOnce = async (): Promise<void> => {
     await reconcileProfileRuntime();
     if (capabilities.usesChromeMcp) {
       if (profile.userDataDir && !fs.existsSync(profile.userDataDir)) {
@@ -265,6 +270,16 @@ export function createProfileAvailability({
         `Chrome CDP websocket for profile "${profile.name}" is not reachable after restart.`,
       );
     }
+  };
+
+  const ensureBrowserAvailable = async (): Promise<void> => {
+    if (inflightLaunch) {
+      return inflightLaunch;
+    }
+    inflightLaunch = ensureBrowserAvailableOnce().finally(() => {
+      inflightLaunch = null;
+    });
+    return inflightLaunch;
   };
 
   const stopRunningBrowser = async (): Promise<{ stopped: boolean }> => {

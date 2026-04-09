@@ -61,6 +61,22 @@ describe("browser server-context ensureBrowserAvailable", () => {
     expect(stopOpenClawChrome).toHaveBeenCalledTimes(1);
   });
 
+  it("deduplicates concurrent lazy-start calls to prevent PortInUseError", async () => {
+    const { launchOpenClawChrome, stopOpenClawChrome, isChromeCdpReady, profile } =
+      setupEnsureBrowserAvailableHarness();
+    isChromeCdpReady.mockResolvedValue(true);
+    mockLaunchedChrome(launchOpenClawChrome, 456);
+
+    // Two concurrent calls — both should resolve, but only one launch should happen.
+    const p1 = profile.ensureBrowserAvailable();
+    const p2 = profile.ensureBrowserAvailable();
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.all([p1, p2]);
+
+    expect(launchOpenClawChrome).toHaveBeenCalledTimes(1);
+    expect(stopOpenClawChrome).not.toHaveBeenCalled();
+  });
+
   it("reuses a pre-existing loopback browser after an initial short probe miss", async () => {
     const { launchOpenClawChrome, stopOpenClawChrome, isChromeCdpReady, profile } =
       setupEnsureBrowserAvailableHarness();
