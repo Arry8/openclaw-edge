@@ -876,7 +876,7 @@ describe("QmdMemoryManager", () => {
     expect(logWarnMock).toHaveBeenCalledWith(expect.stringContaining("rebinding"));
   });
 
-  it("warns instead of silently succeeding when add conflict metadata is unavailable", async () => {
+  it("logs info instead of warn when collection already exists and metadata is unavailable", async () => {
     cfg = {
       ...cfg,
       memory: {
@@ -907,7 +907,7 @@ describe("QmdMemoryManager", () => {
     const { manager } = await createManager({ mode: "full" });
     await manager.close();
 
-    expect(logWarnMock).toHaveBeenCalledWith(
+    expect(logInfoMock).toHaveBeenCalledWith(
       expect.stringContaining("qmd collection add skipped for workspace-main"),
     );
   });
