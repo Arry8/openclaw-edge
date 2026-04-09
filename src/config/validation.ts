@@ -350,18 +350,36 @@ export function collectUnsupportedSecretRefPolicyIssues(raw: unknown): ConfigVal
   return collectUnsupportedMutableSecretRefIssues(raw);
 }
 
+const PLUGIN_ENTRY_PATH_RE = /^plugins\.entries\.[^.]+$/;
+
+function enhancePluginEntryUnrecognizedKeyMessage(issuePath: string, message: string): string {
+  if (!PLUGIN_ENTRY_PATH_RE.test(issuePath) || !/Unrecognized key/i.test(message)) {
+    return message;
+  }
+  const keys = [...message.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (keys.length === 0) {
+    return message;
+  }
+  const configPath = `${issuePath}.config`;
+  if (keys.length === 1) {
+    return `${message} (did you mean ${configPath}.${keys[0]}? plugin-specific settings belong under the \`config\` key)`;
+  }
+  return `${message} (plugin-specific settings belong under ${configPath})`;
+}
+
 function mapZodIssueToConfigIssue(issue: unknown): ConfigValidationIssue {
   const record = toIssueRecord(issue);
-  const path = formatConfigPath(toConfigPathSegments(record?.path));
-  const message = typeof record?.message === "string" ? record.message : "Invalid input";
+  const issuePath = formatConfigPath(toConfigPathSegments(record?.path));
+  const rawMessage = typeof record?.message === "string" ? record.message : "Invalid input";
+  const message = enhancePluginEntryUnrecognizedKeyMessage(issuePath, rawMessage);
   const allowedValuesSummary = summarizeAllowedValues(collectAllowedValuesFromUnknownIssue(issue));
 
   if (!allowedValuesSummary) {
-    return { path, message };
+    return { path: issuePath, message };
   }
 
   return {
-    path,
+    path: issuePath,
     message: appendAllowedValuesHint(message, allowedValuesSummary),
     allowedValues: allowedValuesSummary.values,
     allowedValuesHiddenCount: allowedValuesSummary.hiddenCount,
