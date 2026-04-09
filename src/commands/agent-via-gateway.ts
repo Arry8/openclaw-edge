@@ -47,6 +47,7 @@ export type AgentCliOpts = {
   agent?: string;
   to?: string;
   sessionId?: string;
+  sessionKey?: string;
   thinking?: string;
   verbose?: string;
   json?: boolean;
@@ -99,8 +100,10 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
   if (!body) {
     throw new Error("Message (--message) is required");
   }
-  if (!opts.to && !opts.sessionId && !opts.agent) {
-    throw new Error("Pass --to <E.164>, --session-id, or --agent to choose a session");
+  if (!opts.to && !opts.sessionId && !opts.sessionKey && !opts.agent) {
+    throw new Error(
+      "Pass --to <E.164>, --session-id, --session-key, or --agent to choose a session",
+    );
   }
 
   const cfg = loadConfig();
@@ -125,6 +128,7 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
     agentId,
     to: opts.to,
     sessionId: opts.sessionId,
+    sessionKey: opts.sessionKey,
   }).sessionKey;
 
   const channel = normalizeMessageChannel(opts.channel);
