@@ -39,6 +39,9 @@ import type {
   PluginHookGatewayContext,
   PluginHookGatewayStartEvent,
   PluginHookGatewayStopEvent,
+  PluginHookContextAssembledEvent,
+  PluginHookLoopIterationStartEvent,
+  PluginHookLoopIterationEndEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
   PluginHookMessageSendingEvent,
@@ -120,6 +123,10 @@ export type {
   PluginHookGatewayContext,
   PluginHookGatewayStartEvent,
   PluginHookGatewayStopEvent,
+  // Agent loop observability hooks
+  PluginHookContextAssembledEvent,
+  PluginHookLoopIterationStartEvent,
+  PluginHookLoopIterationEndEvent,
   PluginHookBeforeInstallContext,
   PluginHookBeforeInstallEvent,
   PluginHookBeforeInstallResult,
@@ -1051,7 +1058,52 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
   }
 
   // =========================================================================
-  // Skill Install Hooks
+  // Agent Loop Observability Hooks
+  // =========================================================================
+
+  /**
+   * Run context_assembled hook.
+   * Fires once per attempt when the full context is assembled, before the
+   * first LLM call. May fire multiple times per run if the outer runner
+   * retries (overflow compaction, auth refresh). Use event.attemptIndex
+   * to distinguish initial (0) from retry (1+) assemblies.
+   * Runs in parallel (fire-and-forget).
+   */
+  async function runContextAssembled(
+    event: PluginHookContextAssembledEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<void> {
+    return runVoidHook("context_assembled", event, ctx);
+  }
+
+  /**
+   * Run loop_iteration_start hook.
+   * Fires at the start of each agent loop iteration (before tool execution
+   * or LLM call). Enables recursion depth tracking and iteration-level
+   * observability. Runs in parallel (fire-and-forget).
+   */
+  async function runLoopIterationStart(
+    event: PluginHookLoopIterationStartEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<void> {
+    return runVoidHook("loop_iteration_start", event, ctx);
+  }
+
+  /**
+   * Run loop_iteration_end hook.
+   * Fires at the end of each agent loop iteration (after tool results are
+   * collected). Includes tool call count and `hasToolResults` (a heuristic
+   * hint, not a definitive continuation signal). Runs in parallel
+   * (fire-and-forget).
+   */
+  async function runLoopIterationEnd(
+    event: PluginHookLoopIterationEndEvent,
+    ctx: PluginHookAgentContext,
+  ): Promise<void> {
+    return runVoidHook("loop_iteration_end", event, ctx);
+  }
+
+// Skill Install Hooks
   // =========================================================================
 
   /**
@@ -1083,9 +1135,7 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
         terminalLabel: "block=true",
       },
     );
-  }
-
-  // =========================================================================
+  } // =========================================================================
   // Utility
   // =========================================================================
 
@@ -1140,6 +1190,10 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     // Gateway hooks
     runGatewayStart,
     runGatewayStop,
+    // Agent loop observability hooks
+    runContextAssembled,
+    runLoopIterationStart,
+    runLoopIterationEnd,
     // Install hooks
     runBeforeInstall,
     // Utility

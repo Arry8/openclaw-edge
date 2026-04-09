@@ -1510,6 +1510,81 @@ export async function runEmbeddedAttempt(
         getCompactionCount,
       } = subscription;
 
+      // Build hook context early so the subscription callback can close over it
+      // without a forward reference.
+      const hookAgentId = sessionAgentId;
+      const hookCtx = {
+        agentId: hookAgentId,
+        sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        workspaceDir: params.workspaceDir,
+        messageProvider: params.messageProvider ?? undefined,
+        trigger: params.trigger,
+        channelId: params.messageChannel ?? params.messageProvider ?? undefined,
+      };
+
+      // Subscribe for loop iteration tracking hooks
+      let hookTurnIteration = 0;
+      let hookTurnMessageCount = 0;
+      let hookPendingToolResults = 0;
+      const hookEventUnsub =
+        hookRunner?.hasHooks("loop_iteration_start") || hookRunner?.hasHooks("loop_iteration_end")
+          ? activeSession.subscribe((event) => {
+              if (event.type === "turn_start") {
+                // Counters maintained unconditionally — loop_iteration_end
+                // needs hookTurnMessageCount even if only end handlers exist.
+                hookTurnIteration++;
+                hookTurnMessageCount = activeSession.messages.length;
+                if (hookRunner?.hasHooks("loop_iteration_start")) {
+                  hookRunner
+                    .runLoopIterationStart(
+                      {
+                        runId: params.runId,
+                        attemptIndex: params.attemptIndex,
+                        iteration: hookTurnIteration,
+                        messageCount: activeSession.messages.length,
+                        pendingToolResults: hookPendingToolResults,
+                      },
+                      hookCtx,
+                    )
+                    .catch((err) =>
+                      log.warn(
+                        `loop_iteration_start hook failed: runId=${params.runId} iteration=${hookTurnIteration} ${String(err)}`,
+                      ),
+                    );
+                }
+              }
+              if (event.type === "turn_end") {
+                const toolResults = event.toolResults ?? [];
+                hookPendingToolResults = toolResults.length;
+                if (hookRunner?.hasHooks("loop_iteration_end")) {
+                  hookRunner
+                    .runLoopIterationEnd(
+                      {
+                        runId: params.runId,
+                        attemptIndex: params.attemptIndex,
+                        iteration: hookTurnIteration,
+                        toolCallsMade: toolResults.length,
+                        // Clamp to 0: mid-turn compaction can reduce messages.length
+                        // below the turn_start snapshot, yielding a negative delta.
+                        newMessagesAdded: Math.max(
+                          0,
+                          activeSession.messages.length - hookTurnMessageCount,
+                        ),
+                        hasToolResults: toolResults.length > 0,
+                      },
+                      hookCtx,
+                    )
+                    .catch((err) =>
+                      log.warn(
+                        `loop_iteration_end hook failed: runId=${params.runId} iteration=${hookTurnIteration} ${String(err)}`,
+                      ),
+                    );
+                }
+              }
+            })
+          : undefined;
+
       const queueHandle: EmbeddedPiQueueHandle & {
         kind: "embedded";
         cancel: (reason?: "user_abort" | "restart" | "superseded") => void;
@@ -1619,9 +1694,6 @@ export async function runEmbeddedAttempt(
           });
         }
       }
-
-      // Hook runner was already obtained earlier before tool creation
-      const hookAgentId = sessionAgentId;
 
       let promptError: unknown = null;
       let preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
@@ -1829,6 +1901,43 @@ export async function runEmbeddedAttempt(
                 `promptImages=${imageResult.images.length} ` +
                 `provider=${params.provider}/${params.modelId} sessionFile=${params.sessionFile}`,
             );
+          }
+
+          // Fire context_assembled hook once per attempt, before the first LLM call.
+          // Note: A single user-visible "run" may have multiple "attempts" due to:
+          // - Overflow compaction
+          // - Auth retry
+          // - Tool result truncation
+          // Each attempt fires this hook with potentially different context.
+          // Plugins needing run-level deduplication should key on event.runId.
+          // Use attemptIndex to distinguish initial (0) from retries (1+).
+          // Use loop_iteration_start for per-turn tracking within an attempt.
+          if (hookRunner?.hasHooks("context_assembled")) {
+            // Deep-copy messages to prevent hook handlers from mutating live
+            // session context.  slice() only copies the array; structuredClone
+            // copies the AgentMessage objects themselves, so redaction/logging
+            // plugins can freely mutate event.messages without affecting the
+            // model input passed to activeSession.prompt().
+            const contextMessagesSnapshot = structuredClone(activeSession.messages);
+            hookRunner
+              .runContextAssembled(
+                {
+                  runId: params.runId,
+                  systemPrompt: systemPromptText,
+                  prompt: effectivePrompt,
+                  messages: contextMessagesSnapshot,
+                  messageCount: contextMessagesSnapshot.length,
+                  imageCount: imageResult.images.length,
+                  images: imageResult.images.length > 0 ? structuredClone(imageResult.images) : [],
+                  attemptIndex: params.attemptIndex,
+                },
+                hookCtx,
+              )
+              .catch((err) =>
+                log.warn(
+                  `context_assembled hook failed: runId=${params.runId} attempt=${params.attemptIndex} ${String(err)}`,
+                ),
+              );
           }
 
           if (hookRunner?.hasHooks("llm_input")) {
@@ -2235,6 +2344,13 @@ export async function runEmbeddedAttempt(
         if (!isProbeSession && (aborted || timedOut) && !timedOutDuringCompaction) {
           log.debug(
             `run cleanup: runId=${params.runId} sessionId=${params.sessionId} aborted=${aborted} timedOut=${timedOut}`,
+          );
+        }
+        try {
+          hookEventUnsub?.();
+        } catch (err) {
+          log.error(
+            `CRITICAL: hookEventUnsub failed, possible resource leak: runId=${params.runId} ${String(err)}`,
           );
         }
         try {
