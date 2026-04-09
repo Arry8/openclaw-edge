@@ -58,7 +58,7 @@ describe("Kimi implicit provider (#22409)", () => {
         explicitProviders: {
           "kimi-coding": {
             baseUrl: "https://kimi.example.test/coding/",
-            api: "anthropic-messages",
+            api: "openai-completions",
             models: buildExplicitKimiModels(),
           },
         },
@@ -80,7 +80,7 @@ describe("Kimi implicit provider (#22409)", () => {
         explicitProviders: {
           "kimi-coding": {
             baseUrl: "https://api.kimi.com/coding/",
-            api: "anthropic-messages",
+            api: "openai-completions",
             headers: {
               "User-Agent": "custom-kimi-client/1.0",
               "X-Kimi-Tenant": "tenant-a",
