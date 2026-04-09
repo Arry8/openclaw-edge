@@ -367,7 +367,7 @@ export default definePluginEntry({
                         stream.push({ type: "toolcall_start", contentIndex, partial: output });
                       }
 
-                      const currentBlock = contentList[contentIndex] as Record<string, unknown>;
+                      const currentBlock = contentList[contentIndex];
 
                       if (toolCall.id) {
                         currentBlock.id = toolCall.id;

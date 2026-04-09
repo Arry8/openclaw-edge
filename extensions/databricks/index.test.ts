@@ -50,8 +50,9 @@ describe("Databricks plugin", () => {
       const streamFn = wrapStreamFn({} as ProviderWrapStreamFnContext);
       const eventStream = await streamFn(model, context, options);
       
-      const events: any[] = [];
-      for await (const event of (eventStream as any)) {
+      const iterableStream = eventStream as AsyncIterable<Record<string, unknown>>;
+      const events: Record<string, unknown>[] = [];
+      for await (const event of iterableStream) {
         events.push(event);
       }
 
@@ -102,8 +103,9 @@ describe("Databricks plugin", () => {
       const streamFn = wrapStreamFn({} as ProviderWrapStreamFnContext);
       const eventStream = await streamFn(model, context, options);
       
-      const events: any[] = [];
-      for await (const event of (eventStream as any)) {
+      const iterableStream = eventStream as AsyncIterable<Record<string, unknown>>;
+      const events: Record<string, unknown>[] = [];
+      for await (const event of iterableStream) {
         events.push(event);
       }
 
@@ -144,8 +146,9 @@ describe("Databricks plugin", () => {
       const streamFn = wrapStreamFn({} as ProviderWrapStreamFnContext);
       const eventStream = await streamFn(model, context, options);
       
-      const events: any[] = [];
-      for await (const event of (eventStream as any)) {
+      const iterableStream = eventStream as AsyncIterable<Record<string, unknown>>;
+      const events: Record<string, unknown>[] = [];
+      for await (const event of iterableStream) {
         events.push(event);
       }
 
