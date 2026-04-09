@@ -18,6 +18,7 @@ import {
 import { resolveSessionParentSessionKey } from "../../channels/plugins/session-conversation.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
+import { logDebug } from "../../logger.js";
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -329,9 +330,12 @@ export async function createModelSelectionState(params: {
       return;
     }
     const suffix = extra ? ` ${extra}` : "";
-    console.log(
-      `[model-selection] session=${params.sessionKey ?? "(no-session)"} stage=${stage} elapsedMs=${Date.now() - startMs}${suffix}`,
-    );
+    const msg = `[model-selection] session=${params.sessionKey ?? "(no-session)"} stage=${stage} elapsedMs=${Date.now() - startMs}${suffix}`;
+    // Write to file logger (level-filtered) for structured log collection.
+    logDebug(msg);
+    // Also emit to console unconditionally: this env-var gate is an explicit
+    // opt-in debug flag, so operators expect visible stdout output.
+    console.log(msg);
   };
   const {
     cfg,
