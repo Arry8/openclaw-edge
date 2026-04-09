@@ -260,11 +260,6 @@ export function buildDiscordMessagePayload(params: {
   embeds?: Embed[];
   flags?: number;
   files?: MessagePayloadFile[];
-  allowed_mentions?: {
-    parse?: ("users" | "roles" | "everyone")[];
-    roles?: string[];
-    users?: string[];
-  };
 }): MessagePayloadObject {
   const payload: MessagePayloadObject = {};
   const hasV2 = hasV2Components(params.components);
@@ -283,9 +278,6 @@ export function buildDiscordMessagePayload(params: {
   }
   if (params.files?.length) {
     payload.files = params.files;
-  }
-  if (params.allowed_mentions) {
-    payload.allowed_mentions = params.allowed_mentions;
   }
   return payload;
 }
@@ -328,14 +320,11 @@ async function sendDiscordText(
       isFirst,
     });
     const chunkEmbeds = resolveDiscordSendEmbeds({ embeds, isFirst });
-    // Enable user mentions to trigger notifications
-    const allowedMentions = { parse: ["users"] as const };
     const payload = buildDiscordMessagePayload({
       text: chunk,
       components: chunkComponents,
       embeds: chunkEmbeds,
       flags,
-      allowed_mentions: allowedMentions,
     });
     const body = stripUndefinedFields({
       ...serializePayload(payload),
@@ -400,14 +389,11 @@ async function sendDiscordMedia(
     isFirst: true,
   });
   const captionEmbeds = resolveDiscordSendEmbeds({ embeds, isFirst: true });
-  // Enable user mentions to trigger notifications
-  const allowedMentions = { parse: ["users"] as const };
   const payload = buildDiscordMessagePayload({
     text: caption,
     components: captionComponents,
     embeds: captionEmbeds,
     flags,
-    allowed_mentions: allowedMentions,
     files: [
       {
         data: fileData,
