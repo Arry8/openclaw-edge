@@ -96,6 +96,15 @@ export const __testing = {
   withBundledProviderVitestCompat,
 } as const;
 
+const BUNDLED_PROVIDER_HOOK_ALIAS_OWNER_PLUGIN_IDS = new Map<string, string>([
+  ["azure-openai", "openai"],
+  ["azure-openai-responses", "openai"],
+  ["google-antigravity", "google"],
+  ["google-vertex", "google"],
+  ["minimax-cn", "minimax"],
+  ["minimax-portal-cn", "minimax"],
+]);
+
 type ModelSupportMatchKind = "pattern" | "prefix";
 
 function resolveManifestRegistry(params: {
@@ -213,8 +222,15 @@ export function resolveOwningPluginIdsForProvider(params: {
         ),
     )
     .map((plugin) => plugin.id);
+  const bundledHookAliasOwnerPluginId =
+    BUNDLED_PROVIDER_HOOK_ALIAS_OWNER_PLUGIN_IDS.get(normalizedProvider);
+  if (bundledHookAliasOwnerPluginId) {
+    pluginIds.push(bundledHookAliasOwnerPluginId);
+  }
 
-  return pluginIds.length > 0 ? pluginIds : undefined;
+  return pluginIds.length > 0
+    ? [...new Set(pluginIds)].toSorted((left, right) => left.localeCompare(right))
+    : undefined;
 }
 
 export function resolveOwningPluginIdsForModelRef(params: {

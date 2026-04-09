@@ -12,18 +12,24 @@ type LoadPluginManifestRegistry =
   typeof import("./manifest-registry.js").loadPluginManifestRegistry;
 type ApplyPluginAutoEnable = typeof import("../config/plugin-auto-enable.js").applyPluginAutoEnable;
 type SetActivePluginRegistry = typeof import("./runtime.js").setActivePluginRegistry;
+type ResetPluginRuntimeStateForTest =
+  typeof import("./runtime.js").resetPluginRuntimeStateForTest;
+type ResolvePluginSetupRegistry =
+  typeof import("./setup-registry.js").resolvePluginSetupRegistry;
 
 const resolveRuntimePluginRegistryMock = vi.fn<ResolveRuntimePluginRegistry>();
 const loadOpenClawPluginsMock = vi.fn<LoadOpenClawPlugins>();
 const isPluginRegistryLoadInFlightMock = vi.fn<IsPluginRegistryLoadInFlight>((_) => false);
 const loadPluginManifestRegistryMock = vi.fn<LoadPluginManifestRegistry>();
 const applyPluginAutoEnableMock = vi.fn<ApplyPluginAutoEnable>();
+const resolvePluginSetupRegistryMock = vi.fn<ResolvePluginSetupRegistry>();
 
 let resolveOwningPluginIdsForProvider: typeof import("./providers.js").resolveOwningPluginIdsForProvider;
 let resolveOwningPluginIdsForModelRef: typeof import("./providers.js").resolveOwningPluginIdsForModelRef;
 let resolveEnabledProviderPluginIds: typeof import("./providers.js").resolveEnabledProviderPluginIds;
 let resolvePluginProviders: typeof import("./providers.runtime.js").resolvePluginProviders;
 let setActivePluginRegistry: SetActivePluginRegistry;
+let resetPluginRuntimeStateForTest: ResetPluginRuntimeStateForTest;
 
 function createManifestProviderPlugin(params: {
   id: string;
@@ -53,6 +59,20 @@ function setManifestPlugins(plugins: PluginManifestRecord[]) {
   loadPluginManifestRegistryMock.mockReturnValue({
     plugins,
     diagnostics: [],
+  });
+}
+
+function setSetupProviders(
+  providers: Array<{
+    pluginId: string;
+    provider: ProviderPlugin;
+  }>,
+) {
+  resolvePluginSetupRegistryMock.mockReturnValue({
+    providers,
+    cliBackends: [],
+    configMigrations: [],
+    autoEnableProbes: [],
   });
 }
 
@@ -279,13 +299,17 @@ describe("resolvePluginProviders", () => {
       loadPluginManifestRegistry: (...args: Parameters<LoadPluginManifestRegistry>) =>
         loadPluginManifestRegistryMock(...args),
     }));
+    vi.doMock("./setup-registry.js", () => ({
+      resolvePluginSetupRegistry: (...args: Parameters<ResolvePluginSetupRegistry>) =>
+        resolvePluginSetupRegistryMock(...args),
+    }));
     ({
       resolveOwningPluginIdsForProvider,
       resolveOwningPluginIdsForModelRef,
       resolveEnabledProviderPluginIds,
     } = await import("./providers.js"));
     ({ resolvePluginProviders } = await import("./providers.runtime.js"));
-    ({ setActivePluginRegistry } = await import("./runtime.js"));
+    ({ setActivePluginRegistry, resetPluginRuntimeStateForTest } = await import("./runtime.js"));
   });
 
   it("maps cli backend ids to owning plugin ids via manifests", () => {
@@ -312,6 +336,8 @@ describe("resolvePluginProviders", () => {
     loadOpenClawPluginsMock.mockReturnValue(registry);
     loadPluginManifestRegistryMock.mockReset();
     applyPluginAutoEnableMock.mockReset();
+    resolvePluginSetupRegistryMock.mockReset();
+    setSetupProviders([]);
     applyPluginAutoEnableMock.mockImplementation(
       (params): PluginAutoEnableResult => ({
         config: params.config ?? ({} as OpenClawConfig),
@@ -511,6 +537,18 @@ describe("resolvePluginProviders", () => {
     });
   });
 
+  it("does not load unrelated plugins when explicit provider refs resolve to no owning plugin", () => {
+    const providers = resolvePluginProviders({
+      config: {},
+      providerRefs: ["openai-compatible"],
+      activate: false,
+      cache: false,
+    });
+
+    expectResolvedProviders(providers, []);
+    expect(resolveRuntimePluginRegistryMock).not.toHaveBeenCalled();
+  });
+
   it("loads all discovered provider plugins in setup mode", () => {
     resolvePluginProviders({
       config: {
@@ -635,6 +673,92 @@ describe("resolvePluginProviders", () => {
       }),
     );
   });
+
+  it("activates owning plugins for bundled hook alias provider refs", () => {
+    setOwningProviderManifestPlugins();
+
+    resolvePluginProviders({
+      config: {},
+      providerRefs: ["azure-openai-responses"],
+      activate: true,
+    });
+
+    expect(resolveRuntimePluginRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyPluginIds: ["openai"],
+        activate: true,
+        config: expect.objectContaining({
+          plugins: expect.objectContaining({
+            allow: ["openai"],
+            entries: {
+              openai: { enabled: true },
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("activates owning plugins for active-runtime hook alias provider refs", () => {
+    const activeRegistry = createEmptyPluginRegistry();
+    activeRegistry.providers.push({
+      pluginId: "workspace-provider",
+      provider: {
+        id: "workspace-provider",
+        label: "Workspace Provider",
+        hookAliases: ["workspace-hook-alias"],
+        auth: [],
+      },
+      source: "workspace",
+    });
+    setActivePluginRegistry(activeRegistry, undefined, "default", "/workspace/runtime");
+
+    resolvePluginProviders({
+      config: {},
+      workspaceDir: "/workspace/runtime",
+      providerRefs: ["workspace-hook-alias"],
+      activate: true,
+    });
+
+    expect(resolveRuntimePluginRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyPluginIds: ["workspace-provider"],
+        activate: true,
+        workspaceDir: "/workspace/runtime",
+      }),
+    );
+  });
+
+  it("activates owning plugins for cold-start setup-registry hook alias provider refs", () => {
+    resetPluginRuntimeStateForTest();
+    setSetupProviders([
+      {
+        pluginId: "workspace-provider",
+        provider: {
+          id: "workspace-provider",
+          label: "Workspace Provider",
+          hookAliases: ["workspace-cold-start-alias"],
+          auth: [],
+        },
+      },
+    ]);
+
+    resolvePluginProviders({
+      config: {},
+      workspaceDir: "/workspace/runtime",
+      providerRefs: ["workspace-cold-start-alias"],
+      activate: true,
+    });
+
+    expect(resolveRuntimePluginRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyPluginIds: ["workspace-provider"],
+        activate: true,
+        workspaceDir: "/workspace/runtime",
+      }),
+    );
+  });
+
   it.each([
     {
       provider: "minimax-portal",
@@ -645,11 +769,31 @@ describe("resolvePluginProviders", () => {
       expectedPluginIds: ["openai"],
     },
     {
+      provider: "azure-openai-responses",
+      expectedPluginIds: ["openai"],
+    },
+    {
+      provider: "google-antigravity",
+      expectedPluginIds: ["google"],
+    },
+    {
+      provider: "google-vertex",
+      expectedPluginIds: ["google"],
+    },
+    {
+      provider: "minimax-cn",
+      expectedPluginIds: ["minimax"],
+    },
+    {
+      provider: "minimax-portal-cn",
+      expectedPluginIds: ["minimax"],
+    },
+    {
       provider: "gemini-cli",
       expectedPluginIds: undefined,
     },
   ] as const)(
-    "maps $provider to owning plugin ids via manifests",
+    "maps $provider to owning plugin ids via manifests and bundled hook aliases",
     ({ provider, expectedPluginIds }) => {
       setOwningProviderManifestPlugins();
 
