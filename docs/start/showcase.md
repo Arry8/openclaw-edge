@@ -365,8 +365,14 @@ Community plugin that adds a Telegram `/call` command and forwards calls to a Pi
 
 <Card title="CalDAV Calendar" icon="calendar" href="https://clawhub.ai/skills/caldav-calendar">
   **ClawHub** • `calendar` `caldav` `skill`
-  
+
   Calendar skill using khal/vdirsyncer. Self-hosted calendar integration.
+</Card>
+
+<Card title="CrewClaw" icon="rocket" href="https://crewclaw.com">
+  **@mergisi** • `deployment` `templates` `docker`
+
+  Agent deployment platform with ready-to-use templates. Generates complete workspaces (SOUL.md, Dockerfile, bot scripts) for single and multi-agent setups.
 </Card>
 
 </CardGroup>
