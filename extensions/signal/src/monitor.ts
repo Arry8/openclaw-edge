@@ -318,6 +318,9 @@ async function deliverReplies(params: {
     params;
   for (const payload of replies) {
     const reply = resolveSendableOutboundReplyParts(payload);
+    const replyTo = payload.replyToId ?? undefined;
+    const replyToAuthor = payload.replyToAuthor ?? undefined;
+    let sentCount = 0;
     const delivered = await deliverTextOrMediaReply({
       payload,
       text: reply.text,
@@ -328,7 +331,10 @@ async function deliverReplies(params: {
           account,
           maxBytes,
           accountId,
+          replyToId: sentCount === 0 ? replyTo : undefined,
+          quoteAuthor: sentCount === 0 ? replyToAuthor : undefined,
         });
+        sentCount += 1;
       },
       sendMedia: async ({ mediaUrl, caption }) => {
         await sendMessageSignal(target, caption ?? "", {
@@ -337,7 +343,10 @@ async function deliverReplies(params: {
           mediaUrl,
           maxBytes,
           accountId,
+          replyToId: sentCount === 0 ? replyTo : undefined,
+          quoteAuthor: sentCount === 0 ? replyToAuthor : undefined,
         });
+        sentCount += 1;
       },
     });
     if (delivered !== "empty") {

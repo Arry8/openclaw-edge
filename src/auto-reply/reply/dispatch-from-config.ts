@@ -359,6 +359,7 @@ export async function dispatchReplyFromConfig(params: {
       mirror,
       isGroup,
       groupId,
+      replyToAuthor: ctx.ReplyToAuthor ?? undefined,
     });
     if (!result.ok) {
       logVerbose(`dispatch-from-config: route-reply failed: ${result.error ?? "unknown error"}`);

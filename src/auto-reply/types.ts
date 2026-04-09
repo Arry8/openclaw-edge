@@ -157,6 +157,8 @@ export type ReplyPayload = {
     question: string;
   };
   replyToId?: string;
+  /** Author of the quoted message, forwarded from inbound quote context (e.g. Signal group replies). */
+  replyToAuthor?: string;
   replyToTag?: boolean;
   /** True when [[reply_to_current]] was present but not yet mapped to a message id. */
   replyToCurrent?: boolean;
