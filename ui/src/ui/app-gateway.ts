@@ -56,6 +56,8 @@ function isGenericBrowserFetchFailure(message: string): boolean {
   return /^(?:typeerror:\s*)?(?:fetch failed|failed to fetch)$/i.test(message.trim());
 }
 
+const EVENT_LOG_MAX = 250;
+
 type GatewayHost = {
   settings: UiSettings;
   password: string;
@@ -383,12 +385,12 @@ function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | u
 }
 
 function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
-  host.eventLogBuffer = [
-    { ts: Date.now(), event: evt.event, payload: evt.payload },
-    ...host.eventLogBuffer,
-  ].slice(0, 250);
+  host.eventLogBuffer.unshift({ ts: Date.now(), event: evt.event, payload: evt.payload });
+  if (host.eventLogBuffer.length > EVENT_LOG_MAX) {
+    host.eventLogBuffer.length = EVENT_LOG_MAX;
+  }
   if (host.tab === "debug" || host.tab === "overview") {
-    host.eventLog = host.eventLogBuffer;
+    host.eventLog = [...host.eventLogBuffer];
   }
 
   if (evt.event === "agent") {
