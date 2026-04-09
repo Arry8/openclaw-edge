@@ -16,8 +16,16 @@ interface BaseAgentMessage {
   name?: string;
 }
 
-function mapDatabricksMessages(context: { messages: unknown[]; systemPrompt?: string }) {
-  const result: any[] = [];
+interface OpenAIChatMessage {
+  role: string;
+  content: string | unknown[] | null;
+  tool_calls?: unknown[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+function mapDatabricksMessages(context: { messages: unknown[]; systemPrompt?: string }): OpenAIChatMessage[] {
+  const result: OpenAIChatMessage[] = [];
   if (context.systemPrompt) {
     result.push({ role: "system", content: context.systemPrompt });
   }
@@ -35,18 +43,21 @@ function mapDatabricksMessages(context: { messages: unknown[]; systemPrompt?: st
   return result;
 }
 
-function mapDatabricksTools(tools: any[] | undefined) {
+function mapDatabricksTools(tools: unknown[] | undefined) {
   if (!tools || tools.length === 0) {
     return undefined;
   }
-  return tools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    },
-  }));
+  return tools.map((tool) => {
+    const t = tool as Record<string, unknown>;
+    return {
+      type: "function",
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      },
+    };
+  });
 }
 
 function mapDatabricksStopReason(reason: string | null | undefined): string {
@@ -231,7 +242,7 @@ export default definePluginEntry({
 
           const messages = mapDatabricksMessages(context);
           const tools = mapDatabricksTools(context.tools);
-          const toolChoice = (streamOptions as any).toolChoice;
+          const toolChoice = (streamOptions as Record<string, unknown>).toolChoice;
 
           const extraParams = (streamOptions as Record<string, unknown>).extraParams as Record<string, unknown> | undefined || {};
           const payload = {
@@ -267,8 +278,8 @@ export default definePluginEntry({
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream",
-                ...(model.headers as Record<string, string> || {}),
-                ...(streamOptions.headers as Record<string, string> || {}),
+                ...(model.headers as Record<string, string>),
+                ...(streamOptions.headers as Record<string, string>),
               };
 
               const response = await fetch(url, {
