@@ -6800,6 +6800,12 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                                   type: "string",
                                 },
                               },
+                              knownLongFlags: {
+                                type: "array",
+                                items: {
+                                  type: "string",
+                                },
+                              },
                             },
                             additionalProperties: false,
                           },
@@ -16992,6 +16998,12 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                       },
                     },
                     deniedFlags: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+                    knownLongFlags: {
                       type: "array",
                       items: {
                         type: "string",
