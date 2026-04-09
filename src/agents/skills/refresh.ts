@@ -5,7 +5,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
-import { resolvePluginSkillDirs } from "./plugin-skills.js";
+import { resolvePluginSkillWatchDirs } from "./plugin-skills.js";
 import {
   type SkillsChangeEvent,
   bumpSkillsSnapshotVersion,
@@ -67,7 +67,7 @@ function resolveWatchPaths(workspaceDir: string, config?: OpenClawConfig): strin
     .filter(Boolean)
     .map((dir) => resolveUserPath(dir));
   paths.push(...extraDirs);
-  const pluginSkillDirs = resolvePluginSkillDirs({ workspaceDir, config });
+  const pluginSkillDirs = resolvePluginSkillWatchDirs({ workspaceDir, config });
   paths.push(...pluginSkillDirs);
   return paths;
 }
