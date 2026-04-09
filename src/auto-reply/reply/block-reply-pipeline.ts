@@ -90,6 +90,11 @@ export function createBlockReplyPipeline(params: {
   const bufferedKeys = new Set<string>();
   const bufferedPayloadKeys = new Set<string>();
   const bufferedPayloads: ReplyPayload[] = [];
+  // Track trimmed text of each successfully sent payload for content coverage detection.
+  // When block streaming sends chunks (paragraph/sentence splits) that together equal
+  // the final assembled payload, this allows hasSentPayload to detect the match even
+  // though individual chunk content keys differ from the assembled content key.
+  const streamedTexts: string[] = [];
   let sendChain: Promise<void> = Promise.resolve();
   let aborted = false;
   let didStream = false;
@@ -138,6 +143,10 @@ export function createBlockReplyPipeline(params: {
         sentKeys.add(payloadKey);
         sentContentKeys.add(contentKey);
         didStream = true;
+        const sentText = resolveSendableOutboundReplyParts(payload).trimmedText;
+        if (sentText) {
+          streamedTexts.push(sentText);
+        }
       })
       .catch((err) => {
         if (err === timeoutError) {
@@ -245,8 +254,53 @@ export function createBlockReplyPipeline(params: {
     didStream: () => didStream,
     isAborted: () => aborted,
     hasSentPayload: (payload) => {
-      const payloadKey = createBlockReplyContentKey(payload);
-      return sentContentKeys.has(payloadKey);
+      // Exact content key match (handles identical single-chunk payloads).
+      const contentKey = createBlockReplyContentKey(payload);
+      if (sentContentKeys.has(contentKey)) {
+        return true;
+      }
+      // Content coverage: when block streaming delivered chunks that together
+      // contain the same text as the final assembled payload, treat it as sent.
+      // This handles the mismatch between chunked delivery (paragraph/newline/
+      // sentence splits) and the final assembled payload text.
+      if (!didStream || streamedTexts.length === 0) {
+        return false;
+      }
+      const reply = resolveSendableOutboundReplyParts(payload);
+      // Don't suppress payloads with media unless exact content key matched above;
+      // media dedup requires exact key matching to avoid dropping unique attachments.
+      if (reply.hasMedia) {
+        return false;
+      }
+      const finalText = reply.trimmedText;
+      if (!finalText) {
+        // Empty text with no media is vacuously covered.
+        return true;
+      }
+      // Normalize by stripping all whitespace so "para1\n\npara2" and
+      // "para1" + "para2" (joined) compare as equal regardless of how
+      // the block splitter divided the content.
+      const strip = (s: string) => s.replace(/\s+/g, "");
+      const finalStripped = strip(finalText);
+      if (!finalStripped) {
+        return true;
+      }
+      const streamedStripped = strip(streamedTexts.join(""));
+      if (finalStripped === streamedStripped) {
+        logVerbose(
+          `block streaming content dedup: final payload text matches ${streamedTexts.length} streamed chunk(s)`,
+        );
+        return true;
+      }
+      // Final payload text is a subset of what was streamed (e.g. multi-message
+      // response where each message was streamed separately).
+      if (streamedStripped.length > 0 && streamedStripped.includes(finalStripped)) {
+        logVerbose(
+          `block streaming content dedup: final payload text is subset of streamed content`,
+        );
+        return true;
+      }
+      return false;
     },
   };
 }
