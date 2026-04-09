@@ -23,7 +23,7 @@ export {
   normalizeExecSecurity,
   normalizeExecTarget,
 } from "../infra/exec-approvals.js";
-import { logWarn } from "../logger.js";
+import { logDebug, logWarn } from "../logger.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
@@ -585,26 +585,37 @@ export async function runExecProcess(opts: {
   };
   addSession(session);
 
+  let updateSuppressed = false;
   const emitUpdate = () => {
     if (!opts.onUpdate) {
       return;
     }
-    if (session.backgrounded || session.exited) {
+    if (session.backgrounded || session.exited || updateSuppressed) {
       return;
     }
     const tailText = session.tail || session.aggregated;
     const warningText = opts.warnings.length ? `${opts.warnings.join("\n")}\n\n` : "";
-    opts.onUpdate({
-      content: [{ type: "text", text: warningText + (tailText || "") }],
-      details: {
-        status: "running",
-        sessionId,
-        pid: session.pid ?? undefined,
-        startedAt,
-        cwd: session.cwd,
-        tail: session.tail,
-      },
-    });
+    try {
+      opts.onUpdate({
+        content: [{ type: "text", text: warningText + (tailText || "") }],
+        details: {
+          status: "running",
+          sessionId,
+          pid: session.pid ?? undefined,
+          startedAt,
+          cwd: session.cwd,
+          tail: session.tail,
+        },
+      });
+    } catch (err) {
+      // The agent run may have ended while the exec process is still producing
+      // output (e.g. late stdout arriving after tool-call abort or turn timeout).
+      // Suppress further updates for this session to avoid repeated throws.
+      updateSuppressed = true;
+      logDebug(
+        `[exec] onUpdate suppressed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   };
 
   const handleStdout = (data: string) => {
