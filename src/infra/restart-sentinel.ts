@@ -17,6 +17,31 @@ export type RestartSentinelStep = {
   log?: RestartSentinelLog | null;
 };
 
+export type RestartOutboxTask =
+  | {
+      kind: "notify-session";
+      sessionKey?: string;
+      message: string;
+      channel?: string;
+      to?: string;
+      accountId?: string;
+      threadId?: string;
+    }
+  | {
+      kind: "message" | "system_event";
+      message: string;
+      sessionKey?: string;
+      threadId?: string;
+      deliveryContext?: {
+        channel?: string;
+        to?: string;
+        accountId?: string;
+        threadId?: string;
+      };
+      restartId?: string;
+      correlationId?: string;
+    };
+
 export type RestartSentinelStats = {
   mode?: string;
   root?: string;
@@ -31,6 +56,10 @@ export type RestartSentinelPayload = {
   kind: "config-apply" | "config-patch" | "update" | "restart";
   status: "ok" | "error" | "skipped";
   ts: number;
+  reason?: string;
+  initiator?: string;
+  restartId?: string;
+  correlationId?: string;
   sessionKey?: string;
   /** Delivery context captured at restart time to ensure channel routing survives restart. */
   deliveryContext?: {
@@ -40,9 +69,11 @@ export type RestartSentinelPayload = {
   };
   /** Thread ID for reply threading (e.g., Slack thread_ts). */
   threadId?: string;
+  outbox?: RestartOutboxTask[];
   message?: string | null;
   doctorHint?: string | null;
   stats?: RestartSentinelStats | null;
+  suppressPrimaryNotice?: boolean;
 };
 
 export type RestartSentinel = {

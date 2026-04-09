@@ -50,7 +50,7 @@ vi.mock("../config/sessions.js", () => ({
   resolveMainSessionKeyFromConfig: mocks.resolveMainSessionKeyFromConfig,
 }));
 
-vi.mock("../config/sessions/delivery-info.js", () => ({
+vi.mock("../config/sessions/thread-info.js", () => ({
   parseSessionThreadInfo: mocks.parseSessionThreadInfo,
 }));
 
@@ -255,6 +255,104 @@ describe("scheduleRestartSentinelWake", () => {
     );
   });
 
+  it("executes persisted restart outbox notify-session tasks on startup", async () => {
+    mocks.consumeRestartSentinel.mockResolvedValue({
+      payload: {
+        sessionKey: "agent:main:main",
+        message: "restart message",
+        outbox: [
+          {
+            kind: "notify-session",
+            sessionKey: "agent:main:main",
+            message: "outbox message",
+            channel: "telegram",
+            to: "telegram:119707338",
+            accountId: "default",
+            threadId: "20",
+          },
+        ],
+      },
+    } as unknown as Awaited<ReturnType<typeof mocks.consumeRestartSentinel>>);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenNthCalledWith(
+      1,
+      "outbox message",
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(mocks.requestHeartbeatNow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "hook:gateway.restart.outbox",
+        sessionKey: "agent:main:main",
+      }),
+    );
+  });
+
+  it("preserves nested deliveryContext threadId for persisted message outbox", async () => {
+    mocks.consumeRestartSentinel.mockResolvedValue({
+      payload: {
+        sessionKey: "agent:main:main",
+        suppressPrimaryNotice: true,
+        outbox: [
+          {
+            kind: "message",
+            message: "outbox message",
+            deliveryContext: {
+              channel: "telegram",
+              to: "telegram:119707338",
+              accountId: "default",
+              threadId: "20",
+            },
+          },
+        ],
+      },
+    } as unknown as Awaited<ReturnType<typeof mocks.consumeRestartSentinel>>);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith(
+      "outbox message",
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+        deliveryContext: expect.objectContaining({
+          channel: "telegram",
+          to: "telegram:119707338",
+          accountId: "default",
+          threadId: "20",
+        }),
+      }),
+    );
+  });
+
+  it("honors suppressPrimaryNotice while still executing persisted outbox", async () => {
+    mocks.consumeRestartSentinel.mockResolvedValue({
+      payload: {
+        sessionKey: "agent:main:main",
+        message: "restart message",
+        suppressPrimaryNotice: true,
+        outbox: [
+          {
+            kind: "message",
+            message: "outbox legacy message",
+          },
+        ],
+      },
+    } as unknown as Awaited<ReturnType<typeof mocks.consumeRestartSentinel>>);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith(
+      "outbox legacy message",
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(mocks.enqueueSystemEvent).not.toHaveBeenCalledWith("restart message", expect.anything());
+  });
+
   it("does not wake the main session when the sentinel has no sessionKey", async () => {
     mocks.consumeRestartSentinel.mockResolvedValue({
       payload: {
@@ -269,5 +367,31 @@ describe("scheduleRestartSentinelWake", () => {
     });
     expect(mocks.requestHeartbeatNow).not.toHaveBeenCalled();
     expect(mocks.deliverOutboundPayloads).not.toHaveBeenCalled();
+  });
+
+  it("executes legacy persisted outbox entries without kind and skips malformed items", async () => {
+    mocks.consumeRestartSentinel.mockResolvedValue({
+      payload: {
+        sessionKey: "agent:main:main",
+        suppressPrimaryNotice: true,
+        outbox: [null, { foo: "bar" }, { message: "legacy outbox message" }],
+      },
+    } as unknown as Awaited<ReturnType<typeof mocks.consumeRestartSentinel>>);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith(
+      "legacy outbox message",
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(mocks.requestHeartbeatNow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "hook:gateway.restart.outbox",
+        sessionKey: "agent:main:main",
+      }),
+    );
   });
 });
