@@ -352,9 +352,31 @@ export function matchAllowlist(
     }
     const hasPath = pattern.includes("/") || pattern.includes("\\") || pattern.includes("~");
     if (!hasPath) {
+      // Bare patterns (no path separators) match against the executable name
+      // rather than the full resolved path.  This allows patterns like
+      // "python3" or "node" to work regardless of where the binary lives.
+      // On Windows, strip the .exe suffix so "python3" matches "python3.exe".
+      let bareTarget = resolution.executableName;
+      if (useArgPattern && bareTarget.toLowerCase().endsWith(".exe")) {
+        bareTarget = bareTarget.slice(0, -4);
+      }
+      if (matchesExecAllowlistPattern(pattern, bareTarget, effectivePlatform)) {
+        if (!entry.argPattern) {
+          if (!useArgPattern) {
+            return entry;
+          }
+          if (!pathOnlyMatch) {
+            pathOnlyMatch = entry;
+          }
+          continue;
+        }
+        if (argv && matchArgPattern(entry.argPattern, argv, platform)) {
+          return entry;
+        }
+      }
       continue;
     }
-    if (!matchesExecAllowlistPattern(pattern, resolvedPath)) {
+    if (!matchesExecAllowlistPattern(pattern, resolvedPath, effectivePlatform)) {
       continue;
     }
     if (!useArgPattern) {
