@@ -10,7 +10,8 @@ export type LoopDetectorKind =
   | "generic_repeat"
   | "known_poll_no_progress"
   | "global_circuit_breaker"
-  | "ping_pong";
+  | "ping_pong"
+  | "unknown_tool_repeat";
 
 export type LoopDetectionResult =
   | { stuck: false }
@@ -193,6 +194,35 @@ function formatErrorForHash(error: unknown): string {
   return stableStringify(error);
 }
 
+function normalizeUnknownToolName(value: string | undefined): string | undefined {
+  const trimmed = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[.,!?;]+$/u, "");
+  return trimmed ? trimmed : undefined;
+}
+
+const UNKNOWN_TOOL_NAME_FRAGMENT = String.raw`[a-z0-9_:./-]+`;
+
+function extractUnknownToolName(error: unknown): string | undefined {
+  if (error === undefined || error === null) {
+    return undefined;
+  }
+  const raw = formatErrorForHash(error);
+  const match =
+    raw.match(new RegExp(`unknown tool[:\\s]+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?`, "i")) ??
+    raw.match(
+      new RegExp(
+        `tool\\s+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?\\s+(?:not found|is not available)`,
+        "i",
+      ),
+    ) ??
+    raw.match(
+      new RegExp(`missing tool definition[:\\s]+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?`, "i"),
+    );
+  return normalizeUnknownToolName(match?.[1]);
+}
+
 function hashToolOutcome(
   toolName: string,
   params: unknown,
@@ -268,6 +298,68 @@ function getNoProgressStreak(
   }
 
   return { count: streak, latestResultHash };
+}
+
+function getUnknownToolRepeatStreak(
+  history: Array<{
+    toolName: string;
+    argsHash: string;
+    outcomeKind?: string;
+    outcomeDetail?: string;
+  }>,
+  toolName: string,
+  argsHash: string,
+): { count: number; missingToolName?: string } {
+  const normalizedToolName = normalizeUnknownToolName(toolName);
+  let count = 0;
+  let missingToolName: string | undefined;
+
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const record = history[i];
+    if (!record || record.toolName !== toolName || record.argsHash !== argsHash) {
+      break;
+    }
+    if (record.outcomeKind !== "unknown_tool") {
+      break;
+    }
+    const currentMissingTool = normalizeUnknownToolName(record.outcomeDetail);
+    if (!currentMissingTool || currentMissingTool !== normalizedToolName) {
+      break;
+    }
+    missingToolName = currentMissingTool;
+    count += 1;
+  }
+
+  return { count, missingToolName };
+}
+
+export const UNKNOWN_TOOL_REPEAT_THRESHOLD = 2;
+
+export function detectRepeatedUnknownToolCall(
+  state: SessionState,
+  toolName: string,
+  params: unknown,
+): LoopDetectionResult {
+  const history = state.toolCallHistory ?? [];
+  const currentHash = hashToolCall(toolName, params);
+  const repeatedUnknownTool = getUnknownToolRepeatStreak(history, toolName, currentHash);
+
+  if (repeatedUnknownTool.count < UNKNOWN_TOOL_REPEAT_THRESHOLD) {
+    return { stuck: false };
+  }
+
+  const missingToolName = repeatedUnknownTool.missingToolName ?? normalizeUnknownToolName(toolName);
+  const printableToolName = missingToolName ?? toolName;
+  return {
+    stuck: true,
+    level: "critical",
+    detector: "unknown_tool_repeat",
+    count: repeatedUnknownTool.count,
+    message:
+      `CRITICAL: ${printableToolName} is not an available tool and has already failed ` +
+      `${repeatedUnknownTool.count} consecutive times. Stop retrying this tool call and ask the user ` +
+      `to correct the tool name or install the missing tool.`,
+  };
 }
 
 function getPingPongStreak(
@@ -404,6 +496,11 @@ export function detectToolCallLoop(
   params: unknown,
   config?: ToolLoopDetectionConfig,
 ): LoopDetectionResult {
+  const repeatedUnknownToolResult = detectRepeatedUnknownToolCall(state, toolName, params);
+  if (repeatedUnknownToolResult.stuck) {
+    return repeatedUnknownToolResult;
+  }
+
   const resolvedConfig = resolveLoopDetectionConfig(config);
   if (!resolvedConfig.enabled) {
     return { stuck: false };
@@ -579,6 +676,7 @@ export function recordToolCallOutcome(
     params.result,
     params.error,
   );
+  const unknownToolName = extractUnknownToolName(params.error);
   if (!resultHash) {
     return;
   }
@@ -604,6 +702,8 @@ export function recordToolCallOutcome(
       continue;
     }
     call.resultHash = resultHash;
+    call.outcomeKind = unknownToolName ? "unknown_tool" : undefined;
+    call.outcomeDetail = unknownToolName;
     matched = true;
     break;
   }
@@ -614,6 +714,8 @@ export function recordToolCallOutcome(
       argsHash,
       toolCallId: params.toolCallId,
       resultHash,
+      outcomeKind: unknownToolName ? "unknown_tool" : undefined,
+      outcomeDetail: unknownToolName,
       timestamp: Date.now(),
     });
   }
