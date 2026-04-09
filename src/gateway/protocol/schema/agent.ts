@@ -45,7 +45,7 @@ export const SendParamsSchema = Type.Object(
     channel: Type.Optional(Type.String()),
     accountId: Type.Optional(Type.String()),
     /** Optional agent id for per-agent media root resolution on gateway sends. */
-    agentId: Type.Optional(Type.String()),
+    agentId: Type.Optional(NonEmptyString),
     /** Thread id (channel-specific meaning, e.g. Telegram forum topic id). */
     threadId: Type.Optional(Type.String()),
     /** Optional session key for mirroring delivered output back into the transcript. */
@@ -146,6 +146,7 @@ export const WakeParamsSchema = Type.Object(
   {
     mode: Type.Union([Type.Literal("now"), Type.Literal("next-heartbeat")]),
     text: NonEmptyString,
+    agentId: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
