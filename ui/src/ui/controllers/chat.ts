@@ -113,7 +113,21 @@ export async function loadChatHistory(state: ChatState) {
       return;
     }
     const messages = Array.isArray(res.messages) ? res.messages : [];
-    state.chatMessages = messages.filter((message) => !isAssistantSilentReply(message));
+    
+    const serverMessages = messages.filter((message) => !isAssistantSilentReply(message));
+    
+    const pendingMessages = state.chatMessages.filter(
+      (msg: any) => msg && msg.status === "pending"
+    );
+    
+    const serverMessageIds = new Set(serverMessages.map((m: any) => m.id).filter(Boolean));
+    const serverClientIds = new Set(serverMessages.map((m: any) => m.client_id || m.idempotencyKey).filter(Boolean));
+    
+    const stillPending = pendingMessages.filter(
+      (msg: any) => !serverClientIds.has(msg.client_id) && !serverMessageIds.has(msg.client_id)
+    );
+    
+    state.chatMessages = [...serverMessages, ...stillPending];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     // Clear all streaming state — history includes tool results and text
     // inline, so keeping streaming artifacts would cause duplicates.
@@ -226,9 +240,14 @@ export async function sendChatMessage(
     }
   }
 
+  const runId = generateUUID();
+  state.chatRunId = runId;
+
   state.chatMessages = [
     ...state.chatMessages,
     {
+      client_id: runId,
+      status: "pending",
       role: "user",
       content: contentBlocks,
       timestamp: now,
@@ -237,8 +256,6 @@ export async function sendChatMessage(
 
   state.chatSending = true;
   state.lastError = null;
-  const runId = generateUUID();
-  state.chatRunId = runId;
   state.chatStream = "";
   state.chatStreamStartedAt = now;
 
@@ -391,6 +408,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatStream = next;
     }
   } else if (payload.state === "final") {
+    state.chatMessages = state.chatMessages.map((msg: any) =>
+      msg.status === "pending" && msg.client_id === payload.runId
+        ? { ...msg, status: "confirmed" }
+        : msg
+    );
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];
