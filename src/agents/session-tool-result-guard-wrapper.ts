@@ -1,11 +1,15 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import {
   applyInputProvenanceToUserMessage,
   type InputProvenance,
+  isInterSessionInputProvenance,
 } from "../sessions/input-provenance.js";
 import { installSessionToolResultGuard } from "./session-tool-result-guard.js";
+
+const log = createSubsystemLogger("agents/isolation-audit");
 
 export type GuardedSessionManager = SessionManager & {
   /** Flush any synthetic tool results for pending tool calls. Idempotent. */
@@ -28,6 +32,18 @@ export function guardSessionManager(
     allowedToolNames?: Iterable<string>;
   },
 ): GuardedSessionManager {
+  // Audit: log inter-session message delivery for isolation observability
+  // Placed before the idempotency guard to ensure every delivery is logged,
+  // even if the session manager is already guarded.
+  if (opts?.inputProvenance && isInterSessionInputProvenance(opts.inputProvenance)) {
+    log.info("inter_session_delivery", {
+      from: opts.inputProvenance.sourceSessionKey,
+      to: opts?.sessionKey,
+      channel: opts.inputProvenance.sourceChannel,
+      tool: opts.inputProvenance.sourceTool,
+    });
+  }
+
   if (typeof (sessionManager as GuardedSessionManager).flushPendingToolResults === "function") {
     return sessionManager as GuardedSessionManager;
   }
