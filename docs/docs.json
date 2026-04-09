@@ -1252,6 +1252,7 @@
                   "providers/comfy",
                   "providers/claude-max-api-proxy",
                   "providers/cloudflare-ai-gateway",
+                  "providers/cursor-agent-api-proxy",
                   "providers/deepgram",
                   "providers/deepseek",
                   "providers/fal",
