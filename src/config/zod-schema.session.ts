@@ -207,6 +207,7 @@ export const MessagesSchema = z
       .strict()
       .optional(),
     suppressToolErrors: z.boolean().optional(),
+    suppressApiErrors: z.boolean().optional(),
     tts: TtsConfigSchema,
     modelEmojiMap: z.record(z.string(), z.string()).optional(),
     thinkEmoji: z.tuple([z.string(), z.string()]).optional(),
