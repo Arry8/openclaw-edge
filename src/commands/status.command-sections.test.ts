@@ -3,6 +3,7 @@ import type { HealthSummary } from "./health.js";
 import {
   buildStatusFooterLines,
   buildStatusHealthRows,
+  buildStatusMemoryValue,
   buildStatusPairingRecoveryLines,
   buildStatusPluginCompatibilityLines,
   buildStatusSecurityAuditLines,
@@ -135,6 +136,29 @@ describe("status.command-sections", () => {
       { Item: "Matrix", Status: "ok(LINKED)", Detail: "linked" },
       { Item: "Signal", Status: "warn(UNLINKED)", Detail: "not linked" },
     ]);
+  });
+
+  it("omits undefined memory file and chunk counts", () => {
+    const value = buildStatusMemoryValue({
+      memory: {
+        agentId: "main",
+        backend: "builtin",
+        provider: "memory-lancedb-pro",
+        vector: { enabled: true, available: true },
+        fts: { enabled: true, available: true },
+      },
+      memoryPlugin: { enabled: true, slot: "memory-lancedb-pro" },
+      ok: (value) => `ok(${value})`,
+      warn: (value) => `warn(${value})`,
+      muted: (value) => `muted(${value})`,
+      resolveMemoryVectorState: () => ({ state: "ready", tone: "ok" }),
+      resolveMemoryFtsState: () => ({ state: "ready", tone: "ok" }),
+      resolveMemoryCacheSummary: () => ({ text: "cache warm", tone: "muted" }),
+    });
+
+    expect(value).toBe(
+      ["plugin memory-lancedb-pro", "ok(vector ready)", "ok(fts ready)"].join(" · "),
+    );
   });
 
   it("builds footer lines from update and reachability state", () => {
