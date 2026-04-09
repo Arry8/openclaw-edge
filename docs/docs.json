@@ -881,6 +881,14 @@
       "destination": "/install/northflank"
     },
     {
+      "source": "/xcloud",
+      "destination": "/install/xcloud"
+    },
+    {
+      "source": "/platforms/xcloud",
+      "destination": "/install/xcloud"
+    },
+    {
       "source": "/gateway/trusted-proxy",
       "destination": "/gateway/trusted-proxy-auth"
     },
@@ -980,7 +988,8 @@
                   "install/oracle",
                   "install/railway",
                   "install/raspberry-pi",
-                  "install/render"
+                  "install/render",
+                  "install/xcloud"
                 ]
               },
               {
