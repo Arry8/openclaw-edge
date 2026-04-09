@@ -208,6 +208,7 @@ export async function runRestartScript(scriptPath: string): Promise<void> {
   const child = spawn("/bin/sh", [scriptPath], {
     detached: true,
     stdio: "ignore",
+    windowsHide: isWindows,
   });
   child.unref();
 }
