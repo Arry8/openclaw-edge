@@ -8,6 +8,7 @@ import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { promptAuthChoiceGrouped } from "./auth-choice-prompt.js";
 import { applyAuthChoice, resolvePreferredProviderForAuthChoice } from "./auth-choice.js";
+import { promptModelMetadataForPrimary } from "./model-metadata.js";
 import {
   applyModelAllowlist,
   applyModelFallbacksFromSelection,
@@ -166,6 +167,10 @@ export async function promptAuthConfig(
       next = applyModelAllowlist(next, allowlistSelection.models);
       next = applyModelFallbacksFromSelection(next, allowlistSelection.models);
     }
+  }
+
+  if (authChoice === "custom-api-key") {
+    next = await promptModelMetadataForPrimary(next, prompter);
   }
 
   return next;
