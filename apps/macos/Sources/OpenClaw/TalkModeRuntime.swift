@@ -124,8 +124,9 @@ actor TalkModeRuntime {
     private func start() async {
         let gen = self.lifecycleGeneration
         guard voiceWakeSupported else { return }
-        guard PermissionManager.voiceWakePermissionsGranted() else {
-            self.logger.debug("talk runtime not starting: permissions missing")
+        
+        guard await PermissionManager.ensureVoiceWakePermissions(interactive: true) else {
+            self.logger.error("talk runtime not starting: permissions missing")
             return
         }
         await self.reloadConfig()
