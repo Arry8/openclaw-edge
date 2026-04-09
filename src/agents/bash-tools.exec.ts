@@ -11,6 +11,7 @@ import {
 } from "../infra/exec-approvals.js";
 import { matchesExecDenylist } from "../infra/exec-denylist.js";
 import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
+import { SafeOpenError, readFileWithinRoot } from "../infra/fs-safe.js";
 import { sanitizeHostExecEnvWithDiagnostics } from "../infra/host-env-security.js";
 import {
   getShellPathFromLoginShell,
@@ -57,7 +58,6 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
-import { assertSandboxPath } from "./sandbox-paths.js";
 import { EXEC_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
 import { type AgentToolWithMeta, failedTextResult, textResult } from "./tools/common.js";
 
@@ -105,6 +105,44 @@ const PREFLIGHT_ENV_OPTIONS_WITH_VALUES = new Set([
   "--split-string",
   "--unset",
 ]);
+
+const SKIPPABLE_SCRIPT_PREFLIGHT_FS_ERROR_CODES = new Set([
+  "EACCES",
+  "EISDIR",
+  "ELOOP",
+  "EINVAL",
+  "ENAMETOOLONG",
+  "ENOENT",
+  "ENOTDIR",
+  "EPERM",
+]);
+
+function getNodeErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  return String((error as { code?: unknown }).code);
+}
+
+function shouldSkipScriptPreflightPathError(error: unknown): boolean {
+  if (error instanceof SafeOpenError) {
+    return true;
+  }
+  const errorCode = getNodeErrorCode(error);
+  return !!(errorCode && SKIPPABLE_SCRIPT_PREFLIGHT_FS_ERROR_CODES.has(errorCode));
+}
+
+function resolvePreflightRelativePath(params: { rootDir: string; absPath: string }): string | null {
+  const root = path.resolve(params.rootDir);
+  const candidate = path.resolve(params.absPath);
+  const relative = path.relative(root, candidate);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    return null;
+  }
+  // Preserve literal "~" path segments under the workdir. `readFileWithinRoot`
+  // expands home prefixes for relative paths, so normalize `~/...` to `./~/...`.
+  return /^~(?:$|[\\/])/u.test(relative) ? `.${path.sep}${relative}` : relative;
+}
 
 function isShellEnvAssignmentToken(token: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*=.*$/u.test(token);
@@ -922,27 +960,44 @@ async function validateScriptFileForShellBleed(params: {
     const absPath = path.isAbsolute(relOrAbsPath)
       ? path.resolve(relOrAbsPath)
       : path.resolve(params.workdir, relOrAbsPath);
-
-    // Best-effort: only validate if file exists and is reasonably small.
-    let stat: { isFile(): boolean; size: number };
+    const relativePath = resolvePreflightRelativePath({
+      rootDir: params.workdir,
+      absPath,
+    });
+    if (!relativePath) {
+      continue;
+    }
     try {
-      await assertSandboxPath({
-        filePath: absPath,
-        cwd: params.workdir,
-        root: params.workdir,
-      });
-      stat = await fs.stat(absPath);
-    } catch {
-      continue;
-    }
-    if (!stat.isFile()) {
-      continue;
-    }
-    if (stat.size > 512 * 1024) {
-      continue;
+      const stat = await fs.lstat(absPath);
+      if (!stat.isFile()) {
+        continue;
+      }
+    } catch (error) {
+      if (shouldSkipScriptPreflightPathError(error)) {
+        continue;
+      }
+      throw error;
     }
 
-    const content = await fs.readFile(absPath, "utf-8");
+    // Best-effort: only validate files that safely resolve within workdir and
+    // are reasonably small. This keeps preflight checks on a pinned file
+    // identity instead of trusting mutable pathnames across multiple ops.
+    let content: string;
+    try {
+      const safeRead = await readFileWithinRoot({
+        rootDir: params.workdir,
+        relativePath,
+        maxBytes: 512 * 1024,
+      });
+      content = safeRead.buffer.toString("utf-8");
+    } catch (error) {
+      if (shouldSkipScriptPreflightPathError(error)) {
+        // Preflight validation is best-effort: skip path/read failures and
+        // continue to execute the command normally.
+        continue;
+      }
+      throw error;
+    }
 
     // Common failure mode: shell env var syntax leaking into Python/JS.
     // We deliberately match all-caps/underscore vars to avoid false positives with `$` as a JS identifier.
