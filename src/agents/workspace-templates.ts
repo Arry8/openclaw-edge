@@ -44,7 +44,7 @@ export async function resolveWorkspaceTemplateDir(opts?: {
       }
     }
 
-    cachedTemplateDir = candidates[0] ?? FALLBACK_TEMPLATE_DIR;
+    cachedTemplateDir = FALLBACK_TEMPLATE_DIR;
     return cachedTemplateDir;
   })();
 
