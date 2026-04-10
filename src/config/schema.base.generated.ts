@@ -5058,6 +5058,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                         description:
                           "DANGEROUS break-glass override that allows sandbox Docker network mode container:<id>. This joins another container namespace and weakens sandbox isolation.",
                       },
+                      dangerouslyAllowHostNetwork: {
+                        type: "boolean",
+                      },
                     },
                     additionalProperties: false,
                   },
@@ -6279,6 +6282,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                           title: "Agent Sandbox Docker Allow Container Namespace Join",
                           description:
                             "Per-agent DANGEROUS override for container namespace joins in sandbox Docker network mode.",
+                        },
+                        dangerouslyAllowHostNetwork: {
+                          type: "boolean",
                         },
                       },
                       additionalProperties: false,
@@ -25314,6 +25320,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       help: "DANGEROUS break-glass override that allows sandbox Docker network mode container:<id>. This joins another container namespace and weakens sandbox isolation.",
       tags: ["security", "access", "storage", "advanced"],
     },
+    "agents.defaults.sandbox.docker.dangerouslyAllowHostNetwork": {
+      label: "Sandbox Docker Allow Host Network",
+      help: 'DANGEROUS break-glass override that allows sandbox Docker network mode "host". This bypasses container network isolation entirely.',
+      tags: ["security", "access", "storage", "advanced"],
+    },
     "commands.native": {
       label: "Native Commands",
       help: "Registers native slash/menu commands with channels that support command registration (Discord, Slack, Telegram). Keep enabled for discoverability unless you intentionally run text-only command workflows.",
@@ -26375,6 +26386,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     "agents.list[].sandbox.docker.dangerouslyAllowContainerNamespaceJoin": {
       label: "Agent Sandbox Docker Allow Container Namespace Join",
       help: "Per-agent DANGEROUS override for container namespace joins in sandbox Docker network mode.",
+      tags: ["security", "access", "storage", "advanced"],
+    },
+    "agents.list[].sandbox.docker.dangerouslyAllowHostNetwork": {
+      label: "Agent Sandbox Docker Allow Host Network",
+      help: "Per-agent DANGEROUS override for host network mode in sandbox Docker.",
       tags: ["security", "access", "storage", "advanced"],
     },
     "discovery.mdns.mode": {

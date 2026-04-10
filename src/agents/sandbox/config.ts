@@ -33,6 +33,7 @@ export const DANGEROUS_SANDBOX_DOCKER_BOOLEAN_KEYS = [
   "dangerouslyAllowReservedContainerTargets",
   "dangerouslyAllowExternalBindSources",
   "dangerouslyAllowContainerNamespaceJoin",
+  "dangerouslyAllowHostNetwork",
 ] as const;
 
 const DEFAULT_SANDBOX_SSH_COMMAND = "ssh";
