@@ -121,11 +121,15 @@ describe("memory search config", () => {
   function expectMergedRemoteConfig(
     resolved: ReturnType<typeof resolveMemorySearchConfig>,
     apiKey: unknown,
+    extras?: { nonBatchConcurrency?: number },
   ) {
     expect(resolved?.remote).toEqual({
       baseUrl: "https://agent.example/v1",
       apiKey,
       headers: { "X-Default": "on" },
+      ...(typeof extras?.nonBatchConcurrency === "number"
+        ? { nonBatchConcurrency: extras.nonBatchConcurrency }
+        : {}),
       batch: {
         enabled: false,
         wait: true,
@@ -490,6 +494,18 @@ describe("memory search config", () => {
       provider: "default",
       id: "OPENAI_API_KEY",
     });
+  });
+
+  it("merges remote non-batch concurrency from defaults with agent overrides", () => {
+    const cfg = configWithRemoteDefaults({
+      apiKey: "default-key", // pragma: allowlist secret
+      headers: { "X-Default": "on" },
+      nonBatchConcurrency: 1,
+    });
+
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+
+    expectMergedRemoteConfig(resolved, "default-key", { nonBatchConcurrency: 1 });
   });
 
   it("gates session sources behind experimental flag", () => {
