@@ -78,6 +78,8 @@ import {
   downgradeOpenAIFunctionCallReasoningPairs,
   downgradeOpenAIReasoningBlocks,
   isCloudCodeAssistFormatError,
+  resolveBootstrapContinuationMaxChars,
+  resolveBootstrapContinuationTotalMaxChars,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
   resolveBootstrapTotalMaxChars,
@@ -576,6 +578,24 @@ export async function runEmbeddedAttempt(
       !isContinuationTurn &&
       params.bootstrapContextMode !== "lightweight" &&
       params.bootstrapContextRunKind !== "heartbeat";
+    // When contextInjection is "always" (default), use reduced bootstrap
+    // budgets on continuation turns to save context window space (~75%
+    // reduction). Only applies in "always" mode — when contextInjection is
+    // "continuation-skip", bootstrap is either fully skipped or re-injected
+    // at full budget (e.g. post-compaction), so reduced budgets would be wrong.
+    const isContinuationBudget =
+      contextInjectionMode === "always" &&
+      !isContinuationTurn &&
+      (await fs
+        .stat(params.sessionFile)
+        .then(() => true)
+        .catch(() => false));
+    const bootstrapMaxChars = isContinuationBudget
+      ? resolveBootstrapContinuationMaxChars(params.config)
+      : resolveBootstrapMaxChars(params.config);
+    const bootstrapTotalMaxChars = isContinuationBudget
+      ? resolveBootstrapContinuationTotalMaxChars(params.config)
+      : resolveBootstrapTotalMaxChars(params.config);
     const { bootstrapFiles: hookAdjustedBootstrapFiles, contextFiles } = isContinuationTurn
       ? {
           bootstrapFiles: [],
@@ -589,9 +609,9 @@ export async function runEmbeddedAttempt(
           warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
           contextMode: params.bootstrapContextMode,
           runKind: params.bootstrapContextRunKind,
+          maxChars: bootstrapMaxChars,
+          totalMaxChars: bootstrapTotalMaxChars,
         });
-    const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);
-    const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(params.config);
     const bootstrapAnalysis = analyzeBootstrapBudget({
       files: buildBootstrapInjectionStats({
         bootstrapFiles: hookAdjustedBootstrapFiles,
