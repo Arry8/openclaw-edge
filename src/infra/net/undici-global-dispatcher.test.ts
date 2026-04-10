@@ -9,6 +9,9 @@ const {
   setCurrentDispatcher,
   getCurrentDispatcher,
   getDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamilyAttemptTimeout,
+  getDefaultAutoSelectFamilyAttemptTimeout,
 } = vi.hoisted(() => {
   class Agent {
     constructor(public readonly options?: Record<string, unknown>) {}
@@ -33,6 +36,9 @@ const {
   };
   const getCurrentDispatcher = () => currentDispatcher;
   const getDefaultAutoSelectFamily = vi.fn(() => undefined as boolean | undefined);
+  const setDefaultAutoSelectFamily = vi.fn();
+  const setDefaultAutoSelectFamilyAttemptTimeout = vi.fn();
+  const getDefaultAutoSelectFamilyAttemptTimeout = vi.fn(() => 250);
 
   return {
     Agent,
@@ -43,6 +49,9 @@ const {
     setCurrentDispatcher,
     getCurrentDispatcher,
     getDefaultAutoSelectFamily,
+    setDefaultAutoSelectFamily,
+    setDefaultAutoSelectFamilyAttemptTimeout,
+    getDefaultAutoSelectFamilyAttemptTimeout,
   };
 });
 
@@ -57,6 +66,9 @@ vi.mock("undici", () => ({
 
 vi.mock("node:net", () => ({
   getDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamily,
+  setDefaultAutoSelectFamilyAttemptTimeout,
+  getDefaultAutoSelectFamilyAttemptTimeout,
 }));
 
 vi.mock("./proxy-env.js", () => ({
@@ -233,6 +245,28 @@ describe("ensureGlobalUndiciEnvProxyDispatcher", () => {
 
     expect(setGlobalDispatcher).toHaveBeenCalledTimes(2);
     expect(getCurrentDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
+  });
+});
+
+describe("module-level autoSelectFamily bootstrap", () => {
+  it("bumps autoSelectFamily attempt timeout from Node default on module load", async () => {
+    vi.resetModules();
+    getDefaultAutoSelectFamilyAttemptTimeout.mockReturnValue(250); // Node 22 default
+    setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
+
+    await import("./undici-global-dispatcher.js");
+
+    expect(setDefaultAutoSelectFamilyAttemptTimeout).toHaveBeenCalledWith(300);
+  });
+
+  it("does not override explicitly configured timeout", async () => {
+    vi.resetModules();
+    getDefaultAutoSelectFamilyAttemptTimeout.mockReturnValue(500); // operator set via CLI
+    setDefaultAutoSelectFamilyAttemptTimeout.mockClear();
+
+    await import("./undici-global-dispatcher.js");
+
+    expect(setDefaultAutoSelectFamilyAttemptTimeout).not.toHaveBeenCalled();
   });
 });
 
