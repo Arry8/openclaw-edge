@@ -16,6 +16,23 @@ export const HEARTBEAT_PROMPT =
 export const DEFAULT_HEARTBEAT_EVERY = "30m";
 export const DEFAULT_HEARTBEAT_ACK_MAX_CHARS = 300;
 
+function isHeartbeatScaffoldLine(trimmed: string): boolean {
+  if (!trimmed) {
+    return true;
+  }
+  // Skip markdown header lines (# followed by space or EOL, ## etc)
+  // This intentionally does NOT skip lines like "#TODO" or "#hashtag" which might be content
+  // (Those aren't valid markdown headers - ATX headers require space after #)
+  if (/^#+(\s|$)/.test(trimmed)) {
+    return true;
+  }
+  // Skip empty markdown list items like "- [ ]" or "* [ ]" or just "- "
+  if (/^[-*+]\s*(\[[\sXx]?\]\s*)?$/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Check if HEARTBEAT.md content is "effectively empty" - meaning it has no actionable tasks.
  * This allows skipping heartbeat API calls when no tasks are configured.
@@ -37,25 +54,34 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
   }
 
   const lines = content.split("\n");
+  let inMarkdownFence = false;
   for (const line of lines) {
     const trimmed = line.trim();
-    // Skip empty lines
-    if (!trimmed) {
+
+    if (/^```(?:markdown|md)?$/i.test(trimmed)) {
+      inMarkdownFence = !inMarkdownFence;
       continue;
     }
-    // Skip markdown header lines (# followed by space or EOL, ## etc)
-    // This intentionally does NOT skip lines like "#TODO" or "#hashtag" which might be content
-    // (Those aren't valid markdown headers - ATX headers require space after #)
-    if (/^#+(\s|$)/.test(trimmed)) {
+
+    if (isHeartbeatScaffoldLine(trimmed)) {
+      // Treat scaffold-only lines as comments even inside ```markdown fences.
+      // The shipped HEARTBEAT scaffold uses fenced markdown with #-prefixed guidance,
+      // and that wrapper must stay effectively empty for backward compatibility.
       continue;
     }
-    // Skip empty markdown list items like "- [ ]" or "* [ ]" or just "- "
-    if (/^[-*+]\s*(\[[\sXx]?\]\s*)?$/.test(trimmed)) {
-      continue;
+
+    if (inMarkdownFence) {
+      return false;
     }
+
     // Found a non-empty, non-comment line - there's actionable content
     return false;
   }
+
+  if (inMarkdownFence) {
+    return false;
+  }
+
   // All lines were either empty or comments
   return true;
 }
