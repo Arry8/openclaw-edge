@@ -54,6 +54,7 @@
   "matrix-runtime-shared",
   "thread-bindings-runtime",
   "text-runtime",
+  "telegram-command-config",
   "text-chunking",
   "agent-runtime",
   "simple-completion-runtime",
