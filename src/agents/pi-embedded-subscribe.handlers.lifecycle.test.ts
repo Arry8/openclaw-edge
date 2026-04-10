@@ -7,11 +7,16 @@ vi.mock("../infra/agent-events.js", () => ({
   emitAgentEvent: vi.fn(),
 }));
 
+vi.mock("../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => null,
+}));
+
 function createContext(
   lastAssistant: unknown,
   overrides?: {
     onAgentEvent?: (event: unknown) => void;
     onBlockReplyFlush?: () => void | Promise<void>;
+    hookRunner?: EmbeddedPiSubscribeContext["hookRunner"];
   },
 ): EmbeddedPiSubscribeContext {
   const onBlockReply = vi.fn();
@@ -24,6 +29,7 @@ function createContext(
       onBlockReply,
       onBlockReplyFlush: overrides?.onBlockReplyFlush,
     },
+    hookRunner: overrides?.hookRunner,
     state: {
       lastAssistant: lastAssistant as EmbeddedPiSubscribeContext["state"]["lastAssistant"],
       pendingCompactionRetry: 0,
@@ -223,5 +229,98 @@ describe("handleAgentEnd", () => {
 
     resolveChannelFlush?.();
     await endPromise;
+  });
+
+  describe("agent_error hook", () => {
+    it("broadcasts hook replacement message instead of raw error", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "403: Key limit exceeded",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => ({ message: "⚠️ Me he quedado sin tokens" })),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: "⚠️ Me he quedado sin tokens",
+        },
+      });
+    });
+
+    it("broadcasts original error when hook returns no message", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "connection refused",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => undefined),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phase: "error",
+            error: expect.stringContaining("connection refused"),
+          }),
+        }),
+      );
+    });
+
+    it("broadcasts original error when hook throws", async () => {
+      const onAgentEvent = vi.fn();
+      const ctx = createContext(
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "connection refused",
+          content: [{ type: "text", text: "" }],
+        },
+        {
+          onAgentEvent,
+          hookRunner: {
+            hasHooks: vi.fn(() => true),
+            runAgentError: vi.fn(async () => {
+              throw new Error("hook failure");
+            }),
+          } as unknown as EmbeddedPiSubscribeContext["hookRunner"],
+        },
+      );
+
+      await handleAgentEnd(ctx);
+
+      expect(onAgentEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phase: "error",
+            error: expect.stringContaining("connection refused"),
+          }),
+        }),
+      );
+    });
   });
 });
