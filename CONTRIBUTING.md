@@ -93,6 +93,32 @@ For coordinated change sets that genuinely need more than 10 PRs, join the **#cl
 
 ## Before You PR
 
+### Check for Existing Work
+
+Before opening a new issue or PR, **search for existing issues and PRs** that address the same problem or feature. Duplicate work wastes everyone's time — yours included.
+
+- If an existing PR is open and directionally correct, consider reviewing it or offering to help iterate on it rather than opening a competing PR.
+- If you believe your approach is significantly better, open your PR with a clear explanation of _why_ — and **acknowledge the prior work**. Link to the existing issue/PR and credit the original author:
+  - Mention "Related to #XXXX by @author" or "Builds on the approach in #XXXX" in your PR description.
+  - If your PR incorporates or duplicates ideas from a prior PR, add `Co-authored-by: Original Author <email>` to your commit message. This ensures they appear in GitHub's contributor graph. You can find the author's email from their original PR's commit history, or use `username@users.noreply.github.com` if their email is not public.
+
+### For Maintainers: Credit and Contributor-First Practices
+
+When multiple PRs address the same issue:
+
+1. **Prefer the first contributor's PR when feasible.** If it's directionally correct, guide the author to fix issues via review comments rather than closing and rewriting from scratch. The "teach someone to fish" approach grows the contributor pool and builds long-term project health.
+
+2. **If selecting a later or better contribution over the first**, credit everyone whose PRs you close:
+   - **Always** add `Co-authored-by: Name <email>` to the merge commit — this is the preferred method because it shows up in both `git log` and GitHub's contributor graph, ensuring the original author gets visible credit.
+   - Mention the superseded PR(s) and author(s) in the PR description: "Based on the work in #XXXX by @author".
+   - Additionally, follow the `(thanks @handle)` convention in the commit message — e.g., `fix(slack): improve delivery (#1234) (thanks @original-author)` — for human-readable acknowledgment.
+
+3. **Explain why you're superseding** when closing a PR in favor of another. A sentence or two about _why_ the rewrite was necessary (vs. iterating on the original) helps the contributor learn and doesn't leave them guessing.
+
+Credit is free to give but incredibly meaningful to receive. Small gestures compound into a reputation that makes people _want_ to contribute.
+
+### Testing and Quality
+
 - Test locally with your OpenClaw instance
 - Run tests: `pnpm build && pnpm check && pnpm test`
 - For extension/plugin changes, run the fast local lane first:
