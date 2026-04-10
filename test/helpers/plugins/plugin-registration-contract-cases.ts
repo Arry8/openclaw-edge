@@ -69,6 +69,20 @@ export const pluginRegistrationContractCases = {
     speechProviderIds: ["microsoft"],
     requireSpeechVoices: true,
   },
+  mrscraper: {
+    pluginId: "mrscraper",
+    webFetchProviderIds: ["mrscraper"],
+    toolNames: [
+      "mrscraper_bulk_rerun_ai_scraper",
+      "mrscraper_bulk_rerun_manual_scraper",
+      "mrscraper_fetch_html",
+      "mrscraper_get_all_results",
+      "mrscraper_get_result_by_id",
+      "mrscraper_rerun_ai_scraper",
+      "mrscraper_rerun_manual_scraper",
+      "mrscraper_scrape",
+    ],
+  },
   minimax: {
     pluginId: "minimax",
     providerIds: ["minimax", "minimax-portal"],

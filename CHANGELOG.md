@@ -135,6 +135,10 @@ Docs: https://docs.openclaw.ai
 - Providers/Z.AI: default onboarding and endpoint detection to GLM-5.1 instead of GLM-5. (#61998) Thanks @serg0x.
 - Reply execution: prefer the active runtime snapshot over stale queued reply config during embedded reply and follow-up execution so SecretRef-backed reply turns stop crashing after secrets have already resolved. (#62693) Thanks @mbelinky.
 
+### Changes
+
+- Web tools/MrScraper: add a bundled `mrscraper` plugin with `web_fetch` provider fallback via the unblocker plus explicit `mrscraper_fetch_html` and `mrscraper_scrape` tools, using plugin-owned config under `plugins.entries.mrscraper.config.*`.
+
 ## 2026.4.5
 
 ### Breaking

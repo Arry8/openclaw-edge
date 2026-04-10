@@ -824,6 +824,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/mrscraper: {}
+
   extensions/msteams:
     dependencies:
       '@microsoft/teams.api':
