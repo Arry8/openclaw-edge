@@ -253,7 +253,7 @@ export function buildViduVideoGenerationProvider(): VideoGenerationProvider {
       imageToVideo: {
         enabled: true,
         maxVideos: 1,
-        maxInputImages: 1,
+        maxInputImages: 7,
         maxDurationSeconds: 16,
         supportsAspectRatio: true,
         supportsResolution: true,

@@ -1,5 +1,5 @@
 ---
-summary: "Generate videos from text, images, or existing videos using 12 provider backends"
+summary: "Generate videos from text, images, or existing videos using 13 provider backends"
 read_when:
   - Generating videos via the agent
   - Configuring video generation providers and models
