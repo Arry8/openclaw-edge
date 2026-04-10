@@ -162,6 +162,7 @@
   "json-store",
   "persistent-dedupe",
   "keyed-async-queue",
+  "kudosity-sms",
   "line",
   "line-core",
   "line-runtime",
