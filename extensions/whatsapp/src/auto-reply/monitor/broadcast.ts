@@ -58,8 +58,10 @@ export async function maybeBroadcastMessage(params: {
     opts?: {
       groupHistory?: GroupHistoryEntry[];
       suppressGroupHistoryClear?: boolean;
+      preflightAudioTranscript?: string | null;
     },
   ) => Promise<boolean>;
+  preflightAudioTranscript?: string | null;
 }) {
   const broadcastAgents = params.cfg.broadcast?.[params.peerId];
   if (!broadcastAgents || !Array.isArray(broadcastAgents)) {
@@ -102,6 +104,7 @@ export async function maybeBroadcastMessage(params: {
       return await params.processMessage(params.msg, agentRoute, params.groupHistoryKey, {
         groupHistory: groupHistorySnapshot,
         suppressGroupHistoryClear: true,
+        preflightAudioTranscript: params.preflightAudioTranscript,
       });
     } catch (err) {
       whatsappInboundLog.error(`Broadcast agent ${agentId} failed: ${formatError(err)}`);
