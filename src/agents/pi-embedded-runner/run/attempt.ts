@@ -76,6 +76,7 @@ import {
 } from "../../pi-bundle-mcp-tools.js";
 import {
   downgradeOpenAIFunctionCallReasoningPairs,
+  downgradeOpenAIReasoningBlocks,
   isCloudCodeAssistFormatError,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
@@ -1334,7 +1335,10 @@ export async function runEmbeddedAttempt(
           if (!Array.isArray(messages)) {
             return inner(model, context, options);
           }
-          const sanitized = downgradeOpenAIFunctionCallReasoningPairs(messages as AgentMessage[]);
+          // Strip orphaned reasoning blocks first, then fix function-call
+          // pairing — matches the call order in google.ts.
+          const reasoningSanitized = downgradeOpenAIReasoningBlocks(messages as AgentMessage[]);
+          const sanitized = downgradeOpenAIFunctionCallReasoningPairs(reasoningSanitized);
           if (sanitized === messages) {
             return inner(model, context, options);
           }
