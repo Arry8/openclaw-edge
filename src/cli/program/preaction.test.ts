@@ -10,7 +10,9 @@ const setVerboseMock = vi.fn();
 const emitCliBannerMock = vi.fn();
 const ensureConfigReadyMock = vi.fn(async () => {});
 const ensurePluginRegistryLoadedMock = vi.fn();
-const routeLogsToStderrMock = vi.fn();
+const routeLogsToStderrMock = vi.fn(() => {
+  loggingState.forceConsoleToStderr = true;
+});
 
 const runtimeMock = {
   log: vi.fn(),
@@ -83,6 +85,7 @@ beforeEach(() => {
   loggingState.forceConsoleToStderr = false;
   delete process.env.NODE_NO_WARNINGS;
   delete process.env.OPENCLAW_HIDE_BANNER;
+  loggingState.forceConsoleToStderr = false;
 });
 
 afterEach(() => {
@@ -108,6 +111,7 @@ afterEach(() => {
   } else {
     process.env.OPENCLAW_HIDE_BANNER = originalHideBanner;
   }
+  loggingState.forceConsoleToStderr = false;
 });
 
 describe("registerPreActionHooks", () => {
@@ -351,6 +355,7 @@ describe("registerPreActionHooks", () => {
       processArgv: ["node", "openclaw", "status", "--json"],
     });
 
+    expect(loggingState.forceConsoleToStderr).toBe(true);
     expect(ensureConfigReadyMock).toHaveBeenCalledWith({
       runtime: runtimeMock,
       commandPath: ["status"],
@@ -359,11 +364,13 @@ describe("registerPreActionHooks", () => {
     expect(ensurePluginRegistryLoadedMock).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
+    loggingState.forceConsoleToStderr = false;
     await runPreAction({
       parseArgv: ["update", "status", "--json"],
       processArgv: ["node", "openclaw", "update", "status", "--json"],
     });
 
+    expect(loggingState.forceConsoleToStderr).toBe(true);
     expect(ensureConfigReadyMock).toHaveBeenCalledWith({
       runtime: runtimeMock,
       commandPath: ["update", "status"],
@@ -372,11 +379,13 @@ describe("registerPreActionHooks", () => {
     expect(ensurePluginRegistryLoadedMock).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
+    loggingState.forceConsoleToStderr = false;
     await runPreAction({
       parseArgv: ["config", "set", "gateway.auth.mode", "{bad", "--json"],
       processArgv: ["node", "openclaw", "config", "set", "gateway.auth.mode", "{bad", "--json"],
     });
 
+    expect(loggingState.forceConsoleToStderr).toBe(false);
     expect(ensureConfigReadyMock).toHaveBeenCalledWith({
       runtime: runtimeMock,
       commandPath: ["config", "set"],
@@ -445,6 +454,7 @@ describe("registerPreActionHooks", () => {
       processArgv: ["node", "openclaw", "backup", "create", "--json"],
     });
 
+    expect(loggingState.forceConsoleToStderr).toBe(true);
     expect(ensureConfigReadyMock).not.toHaveBeenCalled();
   });
 
@@ -461,8 +471,8 @@ describe("registerPreActionHooks", () => {
 
     expect(ensurePluginRegistryLoadedMock).toHaveBeenCalled();
     expect(stderrDuringPluginLoad).toBe(true);
-    // Flag must be restored after plugin loading completes
-    expect(loggingState.forceConsoleToStderr).toBe(false);
+    // JSON mode keeps stderr routing enabled for the rest of the command.
+    expect(loggingState.forceConsoleToStderr).toBe(true);
   });
 
   it("does not route logs to stderr during plugin loading without --json", async () => {
