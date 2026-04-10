@@ -26,6 +26,8 @@ export type FeishuCardInteractionEnvelope = {
     s?: string;
     e?: number;
     t?: "p2p" | "group";
+    /** Optional card content to update the message to after this action is processed. */
+    uc?: Record<string, unknown>;
   };
 };
 
