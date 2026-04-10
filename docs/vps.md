@@ -26,7 +26,8 @@ tuning that applies everywhere.
   <Card title="Hetzner" href="/install/hetzner">Docker on Hetzner VPS</Card>
   <Card title="Hostinger" href="/install/hostinger">Docker on Hostinger</Card>
   <Card title="GCP" href="/install/gcp">Compute Engine</Card>
-  <Card title="Azure" href="/install/azure">Linux VM</Card>
+  <Card title="Azure VM" href="/install/azure">Linux VM</Card>
+  <Card title="Azure Container Apps" href="/install/azure-containers">Serverless containers</Card>
   <Card title="exe.dev" href="/install/exe-dev">VM with HTTPS proxy</Card>
   <Card title="Raspberry Pi" href="/install/raspberry-pi">ARM self-hosted</Card>
 </CardGroup>
