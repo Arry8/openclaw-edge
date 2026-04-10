@@ -217,6 +217,19 @@ client protocol. Compatible with TeamSpeak 3, 5 & 6.
 openclaw plugins install @honeybbq/openclaw-teamspeak
 ```
 
+### Sage
+
+Safety for Agents — Agent Detection & Response (ADR) layer for OpenClaw.
+Guards commands, files, and web requests using configurable YAML threat rules
+and real-time URL reputation checking. By Gen Digital.
+
+- **npm:** `@gendigital/sage-openclaw`
+- **repo:** [github.com/gendigitalinc/sage](https://github.com/gendigitalinc/sage)
+
+```bash
+openclaw plugins install @gendigital/sage-openclaw
+```
+
 ### wecom
 
 WeCom channel plugin for OpenClaw by the Tencent WeCom team. Powered by
