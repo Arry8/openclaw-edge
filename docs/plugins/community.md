@@ -121,6 +121,20 @@ cost, tokens, errors, and more.
 openclaw plugins install @opik/opik-openclaw
 ```
 
+### Qmemory
+
+Context-engine plugin that gives agents persistent, cross-session graph memory
+powered by SurrealDB. Implements the full `ContextEngine` interface with 12
+lifecycle hooks capturing tool calls, cron outcomes, subagent relationships,
+and session state into a connected graph the agent can search and traverse.
+
+- **npm:** `qmemory`
+- **repo:** [github.com/QusaiiSaleem/qmemory](https://github.com/QusaiiSaleem/qmemory)
+
+```bash
+openclaw plugins install qmemory
+```
+
 ### QQbot
 
 Connect OpenClaw to QQ via the QQ Bot API. Supports private chats, group
