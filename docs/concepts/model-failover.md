@@ -243,6 +243,13 @@ If all profiles for a provider fail, OpenClaw moves to the next model in
 `agents.defaults.model.fallbacks`. This applies to auth failures, rate limits, and
 timeouts that exhausted profile rotation (other errors do not advance fallback).
 
+Per-agent model objects can opt out of that implicit global fallback chain. If an
+agent declares its own `model.primary` but does not declare `model.fallbacks`,
+OpenClaw treats that as a dedicated lane when `agents.defaults.model.fallbacks`
+is non-empty, even if `agents.defaults.model.primary` itself is unset. Set
+`model.fallbacks` explicitly on the agent when you want it to keep inheriting the
+global fallback list.
+
 Overloaded and rate-limit errors are handled more aggressively than billing
 cooldowns. By default, OpenClaw allows one same-provider auth-profile retry,
 then switches to the next configured model fallback without waiting.
@@ -253,6 +260,11 @@ bucket. Tune this with `auth.cooldowns.overloadedProfileRotations`,
 
 When a run starts with a model override (hooks or CLI), fallbacks still end at
 `agents.defaults.model.primary` after trying any configured fallbacks.
+
+If an agent has its own explicit `agents.list[].model.primary` and that primary
+differs from the global default, OpenClaw treats that agent as a dedicated lane.
+In that case, global fallbacks are not appended unless the agent explicitly sets
+`agents.list[].model.fallbacks` (use `[]` to keep the lane pinned).
 
 ### Candidate chain rules
 
@@ -272,6 +284,8 @@ Rules:
 - When the run started from an override, the configured primary is appended at
   the end so the chain can settle back onto the normal default once earlier
   candidates are exhausted.
+- Dedicated agents with their own explicit primary skip that implicit settle-back
+  step unless they also declare agent-local fallbacks.
 
 ### Which errors advance fallback
 
