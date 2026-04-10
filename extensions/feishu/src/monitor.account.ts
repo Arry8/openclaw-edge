@@ -283,6 +283,7 @@ function parseFeishuCardActionEventPayload(value: unknown): FeishuCardActionEven
       union_id: unionId,
     },
     token,
+    message_id: readString(value.message_id),
     action: {
       value: actionValue,
       tag,
