@@ -101,7 +101,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Post bundle size comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_BYTES: ${{ needs.measure-pr.outputs.size_bytes }}
           PR_HUMAN: ${{ needs.measure-pr.outputs.size_human }}
