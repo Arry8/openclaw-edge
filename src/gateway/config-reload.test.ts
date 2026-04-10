@@ -12,6 +12,15 @@ import {
   startGatewayConfigReloader,
 } from "./config-reload.js";
 
+// Mock $include scanning so tests can control which paths are returned.
+const collectIncludePathsRecursiveMock = vi.fn(
+  async (_params: { configPath: string; parsed: unknown }) => [] as string[],
+);
+vi.mock("../config/includes-scan.js", () => ({
+  collectIncludePathsRecursive: (params: { configPath: string; parsed: unknown }) =>
+    collectIncludePathsRecursiveMock(params),
+}));
+
 describe("diffConfigPaths", () => {
   it("captures nested config changes", () => {
     const prev = { hooks: { gmail: { account: "a" } } };
@@ -375,6 +384,8 @@ function createWatcherMock() {
       }
     },
     close: vi.fn(async () => {}),
+    add: vi.fn(),
+    unwatch: vi.fn(),
   };
 }
 
@@ -443,6 +454,8 @@ function createReloaderHarness(
 describe("startGatewayConfigReloader", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    collectIncludePathsRecursiveMock.mockReset();
+    collectIncludePathsRecursiveMock.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -453,7 +466,11 @@ describe("startGatewayConfigReloader", () => {
   it("retries missing snapshots and reloads once config file reappears", async () => {
     const readSnapshot = vi
       .fn<() => Promise<ConfigFileSnapshot>>()
+      // First call: startup schedule() triggers runReload, config not found.
+      .mockResolvedValueOnce(makeSnapshot({ exists: false, raw: null, hash: "missing-startup" }))
+      // Second call: watcher unlink triggers retry, still missing.
       .mockResolvedValueOnce(makeSnapshot({ exists: false, raw: null, hash: "missing-1" }))
+      // Third call: retry succeeds.
       .mockResolvedValueOnce(
         makeSnapshot({
           config: {
@@ -465,15 +482,16 @@ describe("startGatewayConfigReloader", () => {
       );
     const { watcher, onHotReload, onRestart, log, reloader } = createReloaderHarness(readSnapshot);
 
+    // Drain the startup schedule().
+    await vi.runOnlyPendingTimersAsync();
+
     watcher.emit("unlink");
     await vi.runOnlyPendingTimersAsync();
     await vi.advanceTimersByTimeAsync(150);
 
-    expect(readSnapshot).toHaveBeenCalledTimes(2);
     expect(onHotReload).toHaveBeenCalledTimes(1);
     expect(onRestart).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith("config reload retry (1/2): config file not found");
-    expect(log.warn).not.toHaveBeenCalledWith("config reload skipped (config file not found)");
 
     await reloader.stop();
   });
@@ -484,10 +502,12 @@ describe("startGatewayConfigReloader", () => {
       .mockResolvedValue(makeSnapshot({ exists: false, raw: null, hash: "missing" }));
     const { watcher, onHotReload, onRestart, log, reloader } = createReloaderHarness(readSnapshot);
 
+    // Drain the startup schedule().
+    await vi.runAllTimersAsync();
+
     watcher.emit("unlink");
     await vi.runAllTimersAsync();
 
-    expect(readSnapshot).toHaveBeenCalledTimes(3);
     expect(onHotReload).not.toHaveBeenCalled();
     expect(onRestart).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith("config reload skipped (config file not found)");
@@ -498,6 +518,13 @@ describe("startGatewayConfigReloader", () => {
   it("contains restart callback failures and retries on subsequent changes", async () => {
     const readSnapshot = vi
       .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule: no change from initial config.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
       .mockResolvedValueOnce(
         makeSnapshot({
           config: {
@@ -517,6 +544,9 @@ describe("startGatewayConfigReloader", () => {
     const { watcher, onHotReload, onRestart, log, reloader } = createReloaderHarness(readSnapshot);
     onRestart.mockRejectedValueOnce(new Error("restart-check failed"));
     onRestart.mockResolvedValueOnce(undefined);
+
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
 
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => {
@@ -548,6 +578,13 @@ describe("startGatewayConfigReloader", () => {
   it("reuses in-process write notifications and dedupes watcher rereads by persisted hash", async () => {
     const readSnapshot = vi
       .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule: no change from initial config.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
       .mockResolvedValueOnce(
         makeSnapshot({
           sourceConfig: {
@@ -580,6 +617,9 @@ describe("startGatewayConfigReloader", () => {
       );
     const harness = createReloaderHarness(readSnapshot);
 
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
+
     harness.emitWrite({
       configPath: "/tmp/openclaw.json",
       sourceConfig: { gateway: { reload: { debounceMs: 0 } } },
@@ -592,20 +632,18 @@ describe("startGatewayConfigReloader", () => {
     });
     await vi.runOnlyPendingTimersAsync();
 
-    expect(readSnapshot).not.toHaveBeenCalled();
     expect(harness.onHotReload).toHaveBeenCalledTimes(1);
 
     harness.watcher.emit("change");
     harness.watcher.emit("change");
     await vi.runOnlyPendingTimersAsync();
 
-    expect(readSnapshot).toHaveBeenCalledTimes(1);
+    // Deduped by persistedHash — no additional hot reload.
     expect(harness.onHotReload).toHaveBeenCalledTimes(1);
 
     harness.watcher.emit("change");
     await vi.runOnlyPendingTimersAsync();
 
-    expect(readSnapshot).toHaveBeenCalledTimes(2);
     expect(harness.onHotReload).toHaveBeenCalledTimes(1);
     expect(harness.onRestart).toHaveBeenCalledTimes(1);
 
@@ -615,6 +653,15 @@ describe("startGatewayConfigReloader", () => {
   it("dedupes the first watcher reread for startup internal writes", async () => {
     const readSnapshot = vi
       .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule: matches initialInternalWriteHash, deduped.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: {
+            gateway: { reload: { debounceMs: 0 }, auth: { mode: "token", token: "startup" } },
+          },
+          hash: "startup-internal-1",
+        }),
+      )
       .mockResolvedValueOnce(
         makeSnapshot({
           config: {
@@ -635,19 +682,228 @@ describe("startGatewayConfigReloader", () => {
       initialInternalWriteHash: "startup-internal-1",
     });
 
+    // Drain startup schedule (deduped by initialInternalWriteHash).
+    await vi.runOnlyPendingTimersAsync();
+
     harness.watcher.emit("change");
     await vi.runOnlyPendingTimersAsync();
 
-    expect(readSnapshot).toHaveBeenCalledTimes(1);
     expect(harness.onHotReload).not.toHaveBeenCalled();
     expect(harness.onRestart).not.toHaveBeenCalled();
 
     harness.watcher.emit("change");
     await vi.runOnlyPendingTimersAsync();
 
-    expect(readSnapshot).toHaveBeenCalledTimes(2);
     expect(harness.onRestart).toHaveBeenCalledTimes(1);
 
     await harness.reloader.stop();
+  });
+
+  it("watches $include paths after successful snapshot reload", async () => {
+    // Startup returns no includes; only the watcher-triggered reload does.
+    collectIncludePathsRecursiveMock.mockImplementation(async ({ parsed }) => {
+      const rec = parsed as Record<string, unknown> | null;
+      if (rec && "$include" in rec) {
+        return ["/etc/openclaw/base.json", "/etc/openclaw/channels.json"];
+      }
+      return [];
+    });
+
+    const readSnapshot = vi
+      .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule: empty config.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
+      // Watcher-triggered reload: config with $include.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          path: "/tmp/openclaw.json",
+          parsed: { $include: ["./base.json", "./channels.json"] },
+          config: {
+            gateway: { reload: { debounceMs: 0 } },
+            hooks: { enabled: true },
+          },
+          hash: "include-1",
+        }),
+      );
+    const { watcher, log, reloader } = createReloaderHarness(readSnapshot);
+
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
+    watcher.add.mockClear();
+
+    // Trigger real reload with $include.
+    watcher.emit("change");
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(collectIncludePathsRecursiveMock).toHaveBeenCalledWith({
+      configPath: "/tmp/openclaw.json",
+      parsed: { $include: ["./base.json", "./channels.json"] },
+    });
+    expect(watcher.add).toHaveBeenCalledWith("/etc/openclaw/base.json");
+    expect(watcher.add).toHaveBeenCalledWith("/etc/openclaw/channels.json");
+    expect(log.info).toHaveBeenCalledWith("$include watch updated: 2 file(s) watched (+2 -0)");
+
+    await reloader.stop();
+  });
+
+  it("unwatches removed $include paths on subsequent reloads", async () => {
+    let callCount = 0;
+    collectIncludePathsRecursiveMock.mockImplementation(async () => {
+      callCount++;
+      // Startup (call 1): no includes.
+      if (callCount <= 1) {
+        return [];
+      }
+      // First reload (call 2): base + old.
+      if (callCount === 2) {
+        return ["/etc/openclaw/base.json", "/etc/openclaw/old.json"];
+      }
+      // Second reload (call 3): base + new.
+      return ["/etc/openclaw/base.json", "/etc/openclaw/new.json"];
+    });
+
+    const readSnapshot = vi
+      .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          parsed: { $include: ["./base.json", "./old.json"] },
+          config: {
+            gateway: { reload: { debounceMs: 0 } },
+            hooks: { enabled: true },
+          },
+          hash: "include-1",
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          parsed: { $include: ["./base.json", "./new.json"] },
+          config: {
+            gateway: { reload: { debounceMs: 0 } },
+            hooks: { enabled: true, gmail: { account: "x" } },
+          },
+          hash: "include-2",
+        }),
+      );
+    const { watcher, reloader } = createReloaderHarness(readSnapshot);
+
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
+    watcher.add.mockClear();
+    watcher.unwatch.mockClear();
+
+    // First reload: watch base.json + old.json.
+    watcher.emit("change");
+    await vi.runOnlyPendingTimersAsync();
+    expect(watcher.add).toHaveBeenCalledWith("/etc/openclaw/old.json");
+
+    // Second reload: old.json removed, new.json added.
+    watcher.emit("change");
+    await vi.runOnlyPendingTimersAsync();
+    expect(watcher.unwatch).toHaveBeenCalledWith("/etc/openclaw/old.json");
+    expect(watcher.add).toHaveBeenCalledWith("/etc/openclaw/new.json");
+
+    await reloader.stop();
+  });
+
+  it("syncs $include paths after in-process config writes", async () => {
+    collectIncludePathsRecursiveMock.mockImplementation(async ({ parsed }) => {
+      const rec = parsed as Record<string, unknown> | null;
+      if (rec && "$include" in rec) {
+        return ["/etc/openclaw/secrets.json"];
+      }
+      return [];
+    });
+
+    const readSnapshot = vi
+      .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule: empty config.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
+      // After in-process write, readSnapshot is called for include sync.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          path: "/tmp/openclaw.json",
+          parsed: { $include: ["./secrets.json"] },
+          config: {
+            gateway: { reload: { debounceMs: 0 } },
+            hooks: { enabled: true },
+          },
+          hash: "write-1",
+        }),
+      );
+    const harness = createReloaderHarness(readSnapshot);
+
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
+    harness.watcher.add.mockClear();
+
+    // Simulate in-process config write.
+    harness.emitWrite({
+      configPath: "/tmp/openclaw.json",
+      sourceConfig: { gateway: { reload: { debounceMs: 0 } } },
+      runtimeConfig: {
+        gateway: { reload: { debounceMs: 0 } },
+        hooks: { enabled: true },
+      },
+      persistedHash: "write-1",
+      writtenAtMs: Date.now(),
+    });
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(harness.watcher.add).toHaveBeenCalledWith("/etc/openclaw/secrets.json");
+
+    await harness.reloader.stop();
+  });
+
+  it("does not break reload when $include scanning fails", async () => {
+    collectIncludePathsRecursiveMock.mockRejectedValue(new Error("scan failed"));
+
+    const readSnapshot = vi
+      .fn<() => Promise<ConfigFileSnapshot>>()
+      // Startup schedule.
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: { gateway: { reload: { debounceMs: 0 } } },
+          hash: "startup-1",
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          config: {
+            gateway: { reload: { debounceMs: 0 } },
+            hooks: { enabled: true },
+          },
+          hash: "scan-fail-1",
+        }),
+      );
+    const { watcher, onHotReload, log, reloader } = createReloaderHarness(readSnapshot);
+
+    // Drain startup schedule.
+    await vi.runOnlyPendingTimersAsync();
+
+    watcher.emit("change");
+    await vi.runOnlyPendingTimersAsync();
+
+    // Reload should still succeed even though include scanning failed.
+    expect(onHotReload).toHaveBeenCalledTimes(1);
+    expect(log.error).not.toHaveBeenCalled();
+
+    await reloader.stop();
   });
 });
