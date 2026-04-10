@@ -26,6 +26,84 @@ const defaultFeishuClientSdk: FeishuClientSdk = {
 
 let feishuClientSdk: FeishuClientSdk = defaultFeishuClientSdk;
 
+/** Default reconnect interval for Feishu WebSocket (in ms). */
+const DEFAULT_RECONNECT_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+
+/** Maximum reconnect backoff for Feishu WebSocket (in ms). */
+const MAX_RECONNECT_BACKOFF_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Applies monkey-patches to the Lark WSClient prototype to fix two bugs:
+ * 1. PingInterval may be undefined on system_busy responses, causing a crash
+ * 2. Reconnect uses a fixed interval instead of exponential backoff
+ *
+ * This is applied once at module load time so all WSClient instances are fixed.
+ */
+function applyFeishuSDKReconnectPatch(): void {
+  const WSClient = defaultFeishuClientSdk.WSClient;
+  if (!WSClient?.prototype) return;
+
+  const proto = WSClient.prototype as Record<string, unknown>;
+
+  // --- Fix 1: Guard PingInterval in handleControlData (pong handler) ---
+  const origHandleControlData = proto["handleControlData"] as
+    | ((data: { headers: Array<{ key: string; value: string }>; payload?: Uint8Array }) => Promise<void>)
+    | undefined;
+  if (origHandleControlData) {
+    proto["handleControlData"] = async function (
+      data: { headers: Array<{ key: string; value: string }>; payload?: Uint8Array },
+    ) {
+      const self = this as unknown as Record<string, unknown>;
+      try {
+        return await origHandleControlData.call(this, data);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("PingInterval")) {
+          (self.logger as Record<string, Function> | undefined)?.warn?.call(
+            self.logger,
+            "[feishu-ws-patch]",
+            "swallowed PingInterval error in pong handler (Feishu system_busy?)",
+          );
+          return; // swallow — Feishu returns no Pong on system_busy
+        }
+        throw err;
+      }
+    };
+  }
+
+  // --- Fix 2: Exponential backoff on reConnect ---
+  const origReConnect = proto["reConnect"] as ((isStart?: boolean) => Promise<void>) | undefined;
+  if (origReConnect) {
+    proto["reConnect"] = async function (isStart = false) {
+      const self = this as unknown as Record<string, unknown>;
+      if (isStart) {
+        // Reset backoff counter on a fresh start
+        self._feishuReconnectCount = 0;
+      }
+      if (!isStart) {
+        // Exponential backoff: doubles each retry, capped at MAX_RECONNECT_BACKOFF_MS
+        // Add ±20% jitter to avoid synchronized retries across multiple clients
+        self._feishuReconnectCount = ((self._feishuReconnectCount as number) || 0) + 1;
+        const count = self._feishuReconnectCount as number;
+        const wsConfig = self.wsConfig as { getWS?: () => { reconnectInterval?: number } } | undefined;
+        const { reconnectInterval = DEFAULT_RECONNECT_INTERVAL_MS } = wsConfig?.getWS?.() ?? {};
+        const jitter = 1 + (Math.random() - 0.5) * 0.4; // ±20%
+        const backoff = Math.min(reconnectInterval * Math.pow(2, count - 1) * jitter, MAX_RECONNECT_BACKOFF_MS);
+        (self.logger as Record<string, Function> | undefined)?.info?.call(
+          self.logger,
+          "[feishu-ws-patch]",
+          `reconnect backoff: ${Math.round(backoff / 1000)}s (attempt ${count}, jitter ${Math.round((jitter - 1) * 100)}%)`,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, backoff));
+      }
+      return origReConnect.call(this, isStart);
+    };
+  }
+}
+
+// Apply patch once at module load
+applyFeishuSDKReconnectPatch();
+
 /** Default HTTP timeout for Feishu API requests (30 seconds). */
 export const FEISHU_HTTP_TIMEOUT_MS = 30_000;
 export const FEISHU_HTTP_TIMEOUT_MAX_MS = 300_000;
