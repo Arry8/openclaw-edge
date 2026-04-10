@@ -910,8 +910,8 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
   // Build refspecs: refs/pull/<n>/head:tmp/pr-<n>
   const refspecs = numbers.map((n) => `refs/pull/${n}/head:tmp/pr-${n}`);
 
-  const FETCH_BATCH_TIMEOUT_MS = 30_000;   // 30s for the whole batch
-  const FETCH_SINGLE_TIMEOUT_MS = 5_000;   // 5s per ref — avoids hanging on deleted/GC'd refs
+  const FETCH_BATCH_TIMEOUT_MS = 10_000;   // 10s for the whole batch (batches with valid refs finish in <1s)
+  const FETCH_SINGLE_TIMEOUT_MS = 2_000;   // 2s per ref — valid refs arrive in <300ms; 2s handles slow connections
   const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs], { timeoutMs: FETCH_BATCH_TIMEOUT_MS });
 
   if (r.ok) {
