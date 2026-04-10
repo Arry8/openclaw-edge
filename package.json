@@ -30,6 +30,7 @@
     "!dist/**/*.map",
     "!dist/plugin-sdk/.tsbuildinfo",
     "docs/",
+    "docs/reference/templates/",
     "!docs/.generated/**",
     "!docs/.i18n/zh-CN.tm.jsonl",
     "skills/",
