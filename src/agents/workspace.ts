@@ -290,7 +290,7 @@ type WorkspaceSetupState = {
 };
 
 /** Set of recognized bootstrap filenames for runtime validation */
-const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
+export const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_HARD_EXECUTION_RULES_FILENAME,
