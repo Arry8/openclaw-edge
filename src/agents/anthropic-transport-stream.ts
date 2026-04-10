@@ -27,27 +27,6 @@ import {
   sanitizeTransportPayloadText,
 } from "./transport-stream-shared.js";
 
-/**
- * Wrapper around parseStreamingJson that sanitizes C0 control characters
- * (U+0000–U+001F) on SyntaxError. Anthropic's streaming API occasionally
- * emits unescaped control characters in SSE data lines, causing JSON.parse
- * to throw. This defense-in-depth fallback strips them and retries.
- *
- * See: https://github.com/openclaw/openclaw/issues/14321
- * See: https://github.com/openclaw/openclaw/issues/32179
- */
-function safeParseStreamingJson(json: string): unknown {
-  try {
-    return parseStreamingJson(json);
-  } catch (e) {
-    if (e instanceof SyntaxError) {
-      // Strip C0 control characters and retry
-      return parseStreamingJson(json.replace(/[\x00-\x1f]/g, ""));
-    }
-    throw e;
-  }
-}
-
 const CLAUDE_CODE_VERSION = "2.1.75";
 const CLAUDE_CODE_TOOLS = [
   "Read",
@@ -792,7 +771,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
               typeof delta.partial_json === "string"
             ) {
               block.partialJson += delta.partial_json;
-              block.arguments = safeParseStreamingJson(block.partialJson);
+              block.arguments = parseStreamingJson(block.partialJson);
               stream.push({
                 type: "toolcall_delta",
                 contentIndex: index,
@@ -837,7 +816,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
             }
             if (block.type === "toolCall") {
               if (typeof block.partialJson === "string" && block.partialJson.length > 0) {
-                block.arguments = safeParseStreamingJson(block.partialJson);
+                block.arguments = parseStreamingJson(block.partialJson);
               }
               delete block.partialJson;
               stream.push({
