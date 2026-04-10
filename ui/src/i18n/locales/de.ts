@@ -603,6 +603,7 @@ export const de: TranslationMap = {
     uk: "Українська (Ukrainisch)",
     id: "Bahasa Indonesia (Indonesisch)",
     pl: "Polski (Polnisch)",
+    sv: "Schwedisch (Svenska)",
   },
   cron: {
     summary: {
