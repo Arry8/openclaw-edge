@@ -856,7 +856,11 @@ export const agentHandlers: GatewayRequestHandlers = {
         bootstrapContextRunKind: request.bootstrapContextRunKind,
         internalEvents: request.internalEvents,
         inputProvenance,
-        // Internal-only: allow workspace override for spawned subagent runs.
+        // Pass the resolved agent ID so workspace files load from the correct
+        // agent workspace instead of always falling back to the default agent.
+        agentId,
+        // Allow workspace override for spawned subagent runs; for normal agent
+        // runs the agentId above drives workspace resolution.
         workspaceDir: resolveIngressWorkspaceOverrideForSpawnedRun({
           spawnedBy: spawnedByValue,
           workspaceDir: sessionEntry?.spawnedWorkspaceDir,
