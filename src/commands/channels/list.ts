@@ -6,7 +6,6 @@ import type { ChannelAccountSnapshot, ChannelPlugin } from "../../channels/plugi
 import { withProgress } from "../../cli/progress.js";
 import { formatUsageReportLines, loadProviderUsageSummary } from "../../infra/provider-usage.js";
 import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
-import { describeUnknownError } from "../../secrets/shared.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import { formatChannelAccountLabel, requireValidConfig } from "./shared.js";
@@ -15,36 +14,6 @@ export type ChannelsListOptions = {
   json?: boolean;
   usage?: boolean;
 };
-
-function classifyUsageSnapshotFailure(error: unknown): {
-  lines: string[];
-  rawError?: string;
-} {
-  const message = describeUnknownError(error).trim();
-  const normalized = message.toLowerCase();
-  const isClaudeScopeFailure =
-    normalized.includes("claude") &&
-    (normalized.includes("403") || normalized.includes("user:profile"));
-
-  if (isClaudeScopeFailure) {
-    return {
-      lines: [
-        "Usage snapshot unavailable for Claude.",
-        "This usually means the current auth does not have the required user:profile access.",
-        "Try openclaw channels list --no-usage, re-auth via Claude Code CLI, or set CLAUDE_WEB_SESSION_KEY / CLAUDE_WEB_COOKIE.",
-      ],
-    };
-  }
-
-  return {
-    lines: [
-      "Usage snapshot unavailable.",
-      "The channel and auth summary above is still valid.",
-      "Try openclaw channels list --no-usage, re-auth the affected provider, or retry with the required credentials in this command path.",
-    ],
-    rawError: message || undefined,
-  };
-}
 
 const colorValue = (value: string) => {
   if (value === "none") {
@@ -127,15 +96,7 @@ async function loadUsageWithProgress(
       async () => await loadProviderUsageSummary(),
     );
   } catch (err) {
-    const classified = classifyUsageSnapshotFailure(err);
-    runtime.log("");
-    runtime.log(theme.warn("Usage:"));
-    for (const line of classified.lines) {
-      runtime.log(theme.warn(`- ${line}`));
-    }
-    if (classified.rawError) {
-      runtime.log(theme.muted(`  Error: ${classified.rawError}`));
-    }
+    runtime.error(String(err));
     return null;
   }
 }

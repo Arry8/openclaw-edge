@@ -313,7 +313,7 @@ openclaw config set agents.defaults.videoGenerationModel.primary "qwen/wan2.6-t2
 - [Tools Overview](/tools)
 - [Background Tasks](/automation/tasks) -- task tracking for async video generation
 - [Alibaba Model Studio](/providers/alibaba)
-- [BytePlus (International)](/concepts/model-providers#byteplus-international)
+- [BytePlus](/concepts/model-providers#byteplus-international)
 - [ComfyUI](/providers/comfy)
 - [fal](/providers/fal)
 - [Google (Gemini)](/providers/google)
