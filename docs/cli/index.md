@@ -704,7 +704,7 @@ Subcommands:
   - When adding a non-default account to a channel still using single-account top-level config, OpenClaw promotes account-scoped values into the channel account map before writing the new account. Most channels use `accounts.default`; Matrix can preserve an existing matching named/default target instead.
   - Non-interactive `channels add` does not auto-create/upgrade bindings; channel-only bindings continue to match the default account.
 - `channels remove`: disable by default; pass `--delete` to remove config entries without prompts.
-- `channels login`: interactive channel login (WhatsApp Web only).
+- `channels login`: interactive channel login for channels that implement a login flow (for example WhatsApp Web and QR-login plugins).
 - `channels logout`: log out of a channel session (if supported).
 
 Common options:
@@ -715,7 +715,7 @@ Common options:
 
 `channels login` options:
 
-- `--channel <channel>` (default `whatsapp`; supports `whatsapp`/`web`)
+- `--channel <channel>` (default `whatsapp`; built-in supports `whatsapp`/`web`, and installed plugins may add more login-capable channel ids)
 - `--account <id>`
 - `--verbose`
 
