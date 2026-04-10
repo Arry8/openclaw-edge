@@ -25,6 +25,7 @@ import { resolvePreferredSessionKeyForSessionIdMatches } from "../../sessions/se
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
   buildUsageAggregateTail,
+  sortUsageRankingEntries,
   mergeUsageDailyLatency,
   mergeUsageLatency,
 } from "../../shared/usage-aggregates.js";
@@ -603,8 +604,9 @@ export const usageHandlers: GatewayRequestHandlers = {
     // Sort by most recent first
     mergedEntries.sort((a, b) => b.updatedAt - a.updatedAt);
 
-    // Apply limit
+    // Apply limit only to the returned session list; aggregates should cover all entries.
     const limitedEntries = mergedEntries.slice(0, limit);
+    const limitedEntryKeys = new Set(limitedEntries.map((entry) => `${entry.key}::${entry.sessionId}`));
 
     // Load usage for each session
     const sessions: SessionUsageEntry[] = [];
@@ -688,7 +690,7 @@ export const usageHandlers: GatewayRequestHandlers = {
       target.missingCostEntries += source.missingCostEntries;
     };
 
-    for (const merged of limitedEntries) {
+    for (const merged of mergedEntries) {
       const agentId = parseAgentSessionKey(merged.key)?.agentId;
       const usage = await loadSessionCostSummary({
         sessionId: merged.sessionId,
@@ -835,24 +837,26 @@ export const usageHandlers: GatewayRequestHandlers = {
         }
       }
 
-      sessions.push({
-        key: merged.key,
-        label: merged.label,
-        sessionId: merged.sessionId,
-        updatedAt: merged.updatedAt,
-        agentId,
-        channel,
-        chatType,
-        origin: merged.storeEntry?.origin,
-        modelOverride: merged.storeEntry?.modelOverride,
-        providerOverride: merged.storeEntry?.providerOverride,
-        modelProvider: merged.storeEntry?.modelProvider,
-        model: merged.storeEntry?.model,
-        usage,
-        contextWeight: includeContextWeight
-          ? (merged.storeEntry?.systemPromptReport ?? null)
-          : undefined,
-      });
+      if (limitedEntryKeys.has(`${merged.key}::${merged.sessionId}`)) {
+        sessions.push({
+          key: merged.key,
+          label: merged.label,
+          sessionId: merged.sessionId,
+          updatedAt: merged.updatedAt,
+          agentId,
+          channel,
+          chatType,
+          origin: merged.storeEntry?.origin,
+          modelOverride: merged.storeEntry?.modelOverride,
+          providerOverride: merged.storeEntry?.providerOverride,
+          modelProvider: merged.storeEntry?.modelProvider,
+          model: merged.storeEntry?.model,
+          usage,
+          contextWeight: includeContextWeight
+            ? (merged.storeEntry?.systemPromptReport ?? null)
+            : undefined,
+        });
+      }
     }
 
     // Format dates back to YYYY-MM-DD strings
@@ -892,9 +896,9 @@ export const usageHandlers: GatewayRequestHandlers = {
         }
         return (b.totals?.totalTokens ?? 0) - (a.totals?.totalTokens ?? 0);
       }),
-      byAgent: Array.from(byAgentMap.entries())
-        .map(([id, totals]) => ({ agentId: id, totals }))
-        .toSorted((a, b) => (b.totals?.totalCost ?? 0) - (a.totals?.totalCost ?? 0)),
+      byAgent: sortUsageRankingEntries(
+        Array.from(byAgentMap.entries()).map(([id, totals]) => ({ agentId: id, totals })),
+      ),
       ...tail,
     };
 
