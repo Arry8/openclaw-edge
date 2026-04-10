@@ -775,6 +775,8 @@ export async function runReplyAgent(params: {
       let formatted = formatResponseUsageLine({
         usage,
         showCost,
+        providerUsed,
+        modelUsed,
         costConfig,
       });
       if (formatted && responseUsageMode === "full" && sessionKey) {
