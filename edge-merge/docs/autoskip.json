@@ -268,5 +268,95 @@
     "reason": "src/infra/remediation/bootstrap-janitor.ts (auto-skip attempt 1)",
     "source": "auto",
     "revertedAt": "2026-04-10T02:42:06.653Z"
+  },
+  {
+    "number": 55619,
+    "reason": "extensions/feishu/src/client.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T12:52:48.769Z"
+  },
+  {
+    "number": 53963,
+    "reason": "src/agents/fallback/react-wrapper.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T12:52:48.887Z"
+  },
+  {
+    "number": 64192,
+    "reason": "src/plugins/config-state.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T13:34:41.602Z"
+  },
+  {
+    "number": 53968,
+    "reason": "src/memory/validation/namespace-integrity.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T13:43:59.362Z"
+  },
+  {
+    "number": 53973,
+    "reason": "src/plugin-sdk/msteams-fix.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T13:43:59.460Z"
+  },
+  {
+    "number": 53967,
+    "reason": "src/plugins/core/deduplicator.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T13:43:59.762Z"
+  },
+  {
+    "number": 56468,
+    "reason": "src/config/io.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:18:43.377Z"
+  },
+  {
+    "number": 58492,
+    "reason": "src/auto-reply/reply/get-reply-inline-actions.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:28:38.650Z"
+  },
+  {
+    "number": 58685,
+    "reason": "src/commands/channels/list.ts (auto-skip attempt 2)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:29:53.991Z"
+  },
+  {
+    "number": 59423,
+    "reason": "src/agents/context-layers.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:40:28.863Z"
+  },
+  {
+    "number": 59932,
+    "reason": "src/config/sessions/disk-budget.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:53:04.550Z"
+  },
+  {
+    "number": 60520,
+    "reason": "src/auto-reply/reply/route-reply.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T16:59:48.268Z"
+  },
+  {
+    "number": 61606,
+    "reason": "src/agents/pi-embedded-runner/run/attempt.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T17:13:50.964Z"
+  },
+  {
+    "number": 62429,
+    "reason": "src/agents/anthropic-transport-stream.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T17:20:37.487Z"
+  },
+  {
+    "number": 63046,
+    "reason": "src/agents/tools/image-tool.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T17:28:30.405Z"
   }
 ]
