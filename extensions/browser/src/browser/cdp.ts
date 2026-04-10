@@ -170,11 +170,14 @@ export async function captureScreenshot(opts: {
   });
 }
 
-export async function createTargetViaCdp(opts: {
-  cdpUrl: string;
-  url: string;
-  ssrfPolicy?: SsrFPolicy;
-}): Promise<{ targetId: string }> {
+export async function createTargetViaCdp(
+  opts: {
+    cdpUrl: string;
+    url: string;
+    ssrfPolicy?: SsrFPolicy;
+  },
+  timeouts?: { httpTimeoutMs?: number; handshakeTimeoutMs?: number },
+): Promise<{ targetId: string }> {
   await assertBrowserNavigationAllowed({
     url: opts.url,
     ...withBrowserNavigationPolicy(opts.ssrfPolicy),
@@ -190,7 +193,7 @@ export async function createTargetViaCdp(opts: {
     await assertCdpEndpointAllowed(opts.cdpUrl, opts.ssrfPolicy);
     const version = await fetchJson<{ webSocketDebuggerUrl?: string }>(
       appendCdpPath(opts.cdpUrl, "/json/version"),
-      1500,
+      timeouts?.httpTimeoutMs,
     );
     const wsUrlRaw = String(version?.webSocketDebuggerUrl ?? "").trim();
     wsUrl = wsUrlRaw ? normalizeCdpWsUrl(wsUrlRaw, opts.cdpUrl) : "";
@@ -200,16 +203,20 @@ export async function createTargetViaCdp(opts: {
     await assertCdpEndpointAllowed(wsUrl, opts.ssrfPolicy);
   }
 
-  return await withCdpSocket(wsUrl, async (send) => {
-    const created = (await send("Target.createTarget", { url: opts.url })) as {
-      targetId?: string;
-    };
-    const targetId = String(created?.targetId ?? "").trim();
-    if (!targetId) {
-      throw new Error("CDP Target.createTarget returned no targetId");
-    }
-    return { targetId };
-  });
+  return await withCdpSocket(
+    wsUrl,
+    async (send) => {
+      const created = (await send("Target.createTarget", { url: opts.url })) as {
+        targetId?: string;
+      };
+      const targetId = String(created?.targetId ?? "").trim();
+      if (!targetId) {
+        throw new Error("CDP Target.createTarget returned no targetId");
+      }
+      return { targetId };
+    },
+    { handshakeTimeoutMs: timeouts?.handshakeTimeoutMs },
+  );
 }
 
 export type CdpRemoteObject = {
