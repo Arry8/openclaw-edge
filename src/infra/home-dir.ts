@@ -99,6 +99,25 @@ export function expandHomePrefix(
   return input.replace(/^~(?=$|[\\/])/, home);
 }
 
+/**
+ * Expand `${VAR}` and `$VAR` references in a string using the provided
+ * environment.  Unknown or empty variables are replaced with the empty string
+ * so the caller never sees a literal `${…}` token in the resolved path.
+ */
+export function expandEnvVars(
+  input: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  // Match ${VAR_NAME} (braced) and $VAR_NAME (unbraced, word-boundary).
+  return input.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (_match, braced: string | undefined, unbraced: string | undefined) => {
+      const name = (braced ?? unbraced)!;
+      return env[name]?.trim() ?? "";
+    },
+  );
+}
+
 export function resolveHomeRelativePath(
   input: string,
   opts?: {
@@ -110,15 +129,18 @@ export function resolveHomeRelativePath(
   if (!trimmed) {
     return trimmed;
   }
-  if (trimmed.startsWith("~")) {
-    const expanded = expandHomePrefix(trimmed, {
-      home: resolveRequiredHomeDir(opts?.env ?? process.env, opts?.homedir ?? os.homedir),
+  const env = opts?.env ?? process.env;
+  // Expand environment variable references before resolving the path.
+  const envExpanded = expandEnvVars(trimmed, env);
+  if (envExpanded.startsWith("~")) {
+    const expanded = expandHomePrefix(envExpanded, {
+      home: resolveRequiredHomeDir(env, opts?.homedir ?? os.homedir),
       env: opts?.env,
       homedir: opts?.homedir,
     });
     return path.resolve(expanded);
   }
-  return path.resolve(trimmed);
+  return path.resolve(envExpanded);
 }
 
 export function resolveOsHomeRelativePath(
@@ -132,13 +154,16 @@ export function resolveOsHomeRelativePath(
   if (!trimmed) {
     return trimmed;
   }
-  if (trimmed.startsWith("~")) {
-    const expanded = expandHomePrefix(trimmed, {
-      home: resolveRequiredOsHomeDir(opts?.env ?? process.env, opts?.homedir ?? os.homedir),
+  const env = opts?.env ?? process.env;
+  // Expand environment variable references before resolving the path.
+  const envExpanded = expandEnvVars(trimmed, env);
+  if (envExpanded.startsWith("~")) {
+    const expanded = expandHomePrefix(envExpanded, {
+      home: resolveRequiredOsHomeDir(env, opts?.homedir ?? os.homedir),
       env: opts?.env,
       homedir: opts?.homedir,
     });
     return path.resolve(expanded);
   }
-  return path.resolve(trimmed);
+  return path.resolve(envExpanded);
 }
