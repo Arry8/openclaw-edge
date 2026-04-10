@@ -177,6 +177,7 @@ export const __testing = {
     gatewayCallDeps.createGatewayClient =
       createGatewayClient ?? defaultGatewayCallDeps.createGatewayClient;
   },
+  ensureExplicitGatewayAuth,
   resetDepsForTests(): void {
     gatewayCallDeps.createGatewayClient = defaultGatewayCallDeps.createGatewayClient;
     gatewayCallDeps.loadConfig = defaultGatewayCallDeps.loadConfig;
@@ -250,7 +251,7 @@ export function ensureExplicitGatewayAuth(params: {
         ? "If this is your default local or SSH-tunneled gateway, remove --url and use the default gateway target instead."
         : undefined;
   const message = [
-    "gateway url override requires explicit credentials",
+    "gateway url override requires explicit credentials (--token or --password)",
     params.errorHint,
     followupHint,
     params.configPath ? `Config: ${params.configPath}` : undefined,
