@@ -47,6 +47,7 @@ function loadCoverageRegistryEntries(): SecretRegistryEntry[] {
     expectedResolvedValue: "string",
     ...(entry.when?.type ? { authProfileType: entry.when.type } : {}),
   }));
+
 }
 
 const COVERAGE_REGISTRY_ENTRIES = loadCoverageRegistryEntries();
@@ -319,6 +320,9 @@ function applyConfigForOpenClawTarget(
       ["channels", "feishu", "accounts", wildcardToken, "connectionMode"],
       "webhook",
     );
+  }
+  if (entry.id === "plugins.entries.baidu.config.webSearch.apiKey") {
+    setPathCreateStrict(config, ["tools", "web", "search", "provider"], "baidu");
   }
   if (entry.id === "plugins.entries.brave.config.webSearch.apiKey") {
     setPathCreateStrict(config, ["tools", "web", "search", "provider"], "brave");
