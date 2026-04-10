@@ -511,7 +511,7 @@ export function createAgentEventHandler({
   };
 
   const buildSessionEventSnapshot = (sessionKey: string, evt?: AgentEventPayload) => {
-    const row = loadGatewaySessionRow(sessionKey);
+    const row = loadGatewaySessionRow(sessionKey, { includeTranscriptUsage: true });
     const lifecyclePatch = evt
       ? deriveGatewaySessionLifecycleSnapshot({
           session: row

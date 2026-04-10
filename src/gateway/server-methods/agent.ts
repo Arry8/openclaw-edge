@@ -129,7 +129,9 @@ function emitSessionsChanged(
   if (connIds.size === 0) {
     return;
   }
-  const sessionRow = payload.sessionKey ? loadGatewaySessionRow(payload.sessionKey) : null;
+  const sessionRow = payload.sessionKey
+    ? loadGatewaySessionRow(payload.sessionKey, { includeTranscriptUsage: true })
+    : null;
   context.broadcastToConnIds(
     "sessions.changed",
     {
