@@ -623,7 +623,7 @@ export async function runEmbeddedAttempt(
       config: params.config,
       sessionAgentId,
     });
-    // Track sessions_yield tool invocation (callback pattern, like clientToolCallDetected)
+    // Track sessions_yield tool invocation (callback pattern, like clientToolCallsDetected)
     let yieldDetected = false;
     let yieldMessage: string | null = null;
     // Late-binding reference so onYield can abort the session (declared after tool creation)
@@ -1092,7 +1092,7 @@ export async function runEmbeddedAttempt(
       });
 
       // Add client tools (OpenResponses hosted tools) to customTools
-      let clientToolCallDetected: { name: string; params: Record<string, unknown> } | null = null;
+      const clientToolCallsDetected: Array<{ name: string; params: Record<string, unknown> }> = [];
       const clientToolLoopDetection = resolveToolLoopDetectionConfig({
         cfg: params.config,
         agentId: sessionAgentId,
@@ -1101,7 +1101,7 @@ export async function runEmbeddedAttempt(
         ? toClientToolDefinitions(
             clientTools,
             (toolName, toolParams) => {
-              clientToolCallDetected = { name: toolName, params: toolParams };
+              clientToolCallsDetected.push({ name: toolName, params: toolParams });
             },
             {
               agentId: sessionAgentId,
@@ -2642,8 +2642,8 @@ export async function runEmbeddedAttempt(
         attemptUsage,
         promptCache,
         compactionCount: getCompactionCount(),
-        // Client tool call detected (OpenResponses hosted tools)
-        clientToolCall: clientToolCallDetected ?? undefined,
+        // Client tool calls detected (OpenResponses hosted tools)
+        clientToolCalls: clientToolCallsDetected.length > 0 ? clientToolCallsDetected : undefined,
         yieldDetected: yieldDetected || undefined,
       };
     } finally {
