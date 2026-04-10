@@ -36,6 +36,8 @@ import {
   resolveOpenAiCompatModelOverride,
   resolveOpenAiCompatibleHttpOperatorScopes,
   resolveOpenAiCompatibleHttpSenderIsOwner,
+  resolveProviderForAgent,
+  resolveAgentIdForRequest,
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
 
@@ -479,11 +481,14 @@ export async function handleOpenAiHttpRequest(
   const model = typeof payload.model === "string" ? payload.model : "openclaw";
   const user = typeof payload.user === "string" ? payload.user : undefined;
 
+  const resolvedAgentId = resolveAgentIdForRequest({ req, model });
+  const providerPrefix = resolveProviderForAgent(resolvedAgentId, "api");
   const { agentId, sessionKey, messageChannel } = resolveGatewayRequestContext({
     req,
     model,
     user,
-    sessionPrefix: "openai",
+    agentId: resolvedAgentId,
+    sessionPrefix: providerPrefix,
     defaultMessageChannel: "webchat",
     useMessageChannelHeader: true,
   });

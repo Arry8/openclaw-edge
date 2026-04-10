@@ -8,6 +8,7 @@ import {
   resolveDefaultModelForAgent,
 } from "../agents/model-selection.js";
 import { loadConfig } from "../config/config.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { buildAgentMainSessionKey, normalizeAgentId } from "../routing/session-key.js";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -297,15 +298,31 @@ export function resolveSessionKey(params: {
   return buildAgentMainSessionKey({ agentId: params.agentId, mainKey });
 }
 
+export function resolveProviderForAgent(
+  agentId: string,
+  fallback: string,
+  cfg?: OpenClawConfig,
+): string {
+  const resolvedCfg = cfg ?? loadConfig();
+  try {
+    const modelRef = resolveDefaultModelForAgent({ cfg: resolvedCfg, agentId });
+    return modelRef.provider || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function resolveGatewayRequestContext(params: {
   req: IncomingMessage;
   model: string | undefined;
   user?: string | undefined;
+  agentId?: string;
   sessionPrefix: string;
   defaultMessageChannel: string;
   useMessageChannelHeader?: boolean;
 }): { agentId: string; sessionKey: string; messageChannel: string } {
-  const agentId = resolveAgentIdForRequest({ req: params.req, model: params.model });
+  const agentId =
+    params.agentId ?? resolveAgentIdForRequest({ req: params.req, model: params.model });
   const sessionKey = resolveSessionKey({
     req: params.req,
     agentId,
