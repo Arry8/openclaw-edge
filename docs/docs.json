@@ -1090,6 +1090,7 @@
                     "group": "Memory",
                     "pages": [
                       "concepts/memory",
+                      "concepts/memory-deep-dive",
                       "concepts/memory-builtin",
                       "concepts/memory-qmd",
                       "concepts/memory-honcho",
