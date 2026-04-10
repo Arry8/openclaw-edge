@@ -26,6 +26,7 @@ export function buildGatewaySnapshot(opts?: { includeSensitive?: boolean }): Sna
   const mainKey = normalizeMainKey(cfg.session?.mainKey);
   const mainSessionKey = resolveMainSessionKey(cfg);
   const scope = cfg.session?.scope ?? "per-sender";
+  const dmScope = cfg.session?.dmScope ?? "main";
   const presence = listSystemPresence();
   const uptimeMs = Math.round(process.uptime() * 1000);
   const updateAvailable = getUpdateAvailable() ?? undefined;
@@ -41,6 +42,7 @@ export function buildGatewaySnapshot(opts?: { includeSensitive?: boolean }): Sna
       mainKey,
       mainSessionKey,
       scope,
+      dmScope,
     },
     updateAvailable,
   };
