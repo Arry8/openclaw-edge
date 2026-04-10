@@ -4,12 +4,15 @@ import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { rewriteTranscriptEntriesInSessionFile } from "../../agents/pi-embedded-runner/transcript-rewrite.js";
+import { abortEmbeddedPiRun } from "../../agents/pi-embedded.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import {
   extractAssistantText as extractAssistantHistoryText,
   hasAssistantPhaseMetadata,
 } from "../../agents/tools/chat-history-text.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
+import { stopSubagentsForRequester } from "../../auto-reply/reply/abort.js";
+import { clearSessionQueues } from "../../auto-reply/reply/queue.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
@@ -1367,6 +1370,15 @@ export const chatHandlers: GatewayRequestHandlers = {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unauthorized"));
         return;
       }
+      if (res.aborted) {
+        const { cfg, entry } = loadSessionEntry(rawSessionKey);
+        const sessionId = entry?.sessionId;
+        if (sessionId) {
+          abortEmbeddedPiRun(sessionId);
+        }
+        clearSessionQueues([rawSessionKey, sessionId].filter(Boolean));
+        stopSubagentsForRequester({ cfg, requesterSessionKey: rawSessionKey });
+      }
       respond(true, { ok: true, aborted: res.aborted, runIds: res.runIds });
       return;
     }
@@ -1408,6 +1420,12 @@ export const chatHandlers: GatewayRequestHandlers = {
           },
         ],
       });
+    }
+    if (res.aborted) {
+      const { cfg } = loadSessionEntry(rawSessionKey);
+      abortEmbeddedPiRun(active.sessionId);
+      clearSessionQueues([rawSessionKey, active.sessionId]);
+      stopSubagentsForRequester({ cfg, requesterSessionKey: rawSessionKey });
     }
     respond(true, {
       ok: true,
