@@ -1,4 +1,3 @@
-import path from "node:path";
 import { z } from "zod";
 import { isSafeExecutableValue } from "../infra/exec-safety.js";
 import {
@@ -19,7 +18,7 @@ const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/;
 
 function isAbsolutePath(value: string): boolean {
   return (
-    path.isAbsolute(value) ||
+    value.startsWith("/") ||
     WINDOWS_ABS_PATH_PATTERN.test(value) ||
     WINDOWS_UNC_PATH_PATTERN.test(value)
   );

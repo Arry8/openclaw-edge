@@ -1,4 +1,3 @@
-import path from "node:path";
 import { z } from "zod";
 import { InstallRecordShape } from "./zod-schema.installs.js";
 import { sensitive } from "./zod-schema.sensitive.js";
@@ -14,7 +13,7 @@ function isSafeRelativeModulePath(raw: unknown): boolean {
   }
   // Hook modules are loaded via file-path resolution + dynamic import().
   // Keep this strictly relative to a configured base dir to avoid path traversal and surprises.
-  if (path.isAbsolute(value)) {
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
     return false;
   }
   if (value.startsWith("~")) {
