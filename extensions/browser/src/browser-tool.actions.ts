@@ -24,6 +24,43 @@ const browserToolActionDeps = {
   loadConfig,
 };
 
+const BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS = 5_000;
+
+type BrowserActRequest = Parameters<typeof browserAct>[1];
+type BrowserActRequestWithTimeout = BrowserActRequest & { timeoutMs?: number };
+
+function normalizePositiveTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function withConfiguredActTimeout(request: BrowserActRequest): BrowserActRequest {
+  const typedRequest = request as BrowserActRequestWithTimeout;
+  const explicitTimeout = normalizePositiveTimeoutMs(typedRequest.timeoutMs);
+  if (explicitTimeout !== undefined) {
+    return request;
+  }
+  const cfg = browserToolActionDeps.loadConfig();
+  const configuredTimeout = normalizePositiveTimeoutMs(cfg.browser?.actionTimeoutMs);
+  return { ...typedRequest, timeoutMs: configuredTimeout ?? 20_000 } as BrowserActRequest;
+}
+
+function resolveActProxyTimeoutMs(request: BrowserActRequest): number | undefined {
+  const candidateTimeouts: number[] = [];
+  const explicitTimeout = normalizePositiveTimeoutMs(
+    (request as BrowserActRequestWithTimeout).timeoutMs,
+  );
+  if (explicitTimeout !== undefined) {
+    candidateTimeouts.push(explicitTimeout + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+  }
+  if (request.kind === "wait") {
+    const waitDuration = normalizePositiveTimeoutMs(request.timeMs);
+    if (waitDuration !== undefined) {
+      candidateTimeouts.push(waitDuration + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+    }
+  }
+  return candidateTimeouts.length ? Math.max(...candidateTimeouts) : undefined;
+}
+
 export const __testing = {
   setDepsForTest(
     overrides: Partial<{
@@ -455,21 +492,23 @@ export async function executeActAction(params: {
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
   const { request, baseUrl, profile, proxyRequest } = params;
+  const effectiveRequest = withConfiguredActTimeout(request);
   try {
     const result = proxyRequest
       ? await proxyRequest({
           method: "POST",
           path: "/act",
           profile,
-          body: request,
+          body: effectiveRequest,
+          timeoutMs: resolveActProxyTimeoutMs(effectiveRequest),
         })
-      : await browserToolActionDeps.browserAct(baseUrl, request, {
+      : await browserToolActionDeps.browserAct(baseUrl, effectiveRequest, {
           profile,
         });
     return jsonResult(result);
   } catch (err) {
     if (isChromeStaleTargetError(profile, err)) {
-      const retryRequest = stripTargetIdFromActRequest(request);
+      const retryRequest = stripTargetIdFromActRequest(effectiveRequest);
       const tabs = proxyRequest
         ? ((
             (await proxyRequest({
@@ -481,7 +520,7 @@ export async function executeActAction(params: {
         : await browserToolActionDeps.browserTabs(baseUrl, { profile }).catch(() => []);
       // Some user-browser targetIds can go stale between snapshots and actions.
       // Only retry safe read-only actions, and only when exactly one tab remains attached.
-      if (retryRequest && canRetryChromeActWithoutTargetId(request) && tabs.length === 1) {
+      if (retryRequest && canRetryChromeActWithoutTargetId(effectiveRequest) && tabs.length === 1) {
         try {
           const retryResult = proxyRequest
             ? await proxyRequest({
@@ -489,6 +528,7 @@ export async function executeActAction(params: {
                 path: "/act",
                 profile,
                 body: retryRequest,
+                timeoutMs: resolveActProxyTimeoutMs(retryRequest),
               })
             : await browserToolActionDeps.browserAct(baseUrl, retryRequest, {
                 profile,

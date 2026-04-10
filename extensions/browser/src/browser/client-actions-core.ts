@@ -6,6 +6,9 @@ import type {
 import { buildProfileQuery, withBaseUrl } from "./client-actions-url.js";
 import { fetchBrowserJson } from "./client-fetch.js";
 
+const DEFAULT_BROWSER_ACTION_REQUEST_TIMEOUT_MS = 20_000;
+const BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS = 5_000;
+
 export type BrowserFormField = {
   ref: string;
   type: string;
@@ -109,6 +112,28 @@ export type BrowserDownloadPayload = {
 };
 
 type BrowserDownloadResult = { ok: true; targetId: string; download: BrowserDownloadPayload };
+
+function normalizePositiveTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function resolveBrowserActRequestTimeoutMs(req: BrowserActRequest): number {
+  const candidateTimeouts: number[] = [];
+
+  const explicitTimeout = normalizePositiveTimeoutMs((req as { timeoutMs?: unknown }).timeoutMs);
+  if (explicitTimeout !== undefined) {
+    candidateTimeouts.push(explicitTimeout + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+  }
+
+  if (req.kind === "wait") {
+    const waitDuration = normalizePositiveTimeoutMs(req.timeMs);
+    if (waitDuration !== undefined) {
+      candidateTimeouts.push(waitDuration + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+    }
+  }
+
+  return Math.max(DEFAULT_BROWSER_ACTION_REQUEST_TIMEOUT_MS, ...candidateTimeouts);
+}
 
 async function postDownloadRequest(
   baseUrl: string | undefined,
@@ -248,7 +273,7 @@ export async function browserAct(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
-    timeoutMs: 20000,
+    timeoutMs: resolveBrowserActRequestTimeoutMs(req),
   });
 }
 

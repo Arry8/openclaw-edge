@@ -166,7 +166,16 @@ async function discardResponseBody(res: Response): Promise<void> {
 
 function enhanceDispatcherPathError(url: string, err: unknown): Error {
   const msg = normalizeErrorMessage(err);
-  const suffix = `${resolveBrowserFetchOperatorHint(url)} ${BROWSER_TOOL_MODEL_HINT}`;
+  const msgLower = normalizeLowercaseStringOrEmpty(msg);
+  const looksLikeTimeout =
+    msgLower.includes("timed out") ||
+    msgLower.includes("timeout") ||
+    msgLower.includes("aborted") ||
+    msgLower.includes("abort") ||
+    msgLower.includes("aborterror");
+  const suffix = looksLikeTimeout && !isAbsoluteHttp(url)
+    ? `This can happen when a browser action outlives the client request timeout. Retry or increase timeout before restarting the gateway. ${BROWSER_TOOL_MODEL_HINT}`
+    : `${resolveBrowserFetchOperatorHint(url)} ${BROWSER_TOOL_MODEL_HINT}`;
   const normalized = msg.endsWith(".") ? msg : `${msg}.`;
   return new Error(`${normalized} ${suffix}`, err instanceof Error ? { cause: err } : undefined);
 }
@@ -182,9 +191,12 @@ function enhanceBrowserFetchError(url: string, err: unknown, timeoutMs: number):
     msgLower.includes("abort") ||
     msgLower.includes("aborterror");
   if (looksLikeTimeout) {
+    const timeoutHint = !isAbsoluteHttp(url)
+      ? "This can happen when a browser action outlives the client request timeout. Retry or increase timeout before restarting the gateway."
+      : operatorHint;
     return new Error(
       appendBrowserToolModelHint(
-        `Can't reach the OpenClaw browser control service (timed out after ${timeoutMs}ms). ${operatorHint}`,
+        `Can't reach the OpenClaw browser control service (timed out after ${timeoutMs}ms). ${timeoutHint}`,
       ),
     );
   }

@@ -50,6 +50,7 @@ export function makeBrowserServerState(params?: {
         [profile.name]: profile,
       },
       ...params?.resolvedOverrides,
+      actionTimeoutMs: params?.resolvedOverrides?.actionTimeoutMs ?? 20000,
     },
     profiles: new Map(),
   };
