@@ -509,7 +509,10 @@ export async function prepareSlackMessage(params: {
     policy: {
       isGroup: isRoom,
       requireMention: Boolean(shouldRequireMention),
-      allowedImplicitMentionKinds: ctx.threadRequireExplicitMention ? [] : undefined,
+      allowedImplicitMentionKinds:
+        (channelConfig?.threadRequireExplicitMention ?? ctx.threadRequireExplicitMention)
+          ? []
+          : undefined,
       allowTextCommands,
       hasControlCommand: hasControlCommandInMessage,
       commandAuthorized,
