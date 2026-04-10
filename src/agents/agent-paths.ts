@@ -1,6 +1,6 @@
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
+import { DEFAULT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
 
 export function resolveOpenClawAgentDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -8,7 +8,11 @@ export function resolveOpenClawAgentDir(env: NodeJS.ProcessEnv = process.env): s
   if (override) {
     return resolveUserPath(override, env);
   }
-  const defaultAgentDir = path.join(resolveStateDir(env), "agents", DEFAULT_AGENT_ID, "agent");
+  // Allow early override via env var (before config is parsed).
+  const agentId = env.OPENCLAW_DEFAULT_AGENT_ID?.trim()
+    ? normalizeAgentId(env.OPENCLAW_DEFAULT_AGENT_ID)
+    : DEFAULT_AGENT_ID;
+  const defaultAgentDir = path.join(resolveStateDir(env), "agents", agentId, "agent");
   return resolveUserPath(defaultAgentDir, env);
 }
 

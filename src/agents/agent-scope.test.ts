@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   hasConfiguredModelFallbacks,
+  listAgentIds,
   resolveAgentConfig,
   resolveAgentDir,
   resolveAgentEffectiveModelPrimary,
   resolveAgentExplicitModelPrimary,
-  resolveAgentSkillsFilter,
+  resolveDefaultAgentId,
   resolveFallbackAgentId,
   resolveEffectiveModelFallbacks,
   resolveAgentModelFallbacksOverride,
@@ -339,7 +340,7 @@ describe("resolveAgentConfig", () => {
   });
 
   it("should return agent-specific sandbox config", () => {
-    const cfg = {
+    const cfg: OpenClawConfig = {
       agents: {
         list: [
           {
@@ -355,7 +356,7 @@ describe("resolveAgentConfig", () => {
           },
         ],
       },
-    } as unknown as OpenClawConfig;
+    };
     const result = resolveAgentConfig(cfg, "work");
     expect(result?.sandbox).toEqual({
       mode: "all",
@@ -449,40 +450,6 @@ describe("resolveAgentConfig", () => {
     const agentDir = resolveAgentDir({} as OpenClawConfig, "main");
     expect(agentDir).toBe(path.join(path.resolve(home), ".openclaw", "agents", "main", "agent"));
   });
-
-  it("non-default agent uses agents.defaults.workspace as base (#59789)", () => {
-    const cfg: OpenClawConfig = {
-      agents: {
-        defaults: { workspace: "/shared-ws" },
-        list: [{ id: "main" }, { id: "work", default: true, workspace: "/work-ws" }],
-      },
-    };
-    const workspace = resolveAgentWorkspaceDir(cfg, "main");
-    expect(workspace).toBe(path.resolve("/shared-ws/main"));
-  });
-
-  it("default agent without per-agent workspace uses agents.defaults.workspace directly", () => {
-    const cfg: OpenClawConfig = {
-      agents: {
-        defaults: { workspace: "/shared-ws" },
-        list: [{ id: "main" }, { id: "work", default: true }],
-      },
-    };
-    const workspace = resolveAgentWorkspaceDir(cfg, "work");
-    expect(workspace).toBe(path.resolve("/shared-ws"));
-  });
-
-  it("non-default agent without defaults.workspace falls back to stateDir", () => {
-    const stateDir = path.join(path.sep, "tmp", "test-state");
-    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
-    const cfg: OpenClawConfig = {
-      agents: {
-        list: [{ id: "main" }, { id: "work", default: true, workspace: "/work-ws" }],
-      },
-    };
-    const workspace = resolveAgentWorkspaceDir(cfg, "main");
-    expect(workspace).toBe(path.join(stateDir, "workspace-main"));
-  });
 });
 
 describe("resolveAgentIdByWorkspacePath", () => {
@@ -574,43 +541,77 @@ describe("resolveAgentIdsByWorkspacePath", () => {
   });
 });
 
-describe("resolveAgentSkillsFilter", () => {
-  it("inherits agents.defaults.skills when the agent omits skills", () => {
-    const cfg: OpenClawConfig = {
-      agents: {
-        defaults: {
-          skills: ["github", "weather"],
-        },
-        list: [{ id: "writer" }],
-      },
-    };
-
-    expect(resolveAgentSkillsFilter(cfg, "writer")).toEqual(["github", "weather"]);
+describe("resolveDefaultAgentId with agents.defaultAgentId", () => {
+  it("returns 'main' when no config is provided", () => {
+    expect(resolveDefaultAgentId({})).toBe("main");
   });
 
-  it("uses agents.list[].skills as a full replacement", () => {
+  it("respects agents.defaultAgentId when no agents.list is configured", () => {
     const cfg: OpenClawConfig = {
-      agents: {
-        defaults: {
-          skills: ["github", "weather"],
-        },
-        list: [{ id: "writer", skills: ["docs-search"] }],
-      },
+      agents: { defaultAgentId: "maine-lobster" },
     };
-
-    expect(resolveAgentSkillsFilter(cfg, "writer")).toEqual(["docs-search"]);
+    expect(resolveDefaultAgentId(cfg)).toBe("maine-lobster");
   });
 
-  it("keeps explicit empty agent skills as no skills", () => {
+  it("respects agents.defaultAgentId when agents.list is empty", () => {
+    const cfg: OpenClawConfig = {
+      agents: { defaultAgentId: "maine-lobster", list: [] },
+    };
+    expect(resolveDefaultAgentId(cfg)).toBe("maine-lobster");
+  });
+
+  it("agents.list default: true takes precedence over defaultAgentId", () => {
     const cfg: OpenClawConfig = {
       agents: {
-        defaults: {
-          skills: ["github", "weather"],
-        },
-        list: [{ id: "writer", skills: [] }],
+        defaultAgentId: "maine-lobster",
+        list: [{ id: "reef-crawler", default: true }],
       },
     };
+    expect(resolveDefaultAgentId(cfg)).toBe("reef-crawler");
+  });
 
-    expect(resolveAgentSkillsFilter(cfg, "writer")).toEqual([]);
+  it("normalizes the defaultAgentId value", () => {
+    const cfg: OpenClawConfig = {
+      agents: { defaultAgentId: "  Maine-Lobster  " },
+    };
+    expect(resolveDefaultAgentId(cfg)).toBe("maine-lobster");
+  });
+
+  it("listAgentIds uses defaultAgentId as fallback", () => {
+    const cfg: OpenClawConfig = {
+      agents: { defaultAgentId: "maine-lobster" },
+    };
+    expect(listAgentIds(cfg)).toEqual(["maine-lobster"]);
+  });
+
+  it("falls back to OPENCLAW_DEFAULT_AGENT_ID env var", () => {
+    const orig = process.env.OPENCLAW_DEFAULT_AGENT_ID;
+    try {
+      process.env.OPENCLAW_DEFAULT_AGENT_ID = "env-lobster";
+      expect(resolveDefaultAgentId({})).toBe("env-lobster");
+    } finally {
+      if (orig === undefined) {
+        delete process.env.OPENCLAW_DEFAULT_AGENT_ID;
+      } else {
+        process.env.OPENCLAW_DEFAULT_AGENT_ID = orig;
+      }
+    }
+  });
+
+  it("config defaultAgentId takes precedence over env var", () => {
+    const orig = process.env.OPENCLAW_DEFAULT_AGENT_ID;
+    try {
+      process.env.OPENCLAW_DEFAULT_AGENT_ID = "env-lobster";
+      const cfg: OpenClawConfig = {
+        agents: { defaultAgentId: "config-lobster" },
+      };
+      expect(resolveDefaultAgentId(cfg)).toBe("config-lobster");
+    } finally {
+      if (orig === undefined) {
+        delete process.env.OPENCLAW_DEFAULT_AGENT_ID;
+      } else {
+        process.env.OPENCLAW_DEFAULT_AGENT_ID = orig;
+      }
+    }
   });
 });

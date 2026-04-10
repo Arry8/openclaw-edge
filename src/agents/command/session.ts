@@ -21,7 +21,7 @@ import {
 } from "../../config/sessions.js";
 import { normalizeAgentId, normalizeMainKey } from "../../routing/session-key.js";
 import { resolveSessionIdMatchSelection } from "../../sessions/session-id-resolution.js";
-import { listAgentIds } from "../agent-scope.js";
+import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
 
 export type SessionResolution = {
@@ -149,8 +149,10 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionStore = loadSessionStore(storePath);
 
   const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
+  const defaultAgentId = resolveDefaultAgentId(opts.cfg);
   let sessionKey: string | undefined =
-    explicitSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
+    explicitSessionKey ??
+    (ctx ? resolveSessionKey(scope, ctx, mainKey, defaultAgentId) : undefined);
 
   // If a session id was provided, prefer to re-use its existing entry (by id) even when no key was
   // derived. When duplicates exist across agent stores, pick the same deterministic best match used

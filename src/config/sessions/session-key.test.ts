@@ -66,4 +66,36 @@ describe("resolveSessionKey", () => {
       expect(resolveSessionKey("per-sender", ctx)).toBe("discord:direct:123456");
     });
   });
+
+  describe("custom agentId parameter", () => {
+    it("uses provided agentId for direct chat session keys", () => {
+      const ctx = makeCtx({
+        From: "telegram:123456",
+      });
+      const key = resolveSessionKey("per-sender", ctx, undefined, "maine-lobster");
+      expect(key).toBe("agent:maine-lobster:main");
+    });
+
+    it("uses provided agentId for group session keys", () => {
+      const ctx = makeCtx({
+        From: "telegram:group:-100123",
+        SessionKey: undefined,
+        ChatType: "group",
+        GroupId: "-100123",
+        Channel: "telegram",
+      } as Partial<MsgContext>);
+      // When no explicit SessionKey is set and raw includes `:group:`,
+      // the agent prefix should use the provided agentId.
+      const key = resolveSessionKey("per-sender", ctx, undefined, "maine-lobster");
+      expect(key).toContain("agent:maine-lobster:");
+    });
+
+    it("falls back to 'main' when agentId is not provided", () => {
+      const ctx = makeCtx({
+        From: "telegram:123456",
+      });
+      const key = resolveSessionKey("per-sender", ctx);
+      expect(key).toBe("agent:main:main");
+    });
+  });
 });

@@ -355,13 +355,13 @@ export async function initSessionState(params: {
     }
   }
 
-  // Canonicalize so the written key matches what all read paths produce.
-  // resolveSessionKey uses DEFAULT_AGENT_ID="main"; the configured default
-  // agent may differ, causing key mismatch and orphaned sessions (#29683).
+  // Canonicalize so write-path keys match read-path normalization.
+  // Pass the effective agentId through resolveSessionKey to avoid falling
+  // back to DEFAULT_AGENT_ID="main" when a custom default is configured.
   sessionKey = canonicalizeMainSessionAlias({
     cfg,
     agentId,
-    sessionKey: resolveSessionKey(sessionScope, sessionCtxForState, mainKey),
+    sessionKey: resolveSessionKey(sessionScope, sessionCtxForState, mainKey, agentId),
   });
   const retiredLegacyMainDelivery = maybeRetireLegacyMainDeliveryRoute({
     sessionCfg,

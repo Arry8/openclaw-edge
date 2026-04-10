@@ -82,4 +82,21 @@ describe("resolveOpenClawAgentDir", () => {
       );
     });
   });
+
+  it("honors OPENCLAW_DEFAULT_AGENT_ID when no explicit agent dir override is set", async () => {
+    await withTempStateDir((stateDir) => {
+      withEnv(
+        {
+          OPENCLAW_STATE_DIR: stateDir,
+          OPENCLAW_AGENT_DIR: undefined,
+          PI_CODING_AGENT_DIR: undefined,
+          OPENCLAW_DEFAULT_AGENT_ID: "maine-lobster",
+        },
+        () => {
+          const resolved = resolveOpenClawAgentDir();
+          expect(resolved).toBe(path.join(stateDir, "agents", "maine-lobster", "agent"));
+        },
+      );
+    });
+  });
 });
