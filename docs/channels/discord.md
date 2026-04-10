@@ -797,6 +797,59 @@ Default slash command settings:
     - Discord accepts unicode emoji or custom emoji names.
     - Use `""` to disable the reaction for a channel or account.
 
+    ### Scope configuration
+
+    `messages.ackReactionScope` controls when the ack reaction is sent. Supports the same resolution order as `ackReaction`: `channels.discord.accounts.<id>.ackReactionScope` → `channels.discord.ackReactionScope` → `messages.ackReactionScope`.
+
+    | Value | Behavior |
+    |-------|----------|
+    | `group-mentions` | React only to @mentions in group channels (default) |
+    | `group-all` | React to all messages in group channels |
+    | `direct` | React only in DMs |
+    | `all` | React to all messages everywhere |
+    | `off` / `none` | Disable ack reactions entirely |
+
+    ### Remove after reply
+
+    Set `messages.removeAckAfterReply: true` to automatically remove the ack reaction after the agent sends a reply.
+
+    ### Example configuration
+
+    ```json5
+    {
+      messages: {
+        ackReaction: "👀",
+        ackReactionScope: "group-mentions",
+        removeAckAfterReply: false,
+      },
+      channels: {
+        discord: {
+          // Discord-wide override (overrides messages.ackReaction for all Discord accounts)
+          ackReaction: "🦞",
+        },
+      },
+    }
+    ```
+
+    Per-account override example:
+
+    ```json5
+    {
+      channels: {
+        discord: {
+          accounts: {
+            default: {
+              ackReaction: "👀",
+            },
+            work: {
+              ackReaction: "💼",
+            },
+          },
+        },
+      },
+    }
+    ```
+
   </Accordion>
 
   <Accordion title="Config writes">
