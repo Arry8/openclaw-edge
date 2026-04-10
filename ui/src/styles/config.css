@@ -328,6 +328,10 @@
 }
 
 .config-diff__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
   transition: transform var(--duration-normal) var(--ease-out);
@@ -338,7 +342,7 @@
   height: 100%;
 }
 
-.config-diff[open] .config-diff__chevron {
+.config-diff[open] > .config-diff__summary .config-diff__chevron {
   transform: rotate(180deg);
 }
 
@@ -1345,6 +1349,10 @@
 }
 
 .cfg-object__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   color: var(--muted);
@@ -1356,7 +1364,7 @@
   height: 100%;
 }
 
-.cfg-object[open] .cfg-object__chevron {
+.cfg-object[open] > .cfg-object__header .cfg-object__chevron {
   transform: rotate(180deg);
 }
 
