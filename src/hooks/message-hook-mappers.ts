@@ -49,6 +49,8 @@ export type CanonicalInboundMessageHookContext = {
   channelName?: string;
   isGroup: boolean;
   groupId?: string;
+  replyToId?: string;
+  replyToBody?: string;
 };
 
 export type CanonicalSentMessageHookContext = {
@@ -133,6 +135,8 @@ export function deriveInboundMessageHookContext(
     channelName: ctx.GroupChannel,
     isGroup,
     groupId: isGroup ? conversationId : undefined,
+    replyToId: ctx.ReplyToId,
+    replyToBody: ctx.ReplyToBody,
   };
 }
 
@@ -269,6 +273,8 @@ export function toPluginInboundClaimEvent(
       guildId: canonical.guildId,
       channelName: canonical.channelName,
       groupId: canonical.groupId,
+      replyToId: canonical.replyToId,
+      replyToBody: canonical.replyToBody,
     },
   };
 }
