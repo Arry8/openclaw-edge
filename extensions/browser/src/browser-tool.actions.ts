@@ -26,25 +26,29 @@ const browserToolActionDeps = {
 
 const BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS = 5_000;
 
+type BrowserActRequest = Parameters<typeof browserAct>[1];
+type BrowserActRequestWithTimeout = BrowserActRequest & { timeoutMs?: number };
+
 function normalizePositiveTimeoutMs(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function withConfiguredActTimeout(
-  request: Parameters<typeof browserAct>[1],
-): Parameters<typeof browserAct>[1] {
-  const explicitTimeout = normalizePositiveTimeoutMs((request as { timeoutMs?: unknown }).timeoutMs);
+function withConfiguredActTimeout(request: BrowserActRequest): BrowserActRequest {
+  const typedRequest = request as BrowserActRequestWithTimeout;
+  const explicitTimeout = normalizePositiveTimeoutMs(typedRequest.timeoutMs);
   if (explicitTimeout !== undefined) {
     return request;
   }
   const cfg = browserToolActionDeps.loadConfig();
   const configuredTimeout = normalizePositiveTimeoutMs(cfg.browser?.actionTimeoutMs);
-  return { ...request, timeoutMs: configuredTimeout ?? 20_000 };
+  return { ...typedRequest, timeoutMs: configuredTimeout ?? 20_000 } as BrowserActRequest;
 }
 
-function resolveActProxyTimeoutMs(request: Parameters<typeof browserAct>[1]): number | undefined {
+function resolveActProxyTimeoutMs(request: BrowserActRequest): number | undefined {
   const candidateTimeouts: number[] = [];
-  const explicitTimeout = normalizePositiveTimeoutMs((request as { timeoutMs?: unknown }).timeoutMs);
+  const explicitTimeout = normalizePositiveTimeoutMs(
+    (request as BrowserActRequestWithTimeout).timeoutMs,
+  );
   if (explicitTimeout !== undefined) {
     candidateTimeouts.push(explicitTimeout + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
   }

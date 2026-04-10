@@ -169,6 +169,7 @@ function resetBrowserToolMocks() {
     controlPort: 18791,
     profiles: {},
     defaultProfile: "openclaw",
+    actionTimeoutMs: 20000,
   });
   nodesUtilsMocks.listNodes.mockResolvedValue([]);
   browserToolTesting.setDepsForTest({
@@ -211,6 +212,7 @@ function setResolvedBrowserProfiles(
     controlPort: 18791,
     profiles,
     defaultProfile,
+    actionTimeoutMs: 20000,
   });
 }
 
