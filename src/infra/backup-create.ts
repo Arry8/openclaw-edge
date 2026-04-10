@@ -416,6 +416,9 @@ export async function createBackupArchive(
         gzip: true,
         portable: true,
         preservePaths: true,
+        filter: buildExtensionsNodeModulesFilter(
+          result.assets.find((a) => a.kind === "state")?.sourcePath ?? plan.stateDir,
+        ),
         onWriteEntry: (entry) => {
           entry.path = remapArchiveEntryPath({ entryPath: entry.path, manifestPath, archiveRoot });
         },
@@ -458,4 +461,24 @@ export async function createBackupArchive(
   }
 
   return result;
+}
+
+/**
+ * Build a tar filter that excludes `node_modules` directories inside the
+ * `extensions/` subtree of the given state directory. Extension dependencies
+ * can be reinstalled after restore via `npm install --omit=dev`, so backing
+ * them up only inflates the archive without adding restore value.
+ */
+export function buildExtensionsNodeModulesFilter(stateDir: string): (filePath: string) => boolean {
+  const normalised = stateDir.replaceAll("\\", "/");
+  const extensionsPrefix = `${normalised}/extensions/`;
+  return (filePath: string): boolean => {
+    const fp = filePath.replaceAll("\\", "/");
+    if (!fp.startsWith(extensionsPrefix)) {
+      return true;
+    }
+    const relative = fp.slice(extensionsPrefix.length);
+    const segments = relative.split("/");
+    return !segments.includes("node_modules");
+  };
 }
