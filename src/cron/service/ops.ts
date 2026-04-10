@@ -21,7 +21,7 @@ import {
 } from "./jobs.js";
 import { locked } from "./locked.js";
 import type { CronServiceState } from "./state.js";
-import { ensureLoaded, persist, warnIfDisabled } from "./store.js";
+import { ensureLoaded, persist, warnIfDisabled, watchStore } from "./store.js";
 import {
   applyJobResult,
   armTimer,
@@ -143,6 +143,7 @@ export async function start(state: CronServiceState) {
       await persist(state);
     }
     armTimer(state);
+    state.storeWatcherCleanup = watchStore(state);
     state.deps.log.info(
       {
         enabled: true,
@@ -155,6 +156,8 @@ export async function start(state: CronServiceState) {
 }
 
 export function stop(state: CronServiceState) {
+  state.storeWatcherCleanup?.();
+  state.storeWatcherCleanup = null;
   stopTimer(state);
 }
 
