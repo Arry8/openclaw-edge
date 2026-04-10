@@ -377,10 +377,11 @@ export async function processGatewayAllowlist(
       recordMatchedAllowlistUse(resolvedPath ?? undefined);
 
       let run: Awaited<ReturnType<typeof runExecProcess>> | null = null;
+      const approvedExecCommand = requiresHeredocApproval ? params.command : enforcedCommand;
       try {
         run = await runExecProcess({
           command: params.command,
-          execCommand: enforcedCommand,
+          execCommand: approvedExecCommand,
           workdir: params.workdir,
           env: params.env,
           sandbox: undefined,
