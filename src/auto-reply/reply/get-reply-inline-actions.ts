@@ -99,6 +99,46 @@ function extractTextFromToolResult(result: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+const CLI_ORCHESTRATOR_ACTIVATION_BLOCK = [
+  "This path is only for orchestration_role=self_orchestrator.",
+  "If the user wants the current visible CLI session to enter orchestration mode, you must first activate the current visible CLI session with CLI Bridge before claiming orchestration is enabled.",
+  "Required order:",
+  "1. Discover the current tmux identity from TMUX_PANE.",
+  "2. Call POST /api/conversations/activate-adopted-orchestrator.",
+  "3. Confirm the response includes conversation_id, token, and orchestrator.activation_state=activated.",
+  "4. Only after that may you continue with workflow orchestration.",
+  "If activation fails, do not pretend orchestration mode is active and do not continue dispatching workflow tasks.",
+].join("\n");
+
+const AMBIGUOUS_ORCHESTRATION_PATTERNS = [
+  /^开启编排模式[。！!?\s]*$/u,
+  /^进入编排模式[。！!?\s]*$/u,
+  /^切到编排模式[。！!?\s]*$/u,
+];
+
+function requiresOrchestrationModeClarification(args?: string): boolean {
+  const normalized = args?.trim();
+  if (!normalized) {
+    return false;
+  }
+  return AMBIGUOUS_ORCHESTRATION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+export function buildSkillInvocationPrompt(skillName: string, args?: string): string {
+  const promptParts = [
+    `Use the "${skillName}" skill for this request.`,
+    skillName === "cli-orchestrator" ? CLI_ORCHESTRATOR_ACTIVATION_BLOCK : null,
+    skillName === "cli-orchestrator" && requiresOrchestrationModeClarification(args)
+      ? [
+          "If the user did not explicitly say whether to use supervisor or self_orchestrator, ask one clarification question before choosing a mode.",
+          'Ask whether they want "/orchestrate" (supervisor) or "/orchestrate-self" (self_orchestrator).',
+        ].join("\n")
+      : null,
+    args ? `User input:\n${args}` : null,
+  ].filter((entry): entry is string => Boolean(entry));
+  return promptParts.join("\n\n");
+}
+
 export async function handleInlineActions(params: {
   ctx: MsgContext;
   sessionCtx: TemplateContext;
@@ -266,17 +306,22 @@ export async function handleInlineActions(params: {
       }
     }
 
+<<<<<<< HEAD
     const rewrittenBody = skillInvocation.command.promptTemplate
       ? expandBundleCommandPromptTemplate(
           skillInvocation.command.promptTemplate,
           skillInvocation.args,
         )
-      : [
-          `Use the "${skillInvocation.command.skillName}" skill for this request.`,
-          skillInvocation.args ? `User input:\n${skillInvocation.args}` : null,
-        ]
-          .filter((entry): entry is string => Boolean(entry))
-          .join("\n\n");
+      : buildSkillInvocationPrompt(
+          skillInvocation.command.skillName,
+          skillInvocation.args,
+        );
+=======
+    const rewrittenBody = buildSkillInvocationPrompt(
+      skillInvocation.command.skillName,
+      skillInvocation.args,
+    );
+>>>>>>> 50696a3301 (Split self orchestrator prompt rewrite routing)
     ctx.Body = rewrittenBody;
     ctx.BodyForAgent = rewrittenBody;
     sessionCtx.Body = rewrittenBody;
