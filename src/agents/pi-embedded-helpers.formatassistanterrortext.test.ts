@@ -7,6 +7,7 @@ import {
   getApiErrorPayloadFingerprint,
   formatRawAssistantErrorForUi,
   isRawApiErrorPayload,
+  sanitizeUserFacingText,
 } from "./pi-embedded-helpers.js";
 import { makeAssistantMessageFixture } from "./test-helpers/assistant-message-fixtures.js";
 
@@ -223,6 +224,31 @@ describe("formatAssistantErrorText", () => {
       "LLM request failed: provider returned an invalid streaming response. Please try again.",
     );
   });
+
+  it("sanitizes streaming JSON parse errors from Anthropic SDK (#59076)", () => {
+    const msg = makeAssistantError(
+      "Expected ',' or '}' after property value in JSON at position 334 (line 1 column 335)",
+    );
+    expect(formatAssistantErrorText(msg)).toBe(
+      "LLM streaming response contained a malformed fragment. Please try again.",
+    );
+  });
+
+  it("sanitizes 'Expected double-quoted property name' JSON parse errors (#59076)", () => {
+    const msg = makeAssistantError(
+      "Expected double-quoted property name in JSON at position 8912 (line 219 column 5)",
+    );
+    expect(formatAssistantErrorText(msg)).toBe(
+      "LLM streaming response contained a malformed fragment. Please try again.",
+    );
+  });
+
+  it("sanitizes 'Unexpected token' JSON parse errors (#59076)", () => {
+    const msg = makeAssistantError("Unexpected token < in JSON at position 0");
+    expect(formatAssistantErrorText(msg)).toBe(
+      "LLM streaming response contained a malformed fragment. Please try again.",
+    );
+  });
 });
 
 describe("formatRawAssistantErrorForUi", () => {
@@ -272,5 +298,24 @@ describe("raw API error payload helpers", () => {
     expect(isRawApiErrorPayload(raw)).toBe(true);
     expect(getApiErrorPayloadFingerprint(raw)).toContain("server_error");
     expect(getApiErrorPayloadFingerprint(raw)).toContain("req_123");
+  });
+});
+
+describe("sanitizeUserFacingText — streaming JSON parse error (#59076)", () => {
+  it("rewrites JSON parse error in error context", () => {
+    const result = sanitizeUserFacingText(
+      "Expected ',' or '}' after property value in JSON at position 334 (line 1 column 335)",
+      { errorContext: true },
+    );
+    expect(result).toBe("LLM streaming response contained a malformed fragment. Please try again.");
+  });
+
+  it("does not rewrite JSON parse error when not in error context", () => {
+    // When not in error context, the text could be legitimate assistant content
+    // mentioning JSON errors. Don't rewrite.
+    const text =
+      "Expected ',' or '}' after property value in JSON at position 334 (line 1 column 335)";
+    const result = sanitizeUserFacingText(text, { errorContext: false });
+    expect(result).toBe(text);
   });
 });

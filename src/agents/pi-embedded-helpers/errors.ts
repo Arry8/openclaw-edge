@@ -215,6 +215,25 @@ function isInvalidStreamingEventOrderError(raw: string): boolean {
   );
 }
 
+/**
+ * Detect JSON parse errors leaked from streaming SDKs (e.g. Anthropic SDK SSE
+ * parsing or partial-json tokenizer failures during tool call accumulation).
+ * These are transient streaming artifacts, not actionable user errors.
+ *
+ * Matches patterns like:
+ *   "Expected ',' or '}' after property value in JSON at position 334 (line 1 column 335)"
+ *   "Expected double-quoted property name in JSON at position 8912"
+ *   "Unexpected token < in JSON at position 0"
+ *
+ * See: https://github.com/openclaw/openclaw/issues/59076
+ */
+function isStreamingJsonParseError(raw: string): boolean {
+  if (!raw) {
+    return false;
+  }
+  return /\b(?:expected|unexpected)\b.+\bin json\b.+\bposition\b/i.test(raw);
+}
+
 function hasRateLimitTpmHint(raw: string): boolean {
   const lower = normalizeLowercaseStringOrEmpty(raw);
   return /\btpm\b/i.test(lower) || lower.includes("tokens per minute");
@@ -1008,6 +1027,10 @@ export function formatAssistantErrorText(
     return "LLM request failed: provider returned an invalid streaming response. Please try again.";
   }
 
+  if (isStreamingJsonParseError(raw)) {
+    return "LLM streaming response contained a malformed fragment. Please try again.";
+  }
+
   // Catch role ordering errors - including JSON-wrapped and "400" prefix variants
   if (
     /incorrect role information|roles must alternate|400.*role|"message".*role.*information/i.test(
@@ -1113,6 +1136,10 @@ export function sanitizeUserFacingText(text: unknown, opts?: { errorContext?: bo
 
     if (isInvalidStreamingEventOrderError(trimmed)) {
       return "LLM request failed: provider returned an invalid streaming response. Please try again.";
+    }
+
+    if (isStreamingJsonParseError(trimmed)) {
+      return "LLM streaming response contained a malformed fragment. Please try again.";
     }
 
     if (isRawApiErrorPayload(trimmed) || isLikelyHttpErrorText(trimmed)) {
