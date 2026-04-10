@@ -19,6 +19,9 @@ const GEMINI_RESOURCE_EXHAUSTED_MESSAGE =
   "RESOURCE_EXHAUSTED: Resource has been exhausted (e.g. check quota).";
 // OpenRouter 402 billing example: https://openrouter.ai/docs/api-reference/errors
 const OPENROUTER_CREDITS_MESSAGE = "Payment Required: insufficient credits";
+const OPENROUTER_MODEL_NOT_FOUND_PAYLOAD =
+  '{"error":{"message":"Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni","code":404},"user_id":"user_33GTyP8uDSYYbaeBO48AGHXyuMC"}';
+const GENERIC_JSON_404_PAYLOAD = '{"error":{"message":"Resource missing","code":404}}';
 const TOGETHER_MONTHLY_SPEND_CAP_MESSAGE =
   "The account associated with this API key has reached its maximum allowed monthly spending limit.";
 // Issue-backed Anthropic/OpenAI-compatible insufficient_quota payload under HTTP 400:
@@ -155,6 +158,10 @@ describe("failover-error", () => {
         message: OPENROUTER_CREDITS_MESSAGE,
       }),
     ).toBe("billing");
+    expect(resolveFailoverReasonFromError({ message: OPENROUTER_MODEL_NOT_FOUND_PAYLOAD })).toBe(
+      "model_not_found",
+    );
+    expect(resolveFailoverReasonFromError({ message: GENERIC_JSON_404_PAYLOAD })).toBeNull();
     expect(
       resolveFailoverReasonFromError({
         status: 429,
@@ -520,6 +527,15 @@ describe("failover-error", () => {
     expect(err?.status).toBe(402);
     expect(err?.provider).toBe("anthropic");
     expect(err?.model).toBe("claude-opus-4-6");
+  });
+
+  it("coerces JSON-wrapped OpenRouter 404 model errors into model_not_found", () => {
+    const err = coerceToFailoverError(OPENROUTER_MODEL_NOT_FOUND_PAYLOAD, {
+      provider: "openrouter",
+      model: "openrouter/healer-alpha",
+    });
+    expect(err?.reason).toBe("model_not_found");
+    expect(err?.status).toBe(404);
   });
 
   it("maps overloaded to a 503 fallback status", () => {
