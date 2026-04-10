@@ -162,23 +162,13 @@ export function resolveMaintenanceConfig(): ResolvedSessionMaintenanceConfig {
 export function pruneStaleEntries(
   store: Record<string, SessionEntry>,
   overrideMaxAgeMs?: number,
-  opts: {
-    log?: boolean;
-    /** Session keys to exclude from pruning (e.g. active subagent sessions). */
-    excludeKeys?: ReadonlySet<string>;
-    onPruned?: (params: { key: string; entry: SessionEntry }) => void;
-  } = {},
+  opts: { log?: boolean; onPruned?: (params: { key: string; entry: SessionEntry }) => void } = {},
 ): number {
   const maxAgeMs = overrideMaxAgeMs ?? resolveMaintenanceConfig().pruneAfterMs;
   const cutoffMs = Date.now() - maxAgeMs;
   let pruned = 0;
-  let skippedProtected = 0;
   for (const [key, entry] of Object.entries(store)) {
     if (entry?.updatedAt != null && entry.updatedAt < cutoffMs) {
-      if (opts.excludeKeys?.has(key)) {
-        skippedProtected++;
-        continue;
-      }
       opts.onPruned?.({ key, entry });
       delete store[key];
       pruned++;
@@ -186,9 +176,6 @@ export function pruneStaleEntries(
   }
   if (pruned > 0 && opts.log !== false) {
     log.info("pruned stale session entries", { pruned, maxAgeMs });
-  }
-  if (skippedProtected > 0 && opts.log !== false) {
-    log.info("protected active sessions from pruning", { count: skippedProtected });
   }
   return pruned;
 }
@@ -317,8 +304,6 @@ export function capEntryCount(
   overrideMax?: number,
   opts: {
     log?: boolean;
-    /** Session keys to exclude from capping (e.g. active subagent sessions). */
-    excludeKeys?: ReadonlySet<string>;
     onCapped?: (params: { key: string; entry: SessionEntry }) => void;
   } = {},
 ): number {
@@ -336,27 +321,17 @@ export function capEntryCount(
   });
 
   const toRemove = sorted.slice(maxEntries);
-  let removed = 0;
-  let skippedProtected = 0;
   for (const key of toRemove) {
-    if (opts.excludeKeys?.has(key)) {
-      skippedProtected++;
-      continue;
-    }
     const entry = store[key];
     if (entry) {
       opts.onCapped?.({ key, entry });
     }
     delete store[key];
-    removed++;
   }
-  if (removed > 0 && opts.log !== false) {
-    log.info("capped session entry count", { removed, maxEntries });
+  if (opts.log !== false) {
+    log.info("capped session entry count", { removed: toRemove.length, maxEntries });
   }
-  if (skippedProtected > 0 && opts.log !== false) {
-    log.info("protected active sessions from capping", { count: skippedProtected });
-  }
-  return removed;
+  return toRemove.length;
 }
 
 async function getSessionFileSize(storePath: string): Promise<number | null> {
