@@ -57,7 +57,7 @@ Related:
 
 - [/providers/anthropic](/providers/anthropic)
 - [/reference/token-use](/reference/token-use)
-- [/help/faq#why-am-i-seeing-http-429-ratelimiterror-from-anthropic](/help/faq#why-am-i-seeing-http-429-ratelimiterror-from-anthropic)
+- [/help/faq#why-am-i-seeing-http-429-rate_limit_error-from-anthropic](/help/faq#why-am-i-seeing-http-429-rate_limit_error-from-anthropic)
 
 ## Local OpenAI-compatible backend passes direct probes but agent runs fail
 
