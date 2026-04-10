@@ -58,5 +58,215 @@
     "reason": "src/config/types.models.ts — adds audio/video to schema but ModelInputType not updated (manual)",
     "source": "auto",
     "revertedAt": "2026-04-08T12:55:04.797Z"
+  },
+  {
+    "number": 59989,
+    "reason": "src/agents/pi-embedded-runner/run/attempt.spawn-workspace.test-support.ts (binary-search, attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T23:50:58.989Z"
+  },
+  {
+    "number": 60234,
+    "reason": "src/plugin-sdk/facade-runtime.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-08T23:54:06.424Z"
+  },
+  {
+    "number": 61208,
+    "reason": "src/infra/exec-command-resolution.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T00:01:22.848Z"
+  },
+  {
+    "number": 62474,
+    "reason": "src/cli/send-runtime/channel-outbound-send.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T09:38:09.599Z"
+  },
+  {
+    "number": 63111,
+    "reason": "src/gateway/server-cron.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T09:50:43.784Z"
+  },
+  {
+    "number": 41421,
+    "reason": "src/commands/agents.commands.view-system-prompt.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:34:09.781Z"
+  },
+  {
+    "number": 42967,
+    "reason": "src/agents/tools/tts-tool.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:37:05.389Z"
+  },
+  {
+    "number": 36784,
+    "reason": "extensions/email/src/channel.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:37:05.507Z"
+  },
+  {
+    "number": 43317,
+    "reason": "src/agents/sandbox/types.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:44:43.132Z"
+  },
+  {
+    "number": 47302,
+    "reason": "src/commands/doctor-check-config.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:49:48.746Z"
+  },
+  {
+    "number": 47252,
+    "reason": "extensions/kakao/index.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:49:48.835Z"
+  },
+  {
+    "number": 51032,
+    "reason": "extensions/feishu/src/bot.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T11:54:39.700Z"
+  },
+  {
+    "number": 61961,
+    "reason": "src/gateway/server-methods/tools-catalog.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T12:15:45.384Z"
+  },
+  {
+    "number": 57511,
+    "reason": "extensions/msteams/src/voice/manager.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T12:15:45.501Z"
+  },
+  {
+    "number": 34431,
+    "reason": "src/agents/auto-recall.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:21:29.399Z"
+  },
+  {
+    "number": 39353,
+    "reason": "src/agents/session-transcript-repair.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:31:14.936Z"
+  },
+  {
+    "number": 40201,
+    "reason": "src/cli/update-cli/restart-helper.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:36:46.115Z"
+  },
+  {
+    "number": 41192,
+    "reason": "src/gateway/server-startup-kv-cache.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:49:43.537Z"
+  },
+  {
+    "number": 41858,
+    "reason": "extensions/memory-core/src/memory/manager-sync-ops.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:58:31.159Z"
+  },
+  {
+    "number": 42126,
+    "reason": "extensions/openclaw-workflow/workflow-loader.js (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T13:58:31.266Z"
+  },
+  {
+    "number": 43819,
+    "reason": "src/agents/tools/discord-tool.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T14:10:50.615Z"
+  },
+  {
+    "number": 46083,
+    "reason": "extensions/discord/src/send.shared.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T14:20:21.990Z"
+  },
+  {
+    "number": 45744,
+    "reason": "src/linq/probe.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T14:20:22.086Z"
+  },
+  {
+    "number": 48132,
+    "reason": "extensions/browser/src/browser/pw-session.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T14:35:22.282Z"
+  },
+  {
+    "number": 49357,
+    "reason": "src/agents/usage.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T18:27:26.543Z"
+  },
+  {
+    "number": 49854,
+    "reason": "src/auto-reply/reply/normalize-reply.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-09T18:32:13.390Z"
+  },
+  {
+    "number": 50349,
+    "reason": "src/agents/agent-command.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:02:00.079Z"
+  },
+  {
+    "number": 51261,
+    "reason": "src/agents/pi-embedded-helpers/errors.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:07:00.426Z"
+  },
+  {
+    "number": 51565,
+    "reason": "src/plugin-sdk/channel-feedback.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:11:53.638Z"
+  },
+  {
+    "number": 52287,
+    "reason": "src/agents/pi-embedded-runner/run.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:18:47.598Z"
+  },
+  {
+    "number": 52923,
+    "reason": "src/infra/session-cost-usage.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:23:28.941Z"
+  },
+  {
+    "number": 53360,
+    "reason": "src/infra/friday.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:30:58.267Z"
+  },
+  {
+    "number": 53730,
+    "reason": "src/agents/btw.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:38:41.034Z"
+  },
+  {
+    "number": 53845,
+    "reason": "src/infra/self-healing/plugin-integrity.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:38:41.162Z"
+  },
+  {
+    "number": 53962,
+    "reason": "src/infra/remediation/bootstrap-janitor.ts (auto-skip attempt 1)",
+    "source": "auto",
+    "revertedAt": "2026-04-10T02:42:06.653Z"
   }
 ]
