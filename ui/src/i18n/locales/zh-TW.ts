@@ -549,6 +549,7 @@ export const zh_TW: TranslationMap = {
   },
   login: {
     subtitle: "閘道儀表板",
+    tokenPlaceholder: "OPENCLAW_GATEWAY_TOKEN (可選)",
     passwordPlaceholder: "可選",
   },
   chat: {

@@ -548,6 +548,7 @@ export const zh_CN: TranslationMap = {
   },
   login: {
     subtitle: "网关仪表盘",
+    tokenPlaceholder: "OPENCLAW_GATEWAY_TOKEN (可选)",
     passwordPlaceholder: "可选",
   },
   chat: {
