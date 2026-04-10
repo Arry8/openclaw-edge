@@ -328,10 +328,14 @@ function respondJson(res: ServerResponse, statusCode: number, body: Record<strin
   res.end(JSON.stringify(body));
 }
 
-/** Send a no-content ACK. */
-function respondNoContent(res: ServerResponse) {
-  res.writeHead(204);
-  res.end();
+/** Send a Synology-compatible success ACK. */
+function respondSuccess(res: ServerResponse, includeBody = true) {
+  const body = JSON.stringify({ success: true });
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Content-Length": String(Buffer.byteLength(body)),
+  });
+  res.end(includeBody ? body : undefined);
 }
 
 export interface WebhookHandlerDeps {
@@ -353,7 +357,7 @@ export interface WebhookHandlerDeps {
  * 3. Checks user allowlist
  * 4. Checks rate limit
  * 5. Sanitizes input
- * 6. Immediately ACKs request (204)
+ * 6. Immediately ACKs request (200 + {"success":true})
  * 7. Delivers to the agent asynchronously and sends final reply via incomingUrl
  */
 type SynologyWebhookAuthorization =
@@ -486,7 +490,7 @@ async function parseAndAuthorizeSynologyWebhook(params: {
 
   const cleanText = sanitizeSynologyWebhookText(parsed.payload);
   if (!cleanText) {
-    respondNoContent(params.res);
+    respondSuccess(params.res);
     return { ok: false };
   }
   const preview = cleanText.length > 100 ? `${cleanText.slice(0, 100)}...` : cleanText;
@@ -588,6 +592,10 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
   const invalidTokenRateLimiter = getInvalidTokenRateLimiter(account);
 
   return async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.method === "HEAD") {
+      respondSuccess(res, false);
+      return;
+    }
     // Only accept POST
     if (req.method !== "POST") {
       respondJson(res, 405, { error: "Method not allowed" });
@@ -626,7 +634,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
     );
 
     // ACK immediately so Synology Chat won't remain in "Processing..."
-    respondNoContent(res);
+    respondSuccess(res);
     await processAuthorizedSynologyWebhook({
       account,
       deliver,

@@ -146,10 +146,9 @@ export async function appendStatusAllDiagnosis(params: {
   }
 
   if (params.portUsage) {
-    const benignDualStackLoopback = isDualStackLoopbackGatewayListeners(
-      params.portUsage.listeners,
-      params.port,
-    );
+    const benignDualStackLoopback =
+      params.gatewayReachable &&
+      isDualStackLoopbackGatewayListeners(params.portUsage.listeners, params.port);
     const portOk = params.portUsage.listeners.length === 0 || benignDualStackLoopback;
     emitCheck(`Port ${params.port}`, portOk ? "ok" : "warn");
     if (!portOk) {

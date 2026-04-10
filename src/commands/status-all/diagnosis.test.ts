@@ -67,6 +67,7 @@ describe("status-all diagnosis port checks", () => {
       { pid: 5001, commandLine: "openclaw-gateway", address: "127.0.0.1:18789" },
       { pid: 5001, commandLine: "openclaw-gateway", address: "[::1]:18789" },
     ]);
+    params.gatewayReachable = true;
 
     await appendStatusAllDiagnosis(params);
 
@@ -74,6 +75,19 @@ describe("status-all diagnosis port checks", () => {
     expect(output).toContain("✓ Port 18789");
     expect(output).toContain("Detected dual-stack loopback listeners");
     expect(output).not.toContain("Port 18789 is already in use.");
+  });
+
+  it("keeps warning for same-process dual-stack listeners when the gateway is unreachable", async () => {
+    const params = createBaseParams([
+      { pid: 5001, commandLine: "openclaw-gateway", address: "127.0.0.1:18789" },
+      { pid: 5001, commandLine: "openclaw-gateway", address: "[::1]:18789" },
+    ]);
+
+    await appendStatusAllDiagnosis(params);
+
+    const output = params.lines.join("\n");
+    expect(output).toContain("! Port 18789");
+    expect(output).toContain("Port 18789 is already in use.");
   });
 
   it("keeps warning for multi-process listener conflicts", async () => {
