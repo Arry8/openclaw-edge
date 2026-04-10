@@ -96,7 +96,10 @@ describe("doctor.memory.status", () => {
     const close = vi.fn().mockResolvedValue(undefined);
     getMemorySearchManager.mockResolvedValue({
       manager: {
-        status: () => ({ provider: "gemini" }),
+        status: () => ({
+          provider: "gemini",
+          fts: { enabled: true, available: false, error: "no such module: fts5" },
+        }),
         probeEmbeddingAvailability: vi.fn().mockResolvedValue({ ok: true }),
         close,
       },
@@ -116,6 +119,7 @@ describe("doctor.memory.status", () => {
         agentId: "main",
         provider: "gemini",
         embedding: { ok: true },
+        fts: { enabled: true, available: false, error: "no such module: fts5" },
         dreaming: expect.objectContaining({
           enabled: false,
           shortTermCount: 0,
