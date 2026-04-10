@@ -910,8 +910,9 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
   // Build refspecs: refs/pull/<n>/head:tmp/pr-<n>
   const refspecs = numbers.map((n) => `refs/pull/${n}/head:tmp/pr-${n}`);
 
-  const FETCH_TIMEOUT_MS = 30_000; // 30s — kills stalled connections
-  const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs], { timeoutMs: FETCH_TIMEOUT_MS });
+  const FETCH_BATCH_TIMEOUT_MS = 30_000;   // 30s for the whole batch
+  const FETCH_SINGLE_TIMEOUT_MS = 5_000;   // 5s per ref — avoids hanging on deleted/GC'd refs
+  const r = run("git", ["fetch", "--no-tags", UPSTREAM, ...refspecs], { timeoutMs: FETCH_BATCH_TIMEOUT_MS });
 
   if (r.ok) {
     for (const n of numbers) {
@@ -922,7 +923,7 @@ function fetchBatch(numbers: number[]): Map<number, boolean> {
 
   // Batch failed — try each individually to identify bad refs
   for (const n of numbers) {
-    const single = run("git", ["fetch", "--no-tags", UPSTREAM, `refs/pull/${n}/head:tmp/pr-${n}`], { timeoutMs: FETCH_TIMEOUT_MS });
+    const single = run("git", ["fetch", "--no-tags", UPSTREAM, `refs/pull/${n}/head:tmp/pr-${n}`], { timeoutMs: FETCH_SINGLE_TIMEOUT_MS });
     results.set(n, single.ok);
   }
   return results;
