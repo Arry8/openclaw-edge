@@ -11,14 +11,16 @@ export type BrowserProfileConfig = {
   attachOnly?: boolean;
   /** Profile color (hex). Auto-assigned at creation. */
   color: string;
+  /** Per-profile headless override. Omit to use the global browser.headless setting. */
+  headless?: boolean;
+  /** Per-profile executable path override. Omit to use the global browser.executablePath. */
+  executablePath?: string;
 };
 export type BrowserSnapshotDefaults = {
   /** Default snapshot mode (applies when mode is not provided). */
   mode?: "efficient";
 };
 export type BrowserSsrFPolicyConfig = {
-  /** Legacy alias for private-network access. Prefer dangerouslyAllowPrivateNetwork. */
-  allowPrivateNetwork?: boolean;
   /** If true, permit browser navigation to private/internal networks. Default: true */
   dangerouslyAllowPrivateNetwork?: boolean;
   /**
@@ -42,6 +44,8 @@ export type BrowserConfig = {
   remoteCdpTimeoutMs?: number;
   /** Remote CDP WebSocket handshake timeout (ms). Default: max(remoteCdpTimeoutMs * 2, 2000). */
   remoteCdpHandshakeTimeoutMs?: number;
+  /** Default browser action request timeout (ms) before the client gives up. Default: 20000. */
+  actionTimeoutMs?: number;
   /** Accent color for the openclaw browser profile (hex). Default: #FF4500 */
   color?: string;
   /** Override the browser executable path (all platforms). */

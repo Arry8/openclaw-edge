@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemdUnit } from "./systemd-unit.js";
+import { buildSystemdUnit, parseSystemdEnvAssignment } from "./systemd-unit.js";
 
 describe("buildSystemdUnit", () => {
   it("quotes arguments with whitespace", () => {
@@ -24,6 +24,41 @@ describe("buildSystemdUnit", () => {
     expect(unit).toContain("SuccessExitStatus=0 143");
   });
 
+  it("emits EnvironmentFile= when environmentFile is provided", () => {
+    const unit = buildSystemdUnit({
+      description: "OpenClaw Gateway",
+      programArguments: ["/usr/bin/openclaw", "gateway", "run"],
+      environmentFile: "/home/user/.openclaw/.env",
+    });
+    expect(unit).toContain("EnvironmentFile=/home/user/.openclaw/.env");
+    expect(unit).not.toMatch(/^Environment=/m);
+  });
+
+  it("emits EnvironmentFile= before inline Environment= lines", () => {
+    const unit = buildSystemdUnit({
+      description: "OpenClaw Gateway",
+      programArguments: ["/usr/bin/openclaw", "gateway", "run"],
+      environment: { PATH: "/usr/bin:/bin" },
+      environmentFile: "/home/user/.openclaw/.env",
+    });
+    const lines = unit.split("\n");
+    const envFileIdx = lines.findIndex((l) => l.startsWith("EnvironmentFile="));
+    const envIdx = lines.findIndex((l) => l.startsWith("Environment="));
+    expect(envFileIdx).toBeGreaterThan(-1);
+    expect(envIdx).toBeGreaterThan(-1);
+    expect(envFileIdx).toBeLessThan(envIdx);
+  });
+
+  it("rejects environmentFile paths with line breaks", () => {
+    expect(() =>
+      buildSystemdUnit({
+        description: "OpenClaw Gateway",
+        programArguments: ["/usr/bin/openclaw", "gateway", "run"],
+        environmentFile: "/home/user/.openclaw/.env\nExecStartPre=/bin/touch /tmp/rce",
+      }),
+    ).toThrow(/CR or LF/);
+  });
+
   it("rejects environment values with line breaks", () => {
     expect(() =>
       buildSystemdUnit({
@@ -34,5 +69,26 @@ describe("buildSystemdUnit", () => {
         },
       }),
     ).toThrow(/CR or LF/);
+  });
+});
+
+describe("parseSystemdEnvAssignment", () => {
+  it("unquotes simple assignment", () => {
+    expect(parseSystemdEnvAssignment('"FOO=bar"')).toEqual({ key: "FOO", value: "bar" });
+  });
+
+  it("handles backslash-escaped quotes in values", () => {
+    expect(parseSystemdEnvAssignment('"FOO=bar\\"baz"')).toEqual({ key: "FOO", value: 'bar"baz' });
+  });
+
+  it("handles backslash-escaped backslashes in values", () => {
+    expect(parseSystemdEnvAssignment('"FOO=bar\\\\baz"')).toEqual({
+      key: "FOO",
+      value: "bar\\baz",
+    });
+  });
+
+  it("returns null for empty input", () => {
+    expect(parseSystemdEnvAssignment("")).toBeNull();
   });
 });

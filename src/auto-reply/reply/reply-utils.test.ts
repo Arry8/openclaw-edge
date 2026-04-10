@@ -4,11 +4,13 @@ import { parseAudioTag } from "./audio-tags.js";
 import { createBlockReplyCoalescer } from "./block-reply-coalescer.js";
 import { matchesMentionWithExplicit } from "./mentions.js";
 import { normalizeReplyPayload } from "./normalize-reply.js";
-import { createReplyReferencePlanner } from "./reply-reference.js";
+import { createReplyReferencePlanner, isSingleUseReplyToMode } from "./reply-reference.js";
 import {
   extractShortModelName,
   hasTemplateVariables,
+  resolveModelEmoji,
   resolveResponsePrefixTemplate,
+  resolveThinkEmoji,
 } from "./response-prefix-template.js";
 import { createStreamingDirectiveAccumulator } from "./streaming-directives.js";
 import { createMockTypingController } from "./test-helpers.js";
@@ -189,106 +191,45 @@ describe("normalizeReplyPayload", () => {
     expect(result!.interactive).toBeUndefined();
   });
 
-  it("applies responsePrefix before compiling Slack directives into shared interactive blocks", () => {
+  it("applies responsePrefix before channel-owned transforms run", () => {
     const result = normalizeReplyPayload(
       {
         text: "hello [[slack_buttons: Retry:retry, Ignore:ignore]]",
       },
-      { responsePrefix: "[bot]", enableSlackInteractiveReplies: true },
+      { responsePrefix: "[bot]" },
     );
 
     expect(result).not.toBeNull();
-    expect(result!.text).toBe("[bot] hello");
-    expect(result!.interactive).toEqual({
-      blocks: [
-        {
-          type: "text",
-          text: "[bot] hello",
-        },
-        {
-          type: "buttons",
-          buttons: [
-            {
-              label: "Retry",
-              value: "retry",
-            },
-            {
-              label: "Ignore",
-              value: "ignore",
-            },
-          ],
-        },
-      ],
-    });
+    expect(result!.text).toBe("[bot] hello [[slack_buttons: Retry:retry, Ignore:ignore]]");
+    expect(result!.interactive).toBeUndefined();
   });
 
-  it("compiles simple trailing Options lines into Slack buttons when interactive replies are enabled", () => {
-    const result = normalizeReplyPayload(
-      {
-        text: "Current verbose level: off.\nOptions: on, full, off.",
-      },
-      { enableSlackInteractiveReplies: true },
-    );
+  it("leaves trailing Options lines for channel-owned transforms", () => {
+    const result = normalizeReplyPayload({
+      text: "Current verbose level: off.\nOptions: on, full, off.",
+    });
 
     expect(result).not.toBeNull();
-    expect(result!.text).toBe("Current verbose level: off.");
-    expect(result!.interactive).toEqual({
-      blocks: [
-        {
-          type: "text",
-          text: "Current verbose level: off.",
-        },
-        {
-          type: "buttons",
-          buttons: [
-            { label: "on", value: "on" },
-            { label: "full", value: "full" },
-            { label: "off", value: "off" },
-          ],
-        },
-      ],
-    });
+    expect(result!.text).toBe("Current verbose level: off.\nOptions: on, full, off.");
+    expect(result!.interactive).toBeUndefined();
   });
 
-  it("uses a Slack select when simple Options lines exceed the button row size", () => {
-    const result = normalizeReplyPayload(
-      {
-        text: "Choose a reasoning level.\nOptions: off, minimal, low, medium, high, adaptive.",
-      },
-      { enableSlackInteractiveReplies: true },
-    );
+  it("leaves larger Options lists for channel-owned transforms", () => {
+    const result = normalizeReplyPayload({
+      text: "Choose a reasoning level.\nOptions: off, minimal, low, medium, high, adaptive.",
+    });
 
     expect(result).not.toBeNull();
-    expect(result!.text).toBe("Choose a reasoning level.");
-    expect(result!.interactive).toEqual({
-      blocks: [
-        {
-          type: "text",
-          text: "Choose a reasoning level.",
-        },
-        {
-          type: "select",
-          placeholder: "Choose an option",
-          options: [
-            { label: "off", value: "off" },
-            { label: "minimal", value: "minimal" },
-            { label: "low", value: "low" },
-            { label: "medium", value: "medium" },
-            { label: "high", value: "high" },
-            { label: "adaptive", value: "adaptive" },
-          ],
-        },
-      ],
-    });
+    expect(result!.text).toBe(
+      "Choose a reasoning level.\nOptions: off, minimal, low, medium, high, adaptive.",
+    );
+    expect(result!.interactive).toBeUndefined();
   });
 
   it("leaves complex Options lines as plain text", () => {
-    const result = normalizeReplyPayload(
-      {
-        text: "ACP runtime choices.\nOptions: host=auto|sandbox|gateway|node, security=deny|allowlist|full.",
-      },
-      { enableSlackInteractiveReplies: true },
-    );
+    const result = normalizeReplyPayload({
+      text: "ACP runtime choices.\nOptions: host=auto|sandbox|gateway|node, security=deny|allowlist|full.",
+    });
 
     expect(result).not.toBeNull();
     expect(result!.text).toBe(
@@ -522,14 +463,14 @@ describe("resolveResponsePrefixTemplate", () => {
       {
         name: "model",
         template: "[{model}]",
-        values: { model: "gpt-5.2" },
-        expected: "[gpt-5.2]",
+        values: { model: "gpt-5.4" },
+        expected: "[gpt-5.4]",
       },
       {
         name: "modelFull",
         template: "[{modelFull}]",
-        values: { modelFull: "openai-codex/gpt-5.2" },
-        expected: "[openai-codex/gpt-5.2]",
+        values: { modelFull: "openai-codex/gpt-5.4" },
+        expected: "[openai-codex/gpt-5.4]",
       },
       {
         name: "provider",
@@ -564,8 +505,8 @@ describe("resolveResponsePrefixTemplate", () => {
       {
         name: "case-insensitive variables",
         template: "[{MODEL} | {ThinkingLevel}]",
-        values: { model: "gpt-5.2", thinkingLevel: "low" },
-        expected: "[gpt-5.2 | low]",
+        values: { model: "gpt-5.4", thinkingLevel: "low" },
+        expected: "[gpt-5.4 | low]",
       },
       {
         name: "all variables",
@@ -573,10 +514,10 @@ describe("resolveResponsePrefixTemplate", () => {
         values: {
           identityName: "OpenClaw",
           provider: "anthropic",
-          model: "claude-opus-4-5",
+          model: "claude-opus-4-6",
           thinkingLevel: "high",
         },
-        expected: "[OpenClaw] anthropic/claude-opus-4-5 (think:high)",
+        expected: "[OpenClaw] anthropic/claude-opus-4-6 (think:high)",
       },
     ] as const;
     expectResolvedTemplateCases(cases);
@@ -595,14 +536,14 @@ describe("resolveResponsePrefixTemplate", () => {
       {
         name: "unrecognized variable",
         template: "[{unknownVar}]",
-        values: { model: "gpt-5.2" },
+        values: { model: "gpt-5.4" },
         expected: "[{unknownVar}]",
       },
       {
         name: "mixed resolved/unresolved",
         template: "[{model} | {provider}]",
-        values: { model: "gpt-5.2" },
-        expected: "[gpt-5.2 | {provider}]",
+        values: { model: "gpt-5.4" },
+        expected: "[gpt-5.4 | {provider}]",
       },
     ] as const;
     expectResolvedTemplateCases(cases);
@@ -825,6 +766,50 @@ describe("block reply coalescer", () => {
     coalescer.stop();
   });
 
+  it("does not coalesce reasoning blocks into visible reply text", async () => {
+    const flushes: Array<{ text?: string; isReasoning?: boolean }> = [];
+    const coalescer = createBlockReplyCoalescer({
+      config: { minChars: 1, maxChars: 200, idleMs: 0, joiner: "\n\n" },
+      shouldAbort: () => false,
+      onFlush: (payload) => {
+        flushes.push({
+          text: payload.text,
+          isReasoning: payload.isReasoning,
+        });
+      },
+    });
+
+    coalescer.enqueue({ text: "Reasoning:\n_hidden_", isReasoning: true });
+    coalescer.enqueue({ text: "Visible answer" });
+    await coalescer.flush({ force: true });
+
+    expect(flushes).toEqual([
+      { text: "Reasoning:\n_hidden_", isReasoning: true },
+      { text: "Visible answer", isReasoning: undefined },
+    ]);
+    coalescer.stop();
+  });
+
+  it("preserves compaction notice markers across flushes", async () => {
+    const flushes: Array<{ text?: string; isCompactionNotice?: boolean }> = [];
+    const coalescer = createBlockReplyCoalescer({
+      config: { minChars: 1, maxChars: 200, idleMs: 0, joiner: "\n\n" },
+      shouldAbort: () => false,
+      onFlush: (payload) => {
+        flushes.push({
+          text: payload.text,
+          isCompactionNotice: payload.isCompactionNotice,
+        });
+      },
+    });
+
+    coalescer.enqueue({ text: "Compacting context...", isCompactionNotice: true });
+    await coalescer.flush({ force: true });
+
+    expect(flushes).toEqual([{ text: "Compacting context...", isCompactionNotice: true }]);
+    coalescer.stop();
+  });
+
   it("flushes immediately per enqueue when flushOnEnqueue is set", async () => {
     const cases = [
       {
@@ -905,6 +890,13 @@ describe("createReplyReferencePlanner", () => {
     });
     expect(existingIdPlanner.use()).toBe("thread-1");
     expect(existingIdPlanner.use()).toBeUndefined();
+
+    const batchedPlanner = createReplyReferencePlanner({
+      replyToMode: "batched",
+      startId: "parent",
+    });
+    expect(batchedPlanner.use()).toBe("parent");
+    expect(batchedPlanner.use()).toBeUndefined();
   });
 
   it("honors allowReference=false", () => {
@@ -917,6 +909,15 @@ describe("createReplyReferencePlanner", () => {
     expect(planner.hasReplied()).toBe(false);
     planner.markSent();
     expect(planner.hasReplied()).toBe(true);
+  });
+});
+
+describe("isSingleUseReplyToMode", () => {
+  it("treats first and batched as single-use reply modes", () => {
+    expect(isSingleUseReplyToMode("off")).toBe(false);
+    expect(isSingleUseReplyToMode("all")).toBe(false);
+    expect(isSingleUseReplyToMode("first")).toBe(true);
+    expect(isSingleUseReplyToMode("batched")).toBe(true);
   });
 });
 
@@ -974,9 +975,9 @@ describe("createStreamingDirectiveAccumulator", () => {
 describe("extractShortModelName", () => {
   it("normalizes provider/date/latest suffixes while preserving other IDs", () => {
     const cases = [
-      ["openai-codex/gpt-5.2-codex", "gpt-5.2-codex"],
-      ["claude-opus-4-5-20251101", "claude-opus-4-5"],
-      ["gpt-5.2-latest", "gpt-5.2"],
+      ["openai-codex/gpt-5.4", "gpt-5.4"],
+      ["claude-opus-4-6-20251101", "claude-opus-4-6"],
+      ["gpt-5.4-latest", "gpt-5.4"],
       // Date suffix must be exactly 8 digits at the end.
       ["model-123456789", "model-123456789"],
     ] as const;
@@ -992,5 +993,93 @@ describe("hasTemplateVariables", () => {
     expect(hasTemplateVariables("[{model}]")).toBe(true);
     expect(hasTemplateVariables("[{model}]")).toBe(true);
     expect(hasTemplateVariables("[Claude]")).toBe(false);
+  });
+});
+
+describe("resolveModelEmoji", () => {
+  const map = {
+    "claude-opus-4-6": "🧠",
+    "claude-sonnet-4-5": "🎵",
+    "gpt-5.3-codex": "🤖",
+    "kimi-k2.5": "🌙",
+    anthropic: "🦞",
+  };
+
+  it("matches exact short model name", () => {
+    expect(resolveModelEmoji(map, "claude-opus-4-6")).toBe("🧠");
+    expect(resolveModelEmoji(map, "gpt-5.3-codex")).toBe("🤖");
+  });
+
+  it("matches case-insensitively", () => {
+    expect(resolveModelEmoji(map, "Claude-Opus-4-6")).toBe("🧠");
+  });
+
+  it("matches provider name as fallback", () => {
+    expect(resolveModelEmoji(map, "claude-haiku-4-5", undefined, "anthropic")).toBe("🦞");
+  });
+
+  it("matches full model ID", () => {
+    const fullMap = { "anthropic/claude-opus-4-6": "🧬" };
+    expect(resolveModelEmoji(fullMap, "other", "anthropic/claude-opus-4-6")).toBe("🧬");
+  });
+
+  it("matches substring in model name", () => {
+    const subMap = { opus: "🧠" };
+    expect(resolveModelEmoji(subMap, "claude-opus-4-6")).toBe("🧠");
+  });
+
+  it("returns empty string for no match", () => {
+    expect(resolveModelEmoji(map, "unknown-model")).toBe("");
+  });
+
+  it("returns empty string for undefined/empty map", () => {
+    expect(resolveModelEmoji(undefined, "claude-opus-4-6")).toBe("");
+    expect(resolveModelEmoji({}, "claude-opus-4-6")).toBe("");
+  });
+});
+
+describe("resolveThinkEmoji", () => {
+  it("returns active emoji for high/low thinking", () => {
+    expect(resolveThinkEmoji(["💭", ""], "high")).toBe("💭");
+    expect(resolveThinkEmoji(["💭", ""], "low")).toBe("💭");
+  });
+
+  it("returns inactive emoji for off thinking", () => {
+    expect(resolveThinkEmoji(["💭", "💤"], "off")).toBe("💤");
+  });
+
+  it("returns inactive emoji for undefined thinking level", () => {
+    expect(resolveThinkEmoji(["💭", ""], undefined)).toBe("");
+  });
+
+  it("returns empty string for undefined/invalid pair", () => {
+    expect(resolveThinkEmoji(undefined, "high")).toBe("");
+  });
+});
+
+describe("resolveResponsePrefixTemplate with emoji variables", () => {
+  it("resolves {modelEmoji} and {thinkEmoji} from context", () => {
+    const result = resolveResponsePrefixTemplate("{modelEmoji}{thinkEmoji}", {
+      model: "claude-opus-4-6",
+      modelEmoji: "🧠",
+      thinkEmoji: "💭",
+    });
+    expect(result).toBe("🧠💭");
+  });
+
+  it("resolves {modelEmoji} to empty string when not set", () => {
+    const result = resolveResponsePrefixTemplate("{modelEmoji} hello", {
+      model: "claude-opus-4-6",
+    });
+    expect(result).toBe(" hello");
+  });
+
+  it("resolves mixed emoji and text variables", () => {
+    const result = resolveResponsePrefixTemplate("{modelEmoji} [{model}]{thinkEmoji}", {
+      model: "claude-opus-4-6",
+      modelEmoji: "🧠",
+      thinkEmoji: "💭",
+    });
+    expect(result).toBe("🧠 [claude-opus-4-6]💭");
   });
 });

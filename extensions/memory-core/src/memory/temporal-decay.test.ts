@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { createMemoryCoreTestHarness } from "../test-helpers.js";
 import { mergeHybridResults } from "./hybrid.js";
 import {
   applyTemporalDecayToHybridResults,
@@ -11,14 +11,7 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.UTC(2026, 1, 10, 0, 0, 0);
-
-const tempDirs: string[] = [];
-
-async function makeTempDir(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-temporal-decay-"));
-  tempDirs.push(dir);
-  return dir;
-}
+const { createTempWorkspace } = createMemoryCoreTestHarness();
 
 function createVectorMemoryEntry(params: {
   id: string;
@@ -51,14 +44,6 @@ async function mergeVectorResultsWithTemporalDecay(
   });
 }
 
-afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map(async (dir) => {
-      await fs.rm(dir, { recursive: true, force: true });
-    }),
-  );
-});
-
 describe("temporal decay", () => {
   it("matches exponential decay formula", () => {
     const halfLifeDays = 30;
@@ -79,7 +64,7 @@ describe("temporal decay", () => {
   });
 
   it("does not decay evergreen memory files", async () => {
-    const dir = await makeTempDir();
+    const dir = await createTempWorkspace("openclaw-temporal-decay-");
 
     const rootMemoryPath = path.join(dir, "MEMORY.md");
     const topicPath = path.join(dir, "memory", "projects.md");
@@ -125,6 +110,71 @@ describe("temporal decay", () => {
     expect(merged[0]?.score ?? 0).toBeGreaterThan(merged[1]?.score ?? 0);
   });
 
+  it("extracts date from memory path with topic suffix", async () => {
+    const decayed = await applyTemporalDecayToHybridResults({
+      results: [{ path: "memory/2026-02-10-niki-blog.md", score: 1, source: "memory" }],
+      temporalDecay: { enabled: true, halfLifeDays: 30 },
+      nowMs: NOW_MS,
+    });
+
+    // Date matches today (NOW_MS), so no decay
+    expect(decayed[0]?.score).toBeCloseTo(1);
+  });
+
+  it("extracts date from memory subdirectory path", async () => {
+    const decayed = await applyTemporalDecayToHybridResults({
+      results: [{ path: "memory/archive/2025-01-11.md", score: 1, source: "memory" }],
+      temporalDecay: { enabled: true, halfLifeDays: 30 },
+      nowMs: NOW_MS,
+    });
+
+    // ~395 days old, heavy decay
+    expect(decayed[0]?.score ?? 1).toBeLessThan(0.01);
+  });
+
+  it("extracts date from memory subdirectory path with suffix", async () => {
+    const decayed = await applyTemporalDecayToHybridResults({
+      results: [{ path: "memory/reference/2026-02-10-detail.md", score: 1, source: "memory" }],
+      temporalDecay: { enabled: true, halfLifeDays: 30 },
+      nowMs: NOW_MS,
+    });
+
+    // Date matches today (NOW_MS), so no decay
+    expect(decayed[0]?.score).toBeCloseTo(1);
+  });
+
+  it("extracts date when not at start of basename", async () => {
+    const decayed = await applyTemporalDecayToHybridResults({
+      results: [
+        { path: "memory/archive/morning-summary-2026-02-10.md", score: 1, source: "memory" },
+      ],
+      temporalDecay: { enabled: true, halfLifeDays: 30 },
+      nowMs: NOW_MS,
+    });
+
+    // Date matches today (NOW_MS), so no decay
+    expect(decayed[0]?.score).toBeCloseTo(1);
+  });
+
+  it("treats dated files in subdirectories as temporal, not evergreen", async () => {
+    const dir = await makeTempDir();
+
+    // Create a dated file in a memory subdirectory
+    const datedSubPath = path.join(dir, "memory", "archive", "2010-01-01.md");
+    await fs.mkdir(path.dirname(datedSubPath), { recursive: true });
+    await fs.writeFile(datedSubPath, "old dated");
+
+    const decayed = await applyTemporalDecayToHybridResults({
+      results: [{ path: "memory/archive/2010-01-01.md", score: 1, source: "memory" }],
+      workspaceDir: dir,
+      temporalDecay: { enabled: true, halfLifeDays: 30 },
+      nowMs: NOW_MS,
+    });
+
+    // Very old date means heavy decay — file must NOT be treated as evergreen
+    expect(decayed[0]?.score ?? 1).toBeLessThan(0.001);
+  });
+
   it("handles future dates, zero age, and very old memories", async () => {
     const merged = await mergeVectorResultsWithTemporalDecay([
       createVectorMemoryEntry({
@@ -154,7 +204,7 @@ describe("temporal decay", () => {
   });
 
   it("uses file mtime fallback for non-memory sources", async () => {
-    const dir = await makeTempDir();
+    const dir = await createTempWorkspace("openclaw-temporal-decay-");
     const sessionPath = path.join(dir, "sessions", "thread.jsonl");
     await fs.mkdir(path.dirname(sessionPath), { recursive: true });
     await fs.writeFile(sessionPath, "{}\n");

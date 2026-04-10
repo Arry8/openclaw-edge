@@ -103,6 +103,12 @@ export type CronServiceDeps = {
     } & CronRunOutcome &
       CronRunTelemetry
   >;
+  /**
+   * Returns the timestamp (ms since epoch) of the last inbound user message
+   * on the main session, or `undefined` if unknown.  Used by `skipWhenIdle`
+   * to decide whether the session has been idle too long.
+   */
+  getLastInboundAtMs?: () => number | undefined;
   sendCronFailureAlert?: (params: {
     job: CronJob;
     text: string;
@@ -127,6 +133,7 @@ export type CronServiceState = {
   warnedDisabled: boolean;
   storeLoadedAtMs: number | null;
   storeFileMtimeMs: number | null;
+  storeWatcherCleanup: (() => void) | null;
 };
 
 export function createCronServiceState(deps: CronServiceDeps): CronServiceState {
@@ -139,6 +146,7 @@ export function createCronServiceState(deps: CronServiceDeps): CronServiceState 
     warnedDisabled: false,
     storeLoadedAtMs: null,
     storeFileMtimeMs: null,
+    storeWatcherCleanup: null,
   };
 }
 

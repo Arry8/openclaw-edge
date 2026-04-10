@@ -1,4 +1,3 @@
-import type { Skill } from "@mariozechner/pi-coding-agent";
 import { validateRegistryNpmSpec } from "../../infra/npm-registry-spec.js";
 import { parseFrontmatterBlock } from "../../markdown/frontmatter.js";
 import {
@@ -12,6 +11,8 @@ import {
   resolveOpenClawManifestOs,
   resolveOpenClawManifestRequires,
 } from "../../shared/frontmatter.js";
+import { readStringValue } from "../../shared/string-coerce.js";
+import type { Skill } from "./skill-contract.js";
 import type {
   OpenClawSkillMetadata,
   ParsedSkillFrontmatter,
@@ -152,7 +153,14 @@ function parseInstallSpec(input: unknown): SkillInstallSpec | undefined {
     spec.url = downloadUrl;
   }
   if (typeof raw.archive === "string") {
-    spec.archive = raw.archive;
+    // R7: allowlist stricte des formats d'archive autorisés — toute valeur hors liste est ignorée
+    // silencieusement pour éviter l'injection de flags tar (ex. --use-compress-program=cmd)
+    // ou de flags à un seul tiret (ex. -I cmd).
+    const archiveVal = raw.archive.trim();
+    const ALLOWED_ARCHIVE_VALUES = ["zip", "tar.gz", "tar.bz2"];
+    if (!archiveVal.startsWith("-") && ALLOWED_ARCHIVE_VALUES.includes(archiveVal)) {
+      spec.archive = archiveVal;
+    }
   }
   if (typeof raw.extract === "boolean") {
     spec.extract = raw.extract;
@@ -195,10 +203,10 @@ export function resolveOpenClawMetadata(
   const osRaw = resolveOpenClawManifestOs(metadataObj);
   return {
     always: typeof metadataObj.always === "boolean" ? metadataObj.always : undefined,
-    emoji: typeof metadataObj.emoji === "string" ? metadataObj.emoji : undefined,
-    homepage: typeof metadataObj.homepage === "string" ? metadataObj.homepage : undefined,
-    skillKey: typeof metadataObj.skillKey === "string" ? metadataObj.skillKey : undefined,
-    primaryEnv: typeof metadataObj.primaryEnv === "string" ? metadataObj.primaryEnv : undefined,
+    emoji: readStringValue(metadataObj.emoji),
+    homepage: readStringValue(metadataObj.homepage),
+    skillKey: readStringValue(metadataObj.skillKey),
+    primaryEnv: readStringValue(metadataObj.primaryEnv),
     os: osRaw.length > 0 ? osRaw : undefined,
     requires: requires,
     install: install.length > 0 ? install : undefined,

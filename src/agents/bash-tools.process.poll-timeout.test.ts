@@ -31,11 +31,12 @@ async function pollSession(
   sessionId: string,
   timeout?: number | string,
 ) {
-  return processTool.execute(callId, {
+  const args = {
     action: "poll",
     sessionId,
     ...(timeout === undefined ? {} : { timeout }),
-  });
+  } as unknown as Parameters<ReturnType<typeof createProcessTool>["execute"]>[1];
+  return processTool.execute(callId, args);
 }
 
 function retryMs(result: Awaited<ReturnType<ReturnType<typeof createProcessTool>["execute"]>>) {
@@ -137,4 +138,27 @@ test("process poll resets retryInMs when output appears and clears on completion
   const pollFinished = await pollSession(processTool, "toolcall-finished", sessionId);
   expect(pollStatus(pollFinished)).toBe("completed");
   expect(retryMs(pollFinished)).toBeUndefined();
+});
+
+test("process log includes late output that arrives after exit", async () => {
+  const sessionId = "sess-late-log";
+  const { processTool, session } = createProcessSessionHarness(sessionId);
+
+  appendOutput(session, "stdout", "before\n");
+  markExited(session, 0, null, "completed");
+  appendOutput(session, "stdout", "after\n");
+
+  const log = await processTool.execute("toolcall-log", {
+    action: "log",
+    sessionId,
+  });
+
+  const firstContent = log.content[0];
+  expect(firstContent?.type).toBe("text");
+  if (firstContent?.type !== "text") {
+    throw new Error("expected text content");
+  }
+  expect(firstContent.text).toContain("before");
+  expect(firstContent.text).toContain("after");
+  expect((log.details as { status?: string }).status).toBe("completed");
 });

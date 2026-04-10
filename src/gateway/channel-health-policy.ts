@@ -11,6 +11,7 @@ export type ChannelHealthSnapshot = {
   lastRunActivityAt?: number | null;
   lastEventAt?: number | null;
   lastStartAt?: number | null;
+  lastConnectedAt?: number | null;
   reconnectAttempts?: number;
   mode?: string;
 };
@@ -35,6 +36,7 @@ export type ChannelHealthPolicy = {
   now: number;
   staleEventThresholdMs: number;
   channelConnectGraceMs: number;
+  skipStaleSocketCheck?: boolean;
 };
 
 export type ChannelRestartReason =
@@ -53,6 +55,27 @@ const BUSY_ACTIVITY_STALE_THRESHOLD_MS = 25 * 60_000;
 // probes so both surfaces evaluate channel lifecycle windows consistently.
 export const DEFAULT_CHANNEL_STALE_EVENT_THRESHOLD_MS = 30 * 60_000;
 export const DEFAULT_CHANNEL_CONNECT_GRACE_MS = 120_000;
+
+function hasFreshCurrentLifecycleEvent(
+  snapshot: ChannelHealthSnapshot,
+  policy: ChannelHealthPolicy,
+  lastStartAt: number | null,
+): boolean {
+  if (
+    policy.channelId === "telegram" ||
+    snapshot.mode === "webhook" ||
+    snapshot.connected !== true ||
+    typeof snapshot.lastEventAt !== "number" ||
+    !Number.isFinite(snapshot.lastEventAt)
+  ) {
+    return false;
+  }
+  if (lastStartAt != null && snapshot.lastEventAt < lastStartAt) {
+    return false;
+  }
+  const eventAge = policy.now - snapshot.lastEventAt;
+  return eventAge >= 0 && eventAge <= policy.staleEventThresholdMs;
+}
 
 export function evaluateChannelHealth(
   snapshot: ChannelHealthSnapshot,
@@ -94,24 +117,46 @@ export function evaluateChannelHealth(
       if (runActivityAge < BUSY_ACTIVITY_STALE_THRESHOLD_MS) {
         return { healthy: true, reason: "busy" };
       }
+      if (hasFreshCurrentLifecycleEvent(snapshot, policy, lastStartAt)) {
+        return { healthy: true, reason: "healthy" };
+      }
       return { healthy: false, reason: "stuck" };
     }
   }
-  if (snapshot.lastStartAt != null) {
-    const upDuration = policy.now - snapshot.lastStartAt;
+  const hasConnectedField = Object.prototype.hasOwnProperty.call(snapshot, "connected");
+  const lastConnectedAt =
+    typeof snapshot.lastConnectedAt === "number" && Number.isFinite(snapshot.lastConnectedAt)
+      ? snapshot.lastConnectedAt
+      : null;
+
+  if (lastStartAt != null) {
+    const upDuration = policy.now - lastStartAt;
     if (upDuration < policy.channelConnectGraceMs) {
       return { healthy: true, reason: "startup-connect-grace" };
+    }
+
+    // Some channels explicitly track `connected`, but during startup we can see
+    // patch-merged snapshots where `running=true` is set for a new lifecycle
+    // while `connected` (or related timestamps) are stale/undefined. Treat
+    // this as unhealthy once we are past the startup grace window.
+    if (hasConnectedField) {
+      if (snapshot.connected !== true) {
+        return { healthy: false, reason: "disconnected" };
+      }
+      if (lastConnectedAt != null && lastConnectedAt < lastStartAt) {
+        return { healthy: false, reason: "disconnected" };
+      }
     }
   }
   if (snapshot.connected === false) {
     return { healthy: false, reason: "disconnected" };
   }
-  // Skip stale-socket check for Telegram (long-polling mode) and any channel
-  // explicitly operating in webhook mode. In these cases, there is no persistent
-  // outgoing socket that can go half-dead, so the lack of incoming events
-  // does not necessarily indicate a connection failure.
+  // Skip stale-socket checks for channels that declare this health policy and
+  // any channel explicitly operating in webhook mode. In these cases, there is
+  // no persistent outgoing socket that can go half-dead, so the lack of
+  // incoming events does not necessarily indicate a connection failure.
   if (
-    policy.channelId !== "telegram" &&
+    policy.skipStaleSocketCheck !== true &&
     snapshot.mode !== "webhook" &&
     snapshot.connected === true &&
     snapshot.lastEventAt != null

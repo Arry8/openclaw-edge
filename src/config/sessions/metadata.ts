@@ -2,9 +2,15 @@ import type { MsgContext } from "../../auto-reply/templating.js";
 import { normalizeChatType } from "../../channels/chat-type.js";
 import { resolveConversationLabel } from "../../channels/conversation-label.js";
 import { getChannelPlugin, normalizeChannelId } from "../../channels/plugins/index.js";
+import {
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { buildGroupDisplayName, resolveGroupSessionKey } from "./group.js";
 import type { GroupKeyResolution, SessionEntry, SessionOrigin } from "./types.js";
+
+const STABLE_SESSION_ORIGIN_SYSTEM_PROVIDERS = new Set(["heartbeat", "cron-event", "exec-event"]);
 
 const mergeOrigin = (
   existing: SessionOrigin | undefined,
@@ -32,6 +38,12 @@ const mergeOrigin = (
   if (next?.to) {
     merged.to = next.to;
   }
+  if (next?.nativeChannelId) {
+    merged.nativeChannelId = next.nativeChannelId;
+  }
+  if (next?.nativeDirectUserId) {
+    merged.nativeDirectUserId = next.nativeDirectUserId;
+  }
   if (next?.accountId) {
     merged.accountId = next.accountId;
   }
@@ -42,18 +54,21 @@ const mergeOrigin = (
 };
 
 export function deriveSessionOrigin(ctx: MsgContext): SessionOrigin | undefined {
-  const label = resolveConversationLabel(ctx)?.trim();
+  const label = normalizeOptionalString(resolveConversationLabel(ctx));
   const providerRaw =
     (typeof ctx.OriginatingChannel === "string" && ctx.OriginatingChannel) ||
     ctx.Surface ||
     ctx.Provider;
   const provider = normalizeMessageChannel(providerRaw);
-  const surface = ctx.Surface?.trim().toLowerCase();
+  const surface = normalizeOptionalLowercaseString(ctx.Surface);
   const chatType = normalizeChatType(ctx.ChatType) ?? undefined;
-  const from = ctx.From?.trim();
-  const to =
-    (typeof ctx.OriginatingTo === "string" ? ctx.OriginatingTo : ctx.To)?.trim() ?? undefined;
-  const accountId = ctx.AccountId?.trim();
+  const from = normalizeOptionalString(ctx.From);
+  const to = normalizeOptionalString(
+    typeof ctx.OriginatingTo === "string" ? ctx.OriginatingTo : ctx.To,
+  );
+  const nativeChannelId = normalizeOptionalString(ctx.NativeChannelId);
+  const nativeDirectUserId = normalizeOptionalString(ctx.NativeDirectUserId);
+  const accountId = normalizeOptionalString(ctx.AccountId);
   const threadId = ctx.MessageThreadId ?? undefined;
 
   const origin: SessionOrigin = {};
@@ -75,6 +90,12 @@ export function deriveSessionOrigin(ctx: MsgContext): SessionOrigin | undefined 
   if (to) {
     origin.to = to;
   }
+  if (nativeChannelId) {
+    origin.nativeChannelId = nativeChannelId;
+  }
+  if (nativeDirectUserId) {
+    origin.nativeDirectUserId = nativeDirectUserId;
+  }
   if (accountId) {
     origin.accountId = accountId;
   }
@@ -83,6 +104,22 @@ export function deriveSessionOrigin(ctx: MsgContext): SessionOrigin | undefined 
   }
 
   return Object.keys(origin).length > 0 ? origin : undefined;
+}
+
+function shouldPreserveExistingOrigin(params: {
+  ctx: MsgContext;
+  existing?: SessionEntry;
+}): boolean {
+  if (!params.existing?.origin) {
+    return false;
+  }
+  const provider = params.ctx.Provider?.trim().toLowerCase();
+  if (!provider) {
+    return false;
+  }
+  // Synthetic heartbeat/cron/exec turns should not rebind an existing session's
+  // stable origin metadata to placeholders like "heartbeat".
+  return STABLE_SESSION_ORIGIN_SYSTEM_PROVIDERS.has(provider);
 }
 
 export function snapshotSessionOrigin(entry?: SessionEntry): SessionOrigin | undefined {
@@ -156,7 +193,8 @@ export function deriveSessionMetaPatch(params: {
   groupResolution?: GroupKeyResolution | null;
 }): Partial<SessionEntry> | null {
   const groupPatch = deriveGroupSessionPatch(params);
-  const origin = deriveSessionOrigin(params.ctx);
+  const preserveExistingOrigin = shouldPreserveExistingOrigin(params);
+  const origin = preserveExistingOrigin ? undefined : deriveSessionOrigin(params.ctx);
   if (!groupPatch && !origin) {
     return null;
   }

@@ -12,8 +12,8 @@ function asMessages(messages: unknown[]): AgentMessage[] {
 
 function makeDualToolUseAssistantContent() {
   return [
-    { type: "toolUse", id: "tool-1", name: "test1", input: {} },
-    { type: "toolUse", id: "tool-2", name: "test2", input: {} },
+    { type: "toolUse", id: "tool-1", name: "test1", arguments: {} },
+    { type: "toolUse", id: "tool-2", name: "test2", arguments: {} },
     { type: "text", text: "Done" },
   ];
 }
@@ -92,6 +92,88 @@ describe("validateGeminiTurns", () => {
     expect(result[1].role).toBe("assistant");
     expect((result[1] as { content?: unknown[] }).content).toHaveLength(2);
     expect(result[2]).toEqual({ role: "user", content: "How are you?" });
+  });
+
+  it("should deduplicate toolCall blocks by ID when merging", () => {
+    const msgs = asMessages([
+      { role: "user", content: "Hello" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "tc-1", name: "read", input: { path: "/a" } },
+          { type: "text", text: "Reading file" },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "tc-1", name: "read", input: { path: "/a" } },
+          { type: "text", text: "More text" },
+        ],
+      },
+    ]);
+
+    const result = validateGeminiTurns(msgs);
+
+    expect(result).toHaveLength(2);
+    const merged = result[1] as { content: { type: string; id?: string }[] };
+    // The duplicate toolCall (same id) should be dropped
+    const toolCalls = merged.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].id).toBe("tc-1");
+    // Both text blocks should be preserved
+    const textBlocks = merged.content.filter((b) => b.type === "text");
+    expect(textBlocks).toHaveLength(2);
+  });
+
+  it("should deduplicate across tool block type variants (toolUse, tool_use)", () => {
+    const msgs = asMessages([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tc-1", name: "read", input: {} }],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolUse", id: "tc-1", name: "read", input: {} },
+          { type: "tool_use", id: "tc-1", name: "read", input: {} },
+          { type: "text", text: "done" },
+        ],
+      },
+    ]);
+
+    const result = validateGeminiTurns(msgs);
+
+    expect(result).toHaveLength(1);
+    const merged = result[0] as { content: { type: string; id?: string }[] };
+    // All three tool blocks share tc-1 — only the first (from prevContent) survives
+    const toolBlocks = merged.content.filter((b) =>
+      ["toolCall", "toolUse", "tool_use"].includes(b.type),
+    );
+    expect(toolBlocks).toHaveLength(1);
+    expect(toolBlocks[0].id).toBe("tc-1");
+    // Text block preserved
+    expect(merged.content.filter((b) => b.type === "text")).toHaveLength(1);
+  });
+
+  it("should keep toolCall blocks with different IDs when merging", () => {
+    const msgs = asMessages([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tc-1", name: "read", input: {} }],
+      },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tc-2", name: "write", input: {} }],
+      },
+    ]);
+
+    const result = validateGeminiTurns(msgs);
+
+    expect(result).toHaveLength(1);
+    const merged = result[0] as { content: { type: string; id?: string }[] };
+    const toolCalls = merged.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(2);
   });
 
   it("should preserve metadata from later message when merging", () => {
@@ -368,7 +450,7 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
       {
         role: "assistant",
         content: [
-          { type: "toolUse", id: "tool-1", name: "test", input: {} },
+          { type: "toolUse", id: "tool-1", name: "test", arguments: {} },
           { type: "text", text: "I'll check that" },
         ],
       },
@@ -389,7 +471,7 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
       {
         role: "assistant",
         content: [
-          { type: "toolUse", id: "tool-1", name: "test", input: {} },
+          { type: "toolUse", id: "tool-1", name: "test", arguments: {} },
           { type: "text", text: "Here's result" },
         ],
       },
@@ -408,7 +490,7 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
     // tool_use should be preserved because matching tool_result exists
     const assistantContent = (result[1] as { content?: unknown[] }).content;
     expect(assistantContent).toEqual([
-      { type: "toolUse", id: "tool-1", name: "test", input: {} },
+      { type: "toolUse", id: "tool-1", name: "test", arguments: {} },
       { type: "text", text: "Here's result" },
     ]);
   });
@@ -418,7 +500,7 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
       { role: "user", content: [{ type: "text", text: "Use tool" }] },
       {
         role: "assistant",
-        content: [{ type: "toolUse", id: "tool-1", name: "test", input: {} }],
+        content: [{ type: "toolUse", id: "tool-1", name: "test", arguments: {} }],
       },
       { role: "user", content: [{ type: "text", text: "Hello" }] },
     ]);
@@ -429,6 +511,23 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
     // Should insert fallback text since all content would be removed
     const assistantContent = (result[1] as { content?: unknown[] }).content;
     expect(assistantContent).toEqual([{ type: "text", text: "[tool calls omitted]" }]);
+  });
+
+  it("leaves aborted tool-only assistant turns empty instead of synthesizing fallback text", () => {
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        stopReason: "aborted",
+        content: [{ type: "toolCall", id: "tool-1", name: "test", arguments: {} }],
+      },
+      { role: "user", content: [{ type: "text", text: "Hello" }] },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(3);
+    expect((result[1] as { content?: unknown[] }).content).toEqual([]);
   });
 
   it("should handle multiple dangling tool_use blocks", () => {
@@ -458,28 +557,54 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
     // tool-1 should be preserved (has matching tool_result), tool-2 stripped, text preserved
     const assistantContent = (result[1] as { content?: unknown[] }).content;
     expect(assistantContent).toEqual([
-      { type: "toolUse", id: "tool-1", name: "test1", input: {} },
+      { type: "toolUse", id: "tool-1", name: "test1", arguments: {} },
       { type: "text", text: "Done" },
     ]);
   });
 
-  it("should not modify messages when next is not user", () => {
+  it("matches standalone toolResult messages before the next assistant turn", () => {
     const msgs = asMessages([
       { role: "user", content: [{ type: "text", text: "Use tool" }] },
       {
         role: "assistant",
-        content: [{ type: "toolUse", id: "tool-1", name: "test", input: {} }],
+        content: [{ type: "toolCall", id: "tool-1", name: "test", arguments: {} }],
       },
-      // Next is assistant, not user - should not strip
-      { role: "assistant", content: [{ type: "text", text: "Continue" }] },
+      { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "data" }] },
+      { role: "user", content: [{ type: "text", text: "Continue" }] },
     ]);
 
     const result = validateAnthropicTurns(msgs);
 
-    expect(result).toHaveLength(3);
-    // Original tool_use should be preserved
+    expect(result).toHaveLength(4);
     const assistantContent = (result[1] as { content?: unknown[] }).content;
-    expect(assistantContent).toEqual([{ type: "toolUse", id: "tool-1", name: "test", input: {} }]);
+    expect(assistantContent).toEqual([
+      { type: "toolCall", id: "tool-1", name: "test", arguments: {} },
+    ]);
+  });
+
+  it("matches tool result blocks across intermediate non-assistant messages", () => {
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "functionCall", id: "tool-1", name: "test", arguments: {} },
+          { type: "text", text: "Checking" },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "still waiting" }] },
+      { role: "tool", toolCallId: "tool-1", content: [{ type: "text", text: "data" }] },
+      { role: "user", content: [{ type: "text", text: "Continue" }] },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(5);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    expect(assistantContent).toEqual([
+      { type: "functionCall", id: "tool-1", name: "test", arguments: {} },
+      { type: "text", text: "Checking" },
+    ]);
   });
 
   it("is replay-safe across repeated validation passes", () => {
@@ -495,6 +620,176 @@ describe("validateAnthropicTurns strips dangling tool_use blocks", () => {
     const secondPass = validateAnthropicTurns(firstPass);
 
     expect(secondPass).toEqual(firstPass);
+  });
+
+  it("should strip orphaned tool_use from last assistant message (end-of-conversation)", () => {
+    // When the last message is assistant with tool_use blocks and no following user message,
+    // the orphaned tool_use blocks should be stripped to prevent Anthropic API errors.
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolUse", id: "tool-1", name: "test", input: {} },
+          { type: "text", text: "Let me check" },
+        ],
+      },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(2);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    // tool_use should be stripped, text preserved
+    expect(assistantContent).toEqual([{ type: "text", text: "Let me check" }]);
+  });
+
+  it("should insert fallback text when last assistant has only tool_use blocks (end-of-conversation)", () => {
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        content: [{ type: "toolUse", id: "tool-1", name: "test", input: {} }],
+      },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(2);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    expect(assistantContent).toEqual([{ type: "text", text: "[tool calls omitted]" }]);
+  });
+
+  it("should recognize toolCall and functionCall block types as tool calls", () => {
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "tool-1", name: "test", arguments: {} },
+          { type: "functionCall", id: "tool-2", name: "test2", arguments: {} },
+          { type: "text", text: "Checking" },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "Hello" }] },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(3);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    // Both toolCall and functionCall should be stripped (no matching tool_result)
+    expect(assistantContent).toEqual([{ type: "text", text: "Checking" }]);
+  });
+
+  it("should not strip tool_use from last assistant when matching tool_result follows", () => {
+    // Normal conversation: tool_use with matching tool_result in following user message
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolUse", id: "tool-1", name: "test", input: {} },
+          { type: "text", text: "Result" },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "toolResult", toolUseId: "tool-1", content: [{ type: "text", text: "OK" }] },
+        ],
+      },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(3);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    // tool_use preserved because matching tool_result exists
+    expect(assistantContent).toEqual([
+      { type: "toolUse", id: "tool-1", name: "test", input: {} },
+      { type: "text", text: "Result" },
+    ]);
+  });
+
+  it("should strip functionCall blocks mid-conversation when no matching toolResult exists", () => {
+    // Tests all three tool-call type variants (toolUse, toolCall, functionCall)
+    // in a multi-turn conversation with mixed matching/dangling tool calls.
+    // All tool-call types produce "toolResult" type results — there is no "functionResult".
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tools" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolUse", id: "tu-1", name: "search", input: {} },
+          { type: "toolCall", id: "tc-1", name: "fetch", arguments: {} },
+          { type: "functionCall", id: "fc-1", name: "compute", arguments: {} },
+          { type: "text", text: "Running three tools" },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          // Only toolUse tu-1 has a matching toolResult
+          {
+            type: "toolResult",
+            toolUseId: "tu-1",
+            content: [{ type: "text", text: "Search result" }],
+          },
+          { type: "text", text: "Only first tool returned" },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "Continue" }] },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    // The two consecutive user messages should be merged
+    expect(result).toHaveLength(3);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    // toolUse tu-1 preserved (has matching toolResult), toolCall tc-1 and functionCall fc-1 stripped
+    expect(assistantContent).toEqual([
+      { type: "toolUse", id: "tu-1", name: "search", input: {} },
+      { type: "text", text: "Running three tools" },
+    ]);
+  });
+
+  it("should strip end-of-conversation functionCall blocks", () => {
+    // When functionCall blocks are the last assistant message with no following user message
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Compute something" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "functionCall", id: "fc-1", name: "compute", arguments: {} },
+          { type: "text", text: "Computing..." },
+        ],
+      },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(2);
+    const assistantContent = (result[1] as { content?: unknown[] }).content;
+    expect(assistantContent).toEqual([{ type: "text", text: "Computing..." }]);
+  });
+
+  it("does not synthesize fallback text for aborted terminal tool-only turns", () => {
+    const msgs = asMessages([
+      { role: "user", content: [{ type: "text", text: "Use tool" }] },
+      {
+        role: "assistant",
+        stopReason: "aborted",
+        content: [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }],
+      },
+    ]);
+
+    const result = validateAnthropicTurns(msgs);
+
+    expect(result).toHaveLength(2);
+    const assistant = result[1] as { content?: unknown[]; stopReason?: string };
+    expect(assistant.stopReason).toBe("aborted");
+    expect(assistant.content).toEqual([]);
   });
 
   it("does not crash when assistant content is non-array", () => {

@@ -12,6 +12,7 @@ import {
 } from "../../../src/gateway/protocol/connect-error-details.js";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity.ts";
+import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "./string-coerce.ts";
 import { generateUUID } from "./uuid.ts";
 
 export type GatewayEventFrame = {
@@ -82,7 +83,7 @@ export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): 
 function isTrustedRetryEndpoint(url: string): boolean {
   try {
     const gatewayUrl = new URL(url, window.location.href);
-    const host = gatewayUrl.hostname.trim().toLowerCase();
+    const host = normalizeLowercaseStringOrEmpty(gatewayUrl.hostname);
     const isLoopbackHost =
       host === "localhost" || host === "::1" || host === "[::1]" || host === "127.0.0.1";
     const isLoopbackIPv4 = host.startsWith("127.");
@@ -212,6 +213,30 @@ export type GatewayBrowserClientOptions = {
 // 4008 = application-defined code (browser rejects 1008 "Policy Violation")
 const CONNECT_FAILED_CLOSE_CODE = 4008;
 
+/**
+ * Reconnect backoff: initial delay (ms) before the first reconnect attempt.
+ * Resets to this value after a successful connection.
+ */
+const INITIAL_BACKOFF_MS = 800;
+
+/**
+ * Reconnect backoff: maximum delay (ms) between reconnect attempts.
+ * Prevents unbounded growth during prolonged disconnections.
+ */
+const MAX_BACKOFF_MS = 15_000;
+
+/**
+ * Reconnect backoff: exponential growth multiplier applied after each failed attempt.
+ * e.g. 800 → 1360 → 2312 → ... → capped at MAX_BACKOFF_MS.
+ */
+const BACKOFF_MULTIPLIER = 1.7;
+
+/**
+ * Delay (ms) between WebSocket open and sending the connect handshake.
+ * Provides a window for the server to send a challenge nonce before the
+ * client initiates authentication.
+ */
+const CONNECT_QUEUE_DELAY_MS = 750;
 function buildGatewayConnectAuth(
   selectedAuth: SelectedConnectAuth,
 ): GatewayConnectAuth | undefined {
@@ -280,6 +305,7 @@ export class GatewayBrowserClient {
   private connectNonce: string | null = null;
   private connectSent = false;
   private connectTimer: number | null = null;
+  private backoffMs = INITIAL_BACKOFF_MS;
   private backoffMs = 800;
   private pendingConnectError: GatewayErrorInfo | undefined;
   private pendingDeviceTokenRetry = false;
@@ -346,7 +372,7 @@ export class GatewayBrowserClient {
       return;
     }
     const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
+    this.backoffMs = Math.min(this.backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS);
     window.setTimeout(() => this.connect(), delay);
   }
 
@@ -386,8 +412,8 @@ export class GatewayBrowserClient {
     const role = CONTROL_UI_OPERATOR_ROLE;
     const scopes = [...CONTROL_UI_OPERATOR_SCOPES];
     const client = this.buildConnectClient();
-    const explicitGatewayToken = this.opts.token?.trim() || undefined;
-    const explicitPassword = this.opts.password?.trim() || undefined;
+    const explicitGatewayToken = normalizeOptionalString(this.opts.token);
+    const explicitPassword = normalizeOptionalString(this.opts.password);
 
     // crypto.subtle is only available in secure contexts (HTTPS, localhost).
     // Over plain HTTP, we skip device identity and fall back to token-only auth.
@@ -409,6 +435,17 @@ export class GatewayBrowserClient {
       if (this.pendingDeviceTokenRetry && selectedAuth.authDeviceToken) {
         this.pendingDeviceTokenRetry = false;
       }
+    } else {
+      // In insecure context (HTTP/LAN), skip device identity but still use
+      // explicit token/password if provided. Gateways may reject this unless
+      // gateway.controlUi.allowInsecureAuth is enabled.
+      const explicitToken = this.opts.token?.trim() || undefined;
+      const explicitPassword = this.opts.password?.trim() || undefined;
+      selectedAuth = {
+        authToken: explicitToken,
+        authPassword: explicitPassword,
+        canFallbackToShared: false,
+      };
     }
 
     return {
@@ -430,6 +467,24 @@ export class GatewayBrowserClient {
     };
   }
 
+    void this.request<GatewayHelloOk>("connect", params)
+      .then((hello) => {
+        if (hello?.auth?.deviceToken && deviceIdentity) {
+          storeDeviceAuthToken({
+            deviceId: deviceIdentity.deviceId,
+            role: hello.auth.role ?? role,
+            token: hello.auth.deviceToken,
+            scopes: hello.auth.scopes ?? [],
+          });
+        }
+        this.backoffMs = INITIAL_BACKOFF_MS;
+        this.opts.onHello?.(hello);
+      })
+      .catch(() => {
+        if (canFallbackToShared && deviceIdentity) {
+          clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
+        }
+        this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
   private handleConnectHello(hello: GatewayHelloOk, plan: ConnectPlan) {
     this.pendingDeviceTokenRetry = false;
     this.deviceTokenRetryBudgetUsed = false;
@@ -491,7 +546,7 @@ export class GatewayBrowserClient {
   }
 
   private async sendConnect() {
-    if (this.connectSent) {
+    if (this.closed || this.connectSent) {
       return;
     }
     this.connectSent = true;
@@ -564,8 +619,8 @@ export class GatewayBrowserClient {
   }
 
   private selectConnectAuth(params: { role: string; deviceId: string }): SelectedConnectAuth {
-    const explicitGatewayToken = this.opts.token?.trim() || undefined;
-    const authPassword = this.opts.password?.trim() || undefined;
+    const explicitGatewayToken = normalizeOptionalString(this.opts.token);
+    const authPassword = normalizeOptionalString(this.opts.password);
     const storedEntry = loadDeviceAuthToken({
       deviceId: params.deviceId,
       role: params.role,
@@ -617,6 +672,6 @@ export class GatewayBrowserClient {
     }
     this.connectTimer = window.setTimeout(() => {
       void this.sendConnect();
-    }, 750);
+    }, CONNECT_QUEUE_DELAY_MS);
   }
 }

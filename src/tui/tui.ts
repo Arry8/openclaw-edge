@@ -11,11 +11,13 @@ import {
 import { resolveAgentIdByWorkspacePath, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
+  buildAgentPeerSessionKey,
   buildAgentMainSessionKey,
   normalizeAgentId,
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { getSlashCommands } from "./commands.js";
 import { ChatLog } from "./components/chat-log.js";
 import { CustomEditor } from "./components/custom-editor.js";
@@ -54,12 +56,29 @@ export function resolveTuiSessionKey(params: {
   sessionScope: SessionScope;
   currentAgentId: string;
   sessionMainKey: string;
+  dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+  identityLinks?: Record<string, string[]>;
+  webchatDefaultPeerId?: string;
 }) {
   const trimmed = (params.raw ?? "").trim();
   if (!trimmed) {
     if (params.sessionScope === "global") {
       return "global";
     }
+
+    const defaultPeerId = (params.webchatDefaultPeerId ?? "").trim();
+    if (defaultPeerId) {
+      return buildAgentPeerSessionKey({
+        agentId: params.currentAgentId,
+        mainKey: params.sessionMainKey,
+        channel: "webchat",
+        peerKind: "direct",
+        peerId: defaultPeerId,
+        dmScope: params.dmScope ?? "main",
+        identityLinks: params.identityLinks,
+      });
+    }
+
     return buildAgentMainSessionKey({
       agentId: params.currentAgentId,
       mainKey: params.sessionMainKey,
@@ -69,9 +88,9 @@ export function resolveTuiSessionKey(params: {
     return trimmed;
   }
   if (trimmed.startsWith("agent:")) {
-    return trimmed.toLowerCase();
+    return normalizeLowercaseStringOrEmpty(trimmed);
   }
-  return `agent:${params.currentAgentId}:${trimmed.toLowerCase()}`;
+  return `agent:${params.currentAgentId}:${normalizeLowercaseStringOrEmpty(trimmed)}`;
 }
 
 export function resolveInitialTuiAgentId(params: {
@@ -158,6 +177,24 @@ export function stopTuiSafely(stop: () => void): void {
   }
 }
 
+type DrainableTui = {
+  stop: () => void;
+  terminal?: {
+    drainInput?: (maxMs?: number, idleMs?: number) => Promise<void>;
+  };
+};
+
+export async function drainAndStopTuiSafely(tui: DrainableTui): Promise<void> {
+  if (typeof tui.terminal?.drainInput === "function") {
+    try {
+      await tui.terminal.drainInput();
+    } catch {
+      // Best-effort only. A failed drain should not skip terminal shutdown.
+    }
+  }
+  stopTuiSafely(() => tui.stop());
+}
+
 type CtrlCAction = "clear" | "warn" | "exit";
 
 export function resolveCtrlCAction(params: {
@@ -189,6 +226,9 @@ export async function runTui(opts: TuiOptions) {
   const config = loadConfig();
   const initialSessionInput = (opts.session ?? "").trim();
   let sessionScope: SessionScope = (config.session?.scope ?? "per-sender") as SessionScope;
+  const dmScope = config.session?.dmScope;
+  const identityLinks = config.session?.identityLinks;
+  const webchatDefaultPeerId = config.gateway?.webchat?.defaultPeerId;
   let sessionMainKey = normalizeMainKey(config.session?.mainKey);
   let agentDefaultId = resolveDefaultAgentId(config);
   let currentAgentId = resolveInitialTuiAgentId({
@@ -457,6 +497,9 @@ export async function runTui(opts: TuiOptions) {
       sessionScope,
       currentAgentId,
       sessionMainKey,
+      dmScope,
+      identityLinks,
+      webchatDefaultPeerId,
     });
   };
 
@@ -472,7 +515,7 @@ export async function runTui(opts: TuiOptions) {
     );
   };
 
-  const busyStates = new Set(["sending", "waiting", "streaming", "running"]);
+  const busyStates = new Set(["sending", "waiting", "streaming", "running", "awaiting follow-up"]);
   let statusText: Text | null = null;
   let statusLoader: Loader | null = null;
 
@@ -533,6 +576,11 @@ export async function runTui(opts: TuiOptions) {
           phrases: waitingPhrase ? [waitingPhrase] : undefined,
         }),
       );
+      return;
+    }
+
+    if (activityStatus === "awaiting follow-up") {
+      statusLoader.setMessage(`awaiting follow-up event • ${elapsed} | ${connectionStatus}`);
       return;
     }
 
@@ -631,9 +679,20 @@ export async function runTui(opts: TuiOptions) {
     }
   };
 
+  const activityStatusDisplay: Record<string, string> = {
+    idle: "💤 idle",
+    sending: "📡 sending",
+    waiting: "🧠 thinking",
+    streaming: "📝 streaming",
+    running: "⚙️ running",
+    error: "❌ error",
+    aborted: "🛑 aborted",
+  };
+
   const setActivityStatus = (text: string) => {
     activityStatus = text;
     renderStatus();
+    updateFooter();
   };
 
   const updateFooter = () => {
@@ -654,6 +713,8 @@ export async function runTui(opts: TuiOptions) {
     const reasoning = sessionInfo.reasoningLevel ?? "off";
     const reasoningLabel =
       reasoning === "on" ? "reasoning" : reasoning === "stream" ? "reasoning:stream" : null;
+    const statusIndicator =
+      activityStatusDisplay[activityStatus] ?? `❓ ${activityStatus ?? "unknown"}`;
     const footerParts = [
       `agent ${agentLabel}`,
       `session ${sessionLabel}`,
@@ -663,6 +724,7 @@ export async function runTui(opts: TuiOptions) {
       verbose !== "off" ? `verbose ${verbose}` : null,
       reasoningLabel,
       tokens,
+      statusIndicator,
     ].filter(Boolean);
     footer.setText(theme.dim(footerParts.join(" | ")));
   };
@@ -711,22 +773,24 @@ export async function runTui(opts: TuiOptions) {
     abortActive,
   } = sessionActions;
 
-  const { handleChatEvent, handleAgentEvent, handleBtwEvent } = createEventHandlers({
-    chatLog,
-    btw,
-    tui,
-    state,
-    setActivityStatus,
-    refreshSessionInfo,
-    loadHistory,
-    noteLocalRunId,
-    isLocalRunId,
-    forgetLocalRunId,
-    clearLocalRunIds,
-    isLocalBtwRunId,
-    forgetLocalBtwRunId,
-    clearLocalBtwRunIds,
-  });
+  const { handleChatEvent, handleAgentEvent, handleBtwEvent, handleEventGap } = createEventHandlers(
+    {
+      chatLog,
+      btw,
+      tui,
+      state,
+      setActivityStatus,
+      refreshSessionInfo,
+      loadHistory,
+      noteLocalRunId,
+      isLocalRunId,
+      forgetLocalRunId,
+      clearLocalRunIds,
+      isLocalBtwRunId,
+      forgetLocalBtwRunId,
+      clearLocalBtwRunIds,
+    },
+  );
 
   const requestExit = () => {
     if (exitRequested) {
@@ -734,8 +798,9 @@ export async function runTui(opts: TuiOptions) {
     }
     exitRequested = true;
     client.stop();
-    stopTuiSafely(() => tui.stop());
-    process.exit(0);
+    void drainAndStopTuiSafely(tui).then(() => {
+      process.exit(0);
+    });
   };
 
   const { handleCommand, sendMessage, openModelSelector, openAgentSelector, openSessionSelector } =
@@ -797,9 +862,10 @@ export async function runTui(opts: TuiOptions) {
       lastCtrlCAt,
     });
     lastCtrlCAt = decision.nextLastCtrlCAt;
+    const activeRunHint = activeChatRunId ? "; run still active (Esc or /abort to stop)" : "";
     if (decision.action === "clear") {
       editor.setText("");
-      setActivityStatus("cleared input; press ctrl+c again to exit");
+      setActivityStatus(`cleared input; press ctrl+c again to exit${activeRunHint}`);
       tui.requestRender();
       return;
     }
@@ -807,7 +873,7 @@ export async function runTui(opts: TuiOptions) {
       requestExit();
       return;
     }
-    setActivityStatus("press ctrl+c again to exit");
+    setActivityStatus(`press ctrl+c again to exit${activeRunHint}`);
     tui.requestRender();
   };
   editor.onCtrlC = () => {
@@ -885,6 +951,7 @@ export async function runTui(opts: TuiOptions) {
   };
 
   client.onDisconnected = (reason) => {
+    handleEventGap({ reload: false });
     isConnected = false;
     wasDisconnected = true;
     historyLoaded = false;
@@ -900,6 +967,7 @@ export async function runTui(opts: TuiOptions) {
   };
 
   client.onGap = (info) => {
+    handleEventGap();
     setConnectionStatus(`event gap: expected ${info.expected}, got ${info.received}`, 5000);
     tui.requestRender();
   };

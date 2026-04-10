@@ -1,7 +1,6 @@
-import fsSync from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { openClawRootFs, openClawRootFsSync } from "./openclaw-root.fs.runtime.js";
 
 const CORE_PACKAGE_NAMES = new Set(["openclaw"]);
 
@@ -12,7 +11,7 @@ function parsePackageName(raw: string): string | null {
 
 async function readPackageName(dir: string): Promise<string | null> {
   try {
-    return parsePackageName(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
+    return parsePackageName(await openClawRootFs.readFile(path.join(dir, "package.json"), "utf-8"));
   } catch {
     return null;
   }
@@ -20,7 +19,9 @@ async function readPackageName(dir: string): Promise<string | null> {
 
 function readPackageNameSync(dir: string): string | null {
   try {
-    return parsePackageName(fsSync.readFileSync(path.join(dir, "package.json"), "utf-8"));
+    return parsePackageName(
+      openClawRootFsSync.readFileSync(path.join(dir, "package.json"), "utf-8"),
+    );
   } catch {
     return null;
   }
@@ -30,6 +31,16 @@ async function findPackageRoot(startDir: string, maxDepth = 12): Promise<string 
   for (const current of iterAncestorDirs(startDir, maxDepth)) {
     const name = await readPackageName(current);
     if (name && CORE_PACKAGE_NAMES.has(name)) {
+      // Skip subdirectories that inherit the parent's package name.
+      // The build system copies package.json into dist/, so dist/package.json
+      // has the same "name" as the root. We must prefer the outermost match.
+      const parent = path.dirname(current);
+      if (parent !== current) {
+        const parentName = await readPackageName(parent);
+        if (parentName && parentName === name) {
+          continue;
+        }
+      }
       return current;
     }
   }
@@ -40,6 +51,16 @@ function findPackageRootSync(startDir: string, maxDepth = 12): string | null {
   for (const current of iterAncestorDirs(startDir, maxDepth)) {
     const name = readPackageNameSync(current);
     if (name && CORE_PACKAGE_NAMES.has(name)) {
+      // Skip subdirectories that inherit the parent's package name.
+      // The build system copies package.json into dist/, so dist/package.json
+      // has the same "name" as the root. We must prefer the outermost match.
+      const parent = path.dirname(current);
+      if (parent !== current) {
+        const parentName = readPackageNameSync(parent);
+        if (parentName && parentName === name) {
+          continue;
+        }
+      }
       return current;
     }
   }
@@ -65,7 +86,7 @@ function candidateDirsFromArgv1(argv1: string): string[] {
   // Resolve symlinks for version managers (nvm, fnm, n, Homebrew/Linuxbrew)
   // that create symlinks in bin/ pointing to the real package location.
   try {
-    const resolved = fsSync.realpathSync(normalized);
+    const resolved = openClawRootFsSync.realpathSync(normalized);
     if (resolved !== normalized) {
       candidates.push(path.dirname(resolved));
     }

@@ -1,0 +1,89 @@
+name: Build Signed iOS App with Fastlane
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Select Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3.0'
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Install linting tools
+        run: brew install swiftlint swiftformat
+
+      # 导入证书和描述文件
+      - name: Import certificate and provisioning profile
+        run: |
+          security create-keychain -p "temp123" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "temp123" build.keychain
+          echo -n "${{ secrets.BUILD_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "${{ secrets.P12_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "temp123" build.keychain
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo -n "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+      # 生成 Xcode 项目
+      - name: Prepare iOS project
+        run: |
+          chmod +x ./scripts/ios-configure-signing.sh
+          pnpm install
+          ./scripts/ios-configure-signing.sh
+          cd apps/ios
+          xcodegen generate
+
+      - name: Install Fastlane
+        run: gem install fastlane -NV
+
+      # 设置固定的 bundle ID 和虚拟的推送中转 URL
+      - name: Set fixed bundle ID and environment
+        run: |
+          FIXED_BUNDLE_ID="com.lijinrui.app"
+          # 设置虚拟的推送中转 URL，避免脚本报错
+          echo "OPENCLAW_PUSH_RELAY_BASE_URL=https://example.com" >> $GITHUB_ENV
+          echo "IOS_PUSH_RELAY_BASE_URL=https://example.com" >> $GITHUB_ENV
+          # 确保 build 目录存在
+          mkdir -p apps/ios/build
+          # 创建或覆盖 BetaRelease.xcconfig
+          cat > apps/ios/build/BetaRelease.xcconfig << EOF
+          PRODUCT_BUNDLE_IDENTIFIER = $FIXED_BUNDLE_ID
+          EOF
+          # 告诉 Fastlane 使用这个 xcconfig 文件
+          echo "XCODE_XCCONFIG_FILE=$PWD/apps/ios/build/BetaRelease.xcconfig" >> $GITHUB_ENV
+
+      # 运行 Fastlane 构建已签名的 IPA
+      - name: Build signed IPA with Fastlane
+        env:
+          IOS_BETA_BUILD_NUMBER: 1          # 避免调用 App Store Connect API
+        run: |
+          cd apps/ios
+          fastlane beta_archive
+
+      # 上传生成的 IPA
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenClaw-signed.ipa
+          path: apps/ios/build/beta/OpenClaw-*.ipa

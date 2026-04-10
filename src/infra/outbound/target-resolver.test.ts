@@ -99,6 +99,56 @@ describe("resolveMessagingTarget (directory fallback)", () => {
     expect(mocks.listGroupsLive).toHaveBeenCalledTimes(1);
   });
 
+  it("respects a single directory entry kind even when the initial kind guess was group", async () => {
+    const entry: ChannelDirectoryEntry = { kind: "user", id: "staff_bob", name: "Bob" };
+    mocks.listGroups.mockResolvedValue([entry]);
+    mocks.listGroupsLive.mockResolvedValue([]);
+
+    const result = await resolveMessagingTarget({
+      cfg,
+      channel: "dingtalk",
+      input: "Bob",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.target).toEqual({
+        to: "staff_bob",
+        kind: "user",
+        display: "Bob",
+        source: "directory",
+      });
+    }
+    expect(mocks.listGroups).toHaveBeenCalledTimes(1);
+    expect(mocks.listPeers).not.toHaveBeenCalled();
+  });
+
+  it('normalizes "channel" directory entries to the shared group target kind', async () => {
+    const entry: ChannelDirectoryEntry = {
+      kind: "channel",
+      id: "channel:support-room",
+      name: "Support Room",
+    };
+    mocks.listGroups.mockResolvedValue([entry]);
+    mocks.listGroupsLive.mockResolvedValue([]);
+
+    const result = await resolveMessagingTarget({
+      cfg,
+      channel: "dingtalk",
+      input: "Support Room",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.target).toEqual({
+        to: "channel:support-room",
+        kind: "group",
+        display: "Support Room",
+        source: "directory",
+      });
+    }
+  });
+
   it("skips directory lookup for direct ids", async () => {
     const result = await expectOkResolution({
       cfg,

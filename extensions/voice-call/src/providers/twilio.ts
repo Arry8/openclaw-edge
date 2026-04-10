@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { safeEqualSecret } from "openclaw/plugin-sdk/browser-security-runtime";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import type { TwilioConfig, WebhookSecurityConfig } from "../config.js";
 import { getHeader } from "../http-headers.js";
 import type { MediaStreamHandler } from "../media-stream.js";
@@ -45,9 +47,9 @@ function createTwilioRequestDedupeKey(ctx: WebhookContext, verifiedRequestKey?: 
   const callSid = params.get("CallSid") ?? "";
   const callStatus = params.get("CallStatus") ?? "";
   const direction = params.get("Direction") ?? "";
-  const callId = typeof ctx.query?.callId === "string" ? ctx.query.callId.trim() : "";
-  const flow = typeof ctx.query?.flow === "string" ? ctx.query.flow.trim() : "";
-  const turnToken = typeof ctx.query?.turnToken === "string" ? ctx.query.turnToken.trim() : "";
+  const callId = normalizeOptionalString(ctx.query?.callId) ?? "";
+  const flow = normalizeOptionalString(ctx.query?.flow) ?? "";
+  const turnToken = normalizeOptionalString(ctx.query?.turnToken) ?? "";
   return `twilio:fallback:${crypto
     .createHash("sha256")
     .update(
@@ -80,7 +82,6 @@ export interface TwilioProviderOptions {
 
 export class TwilioProvider implements VoiceCallProvider {
   readonly name = "twilio" as const;
-  private static readonly TTS_SYNTH_TIMEOUT_MS = 8000;
 
   private readonly accountSid: string;
   private readonly authToken: string;
@@ -149,12 +150,67 @@ export class TwilioProvider implements VoiceCallProvider {
 
     this.accountSid = config.accountSid;
     this.authToken = config.authToken;
-    this.baseUrl = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}`;
+    this.baseUrl = TwilioProvider.buildBaseUrl(this.accountSid, config.region, config.edge);
     this.options = options;
 
     if (options.publicUrl) {
       this.currentPublicUrl = options.publicUrl;
     }
+  }
+
+  /**
+   * Build the Twilio API base URL for a given region/edge combination.
+   *
+   * FQDN format: `{product}.{edge}.{region}.twilio.com`
+   *
+   * When both region and edge are specified, targets that specific region.
+   * When only region is specified, edge defaults to the canonical edge for that region.
+   * When neither is specified, falls back to the default US1 endpoint (`api.twilio.com`).
+   *
+   * Supported processing regions (as of 2026):
+   * - **us1** (default) — United States
+   * - **ie1** — Ireland (edge: dublin)
+   * - **au1** — Australia (edge: sydney)
+   *
+   * Note: The legacy `api.{region}.twilio.com` pattern (without edge) is deprecated
+   * and will stop working on April 28, 2026. This method always includes the edge
+   * in the FQDN to use the correct, non-deprecated format.
+   *
+   * @see https://www.twilio.com/docs/global-infrastructure/using-the-twilio-rest-api-in-a-non-us-region
+   * @see https://www.twilio.com/docs/global-infrastructure/api-domain-migration-guide
+   */
+  static buildBaseUrl(accountSid: string, region?: string, edge?: string): string {
+    if (!region) {
+      // Default US1 endpoint — no region/edge needed
+      return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}`;
+    }
+
+    // When region is set, edge must also be specified to avoid the deprecated
+    // api.{region}.twilio.com pattern (which routes to US1 and stops working
+    // April 28, 2026). If the user omitted edge, infer the canonical one.
+    const resolvedEdge = edge || TwilioProvider.defaultEdgeForRegion(region);
+    const host = `api.${resolvedEdge}.${region}.twilio.com`;
+    return `https://${host}/2010-04-01/Accounts/${accountSid}`;
+  }
+
+  /**
+   * Map Twilio processing regions to their canonical edge location.
+   * Used as fallback when `edge` is not explicitly configured.
+   *
+   * Only includes regions that support regional data processing.
+   * Legacy region codes (br1, de1, jp1, sg1, us2) are NOT included —
+   * those were edge-only shortcuts that always processed in US1 and are
+   * deprecated as of April 28, 2026.
+   *
+   * @see https://www.twilio.com/docs/global-infrastructure/api-domain-migration-guide
+   */
+  private static defaultEdgeForRegion(region: string): string {
+    const defaults: Record<string, string> = {
+      ie1: "dublin",
+      au1: "sydney",
+      us1: "ashburn",
+    };
+    return defaults[region.toLowerCase()] ?? "ashburn";
   }
 
   setPublicUrl(url: string): void {
@@ -205,12 +261,7 @@ export class TwilioProvider implements VoiceCallProvider {
     if (!expected || !token) {
       return false;
     }
-    if (expected.length !== token.length) {
-      const dummy = Buffer.from(expected);
-      crypto.timingSafeEqual(dummy, dummy);
-      return false;
-    }
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+    return safeEqualSecret(expected, token);
   }
 
   /**
@@ -269,14 +320,8 @@ export class TwilioProvider implements VoiceCallProvider {
   ): ProviderWebhookParseResult {
     try {
       const params = new URLSearchParams(ctx.rawBody);
-      const callIdFromQuery =
-        typeof ctx.query?.callId === "string" && ctx.query.callId.trim()
-          ? ctx.query.callId.trim()
-          : undefined;
-      const turnTokenFromQuery =
-        typeof ctx.query?.turnToken === "string" && ctx.query.turnToken.trim()
-          ? ctx.query.turnToken.trim()
-          : undefined;
+      const callIdFromQuery = normalizeOptionalString(ctx.query?.callId);
+      const turnTokenFromQuery = normalizeOptionalString(ctx.query?.turnToken);
       const dedupeKey = createTwilioRequestDedupeKey(ctx, options?.verifiedRequestKey);
       const event = this.normalizeEvent(params, {
         callIdOverride: callIdFromQuery,
@@ -683,16 +728,13 @@ export class TwilioProvider implements VoiceCallProvider {
       // Generate audio with core TTS (returns mu-law at 8kHz)
       let muLawAudio: Buffer;
       let synthTimeout: ReturnType<typeof setTimeout> | null = null;
+      const synthTimeoutMs = ttsProvider.synthesisTimeoutMs;
       try {
         const synthPromise = ttsProvider.synthesizeForTelephony(text);
         const timeoutPromise = new Promise<Buffer>((_, reject) => {
           synthTimeout = setTimeout(() => {
-            reject(
-              new Error(
-                `Telephony TTS synthesis timed out after ${TwilioProvider.TTS_SYNTH_TIMEOUT_MS}ms`,
-              ),
-            );
-          }, TwilioProvider.TTS_SYNTH_TIMEOUT_MS);
+            reject(new Error(`Telephony TTS synthesis timed out after ${synthTimeoutMs}ms`));
+          }, synthTimeoutMs);
         });
         muLawAudio = await Promise.race([synthPromise, timeoutPromise]);
       } finally {
@@ -787,7 +829,7 @@ export class TwilioProvider implements VoiceCallProvider {
           Authorization: `Basic ${Buffer.from(`${this.accountSid}:${this.authToken}`).toString("base64")}`,
         },
         allowNotFound: true,
-        allowedHostnames: ["api.twilio.com"],
+        allowedHostnames: [new URL(this.baseUrl).hostname],
         auditContext: "twilio-get-call-status",
         errorPrefix: "Twilio get call status error",
       });

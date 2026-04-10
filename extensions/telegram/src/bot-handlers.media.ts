@@ -5,8 +5,11 @@ export const APPROVE_CALLBACK_DATA_RE =
   /^\/approve(?:@[^\s]+)?\s+[A-Za-z0-9][A-Za-z0-9._:-]*\s+(allow-once|allow-always|deny)\b/i;
 
 export function isMediaSizeLimitError(err: unknown): boolean {
+  if (err instanceof MediaFetchError && err.code === "max_bytes") {
+    return true;
+  }
   const errMsg = String(err);
-  return errMsg.includes("exceeds") && errMsg.includes("MB limit");
+  return errMsg.includes("exceeds") && (errMsg.includes("MB limit") || errMsg.includes("maxBytes"));
 }
 
 export function isRecoverableMediaGroupError(err: unknown): boolean {
@@ -17,7 +20,15 @@ export function hasInboundMedia(msg: Message): boolean {
   return (
     Boolean(msg.media_group_id) ||
     (Array.isArray(msg.photo) && msg.photo.length > 0) ||
-    Boolean(msg.video ?? msg.video_note ?? msg.document ?? msg.audio ?? msg.voice ?? msg.sticker)
+    Boolean(
+      msg.video ??
+      msg.video_note ??
+      msg.document ??
+      msg.audio ??
+      msg.voice ??
+      msg.animation ??
+      msg.sticker,
+    )
   );
 }
 
@@ -35,6 +46,7 @@ export function resolveInboundMediaFileId(msg: Message): string | undefined {
     msg.video_note?.file_id ??
     msg.document?.file_id ??
     msg.audio?.file_id ??
-    msg.voice?.file_id
+    msg.voice?.file_id ??
+    msg.animation?.file_id
   );
 }

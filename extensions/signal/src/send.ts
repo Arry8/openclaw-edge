@@ -2,8 +2,9 @@ import { loadConfig, type OpenClawConfig } from "openclaw/plugin-sdk/config-runt
 import { resolveMarkdownTableMode } from "openclaw/plugin-sdk/config-runtime";
 import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import { resolveOutboundAttachmentFromUrl } from "openclaw/plugin-sdk/media-runtime";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { resolveSignalAccount } from "./accounts.js";
-import { signalRpcRequest } from "./client.js";
+import { signalRpcRequest } from "./client-adapter.js";
 import { markdownToSignalText, type SignalTextStyleRange } from "./format.js";
 import { resolveSignalRpcContext } from "./rpc-context.js";
 
@@ -23,6 +24,16 @@ export type SignalSendOpts = {
   timeoutMs?: number;
   textMode?: "markdown" | "plain";
   textStyles?: SignalTextStyleRange[];
+  /**
+   * Message ID (timestamp string) to quote/reply-to. When provided and quoteTimestamp
+   * is not set, this is parsed as the quote timestamp and `to` is used as quote-author
+   * (best-effort; works for DM inbound replies, skipped for groups).
+   */
+  replyToId?: string;
+  /** Timestamp of the message being quoted (from replyToId). Takes precedence over replyToId. */
+  quoteTimestamp?: number;
+  /** Author of the quoted message (UUID for inbound, phone number for outbound). */
+  quoteAuthor?: string;
 };
 
 export type SignalSendResult = {
@@ -39,16 +50,89 @@ type SignalTarget =
   | { type: "group"; groupId: string }
   | { type: "username"; username: string };
 
+let signalConfigRuntimePromise:
+  | Promise<typeof import("openclaw/plugin-sdk/config-runtime")>
+  | undefined;
+
+async function loadSignalConfigRuntime() {
+  signalConfigRuntimePromise ??= import("openclaw/plugin-sdk/config-runtime");
+  return await signalConfigRuntimePromise;
+}
+
+async function resolveSignalRpcAccountInfo(
+  opts: Pick<SignalSendOpts, "cfg" | "baseUrl" | "account" | "accountId">,
+) {
+  if (opts.baseUrl?.trim() && opts.account?.trim()) {
+    return undefined;
+  }
+  const cfg = opts.cfg ?? (await loadSignalConfigRuntime()).loadConfig();
+  return resolveSignalAccount({
+    cfg,
+    accountId: opts.accountId,
+  });
+}
+
+function normalizeSignalQuoteAuthorFromTarget(rawTo: string): string | undefined {
+  let value = rawTo.trim();
+  if (!value) {
+    return undefined;
+  }
+  if (/^signal:/i.test(value)) {
+    value = value.replace(/^signal:/i, "").trim();
+  }
+  if (!value) {
+    return undefined;
+  }
+  const lower = value.toLowerCase();
+  if (lower.startsWith("group:")) {
+    return undefined;
+  }
+  if (lower.startsWith("username:")) {
+    value = value.slice("username:".length).trim();
+  }
+  return value || undefined;
+}
+
+export function resolveSignalQuoteParams(input: {
+  to: string;
+  replyToId?: string;
+  quoteTimestamp?: number;
+  quoteAuthor?: string;
+}): { quoteTimestamp?: number; quoteAuthor?: string } {
+  let quoteTimestamp = input.quoteTimestamp;
+  let quoteAuthor = input.quoteAuthor?.trim();
+
+  if ((typeof quoteTimestamp !== "number" || !quoteAuthor) && input.replyToId?.trim()) {
+    const parsedTs = Number(input.replyToId.trim());
+    if (Number.isFinite(parsedTs) && parsedTs > 0) {
+      if (typeof quoteTimestamp !== "number") {
+        quoteTimestamp = parsedTs;
+      }
+      quoteAuthor = quoteAuthor || normalizeSignalQuoteAuthorFromTarget(input.to);
+    }
+  }
+
+  if (
+    typeof quoteTimestamp === "number" &&
+    Number.isFinite(quoteTimestamp) &&
+    quoteTimestamp > 0 &&
+    quoteAuthor
+  ) {
+    return { quoteTimestamp, quoteAuthor };
+  }
+  return {};
+}
+
 function parseTarget(raw: string): SignalTarget {
   let value = raw.trim();
   if (!value) {
     throw new Error("Signal recipient is required");
   }
-  const lower = value.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(value);
   if (lower.startsWith("signal:")) {
     value = value.slice("signal:".length).trim();
   }
-  const normalized = value.toLowerCase();
+  const normalized = normalizeLowercaseStringOrEmpty(value);
   if (normalized.startsWith("group:")) {
     return { type: "group", groupId: value.slice("group:".length).trim() };
   }
@@ -177,6 +261,16 @@ export async function sendMessageSignal(
   if (attachments && attachments.length > 0) {
     params.attachments = attachments;
   }
+  const resolvedQuote = resolveSignalQuoteParams({
+    to,
+    replyToId: opts.replyToId,
+    quoteTimestamp: opts.quoteTimestamp,
+    quoteAuthor: opts.quoteAuthor,
+  });
+  if (typeof resolvedQuote.quoteTimestamp === "number" && resolvedQuote.quoteAuthor) {
+    params["quote-timestamp"] = resolvedQuote.quoteTimestamp;
+    params["quote-author"] = resolvedQuote.quoteAuthor;
+  }
 
   const targetParams = buildTargetParams(target, {
     recipient: true,
@@ -203,7 +297,8 @@ export async function sendTypingSignal(
   to: string,
   opts: SignalRpcOpts & { stop?: boolean } = {},
 ): Promise<boolean> {
-  const { baseUrl, account } = resolveSignalRpcContext(opts);
+  const accountInfo = await resolveSignalRpcAccountInfo(opts);
+  const { baseUrl, account } = resolveSignalRpcContext(opts, accountInfo);
   const targetParams = buildTargetParams(parseTarget(to), {
     recipient: true,
     group: true,
@@ -233,7 +328,8 @@ export async function sendReadReceiptSignal(
   if (!Number.isFinite(targetTimestamp) || targetTimestamp <= 0) {
     return false;
   }
-  const { baseUrl, account } = resolveSignalRpcContext(opts);
+  const accountInfo = await resolveSignalRpcAccountInfo(opts);
+  const { baseUrl, account } = resolveSignalRpcContext(opts, accountInfo);
   const targetParams = buildTargetParams(parseTarget(to), {
     recipient: true,
   });

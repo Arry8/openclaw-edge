@@ -3,11 +3,32 @@ import {
   extractContentFromMessage,
   extractTextFromMessage,
   extractThinkingFromMessage,
+  formatTokens,
   isCommandMessage,
   sanitizeRenderableText,
 } from "./tui-formatters.js";
 
 describe("extractTextFromMessage", () => {
+  it("prefers final_answer text over commentary text for assistant messages", () => {
+    const text = extractTextFromMessage({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "Commentary that should not render",
+          textSignature: JSON.stringify({ v: 1, id: "c1", phase: "commentary" }),
+        },
+        {
+          type: "text",
+          text: "Final answer for the TUI",
+          textSignature: JSON.stringify({ v: 1, id: "f1", phase: "final_answer" }),
+        },
+      ],
+    });
+
+    expect(text).toBe("Final answer for the TUI");
+  });
+
   it("renders errorMessage when assistant content is empty", () => {
     const text = extractTextFromMessage({
       role: "assistant",
@@ -119,6 +140,29 @@ Actual user message`,
     expect(text).toBe("Actual user message");
   });
 
+  it("strips leading inbound metadata blocks for command messages (#59871)", () => {
+    const text = extractTextFromMessage({
+      command: true,
+      content: `Conversation info (untrusted metadata):
+\`\`\`json
+{
+  "message_id": "abc123"
+}
+\`\`\`
+
+Sender (untrusted metadata):
+\`\`\`json
+{
+  "label": "Someone"
+}
+\`\`\`
+
+Exec completed: task finished successfully`,
+    });
+
+    expect(text).toBe("Exec completed: task finished successfully");
+  });
+
   it("keeps metadata-like blocks for non-user messages", () => {
     const text = extractTextFromMessage({
       role: "assistant",
@@ -209,6 +253,26 @@ describe("isCommandMessage", () => {
     expect(isCommandMessage({ command: true })).toBe(true);
     expect(isCommandMessage({ command: false })).toBe(false);
     expect(isCommandMessage({})).toBe(false);
+  });
+});
+
+describe("formatTokens", () => {
+  it("renders tokens ? when both total and context are unknown", () => {
+    expect(formatTokens(null, null)).toBe("tokens ?");
+    // Also covers the fully-undefined callsite.
+    expect(formatTokens()).toBe("tokens ?");
+  });
+
+  it("treats missing total with known context as 0/ctx", () => {
+    expect(formatTokens(null, 200_000)).toBe("tokens 0/200k (0%)");
+  });
+
+  it("renders only total when context is unknown", () => {
+    expect(formatTokens(1_500, null)).toBe("tokens 1.5k");
+  });
+
+  it("renders total/context with percentage when both are known", () => {
+    expect(formatTokens(1_000, 200_000)).toBe("tokens 1.0k/200k (1%)");
   });
 });
 

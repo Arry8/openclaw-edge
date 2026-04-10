@@ -12,6 +12,8 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { isDangerousNameMatchingEnabled } from "openclaw/plugin-sdk/config-runtime";
 import { danger } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
+import { createDiscordRequestClient } from "../proxy-request-client.js";
 import type { DiscordGuildEntryResolved } from "./allow-list.js";
 import { createDiscordAutoPresenceController } from "./auto-presence.js";
 import type { DiscordDmPolicy } from "./dm-command-auth.js";
@@ -38,6 +40,44 @@ type CreateClientFn = (
   handlers: ConstructorParameters<typeof Client>[1],
   plugins: ConstructorParameters<typeof Client>[2],
 ) => Client;
+
+type ListenerCompatClient = Client & {
+  plugins?: Array<{ id: string; plugin: Plugin }>;
+  registerListener?: (listener: object) => object;
+  unregisterListener?: (listener: object) => boolean;
+};
+
+function withLegacyListenerCompat(client: Client): ListenerCompatClient {
+  const compatClient = client as ListenerCompatClient;
+  if (!compatClient.registerListener) {
+    compatClient.registerListener = (listener: object) => {
+      if (!compatClient.listeners.includes(listener as never)) {
+        compatClient.listeners.push(listener as never);
+      }
+      return listener;
+    };
+  }
+  if (!compatClient.unregisterListener) {
+    compatClient.unregisterListener = (listener: object) => {
+      const index = compatClient.listeners.indexOf(listener as never);
+      if (index < 0) {
+        return false;
+      }
+      compatClient.listeners.splice(index, 1);
+      return true;
+    };
+  }
+  return compatClient;
+}
+
+function registerLatePlugin(client: Client, plugin: Plugin) {
+  const compatClient = withLegacyListenerCompat(client);
+  void plugin.registerClient?.(compatClient);
+  void plugin.registerRoutes?.(compatClient);
+  if (!compatClient.plugins?.some((entry) => entry.id === plugin.id)) {
+    compatClient.plugins?.push({ id: plugin.id, plugin });
+  }
+}
 
 export function createDiscordStatusReadyListener(params: {
   discordConfig: Parameters<typeof resolveDiscordPresenceUpdate>[0];
@@ -70,6 +110,7 @@ export function createDiscordMonitorClient(params: {
   accountId: string;
   applicationId: string;
   token: string;
+  proxyFetch?: typeof fetch;
   commands: BaseCommand[];
   components: BaseMessageInteractiveComponent[];
   modals: Modal[];
@@ -87,6 +128,7 @@ export function createDiscordMonitorClient(params: {
   let autoPresenceController: DiscordAutoPresenceController | null = null;
   const clientPlugins: Plugin[] = [
     params.createGatewayPlugin({
+      accountId: params.accountId,
       discordConfig: params.discordConfig,
       runtime: params.runtime,
     }),
@@ -94,6 +136,10 @@ export function createDiscordMonitorClient(params: {
   if (params.voiceEnabled) {
     clientPlugins.push(new VoicePlugin());
   }
+  const voicePlugin = clientPlugins.find((plugin) => plugin.id === "voice");
+  const constructorPlugins = voicePlugin
+    ? clientPlugins.filter((plugin) => plugin !== voicePlugin)
+    : clientPlugins;
 
   // Pass eventQueue config to Carbon so the gateway listener budget can be tuned.
   // Default listenerTimeout is 120s (Carbon defaults to 30s, which is too short for some
@@ -106,6 +152,18 @@ export function createDiscordMonitorClient(params: {
     discordConfig: params.discordConfig,
     getAutoPresenceController: () => autoPresenceController,
   });
+
+  // Polyfill registerListener for carbon >=0.14 compatibility: v0.14.0 has a `listeners` array
+  // on Client but no registerListener() method (added later in carbon main, not yet published).
+  // VoicePlugin and GatewayPlugin both call client.registerListener() during Client construction.
+  type CarbonClientProto = { listeners: unknown[]; registerListener?: (listener: unknown) => void };
+  const carbonClientProto = Client.prototype as unknown as CarbonClientProto;
+  if (!carbonClientProto.registerListener) {
+    carbonClientProto.registerListener = function (this: CarbonClientProto, listener: unknown) {
+      this.listeners.push(listener);
+    };
+  }
+
   const client = params.createClient(
     {
       baseUrl: "http://localhost",
@@ -122,8 +180,16 @@ export function createDiscordMonitorClient(params: {
       components: params.components,
       modals: params.modals,
     },
-    clientPlugins,
+    constructorPlugins,
   );
+  if (voicePlugin) {
+    registerLatePlugin(client, voicePlugin);
+  }
+  if (params.proxyFetch) {
+    client.rest = createDiscordRequestClient(params.token, {
+      fetch: params.proxyFetch,
+    });
+  }
   const gateway = client.getPlugin<GatewayPlugin>("gateway") as MutableDiscordGateway | undefined;
   const gatewaySupervisor = params.createGatewaySupervisor({
     gateway,
@@ -159,7 +225,8 @@ export async function fetchDiscordBotIdentity(params: {
   try {
     const botUser = await params.client.fetchUser("@me");
     const botUserId = botUser?.id;
-    const botUserName = botUser?.username?.trim() || botUser?.globalName?.trim() || undefined;
+    const botUserName =
+      normalizeOptionalString(botUser?.username) ?? normalizeOptionalString(botUser?.globalName);
     params.logStartupPhase(
       "fetch-bot-identity:done",
       `botUserId=${botUserId ?? "<missing>"} botUserName=${botUserName ?? "<missing>"}`,

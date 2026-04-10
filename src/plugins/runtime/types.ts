@@ -1,7 +1,33 @@
+import type { ReplyPayload } from "../../auto-reply/types.js";
+import type { deliverOutboundPayloads } from "../../infra/outbound/deliver-runtime.js";
+import type {
+  NormalizedOutboundPayload,
+  OutboundDeliveryResult,
+} from "../../infra/outbound/deliver.js";
+import type { OutboundIdentity } from "../../infra/outbound/identity.js";
+import type { OutboundChannel } from "../../infra/outbound/targets.js";
 import type { PluginRuntimeChannel } from "./types-channel.js";
 import type { PluginRuntimeCore, RuntimeLogger } from "./types-core.js";
 
-export type { RuntimeLogger };
+export type {
+  NormalizedOutboundPayload,
+  OutboundChannel,
+  OutboundDeliveryResult,
+  OutboundIdentity,
+  ReplyPayload,
+  RuntimeLogger,
+};
+
+// ── Outbound delivery types (plugin-facing) ─────────────────────────
+
+/**
+ * Plugin-facing params for `deliverOutboundPayloads`.
+ * Internal fields (`skipQueue`, `mirror`, `session`, `deps`, `abortSignal`) are excluded.
+ */
+export type PluginDeliverOutboundParams = Omit<
+  Parameters<typeof deliverOutboundPayloads>[0],
+  "skipQueue" | "mirror" | "session" | "deps" | "abortSignal"
+>;
 
 // ── Subagent runtime types ──────────────────────────────────────────
 
@@ -18,6 +44,29 @@ export type SubagentRunParams = {
 
 export type SubagentRunResult = {
   runId: string;
+};
+
+export type SubagentSpawnDetachedRequesterOrigin = {
+  channel?: string;
+  accountId?: string;
+  to?: string;
+  threadId?: string | number;
+};
+
+export type SubagentSpawnDetachedParams = {
+  requesterSessionKey: string;
+  task: string;
+  label?: string;
+  agentId?: string;
+  model?: string;
+  thinking?: string;
+  runTimeoutSeconds?: number;
+  requesterOrigin?: SubagentSpawnDetachedRequesterOrigin;
+};
+
+export type SubagentSpawnDetachedResult = {
+  runId: string;
+  childSessionKey: string;
 };
 
 export type SubagentWaitParams = {
@@ -54,6 +103,10 @@ export type SubagentDeleteSessionParams = {
 export type PluginRuntime = PluginRuntimeCore & {
   subagent: {
     run: (params: SubagentRunParams) => Promise<SubagentRunResult>;
+    // Optional on the public type for backward compatibility with external
+    // PluginRuntime implementors. Gateway-bound runtimes expose it when the
+    // native detached subagent path is actually available.
+    spawnDetached?: (params: SubagentSpawnDetachedParams) => Promise<SubagentSpawnDetachedResult>;
     waitForRun: (params: SubagentWaitParams) => Promise<SubagentWaitResult>;
     getSessionMessages: (
       params: SubagentGetSessionMessagesParams,
@@ -61,6 +114,18 @@ export type PluginRuntime = PluginRuntimeCore & {
     /** @deprecated Use getSessionMessages. */
     getSession: (params: SubagentGetSessionParams) => Promise<SubagentGetSessionResult>;
     deleteSession: (params: SubagentDeleteSessionParams) => Promise<void>;
+  };
+  outbound: {
+    /**
+     * Send payloads through the standard outbound delivery pipeline (chunking, hooks, queue).
+     *
+     * Note: when `bestEffort` is true and no `onError` callback is provided,
+     * per-payload delivery failures are silently swallowed and the returned
+     * results array may be shorter than the input payloads array.
+     */
+    deliverOutboundPayloads: (
+      params: PluginDeliverOutboundParams,
+    ) => Promise<OutboundDeliveryResult[]>;
   };
   channel: PluginRuntimeChannel;
 };

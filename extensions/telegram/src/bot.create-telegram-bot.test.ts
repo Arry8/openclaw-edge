@@ -1,7 +1,7 @@
 import type { GetReplyOptions, MsgContext } from "openclaw/plugin-sdk/reply-runtime";
+import { withEnvAsync } from "openclaw/plugin-sdk/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { escapeRegExp, formatEnvelopeTimestamp } from "../../../test/helpers/envelope-timestamp.js";
-import { withEnvAsync } from "../../../test/helpers/plugins/env.js";
 const harness = await import("./bot.create-telegram-bot.test-harness.js");
 const EYES_EMOJI = "\u{1F440}";
 const {
@@ -899,6 +899,65 @@ describe("createTelegramBot", () => {
       getFile: async () => ({}),
     });
     expect(replySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not persist update offset when an update fails", async () => {
+    // For this test we need sequentialize(...) to behave like a normal middleware and call next().
+    sequentializeSpy.mockImplementationOnce(
+      () => async (_ctx: unknown, next: () => Promise<void>) => {
+        await next();
+      },
+    );
+
+    const onUpdateId = vi.fn();
+    loadConfig.mockReturnValue({
+      channels: { telegram: { dmPolicy: "open", allowFrom: ["*"] } },
+    });
+
+    createTelegramBot({
+      token: "tok",
+      updateOffset: {
+        lastUpdateId: 100,
+        onUpdateId,
+      },
+    });
+
+    type Middleware = (
+      ctx: Record<string, unknown>,
+      next: () => Promise<void>,
+    ) => Promise<void> | void;
+
+    const middlewares = middlewareUseSpy.mock.calls
+      .map((call) => call[0])
+      .filter((fn): fn is Middleware => typeof fn === "function");
+
+    const runMiddlewareChain = async (
+      ctx: Record<string, unknown>,
+      finalNext: () => Promise<void>,
+    ) => {
+      let idx = -1;
+      const dispatch = async (i: number): Promise<void> => {
+        if (i <= idx) {
+          throw new Error("middleware dispatch called multiple times");
+        }
+        idx = i;
+        const fn = middlewares[i];
+        if (!fn) {
+          await finalNext();
+          return;
+        }
+        await fn(ctx, async () => dispatch(i + 1));
+      };
+      await dispatch(0);
+    };
+
+    await expect(
+      runMiddlewareChain({ update: { update_id: 101 } }, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(onUpdateId).not.toHaveBeenCalled();
   });
 
   it("does not persist update offset past pending updates", async () => {
@@ -2539,5 +2598,46 @@ describe("createTelegramBot", () => {
     await handler(ctx);
 
     expect(replySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("detects document messages as having inbound media", async () => {
+    createTelegramBot({ token: "tok" });
+    const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
+
+    // Mock globalThis.fetch so getFile does not attempt a live network call.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(Buffer.from("fake-pdf"), {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        }),
+    );
+
+    // Verify that a document message triggers getFile (media download attempt).
+    const getFileSpy = vi.fn(async () => ({ file_path: "documents/report.pdf" }));
+
+    try {
+      await handler({
+        message: {
+          chat: { id: 42, type: "private" },
+          message_id: 500,
+          date: 1736380800,
+          document: {
+            file_id: "doc1",
+            file_name: "report.pdf",
+            mime_type: "application/pdf",
+          },
+          from: { id: 999, username: "pdfuser" },
+        },
+        me: { username: "openclaw_bot" },
+        getFile: getFileSpy,
+      });
+
+      // The handler must call getFile for document attachments, proving the
+      // document field is recognized as inbound media.
+      expect(getFileSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

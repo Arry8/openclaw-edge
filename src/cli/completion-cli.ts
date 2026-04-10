@@ -4,6 +4,10 @@ import path from "node:path";
 import { Command, Option } from "commander";
 import { resolveStateDir } from "../config/paths.js";
 import { routeLogsToStderr } from "../logging/console.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../shared/string-coerce.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
 import { pathExists } from "../utils.js";
@@ -13,11 +17,7 @@ import {
 } from "./completion-fish.js";
 import { getCoreCliCommandNames, registerCoreCliByName } from "./program/command-registry.js";
 import { getProgramContext } from "./program/program-context.js";
-import {
-  getSubCliEntries,
-  loadValidatedConfigForPluginRegistration,
-  registerSubCliByName,
-} from "./program/register.subclis.js";
+import { getSubCliEntries, registerSubCliByName } from "./program/register.subclis.js";
 
 const COMPLETION_SHELLS = ["zsh", "bash", "powershell", "fish"] as const;
 type CompletionShell = (typeof COMPLETION_SHELLS)[number];
@@ -27,8 +27,8 @@ function isCompletionShell(value: string): value is CompletionShell {
 }
 
 export function resolveShellFromEnv(env: NodeJS.ProcessEnv = process.env): CompletionShell {
-  const shellPath = env.SHELL?.trim() ?? "";
-  const shellName = shellPath ? path.basename(shellPath).toLowerCase() : "";
+  const shellPath = normalizeOptionalString(env.SHELL) ?? "";
+  const shellName = shellPath ? normalizeLowercaseStringOrEmpty(path.basename(shellPath)) : "";
   if (shellName === "zsh") {
     return "zsh";
   }
@@ -107,6 +107,10 @@ function formatCompletionSourceLine(
 ): string {
   if (shell === "fish") {
     return `source "${cachePath}"`;
+  }
+  // PowerShell uses dot-sourcing syntax; `source` is not a valid PS cmdlet.
+  if (shell === "powershell") {
+    return `. "${cachePath}"`;
   }
   return `source "${cachePath}"`;
 }
@@ -277,11 +281,10 @@ export function registerCompletionCli(program: Command) {
         await registerSubCliByName(program, entry.name);
       }
 
-      const config = await loadValidatedConfigForPluginRegistration();
-      if (config) {
-        const { registerPluginCliCommands } = await import("../plugins/cli.js");
-        await registerPluginCliCommands(program, config, undefined, undefined, { mode: "eager" });
-      }
+      const { registerPluginCliCommandsFromValidatedConfig } = await import("../plugins/cli.js");
+      await registerPluginCliCommandsFromValidatedConfig(program, undefined, undefined, {
+        mode: "eager",
+      });
 
       if (options.writeState) {
         const writeShells = options.shell ? [shell] : [...COMPLETION_SHELLS];
@@ -347,8 +350,9 @@ export async function installCompletion(shell: string, yes: boolean, binName = "
     profilePath = path.join(home, ".config", "fish", "config.fish");
     sourceLine = formatCompletionSourceLine("fish", binName, cachePath);
   } else {
-    console.error(`Automated installation not supported for ${shell} yet.`);
-    return;
+    // powershell — all CompletionShell values are now handled above.
+    profilePath = getShellProfilePath("powershell");
+    sourceLine = formatCompletionSourceLine("powershell", binName, cachePath);
   }
 
   try {
@@ -379,7 +383,9 @@ export async function installCompletion(shell: string, yes: boolean, binName = "
 
     await fs.writeFile(profilePath, update.next, "utf-8");
     if (!yes) {
-      console.log(`Completion installed. Restart your shell or run: source ${profilePath}`);
+      // Use the correct reload syntax for each shell: PowerShell uses dot-source, others use source.
+      const reloadHint = shell === "powershell" ? `. "${profilePath}"` : `source ${profilePath}`;
+      console.log(`Completion installed. Restart your shell or run: ${reloadHint}`);
     }
   } catch (err) {
     console.error(`Failed to install completion: ${err as string}`);
@@ -389,7 +395,22 @@ export async function installCompletion(shell: string, yes: boolean, binName = "
 function generateZshCompletion(program: Command): string {
   const rootCmd = program.name();
   const script = `
+# Ensure zsh completion system is initialized.
+# When sourced via \`source <(openclaw completion --shell zsh)\`,
+# compdef may not be available unless compinit has been called first.
+if (( ! $+functions[compdef] )); then
+  autoload -Uz compinit
+  compinit -C
+fi
+
 #compdef ${rootCmd}
+
+# Ensure compinit is loaded so compdef is available. Without this guard,
+# sourcing the completion script before compinit causes:
+#   "command not found: compdef"  (Fixes #14289)
+if [[ -z "\${(k)functions[compdef]}" ]]; then
+  autoload -Uz compinit && compinit -i
+fi
 
 _${rootCmd}_root_completion() {
   local -a commands

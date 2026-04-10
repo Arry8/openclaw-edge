@@ -122,6 +122,7 @@ async function applyStagedEntryMode(params: {
   relPath: string;
   mode: number;
   originalPath: string;
+  isDirectory?: boolean;
 }): Promise<void> {
   const destinationPath = path.join(params.destinationRealDir, params.relPath);
   await assertResolvedInsideDestination({
@@ -129,9 +130,10 @@ async function applyStagedEntryMode(params: {
     targetPath: destinationPath,
     originalPath: params.originalPath,
   });
-  if (params.mode !== 0) {
-    await fs.chmod(destinationPath, params.mode).catch(() => undefined);
+  if (params.isDirectory && params.mode === 0) {
+    return;
   }
+  await fs.chmod(destinationPath, params.mode).catch(() => undefined);
 }
 
 export async function withStagedArchiveDestination<T>(params: {
@@ -143,6 +145,40 @@ export async function withStagedArchiveDestination<T>(params: {
     return await params.run(stagingDir);
   } finally {
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function copyStagedFileIntoDestination(params: {
+  sourcePath: string;
+  destinationRealDir: string;
+  relPath: string;
+  originalPath: string;
+  sourceMode: number;
+}): Promise<void> {
+  const restoreMode = params.sourceMode & 0o777;
+  const readableMode = restoreMode | 0o400;
+  const shouldTemporarilyRelaxSourceRead = (restoreMode & 0o400) === 0;
+
+  if (shouldTemporarilyRelaxSourceRead) {
+    await fs.chmod(params.sourcePath, readableMode);
+  }
+
+  try {
+    await copyFileWithinRoot({
+      sourcePath: params.sourcePath,
+      rootDir: params.destinationRealDir,
+      relativePath: params.relPath,
+      mkdir: true,
+      createMode: restoreMode | 0o600,
+    });
+  } catch (error) {
+    throw new Error(`archive staging could not merge ${params.originalPath}`, {
+      cause: error,
+    });
+  } finally {
+    if (shouldTemporarilyRelaxSourceRead) {
+      await fs.chmod(params.sourcePath, restoreMode).catch(() => {});
+    }
   }
 }
 
@@ -179,6 +215,7 @@ export async function mergeExtractedTreeIntoDestination(params: {
           relPath,
           mode: sourceStat.mode & 0o777,
           originalPath,
+          isDirectory: true,
         });
         continue;
       }
@@ -195,16 +232,18 @@ export async function mergeExtractedTreeIntoDestination(params: {
         originalPath,
         isDirectory: false,
       });
-      await copyFileWithinRoot({
+      const sourceMode = sourceStat.mode & 0o777;
+      await copyStagedFileIntoDestination({
         sourcePath,
-        rootDir: params.destinationRealDir,
-        relativePath: relPath,
-        mkdir: true,
+        destinationRealDir: params.destinationRealDir,
+        relPath,
+        originalPath,
+        sourceMode,
       });
       await applyStagedEntryMode({
         destinationRealDir: params.destinationRealDir,
         relPath,
-        mode: sourceStat.mode & 0o777,
+        mode: sourceMode,
         originalPath,
       });
     }

@@ -85,13 +85,11 @@ const provider = api.runtime.agent.defaults.provider; // e.g. "anthropic"
 Launch and manage background subagent runs.
 
 ```typescript
-// Start a subagent run
-const { runId } = await api.runtime.subagent.run({
-  sessionKey: "agent:main:subagent:search-helper",
-  message: "Expand this query into focused follow-up searches.",
-  provider: "openai", // optional override
-  model: "gpt-4.1-mini", // optional override
-  deliver: false,
+// Start a native detached subagent worker (uses the core subagent registry lifecycle)
+const { runId, childSessionKey } = await api.runtime.subagent.spawnDetached({
+  requesterSessionKey: "agent:main:main",
+  task: "Expand this query into focused follow-up searches.",
+  model: "openai/gpt-4.1-mini", // optional canonical provider/model override
 });
 
 // Wait for completion
@@ -99,21 +97,67 @@ const result = await api.runtime.subagent.waitForRun({ runId, timeoutMs: 30000 }
 
 // Read session messages
 const { messages } = await api.runtime.subagent.getSessionMessages({
-  sessionKey: "agent:main:subagent:search-helper",
+  sessionKey: childSessionKey,
   limit: 10,
+});
+
+// Directly run an existing child session when you already manage the session key
+const { runId: directRunId } = await api.runtime.subagent.run({
+  sessionKey: childSessionKey,
+  message: "Continue from the latest saved state.",
+  deliver: false,
 });
 
 // Delete a session
 await api.runtime.subagent.deleteSession({
-  sessionKey: "agent:main:subagent:search-helper",
+  sessionKey: childSessionKey,
 });
 ```
 
 <Warning>
-  Model overrides (`provider`/`model`) require operator opt-in via
+  Model overrides on `spawnDetached()` and `run()` require operator opt-in via
   `plugins.entries.<id>.subagent.allowModelOverride: true` in config.
-  Untrusted plugins can still run subagents, but override requests are rejected.
+  Untrusted plugins can still launch subagents, but override requests are rejected.
 </Warning>
+
+`spawnDetached()` creates a fresh child session through the native subagent spawn path and returns
+both `runId` and `childSessionKey`. `run()` keeps the existing direct gateway `agent` dispatch behavior
+for callers that already manage their own child session key. Pass `requesterOrigin` when you want a
+native detached worker to inherit the current delivery routing metadata.
+
+### `api.runtime.taskFlow`
+
+Bind a Task Flow runtime to an existing OpenClaw session key or trusted tool
+context, then create and manage Task Flows without passing an owner on every call.
+
+```typescript
+const taskFlow = api.runtime.taskFlow.fromToolContext(ctx);
+
+const created = taskFlow.createManaged({
+  controllerId: "my-plugin/review-batch",
+  goal: "Review new pull requests",
+});
+
+const child = taskFlow.runTask({
+  flowId: created.flowId,
+  runtime: "acp",
+  childSessionKey: "agent:main:subagent:reviewer",
+  task: "Review PR #123",
+  status: "running",
+  startedAt: Date.now(),
+});
+
+const waiting = taskFlow.setWaiting({
+  flowId: created.flowId,
+  expectedRevision: created.revision,
+  currentStep: "await-human-reply",
+  waitJson: { kind: "reply", channel: "telegram" },
+});
+```
+
+Use `bindSession({ sessionKey, requesterOrigin })` when you already have a
+trusted OpenClaw session key from your own binding layer. Do not bind from raw
+user input.
 
 ### `api.runtime.tts`
 
@@ -296,6 +340,46 @@ api.runtime.tools.registerMemoryCli(/* ... */);
 
 Channel-specific runtime helpers (available when a channel plugin is loaded).
 
+`api.runtime.channel.mentions` is the shared inbound mention-policy surface for
+bundled channel plugins that use runtime injection:
+
+```typescript
+const mentionMatch = api.runtime.channel.mentions.matchesMentionWithExplicit(text, {
+  mentionRegexes,
+  mentionPatterns,
+});
+
+const decision = api.runtime.channel.mentions.resolveInboundMentionDecision({
+  facts: {
+    canDetectMention: true,
+    wasMentioned: mentionMatch.matched,
+    implicitMentionKinds: api.runtime.channel.mentions.implicitMentionKindWhen(
+      "reply_to_bot",
+      isReplyToBot,
+    ),
+  },
+  policy: {
+    isGroup,
+    requireMention,
+    allowTextCommands,
+    hasControlCommand,
+    commandAuthorized,
+  },
+});
+```
+
+Available mention helpers:
+
+- `buildMentionRegexes`
+- `matchesMentionPatterns`
+- `matchesMentionWithExplicit`
+- `implicitMentionKindWhen`
+- `resolveInboundMentionDecision`
+
+`api.runtime.channel.mentions` intentionally does not expose the older
+`resolveMentionGating*` compatibility helpers. Prefer the normalized
+`{ facts, policy }` path.
+
 ## Storing runtime references
 
 Use `createPluginRuntimeStore` to store the runtime reference for use outside
@@ -330,15 +414,15 @@ export function tryGetRuntime() {
 
 Beyond `api.runtime`, the API object also provides:
 
-| Field                    | Type                      | Description                                                      |
-| ------------------------ | ------------------------- | ---------------------------------------------------------------- |
-| `api.id`                 | `string`                  | Plugin id                                                        |
-| `api.name`               | `string`                  | Plugin display name                                              |
-| `api.config`             | `OpenClawConfig`          | Current config snapshot                                          |
-| `api.pluginConfig`       | `Record<string, unknown>` | Plugin-specific config from `plugins.entries.<id>.config`        |
-| `api.logger`             | `PluginLogger`            | Scoped logger (`debug`, `info`, `warn`, `error`)                 |
-| `api.registrationMode`   | `PluginRegistrationMode`  | `"full"`, `"setup-only"`, `"setup-runtime"`, or `"cli-metadata"` |
-| `api.resolvePath(input)` | `(string) => string`      | Resolve a path relative to the plugin root                       |
+| Field                    | Type                      | Description                                                                                 |
+| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `api.id`                 | `string`                  | Plugin id                                                                                   |
+| `api.name`               | `string`                  | Plugin display name                                                                         |
+| `api.config`             | `OpenClawConfig`          | Current config snapshot (active in-memory runtime snapshot when available)                  |
+| `api.pluginConfig`       | `Record<string, unknown>` | Plugin-specific config from `plugins.entries.<id>.config`                                   |
+| `api.logger`             | `PluginLogger`            | Scoped logger (`debug`, `info`, `warn`, `error`)                                            |
+| `api.registrationMode`   | `PluginRegistrationMode`  | Current load mode; `"setup-runtime"` is the lightweight pre-full-entry startup/setup window |
+| `api.resolvePath(input)` | `(string) => string`      | Resolve a path relative to the plugin root                                                  |
 
 ## Related
 

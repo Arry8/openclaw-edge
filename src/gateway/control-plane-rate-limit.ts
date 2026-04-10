@@ -2,6 +2,7 @@ import type { GatewayClient } from "./server-methods/types.js";
 
 const CONTROL_PLANE_RATE_LIMIT_MAX_REQUESTS = 3;
 const CONTROL_PLANE_RATE_LIMIT_WINDOW_MS = 60_000;
+const PRUNE_INTERVAL_MS = 60_000;
 
 type Bucket = {
   count: number;
@@ -9,6 +10,18 @@ type Bucket = {
 };
 
 const controlPlaneBuckets = new Map<string, Bucket>();
+
+// Periodic cleanup to avoid unbounded map growth from distinct client keys.
+const pruneTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of controlPlaneBuckets) {
+    if (now - bucket.windowStartMs >= CONTROL_PLANE_RATE_LIMIT_WINDOW_MS) {
+      controlPlaneBuckets.delete(key);
+    }
+  }
+}, PRUNE_INTERVAL_MS);
+// Allow the Node.js process to exit even if the timer is still active.
+pruneTimer.unref();
 
 function normalizePart(value: unknown, fallback: string): string {
   if (typeof value !== "string") {
@@ -21,12 +34,11 @@ function normalizePart(value: unknown, fallback: string): string {
 export function resolveControlPlaneRateLimitKey(client: GatewayClient | null): string {
   const deviceId = normalizePart(client?.connect?.device?.id, "unknown-device");
   const clientIp = normalizePart(client?.clientIp, "unknown-ip");
-  if (deviceId === "unknown-device" && clientIp === "unknown-ip") {
-    // Last-resort fallback: avoid cross-client contention when upstream identity is missing.
-    const connId = normalizePart(client?.connId, "");
-    if (connId) {
-      return `${deviceId}|${clientIp}|conn=${connId}`;
-    }
+  // Scope by active gateway connection when available so concurrent
+  // sessions from the same device/IP do not consume each other's budget.
+  const connId = normalizePart(client?.connId, "");
+  if (connId) {
+    return `${deviceId}|${clientIp}|conn=${connId}`;
   }
   return `${deviceId}|${clientIp}`;
 }

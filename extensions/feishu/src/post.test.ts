@@ -48,7 +48,7 @@ describe("parsePostContent", () => {
     const result = parsePostContent(content);
 
     expect(result.textContent).toBe(
-      "[Docs \\[v2\\]](https://example.com/guide(a)) @alice\\_bob @ou\\_123 [https://example.com/no\\-text](https://example.com/no-text)",
+      "[Docs \\[v2\\]](https://example.com/guide(a))  @alice\\_bob  @ou\\_123  [https://example.com/no\\-text](https://example.com/no-text)",
     );
     expect(result.mentionedOpenIds).toEqual(["ou_123"]);
   });
@@ -71,6 +71,24 @@ describe("parsePostContent", () => {
     expect(result.textContent).toBe("Before ![image] after\n![image]");
     expect(result.imageKeys).toEqual(["img_1", "img_2"]);
     expect(result.mentionedOpenIds).toEqual([]);
+  });
+
+  it("adds spaces around anchors and mentions to prevent UI text concatenation", () => {
+    const content = JSON.stringify({
+      title: "",
+      content: [
+        [
+          { tag: "text", text: "打开文档[" },
+          { tag: "a", href: "https://example.com", text: "项目A" },
+          { tag: "text", text: "]并重新理解" },
+        ],
+      ],
+    });
+
+    const result = parsePostContent(content);
+
+    // Should automatically insert spaces around the 'a' tag to prevent the CJK characters from sticking to it
+    expect(result.textContent).toBe("打开文档\\[ [项目A](https://example.com) \\]并重新理解");
   });
 
   it("supports locale wrappers", () => {
@@ -101,5 +119,24 @@ describe("parsePostContent", () => {
       mediaKeys: [],
       mentionedOpenIds: [],
     });
+  });
+
+  it("escapes trailing colon in text runs", () => {
+    const content = JSON.stringify({
+      title: "",
+      content: [
+        [{ tag: "text", text: "This should keep trailing colon:" }],
+        [{ tag: "text", text: "URL: https://example.com:8080/path" }],
+      ],
+    });
+
+    const result = parsePostContent(content);
+
+    expect(result.textContent).toBe(
+      "This should keep trailing colon\\:\nURL: https://example.com:8080/path",
+    );
+    expect(result.imageKeys).toEqual([]);
+    expect(result.mediaKeys).toEqual([]);
+    expect(result.mentionedOpenIds).toEqual([]);
   });
 });

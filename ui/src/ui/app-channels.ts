@@ -6,6 +6,7 @@ import {
   waitWhatsAppLogin,
 } from "./controllers/channels.ts";
 import { loadConfig, saveConfig } from "./controllers/config.ts";
+import { normalizeOptionalString } from "./string-coerce.ts";
 import type { NostrProfile } from "./types.ts";
 import { createNostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 
@@ -26,8 +27,12 @@ export async function handleWhatsAppLogout(host: OpenClawApp) {
 
 export async function handleChannelConfigSave(host: OpenClawApp) {
   await saveConfig(host);
+  const saveError = host.lastError;
   await loadConfig(host);
   await loadChannels(host, true);
+  if (saveError) {
+    host.channelsError = saveError;
+  }
 }
 
 export async function handleChannelConfigReload(host: OpenClawApp) {
@@ -67,15 +72,15 @@ function buildNostrProfileUrl(accountId: string, suffix = ""): string {
 }
 
 function resolveGatewayHttpAuthHeader(host: OpenClawApp): string | null {
-  const deviceToken = host.hello?.auth?.deviceToken?.trim();
+  const deviceToken = normalizeOptionalString(host.hello?.auth?.deviceToken);
   if (deviceToken) {
     return `Bearer ${deviceToken}`;
   }
-  const token = host.settings.token.trim();
+  const token = normalizeOptionalString(host.settings.token);
   if (token) {
     return `Bearer ${token}`;
   }
-  const password = host.password.trim();
+  const password = normalizeOptionalString(host.password);
   if (password) {
     return `Bearer ${password}`;
   }

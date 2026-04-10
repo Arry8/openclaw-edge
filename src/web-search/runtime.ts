@@ -1,17 +1,27 @@
+import { coerceToFailoverError } from "../agents/failover-error.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { normalizeSecretInputString, resolveSecretInputRef } from "../config/types.secrets.js";
 import { logVerbose } from "../globals.js";
 import type {
   PluginWebSearchProviderEntry,
   WebSearchProviderToolDefinition,
 } from "../plugins/types.js";
-import { resolveBundledPluginWebSearchProviders } from "../plugins/web-search-providers.js";
-import { resolvePluginWebSearchProviders } from "../plugins/web-search-providers.runtime.js";
-import { resolveRuntimeWebSearchProviders } from "../plugins/web-search-providers.runtime.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+} from "../shared/string-coerce.js";
+import {
+  resolvePluginWebSearchProviders,
+  resolveRuntimeWebSearchProviders,
+} from "../plugins/web-search-providers.runtime.js";
 import { sortWebSearchProvidersForAutoDetect } from "../plugins/web-search-providers.shared.js";
+import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import type { RuntimeWebSearchMetadata } from "../secrets/runtime-web-tools.types.js";
-import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime.js";
-import { normalizeSecretInput } from "../utils/normalize-secret-input.js";
+import {
+  hasWebProviderEntryCredential,
+  providerRequiresCredential,
+  readWebProviderEnvValue,
+  resolveWebProviderConfig,
+  resolveWebProviderDefinition,
+} from "../web/provider-runtime-shared.js";
 
 type WebSearchConfig = NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
   ? Web extends { search?: infer Search }
@@ -32,11 +42,7 @@ export type RunWebSearchParams = ResolveWebSearchDefinitionParams & {
 };
 
 function resolveSearchConfig(cfg?: OpenClawConfig): WebSearchConfig {
-  const search = cfg?.tools?.web?.search;
-  if (!search || typeof search !== "object") {
-    return undefined;
-  }
-  return search as WebSearchConfig;
+  return resolveWebProviderConfig<"search", NonNullable<WebSearchConfig>>(cfg, "search");
 }
 
 export function resolveWebSearchEnabled(params: {
@@ -52,20 +58,19 @@ export function resolveWebSearchEnabled(params: {
   return true;
 }
 
-function readProviderEnvValue(envVars: string[]): string | undefined {
-  for (const envVar of envVars) {
-    const value = normalizeSecretInput(process.env[envVar]);
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function providerRequiresCredential(
-  provider: Pick<PluginWebSearchProviderEntry, "requiresCredential">,
-): boolean {
-  return provider.requiresCredential !== false;
+export function isWebSearchProviderConfigured(params: {
+  provider: Pick<
+    PluginWebSearchProviderEntry,
+    | "credentialPath"
+    | "id"
+    | "envVars"
+    | "getConfiguredCredentialValue"
+    | "getCredentialValue"
+    | "requiresCredential"
+  >;
+  config?: OpenClawConfig;
+}): boolean {
+  return hasEntryCredential(params.provider, params.config, resolveSearchConfig(params.config));
 }
 
 function hasEntryCredential(
@@ -81,28 +86,17 @@ function hasEntryCredential(
   config: OpenClawConfig | undefined,
   search: WebSearchConfig | undefined,
 ): boolean {
-  if (!providerRequiresCredential(provider)) {
-    return true;
-  }
-  const configuredValue = provider.getConfiguredCredentialValue?.(config);
-  const rawValue =
-    configuredValue ??
-    (provider.id === "brave"
-      ? provider.getCredentialValue(search as Record<string, unknown> | undefined)
-      : undefined);
-  const configuredRef = resolveSecretInputRef({
-    value: rawValue,
-  }).ref;
-  if (configuredRef && configuredRef.source !== "env") {
-    return true;
-  }
-  const fromConfig = normalizeSecretInput(normalizeSecretInputString(rawValue));
-  if (configuredRef?.source === "env") {
-    return Boolean(
-      normalizeSecretInput(process.env[configuredRef.id]) || readProviderEnvValue(provider.envVars),
-    );
-  }
-  return Boolean(fromConfig || readProviderEnvValue(provider.envVars));
+  return hasWebProviderEntryCredential({
+    provider,
+    config,
+    toolConfig: search as Record<string, unknown> | undefined,
+    resolveRawValue: ({ provider: currentProvider, config: currentConfig, toolConfig }) =>
+      currentProvider.getConfiguredCredentialValue?.(currentConfig) ??
+      (currentProvider.id === "brave" ? currentProvider.getCredentialValue(toolConfig) : undefined),
+    resolveEnvValue: ({ provider: currentProvider, configuredEnvVarId }) =>
+      (configuredEnvVarId ? readWebProviderEnvValue([configuredEnvVarId]) : undefined) ??
+      readWebProviderEnvValue(currentProvider.envVars),
+  });
 }
 
 export function listWebSearchProviders(params?: {
@@ -130,15 +124,15 @@ export function resolveWebSearchProviderId(params: {
 }): string {
   const providers = sortWebSearchProvidersForAutoDetect(
     params.providers ??
-      resolveBundledPluginWebSearchProviders({
+      resolvePluginWebSearchProviders({
         config: params.config,
         bundledAllowlistCompat: true,
+        origin: "bundled",
       }),
   );
-  const raw =
-    params.search && "provider" in params.search && typeof params.search.provider === "string"
-      ? params.search.provider.trim().toLowerCase()
-      : "";
+  const raw = normalizeLowercaseStringOrEmpty(
+    params.search && "provider" in params.search ? params.search.provider : undefined,
+  );
 
   if (raw) {
     const explicit = providers.find((provider) => provider.id === raw);
@@ -178,64 +172,267 @@ export function resolveWebSearchDefinition(
 ): { provider: PluginWebSearchProviderEntry; definition: WebSearchProviderToolDefinition } | null {
   const search = resolveSearchConfig(options?.config);
   const runtimeWebSearch = options?.runtimeWebSearch ?? getActiveRuntimeWebToolsMetadata()?.search;
-  if (!resolveWebSearchEnabled({ search, sandboxed: options?.sandboxed })) {
-    return null;
-  }
-
   const providers = sortWebSearchProvidersForAutoDetect(
     options?.preferRuntimeProviders
       ? resolveRuntimeWebSearchProviders({
           config: options?.config,
           bundledAllowlistCompat: true,
         })
-      : resolveBundledPluginWebSearchProviders({
+      : resolvePluginWebSearchProviders({
           config: options?.config,
           bundledAllowlistCompat: true,
+          origin: "bundled",
         }),
-  ).filter(Boolean);
-  if (providers.length === 0) {
-    return null;
-  }
-
-  const providerId =
-    options?.providerId ??
-    runtimeWebSearch?.selectedProvider ??
-    runtimeWebSearch?.providerConfigured ??
-    resolveWebSearchProviderId({ config: options?.config, search, providers });
-  const provider =
-    providers.find((entry) => entry.id === providerId) ??
-    providers.find(
-      (entry) =>
-        entry.id === resolveWebSearchProviderId({ config: options?.config, search, providers }),
-    ) ??
-    providers[0];
-  if (!provider) {
-    return null;
-  }
-
-  const definition = provider.createTool({
+  );
+  return resolveWebProviderDefinition({
     config: options?.config,
-    searchConfig: search as Record<string, unknown> | undefined,
+    toolConfig: search as Record<string, unknown> | undefined,
     runtimeMetadata: runtimeWebSearch,
+    sandboxed: options?.sandboxed,
+    providerId: options?.providerId,
+    providers,
+    resolveEnabled: ({ toolConfig, sandboxed }) =>
+      resolveWebSearchEnabled({
+        search: toolConfig as WebSearchConfig | undefined,
+        sandboxed,
+      }),
+    resolveAutoProviderId: ({ config, toolConfig, providers }) =>
+      resolveWebSearchProviderId({
+        config,
+        search: toolConfig as WebSearchConfig | undefined,
+        providers,
+      }),
+    resolveFallbackProviderId: ({ config, toolConfig, providers }) =>
+      resolveWebSearchProviderId({
+        config,
+        search: toolConfig as WebSearchConfig | undefined,
+        providers,
+      }) || providers[0]?.id,
+    createTool: ({ provider, config, toolConfig, runtimeMetadata }) =>
+      provider.createTool({
+        config,
+        searchConfig: toolConfig,
+        runtimeMetadata,
+      }),
   });
-  if (!definition) {
-    return null;
-  }
-
-  return { provider, definition };
 }
 
 export async function runWebSearch(
   params: RunWebSearchParams,
 ): Promise<{ provider: string; result: Record<string, unknown> }> {
-  const resolved = resolveWebSearchDefinition({ ...params, preferRuntimeProviders: true });
-  if (!resolved) {
-    throw new Error("web_search is disabled or no provider is available.");
+  const search = resolveSearchConfig(params.config);
+
+  const configuredFallbacks: string[] =
+    search && "fallbacks" in search && Array.isArray(search.fallbacks)
+      ? search.fallbacks
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : [];
+
+  // If caller passed an explicit providerId, normalize it early so mixed-case
+  // inputs (e.g. --provider Grok) are handled consistently throughout.
+  // Validate the id exists in the registry WITHOUT calling createTool —
+  // that is deferred to the execution loop so broken providers don't prevent
+  // configured fallbacks from being tried.
+  const runtimePref = params.preferRuntimeProviders ?? true;
+  if (params.providerId !== undefined) {
+    const normalizedExplicit = normalizeLowercaseStringOrEmpty(params.providerId);
+    const registry = runtimePref
+      ? resolveRuntimeWebSearchProviders({ config: params.config, bundledAllowlistCompat: true })
+      : resolvePluginWebSearchProviders({
+          config: params.config,
+          bundledAllowlistCompat: true,
+          origin: "bundled",
+        });
+    if (!registry.some((p) => p.id.toLowerCase() === normalizedExplicit)) {
+      throw new Error(`Unknown web_search provider "${params.providerId}".`);
+    }
   }
-  return {
-    provider: resolved.provider.id,
-    result: await resolved.definition.execute(params.args),
-  };
+
+  // Auto-detect the primary provider to seed the fallback chain.
+  // Use trimmed providerId (preserve original casing) so resolveWebProviderDefinition
+  // finds it correctly — provider lookup already normalizes internally.
+  const trimmedPrimaryId = params.providerId?.trim();
+  let primaryProviderId = "";
+  let primaryInitError: unknown;
+  // Store the primary's resolved definition so it is not resolved again in the loop.
+  let primaryDefinition:
+    | { provider: PluginWebSearchProviderEntry; definition: WebSearchProviderToolDefinition }
+    | null
+    | undefined;
+  try {
+    const primaryResolved = resolveWebSearchDefinition({
+      ...params,
+      providerId: trimmedPrimaryId,
+      preferRuntimeProviders: runtimePref,
+    });
+    primaryProviderId = primaryResolved?.provider.id ?? "";
+    primaryDefinition = primaryResolved;
+    // When an explicit providerId is given and resolution returns null, fail fast
+    // rather than silently falling through to a generic "no provider" error.
+    if (params.providerId !== undefined && primaryResolved === null) {
+      throw new Error(
+        `Web search provider "${trimmedPrimaryId}" is not available (tool returned null).`,
+      );
+    }
+    // Track when the auto-detected primary provider returns null so we can throw a
+    // specific error instead of falling through to the generic "no provider" error.
+    // Only do this when web search is actually enabled — if disabled, let the generic
+    // "web_search is disabled" error surface rather than a misleading provider error.
+    if (
+      params.providerId === undefined &&
+      primaryResolved === null &&
+      resolveWebSearchEnabled({ search, sandboxed: params.sandboxed })
+    ) {
+      const searchedId = trimmedPrimaryId || "auto-detected";
+      primaryInitError = new Error(
+        `Web search provider "${searchedId}" is not available (tool returned null).`,
+      );
+    }
+  } catch (err) {
+    // Non-retryable init errors from the primary should fail fast — do not
+    // silently continue and risk masking with a fallback provider.
+    const normalized = coerceToFailoverError(err, { provider: trimmedPrimaryId ?? "auto" });
+    if (normalized) {
+      const reason = normalized.reason;
+      if (reason !== "rate_limit" && reason !== "billing") {
+        throw err;
+      }
+    }
+    primaryInitError = err;
+  }
+
+  // Build ordered provider chain from raw ids only. Do NOT call resolveWebSearchDefinition
+  // here — that invokes createTool which has side effects and defeats lazy init.
+  // Chain building only needs the primary provider id; all other resolution is
+  // deferred until that provider is actually needed in the execution loop.
+  const seenProviderIds = new Set<string>();
+  const allProviderIds: string[] = [];
+
+  // allProviderIds stores normalized fallback ids (lowercased) but original
+  // casing for the primary provider id. The execution loop matches casing
+  // exactly for the primary and lowercased for fallbacks. Duplicates are
+  // detected case-insensitively.
+  if (primaryProviderId && !seenProviderIds.has(primaryProviderId.toLowerCase())) {
+    seenProviderIds.add(primaryProviderId.toLowerCase());
+    allProviderIds.push(primaryProviderId);
+  }
+
+  // Only apply configured fallbacks when the caller has not pinned an explicit providerId.
+  // An explicit providerId means "run only this provider" — fallbacks would override that intent.
+  if (params.providerId === undefined) {
+    for (const fallbackId of configuredFallbacks) {
+      if (!fallbackId) {
+        continue;
+      }
+      const normalizedFallbackId = normalizeLowercaseStringOrEmpty(fallbackId);
+      if (seenProviderIds.has(normalizedFallbackId)) {
+        continue;
+      }
+      seenProviderIds.add(normalizedFallbackId);
+      // Push trimmed casing (not lowercased) so resolveWebSearchDefinition
+      // can match it case-sensitively as registered.
+      allProviderIds.push(fallbackId.trim());
+    }
+  }
+
+  let lastError: unknown;
+
+  // Cache the registry once for case-insensitive fallback ID pre-validation.
+  // This avoids calling resolveWebSearchDefinition (which invokes createTool)
+  // for unknown typoed fallback ids, preventing init errors from aborting
+  // the chain before valid fallbacks are reached.
+  const registry = runtimePref
+    ? resolveRuntimeWebSearchProviders({ config: params.config, bundledAllowlistCompat: true })
+    : resolvePluginWebSearchProviders({
+        config: params.config,
+        bundledAllowlistCompat: true,
+        origin: "bundled",
+      });
+
+  for (const providerId of allProviderIds) {
+    // Pre-validate: skip unknown fallback ids before calling resolveWebSearchDefinition.
+    // This prevents a typoed fallback like "typo" from triggering createTool of a
+    // wrong provider and throwing a non-retryable init error that aborts the chain.
+    if (!registry.some((p) => p.id.toLowerCase() === providerId.toLowerCase())) {
+      continue;
+    }
+
+    // Reuse the primary definition if this iteration is the primary — avoids double init.
+    const isPrimary = providerId === primaryProviderId && primaryDefinition !== undefined;
+    let resolved:
+      | { provider: PluginWebSearchProviderEntry; definition: WebSearchProviderToolDefinition }
+      | null
+      | undefined;
+    if (isPrimary) {
+      resolved = primaryDefinition;
+    } else {
+      try {
+        resolved = resolveWebSearchDefinition({
+          ...params,
+          providerId,
+          preferRuntimeProviders: runtimePref,
+        });
+      } catch (err) {
+        // Init-time errors: save the most recent error so the final failure
+        // reflects the terminal error from the last attempted provider.
+        // For non-retryable FailoverError (not rate_limit/billing), throw immediately
+        // so hard config/auth errors don't silently switch to a different provider.
+        const normalized = coerceToFailoverError(err, { provider: providerId });
+        if (normalized) {
+          const reason = normalized.reason;
+          if (reason !== "rate_limit" && reason !== "billing") {
+            throw err;
+          }
+        }
+        lastError = err;
+        // Definition init failed (e.g. provider createTool throws) — skip without stopping the chain
+        continue;
+      }
+    }
+    if (!resolved) {
+      continue;
+    }
+
+    // Skip if the resolved provider does not match the requested id.
+    // resolveWebSearchDefinition may substitute an auto-selected provider for
+    // unknown ids (e.g. a typo'd fallback), which would cause duplicate retries
+    // against the same failing primary instead of progressing to a valid fallback.
+    // Normalize both sides since provider ids can be mixed-case (only trimmed, not lowercased on registration).
+    if (resolved.provider.id.toLowerCase() !== providerId.toLowerCase()) {
+      continue;
+    }
+
+    try {
+      return {
+        provider: resolved.provider.id,
+        result: await resolved.definition.execute(params.args),
+      };
+    } catch (err) {
+      lastError = err;
+      const normalized = coerceToFailoverError(err, { provider: providerId });
+
+      // Only retry on rate_limit or billing errors; throw all others immediately
+      if (normalized) {
+        const reason = normalized.reason;
+        if (reason === "rate_limit" || reason === "billing") {
+          logVerbose(
+            `web_search: provider "${providerId}" failed with ${reason}, trying next fallback`,
+          );
+          continue;
+        }
+      }
+
+      throw err;
+    }
+  }
+
+  throw (
+    lastError ??
+    primaryInitError ??
+    new Error("web_search is disabled or no provider is available.")
+  );
 }
 
 export const __testing = {

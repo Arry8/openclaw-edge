@@ -1,6 +1,10 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import { isSubagentSessionKey, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
+import {
   listSpawnedSessionKeys,
   resolveInternalSessionKey,
   resolveMainSessionAlias,
@@ -23,7 +27,7 @@ export type SessionAccessResult =
 export function resolveSessionToolsVisibility(cfg: OpenClawConfig): SessionToolsVisibility {
   const raw = (cfg.tools as { sessions?: { visibility?: unknown } } | undefined)?.sessions
     ?.visibility;
-  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  const value = normalizeLowercaseStringOrEmpty(raw);
   if (value === "self" || value === "tree" || value === "agent" || value === "all") {
     return value;
   }
@@ -63,14 +67,14 @@ export function resolveSandboxedSessionToolContext(params: {
 } {
   const { mainKey, alias } = resolveMainSessionAlias(params.cfg);
   const visibility = resolveSandboxSessionToolsVisibility(params.cfg);
-  const requesterInternalKey =
-    typeof params.agentSessionKey === "string" && params.agentSessionKey.trim()
-      ? resolveInternalSessionKey({
-          key: params.agentSessionKey,
-          alias,
-          mainKey,
-        })
-      : undefined;
+  const requesterSessionKey = normalizeOptionalString(params.agentSessionKey);
+  const requesterInternalKey = requesterSessionKey
+    ? resolveInternalSessionKey({
+        key: requesterSessionKey,
+        alias,
+        mainKey,
+      })
+    : undefined;
   const effectiveRequesterKey = requesterInternalKey ?? alias;
   const restrictToSpawned =
     params.sandboxed === true &&
@@ -96,7 +100,9 @@ export function createAgentToAgentPolicy(cfg: OpenClawConfig): AgentToAgentPolic
       return true;
     }
     return allowPatterns.some((pattern) => {
-      const raw = String(pattern ?? "").trim();
+      const raw =
+        normalizeOptionalString(typeof pattern === "string" ? pattern : String(pattern ?? "")) ??
+        "";
       if (!raw) {
         return false;
       }
@@ -166,9 +172,7 @@ function crossVisibilityMessage(action: SessionAccessAction): string {
   if (action === "history") {
     return "Session history visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
   }
-  if (action === "send") {
-    return "Session send visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
-  }
+  // "send" is gated by a2a policy, not visibility — see createSessionVisibilityGuard.
   if (action === "status") {
     return "Session status visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
   }
@@ -199,9 +203,21 @@ export async function createSessionVisibilityGuard(params: {
 
   const check = (targetSessionKey: string): SessionAccessResult => {
     const targetAgentId = resolveAgentIdFromSessionKey(targetSessionKey);
+    const isSpawnedTreeTarget =
+      params.visibility === "tree" &&
+      targetSessionKey !== params.requesterSessionKey &&
+      spawnedKeys?.has(targetSessionKey);
+
+    if (isSpawnedTreeTarget) {
+      return { allowed: true };
+    }
+
     const isCrossAgent = targetAgentId !== requesterAgentId;
     if (isCrossAgent) {
-      if (params.visibility !== "all") {
+      // For "send", a2a policy is the authorization gate — sending does not
+      // require visibility into the target session's history.  Visibility
+      // only governs read operations (list, history, status).  (#57447)
+      if (params.action !== "send" && params.visibility !== "all") {
         return {
           allowed: false,
           status: "forbidden",

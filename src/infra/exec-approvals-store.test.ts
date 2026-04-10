@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "./exec-approvals-test-helpers.js";
 
 const requestJsonlSocketMock = vi.hoisted(() => vi.fn());
@@ -18,7 +18,9 @@ let addDurableCommandApproval: ExecApprovalsModule["addDurableCommandApproval"];
 let ensureExecApprovals: ExecApprovalsModule["ensureExecApprovals"];
 let mergeExecApprovalsSocketDefaults: ExecApprovalsModule["mergeExecApprovalsSocketDefaults"];
 let normalizeExecApprovals: ExecApprovalsModule["normalizeExecApprovals"];
+let persistAllowAlwaysPatterns: ExecApprovalsModule["persistAllowAlwaysPatterns"];
 let readExecApprovalsSnapshot: ExecApprovalsModule["readExecApprovalsSnapshot"];
+let recordAllowlistMatchesUse: ExecApprovalsModule["recordAllowlistMatchesUse"];
 let recordAllowlistUse: ExecApprovalsModule["recordAllowlistUse"];
 let requestExecApprovalViaSocket: ExecApprovalsModule["requestExecApprovalViaSocket"];
 let resolveExecApprovalsPath: ExecApprovalsModule["resolveExecApprovalsPath"];
@@ -26,6 +28,7 @@ let resolveExecApprovalsSocketPath: ExecApprovalsModule["resolveExecApprovalsSoc
 
 const tempDirs: string[] = [];
 const originalOpenClawHome = process.env.OPENCLAW_HOME;
+const originalOpenClawStateDir = process.env.OPENCLAW_STATE_DIR;
 
 beforeAll(async () => {
   ({
@@ -34,7 +37,9 @@ beforeAll(async () => {
     ensureExecApprovals,
     mergeExecApprovalsSocketDefaults,
     normalizeExecApprovals,
+    persistAllowAlwaysPatterns,
     readExecApprovalsSnapshot,
+    recordAllowlistMatchesUse,
     recordAllowlistUse,
     requestExecApprovalViaSocket,
     resolveExecApprovalsPath,
@@ -44,17 +49,29 @@ beforeAll(async () => {
 
 beforeEach(() => {
   requestJsonlSocketMock.mockReset();
+  delete process.env.OPENCLAW_HOME;
+  delete process.env.OPENCLAW_STATE_DIR;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  delete process.env.OPENCLAW_HOME;
+  delete process.env.OPENCLAW_STATE_DIR;
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+afterAll(() => {
   if (originalOpenClawHome === undefined) {
     delete process.env.OPENCLAW_HOME;
   } else {
     process.env.OPENCLAW_HOME = originalOpenClawHome;
   }
-  for (const dir of tempDirs.splice(0)) {
-    fs.rmSync(dir, { recursive: true, force: true });
+  if (originalOpenClawStateDir === undefined) {
+    delete process.env.OPENCLAW_STATE_DIR;
+  } else {
+    process.env.OPENCLAW_STATE_DIR = originalOpenClawStateDir;
   }
 });
 
@@ -62,6 +79,13 @@ function createHomeDir(): string {
   const dir = makeTempDir();
   tempDirs.push(dir);
   process.env.OPENCLAW_HOME = dir;
+  return dir;
+}
+
+function createStateDir(): string {
+  const dir = makeTempDir();
+  tempDirs.push(dir);
+  process.env.OPENCLAW_STATE_DIR = dir;
   return dir;
 }
 
@@ -82,6 +106,18 @@ describe("exec approvals store helpers", () => {
     );
     expect(path.normalize(resolveExecApprovalsSocketPath())).toBe(
       path.normalize(path.join(dir, ".openclaw", "exec-approvals.sock")),
+    );
+  });
+
+  it("prefers OPENCLAW_STATE_DIR over OPENCLAW_HOME for file and socket paths", () => {
+    createHomeDir();
+    const stateDir = createStateDir();
+
+    expect(path.normalize(resolveExecApprovalsPath())).toBe(
+      path.normalize(path.join(stateDir, "exec-approvals.json")),
+    );
+    expect(path.normalize(resolveExecApprovalsSocketPath())).toBe(
+      path.normalize(path.join(stateDir, "exec-approvals.sock")),
     );
   });
 
@@ -150,6 +186,20 @@ describe("exec approvals store helpers", () => {
     expect(ensured.socket?.token).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(raw.endsWith("\n")).toBe(true);
     expect(readApprovalsFile(dir).socket).toEqual(ensured.socket);
+  });
+
+  it("writes approvals files directly under OPENCLAW_STATE_DIR", () => {
+    createHomeDir();
+    const stateDir = createStateDir();
+    const approvalsPath = path.join(stateDir, "exec-approvals.json");
+
+    const ensured = ensureExecApprovals();
+    const raw = fs.readFileSync(approvalsPath, "utf8");
+
+    expect(ensured.socket?.path).toBe(path.join(stateDir, "exec-approvals.sock"));
+    expect(raw.endsWith("\n")).toBe(true);
+    expect(JSON.parse(raw) as ExecApprovalsFile).toEqual(ensured);
+    expect(fs.existsSync(path.join(stateDir, ".openclaw", "exec-approvals.json"))).toBe(false);
   });
 
   it("adds trimmed allowlist entries once and persists generated ids", () => {
@@ -229,6 +279,40 @@ describe("exec approvals store helpers", () => {
     ).not.toHaveProperty("commandText");
   });
 
+  it("preserves source and argPattern metadata for allow-always entries", () => {
+    const dir = createHomeDir();
+    vi.spyOn(Date, "now").mockReturnValue(321_000);
+
+    const approvals = ensureExecApprovals();
+    addAllowlistEntry(approvals, "worker", "/usr/bin/python3", {
+      argPattern: "^script\\.py\x00$",
+      source: "allow-always",
+    });
+    addAllowlistEntry(approvals, "worker", "/usr/bin/python3", {
+      argPattern: "^script\\.py\x00$",
+      source: "allow-always",
+    });
+    addAllowlistEntry(approvals, "worker", "/usr/bin/python3", {
+      argPattern: "^other\\.py\x00$",
+      source: "allow-always",
+    });
+
+    expect(readApprovalsFile(dir).agents?.worker?.allowlist).toEqual([
+      expect.objectContaining({
+        pattern: "/usr/bin/python3",
+        argPattern: "^script\\.py\x00$",
+        source: "allow-always",
+        lastUsedAt: 321_000,
+      }),
+      expect.objectContaining({
+        pattern: "/usr/bin/python3",
+        argPattern: "^other\\.py\x00$",
+        source: "allow-always",
+        lastUsedAt: 321_000,
+      }),
+    ]);
+  });
+
   it("records allowlist usage on the matching entry and backfills missing ids", () => {
     const dir = createHomeDir();
     vi.spyOn(Date, "now").mockReturnValue(999_000);
@@ -264,6 +348,95 @@ describe("exec approvals store helpers", () => {
     expect(readApprovalsFile(dir).agents?.main?.allowlist?.[0]?.id).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  it("dedupes allowlist usage by pattern and argPattern", () => {
+    const dir = createHomeDir();
+    vi.spyOn(Date, "now").mockReturnValue(777_000);
+
+    const approvals: ExecApprovalsFile = {
+      version: 1,
+      agents: {
+        main: {
+          allowlist: [
+            { pattern: "/usr/bin/python3", argPattern: "^a\\.py\x00$" },
+            { pattern: "/usr/bin/python3", argPattern: "^b\\.py\x00$" },
+          ],
+        },
+      },
+    };
+    fs.mkdirSync(path.dirname(approvalsFilePath(dir)), { recursive: true });
+    fs.writeFileSync(approvalsFilePath(dir), JSON.stringify(approvals, null, 2), "utf8");
+
+    recordAllowlistMatchesUse({
+      approvals,
+      agentId: undefined,
+      matches: [
+        { pattern: "/usr/bin/python3", argPattern: "^a\\.py\x00$" },
+        { pattern: "/usr/bin/python3", argPattern: "^a\\.py\x00$" },
+        { pattern: "/usr/bin/python3", argPattern: "^b\\.py\x00$" },
+      ],
+      command: "python3 a.py",
+      resolvedPath: "/usr/bin/python3",
+    });
+
+    expect(readApprovalsFile(dir).agents?.main?.allowlist).toEqual([
+      expect.objectContaining({
+        pattern: "/usr/bin/python3",
+        argPattern: "^a\\.py\x00$",
+        lastUsedAt: 777_000,
+      }),
+      expect.objectContaining({
+        pattern: "/usr/bin/python3",
+        argPattern: "^b\\.py\x00$",
+        lastUsedAt: 777_000,
+      }),
+    ]);
+  });
+
+  it("persists allow-always patterns with shared helper", () => {
+    const dir = createHomeDir();
+    vi.spyOn(Date, "now").mockReturnValue(654_321);
+
+    const approvals = ensureExecApprovals();
+    const patterns = persistAllowAlwaysPatterns({
+      approvals,
+      agentId: "worker",
+      platform: "win32",
+      segments: [
+        {
+          raw: "/usr/bin/custom-tool.exe a.py",
+          argv: ["/usr/bin/custom-tool.exe", "a.py"],
+          resolution: {
+            execution: {
+              rawExecutable: "/usr/bin/custom-tool.exe",
+              resolvedPath: "/usr/bin/custom-tool.exe",
+              executableName: "custom-tool",
+            },
+            policy: {
+              rawExecutable: "/usr/bin/custom-tool.exe",
+              resolvedPath: "/usr/bin/custom-tool.exe",
+              executableName: "custom-tool",
+            },
+          },
+        },
+      ],
+    });
+
+    expect(patterns).toEqual([
+      {
+        pattern: "/usr/bin/custom-tool.exe",
+        argPattern: "^a\\.py\x00$",
+      },
+    ]);
+    expect(readApprovalsFile(dir).agents?.worker?.allowlist).toEqual([
+      expect.objectContaining({
+        pattern: "/usr/bin/custom-tool.exe",
+        argPattern: "^a\\.py\x00$",
+        source: "allow-always",
+        lastUsedAt: 654_321,
+      }),
+    ]);
+  });
+
   it("returns null when approval socket credentials are missing", async () => {
     await expect(
       requestExecApprovalViaSocket({
@@ -283,9 +456,9 @@ describe("exec approvals store helpers", () => {
   });
 
   it("builds approval socket payloads and accepts decision responses only", async () => {
-    requestJsonlSocketMock.mockImplementationOnce(async ({ payload, accept, timeoutMs }) => {
+    requestJsonlSocketMock.mockImplementationOnce(async ({ requestLine, accept, timeoutMs }) => {
       expect(timeoutMs).toBe(15_000);
-      const parsed = JSON.parse(payload) as {
+      const parsed = JSON.parse(requestLine) as {
         type: string;
         token: string;
         id: string;

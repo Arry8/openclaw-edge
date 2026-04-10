@@ -13,7 +13,7 @@ export function resolveAgentIdentity(
 export function resolveAckReaction(
   cfg: OpenClawConfig,
   agentId: string,
-  opts?: { channel?: string; accountId?: string },
+  opts?: { channel?: string; accountId?: string; channelDefault?: string },
 ): string {
   // L1: Channel account level
   if (opts?.channel && opts?.accountId) {
@@ -42,7 +42,7 @@ export function resolveAckReaction(
 
   // L4: Agent identity emoji fallback
   const emoji = resolveAgentIdentity(cfg, agentId)?.emoji?.trim();
-  return emoji || DEFAULT_ACK_REACTION;
+  return emoji || opts?.channelDefault || DEFAULT_ACK_REACTION;
 }
 
 export function resolveIdentityNamePrefix(
@@ -54,11 +54,6 @@ export function resolveIdentityNamePrefix(
     return undefined;
   }
   return `[${name}]`;
-}
-
-/** Returns just the identity name (without brackets) for template context. */
-export function resolveIdentityName(cfg: OpenClawConfig, agentId: string): string | undefined {
-  return resolveAgentIdentity(cfg, agentId)?.name?.trim() || undefined;
 }
 
 export function resolveMessagePrefix(
@@ -141,7 +136,12 @@ export function resolveEffectiveMessagesConfig(
     channel?: string;
     accountId?: string;
   },
-): { messagePrefix: string; responsePrefix?: string } {
+): {
+  messagePrefix: string;
+  responsePrefix?: string;
+  modelEmojiMap?: Record<string, string>;
+  thinkEmoji?: [string, string];
+} {
   return {
     messagePrefix: resolveMessagePrefix(cfg, agentId, {
       hasAllowFrom: opts?.hasAllowFrom,
@@ -151,6 +151,8 @@ export function resolveEffectiveMessagesConfig(
       channel: opts?.channel,
       accountId: opts?.accountId,
     }),
+    modelEmojiMap: cfg.messages?.modelEmojiMap,
+    thinkEmoji: cfg.messages?.thinkEmoji,
   };
 }
 

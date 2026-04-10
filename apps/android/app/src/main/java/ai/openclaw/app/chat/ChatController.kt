@@ -1,6 +1,15 @@
 package ai.openclaw.app.chat
 
 import ai.openclaw.app.gateway.GatewaySession
+import ai.openclaw.android.gateway.ChatSessionEntry
+import ai.openclaw.android.gateway.applyMainSessionKey
+import ai.openclaw.android.gateway.asArrayOrNull
+import ai.openclaw.android.gateway.asLongOrNull
+import ai.openclaw.android.gateway.asObjectOrNull
+import ai.openclaw.android.gateway.asStringOrNull
+import ai.openclaw.android.gateway.buildChatHistoryParams
+import ai.openclaw.android.gateway.buildSessionsListParams
+import ai.openclaw.android.gateway.parseChatRunId
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -130,11 +139,25 @@ class ChatController(
     thinkingLevel: String,
     attachments: List<OutgoingAttachment>,
   ) {
+    scope.launch {
+      sendMessageAwaitAcceptance(
+        message = message,
+        thinkingLevel = thinkingLevel,
+        attachments = attachments,
+      )
+    }
+  }
+
+  suspend fun sendMessageAwaitAcceptance(
+    message: String,
+    thinkingLevel: String,
+    attachments: List<OutgoingAttachment>,
+  ): Boolean {
     val trimmed = message.trim()
-    if (trimmed.isEmpty() && attachments.isEmpty()) return
+    if (trimmed.isEmpty() && attachments.isEmpty()) return false
     if (!_healthOk.value) {
       _errorText.value = "Gateway health not OK; cannot send"
-      return
+      return false
     }
 
     val runId = UUID.randomUUID().toString()
@@ -177,45 +200,45 @@ class ChatController(
     pendingToolCallsById.clear()
     publishPendingToolCalls()
 
-    scope.launch {
-      try {
-        val params =
-          buildJsonObject {
-            put("sessionKey", JsonPrimitive(sessionKey))
-            put("message", JsonPrimitive(text))
-            put("thinking", JsonPrimitive(thinking))
-            put("timeoutMs", JsonPrimitive(30_000))
-            put("idempotencyKey", JsonPrimitive(runId))
-            if (attachments.isNotEmpty()) {
-              put(
-                "attachments",
-                JsonArray(
-                  attachments.map { att ->
-                    buildJsonObject {
-                      put("type", JsonPrimitive(att.type))
-                      put("mimeType", JsonPrimitive(att.mimeType))
-                      put("fileName", JsonPrimitive(att.fileName))
-                      put("content", JsonPrimitive(att.base64))
-                    }
-                  },
-                ),
-              )
-            }
-          }
-        val res = session.request("chat.send", params.toString())
-        val actualRunId = parseRunId(res) ?: runId
-        if (actualRunId != runId) {
-          clearPendingRun(runId)
-          armPendingRunTimeout(actualRunId)
-          synchronized(pendingRuns) {
-            pendingRuns.add(actualRunId)
-            _pendingRunCount.value = pendingRuns.size
+    return try {
+      val params =
+        buildJsonObject {
+          put("sessionKey", JsonPrimitive(sessionKey))
+          put("message", JsonPrimitive(text))
+          put("thinking", JsonPrimitive(thinking))
+          put("timeoutMs", JsonPrimitive(30_000))
+          put("idempotencyKey", JsonPrimitive(runId))
+          if (attachments.isNotEmpty()) {
+            put(
+              "attachments",
+              JsonArray(
+                attachments.map { att ->
+                  buildJsonObject {
+                    put("type", JsonPrimitive(att.type))
+                    put("mimeType", JsonPrimitive(att.mimeType))
+                    put("fileName", JsonPrimitive(att.fileName))
+                    put("content", JsonPrimitive(att.base64))
+                  }
+                },
+              ),
+            )
           }
         }
-      } catch (err: Throwable) {
+      val res = session.request("chat.send", params.toString())
+      val actualRunId = parseChatRunId(res) ?: runId
+      if (actualRunId != runId) {
         clearPendingRun(runId)
-        _errorText.value = err.message
+        armPendingRunTimeout(actualRunId)
+        synchronized(pendingRuns) {
+          pendingRuns.add(actualRunId)
+          _pendingRunCount.value = pendingRuns.size
+        }
       }
+      true
+    } catch (err: Throwable) {
+      clearPendingRun(runId)
+      _errorText.value = err.message
+      false
     }
   }
 
@@ -280,7 +303,7 @@ class ChatController(
         session.sendNodeEvent("chat.subscribe", """{"sessionKey":"$key"}""")
       }
 
-      val historyJson = session.request("chat.history", """{"sessionKey":"$key"}""")
+      val historyJson = session.request("chat.history", buildChatHistoryParams(key).toString())
       val history = parseHistory(historyJson, sessionKey = key, previousMessages = _messages.value)
       _messages.value = history.messages
       _sessionId.value = history.sessionId
@@ -297,14 +320,8 @@ class ChatController(
 
   private suspend fun fetchSessions(limit: Int?) {
     try {
-      val params =
-        buildJsonObject {
-          put("includeGlobal", JsonPrimitive(true))
-          put("includeUnknown", JsonPrimitive(false))
-          if (limit != null && limit > 0) put("limit", JsonPrimitive(limit))
-        }
-      val res = session.request("sessions.list", params.toString())
-      _sessions.value = parseSessions(res)
+      val res = session.request("sessions.list", buildSessionsListParams(limit).toString())
+      _sessions.value = ChatSessionEntry.parseList(res)
     } catch (_: Throwable) {
       // best-effort
     }
@@ -353,7 +370,7 @@ class ChatController(
         scope.launch {
           try {
             val historyJson =
-              session.request("chat.history", """{"sessionKey":"${_sessionKey.value}"}""")
+              session.request("chat.history", buildChatHistoryParams(_sessionKey.value).toString())
             val history = parseHistory(historyJson, sessionKey = _sessionKey.value, previousMessages = _messages.value)
             _messages.value = history.messages
             _sessionId.value = history.sessionId
@@ -515,27 +532,6 @@ class ChatController(
     }
   }
 
-  private fun parseSessions(jsonString: String): List<ChatSessionEntry> {
-    val root = json.parseToJsonElement(jsonString).asObjectOrNull() ?: return emptyList()
-    val sessions = root["sessions"].asArrayOrNull() ?: return emptyList()
-    return sessions.mapNotNull { item ->
-      val obj = item.asObjectOrNull() ?: return@mapNotNull null
-      val key = obj["key"].asStringOrNull()?.trim().orEmpty()
-      if (key.isEmpty()) return@mapNotNull null
-      val updatedAt = obj["updatedAt"].asLongOrNull()
-      val displayName = obj["displayName"].asStringOrNull()?.trim()
-      ChatSessionEntry(key = key, updatedAtMs = updatedAt, displayName = displayName)
-    }
-  }
-
-  private fun parseRunId(resJson: String): String? {
-    return try {
-      json.parseToJsonElement(resJson).asObjectOrNull()?.get("runId").asStringOrNull()
-    } catch (_: Throwable) {
-      null
-    }
-  }
-
   private fun normalizeThinking(raw: String): String {
     return when (raw.trim().lowercase()) {
       "low" -> "low"
@@ -544,28 +540,6 @@ class ChatController(
       else -> "off"
     }
   }
-}
-
-internal data class MainSessionState(
-  val currentSessionKey: String,
-  val appliedMainSessionKey: String,
-)
-
-internal fun applyMainSessionKey(
-  currentSessionKey: String,
-  appliedMainSessionKey: String,
-  nextMainSessionKey: String,
-): MainSessionState {
-  if (currentSessionKey == appliedMainSessionKey) {
-    return MainSessionState(
-      currentSessionKey = nextMainSessionKey,
-      appliedMainSessionKey = nextMainSessionKey,
-    )
-  }
-  return MainSessionState(
-    currentSessionKey = currentSessionKey,
-    appliedMainSessionKey = nextMainSessionKey,
-  )
 }
 
 internal fun reconcileMessageIds(previous: List<ChatMessage>, incoming: List<ChatMessage>): List<ChatMessage> {
@@ -608,20 +582,3 @@ internal fun messageIdentityKey(message: ChatMessage): String? {
   if (timestamp.isEmpty() && contentFingerprint.isEmpty()) return null
   return listOf(role, timestamp, contentFingerprint).joinToString(separator = "|")
 }
-
-private fun JsonElement?.asObjectOrNull(): JsonObject? = this as? JsonObject
-
-private fun JsonElement?.asArrayOrNull(): JsonArray? = this as? JsonArray
-
-private fun JsonElement?.asStringOrNull(): String? =
-  when (this) {
-    is JsonNull -> null
-    is JsonPrimitive -> content
-    else -> null
-  }
-
-private fun JsonElement?.asLongOrNull(): Long? =
-  when (this) {
-    is JsonPrimitive -> content.toLongOrNull()
-    else -> null
-  }

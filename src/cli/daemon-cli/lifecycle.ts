@@ -1,5 +1,6 @@
 import { isRestartEnabled } from "../../config/commands.js";
 import { readBestEffortConfig, resolveGatewayPort } from "../../config/config.js";
+import { resolveGatewayLaunchAgentLabel } from "../../daemon/constants.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import { probeGateway } from "../../gateway/probe.js";
 import {
@@ -7,9 +8,16 @@ import {
   formatGatewayPidList,
   signalVerifiedGatewayPidSync,
 } from "../../infra/gateway-processes.js";
+import {
+  formatDoctorNonInteractiveHint,
+  type RestartSentinelPayload,
+  writeRestartSentinel,
+} from "../../infra/restart-sentinel.js";
 import { defaultRuntime } from "../../runtime.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { theme } from "../../terminal/theme.js";
 import { formatCliCommand } from "../command-format.js";
+import { recoverInstalledLaunchAgent } from "./launchd-recovery.js";
 import {
   runServiceRestart,
   runServiceStart,
@@ -19,6 +27,7 @@ import {
 import {
   DEFAULT_RESTART_HEALTH_ATTEMPTS,
   DEFAULT_RESTART_HEALTH_DELAY_MS,
+  type GatewayRestartSnapshot,
   renderGatewayPortHealthDiagnostics,
   renderRestartDiagnostics,
   terminateStaleGatewayPids,
@@ -31,7 +40,57 @@ import type { DaemonLifecycleOptions } from "./types.js";
 const POST_RESTART_HEALTH_ATTEMPTS = DEFAULT_RESTART_HEALTH_ATTEMPTS;
 const POST_RESTART_HEALTH_DELAY_MS = DEFAULT_RESTART_HEALTH_DELAY_MS;
 
+function formatRestartFailure(params: {
+  health: GatewayRestartSnapshot;
+  port: number;
+  timeoutSeconds: number;
+}): { statusLine: string; failMessage: string } {
+  if (params.health.waitOutcome === "stopped-free") {
+    const elapsedSeconds = Math.max(1, Math.round((params.health.elapsedMs ?? 0) / 1000));
+    return {
+      statusLine: `Gateway restart failed after ${elapsedSeconds}s: service stayed stopped and port ${params.port} stayed free.`,
+      failMessage: `Gateway restart failed after ${elapsedSeconds}s: service stayed stopped and health checks never came up.`,
+    };
+  }
+
+  return {
+    statusLine: `Timed out after ${params.timeoutSeconds}s waiting for gateway port ${params.port} to become healthy.`,
+    failMessage: `Gateway restart timed out after ${params.timeoutSeconds}s waiting for health checks.`,
+  };
+}
+
 async function resolveGatewayLifecyclePort(service = resolveGatewayService()) {
+  // Priority: use OPENCLAW_PROFILE from CLI to determine which profile's service to operate on
+  const profile = process.env.OPENCLAW_PROFILE?.trim();
+
+  if (profile) {
+    // Build service-specific environment for the target profile
+    // When --profile is explicitly specified, derive label from profile
+    // (this takes precedence over any existing OPENCLAW_LAUNCHD_LABEL)
+    const label = resolveGatewayLaunchAgentLabel(profile);
+    const targetEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      OPENCLAW_PROFILE: profile,
+      OPENCLAW_LAUNCHD_LABEL: label,
+    };
+
+    // Read the target profile's service configuration
+    const command = await service.readCommand(targetEnv).catch(() => null);
+    const serviceEnv = command?.environment ?? undefined;
+    const mergedEnv = {
+      ...targetEnv,
+      ...(serviceEnv ?? undefined),
+    } as NodeJS.ProcessEnv;
+
+    const portFromArgs = parsePortFromArgs(command?.programArguments);
+    if (portFromArgs !== null) {
+      return portFromArgs;
+    }
+    // Fall through to config-based resolution if port not found in service command
+    return resolveGatewayPort(await readBestEffortConfig(), mergedEnv);
+  }
+
+  // Fallback: use current process environment (backward compatible)
   const command = await service.readCommand(process.env).catch(() => null);
   const serviceEnv = command?.environment ?? undefined;
   const mergedEnv = {
@@ -56,8 +115,8 @@ async function assertUnmanagedGatewayRestartEnabled(port: number): Promise<void>
   const probe = await probeGateway({
     url: `${scheme}://127.0.0.1:${port}`,
     auth: {
-      token: process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || undefined,
-      password: process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() || undefined,
+      token: normalizeOptionalString(process.env.OPENCLAW_GATEWAY_TOKEN),
+      password: normalizeOptionalString(process.env.OPENCLAW_GATEWAY_PASSWORD),
     },
     timeoutMs: 1_000,
   }).catch(() => null);
@@ -125,6 +184,10 @@ export async function runDaemonStart(opts: DaemonLifecycleOptions = {}) {
     serviceNoun: "Gateway",
     service: resolveGatewayService(),
     renderStartHints: renderGatewayServiceStartHints,
+    onNotLoaded:
+      process.platform === "darwin"
+        ? async () => await recoverInstalledLaunchAgent({ result: "started" })
+        : undefined,
     opts,
   });
 }
@@ -157,7 +220,8 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
   const restartWaitMs = POST_RESTART_HEALTH_ATTEMPTS * POST_RESTART_HEALTH_DELAY_MS;
   const restartWaitSeconds = Math.round(restartWaitMs / 1000);
 
-  return await runServiceRestart({
+  // Write restart sentinel only after confirming restart will proceed
+  const result = await runServiceRestart({
     serviceNoun: "Gateway",
     service,
     renderStartHints: renderGatewayServiceStartHints,
@@ -167,8 +231,9 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
       const handled = await restartGatewayWithoutServiceManager(restartPort);
       if (handled) {
         restartedWithoutServiceManager = true;
+        return handled;
       }
-      return handled;
+      return await recoverInstalledLaunchAgent({ result: "restarted" });
     },
     postRestartCheck: async ({ warnings, fail, stdout }) => {
       if (restartedWithoutServiceManager) {
@@ -234,13 +299,17 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
       }
 
       const diagnostics = renderRestartDiagnostics(health);
-      const timeoutLine = `Timed out after ${restartWaitSeconds}s waiting for gateway port ${restartPort} to become healthy.`;
+      const failure = formatRestartFailure({
+        health,
+        port: restartPort,
+        timeoutSeconds: restartWaitSeconds,
+      });
       const runningNoPortLine =
         health.runtime.status === "running" && health.portUsage.status === "free"
           ? `Gateway process is running but port ${restartPort} is still free (startup hang/crash loop or very slow VM startup).`
           : null;
       if (!json) {
-        defaultRuntime.log(theme.warn(timeoutLine));
+        defaultRuntime.log(theme.warn(failure.statusLine));
         if (runningNoPortLine) {
           defaultRuntime.log(theme.warn(runningNoPortLine));
         }
@@ -248,17 +317,38 @@ export async function runDaemonRestart(opts: DaemonLifecycleOptions = {}): Promi
           defaultRuntime.log(theme.muted(line));
         }
       } else {
-        warnings.push(timeoutLine);
+        warnings.push(failure.statusLine);
         if (runningNoPortLine) {
           warnings.push(runningNoPortLine);
         }
         warnings.push(...diagnostics);
       }
 
-      fail(`Gateway restart timed out after ${restartWaitSeconds}s waiting for health checks.`, [
+      fail(failure.failMessage, [
         formatCliCommand("openclaw gateway status --deep"),
         formatCliCommand("openclaw doctor"),
       ]);
     },
   });
+
+  // Write restart sentinel only after confirming restart actually occurred
+  if (result) {
+    const sentinelPayload: RestartSentinelPayload = {
+      kind: "restart",
+      status: "ok",
+      ts: Date.now(),
+      message: "Gateway restarted via CLI",
+      doctorHint: formatDoctorNonInteractiveHint(),
+      stats: {
+        mode: "cli.restart",
+      },
+    };
+    try {
+      await writeRestartSentinel(sentinelPayload);
+    } catch {
+      // Sentinel is best-effort; continue even if this fails
+    }
+  }
+
+  return result;
 }

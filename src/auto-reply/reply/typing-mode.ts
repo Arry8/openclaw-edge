@@ -1,4 +1,5 @@
 import type { TypingMode } from "../../config/types.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { TypingPolicy } from "../types.js";
 import type { TypingController } from "./typing.js";
@@ -67,7 +68,7 @@ export function createTypingSignaler(params: {
   let hasRenderableText = false;
 
   const isRenderableText = (text?: string): boolean => {
-    const trimmed = text?.trim();
+    const trimmed = normalizeOptionalString(text);
     if (!trimmed) {
       return false;
     }
@@ -98,7 +99,7 @@ export function createTypingSignaler(params: {
     const renderable = isRenderableText(text);
     if (renderable) {
       hasRenderableText = true;
-    } else if (text?.trim()) {
+    } else if (normalizeOptionalString(text)) {
       return;
     } else {
       return;
@@ -130,14 +131,16 @@ export function createTypingSignaler(params: {
     if (disabled) {
       return;
     }
-    // Start typing as soon as tools begin executing, even before the first text delta.
-    if (!typing.isActive()) {
+    // Guard on hasRenderableText so NO_REPLY runs don't flash typing (#33951).
+    if (!typing.isActive() && hasRenderableText) {
       await typing.startTypingLoop();
       typing.refreshTypingTtl();
       return;
     }
     // Keep typing indicator alive during tool execution.
-    typing.refreshTypingTtl();
+    if (typing.isActive()) {
+      typing.refreshTypingTtl();
+    }
   };
 
   return {

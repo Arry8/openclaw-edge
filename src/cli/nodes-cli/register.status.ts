@@ -1,6 +1,12 @@
 import type { Command } from "commander";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { formatTimeAgo } from "../../infra/format-time/format-relative.ts";
 import { defaultRuntime } from "../../runtime.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { getTerminalTableWidth, renderTable } from "../../terminal/table.js";
 import { shortenHomeInString } from "../../utils.js";
 import { parseDurationMs } from "../parse-duration.js";
@@ -8,14 +14,14 @@ import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
 import { formatPermissions, parseNodeList, parsePairingList } from "./format.js";
 import { renderPendingPairingRequestsTable } from "./pairing-render.js";
 import { callGatewayCli, nodesCallOpts, resolveNodeId } from "./rpc.js";
-import type { NodesRpcOpts } from "./types.js";
+import type { NodeListNode, NodesRpcOpts, PairedNode } from "./types.js";
 
 function formatVersionLabel(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) {
     return raw;
   }
-  if (trimmed.toLowerCase().startsWith("v")) {
+  if (normalizeLowercaseStringOrEmpty(trimmed).startsWith("v")) {
     return trimmed;
   }
   return /^\d/.test(trimmed) ? `v${trimmed}` : trimmed;
@@ -27,8 +33,8 @@ function resolveNodeVersions(node: {
   coreVersion?: string;
   uiVersion?: string;
 }) {
-  const core = node.coreVersion?.trim() || undefined;
-  const ui = node.uiVersion?.trim() || undefined;
+  const core = normalizeOptionalString(node.coreVersion);
+  const ui = normalizeOptionalString(node.uiVersion);
   if (core || ui) {
     return { core, ui };
   }
@@ -36,7 +42,7 @@ function resolveNodeVersions(node: {
   if (!legacy) {
     return { core: undefined, ui: undefined };
   }
-  const platform = node.platform?.trim().toLowerCase() ?? "";
+  const platform = normalizeOptionalLowercaseString(node.platform) ?? "";
   const headless =
     platform === "darwin" || platform === "linux" || platform === "win32" || platform === "windows";
   return headless ? { core: legacy, ui: undefined } : { core: undefined, ui: legacy };
@@ -86,8 +92,7 @@ function parseSinceMs(raw: unknown, label: string): number | undefined {
   if (raw === undefined || raw === null) {
     return undefined;
   }
-  const value =
-    typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw).trim() : null;
+  const value = normalizeOptionalString(raw) ?? (typeof raw === "number" ? String(raw) : null);
   if (value === null) {
     defaultRuntime.error(`${label}: invalid duration value`);
     defaultRuntime.exit(1);
@@ -99,11 +104,36 @@ function parseSinceMs(raw: unknown, label: string): number | undefined {
   try {
     return parseDurationMs(value);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     defaultRuntime.error(`${label}: ${message}`);
     defaultRuntime.exit(1);
     return undefined;
   }
+}
+
+function mergePairedNodes(pairingPaired: PairedNode[], liveNodes: NodeListNode[]): PairedNode[] {
+  if (liveNodes.length === 0) {
+    return pairingPaired;
+  }
+  const pairedById = new Map(pairingPaired.map((node) => [node.nodeId, node] as const));
+  const merged = [...pairingPaired];
+  for (const live of liveNodes) {
+    if (!live.paired || pairedById.has(live.nodeId)) {
+      continue;
+    }
+    merged.push({
+      nodeId: live.nodeId,
+      displayName: live.displayName,
+      platform: live.platform,
+      version: live.version,
+      coreVersion: live.coreVersion,
+      uiVersion: live.uiVersion,
+      remoteIp: live.remoteIp,
+      permissions: live.permissions,
+      lastConnectedAtMs: live.connectedAtMs,
+    });
+  }
+  return merged;
 }
 
 export function registerNodesStatusCommands(nodes: Command) {
@@ -324,23 +354,18 @@ export function registerNodesStatusCommands(nodes: Command) {
           const now = Date.now();
           const hasFilters = connectedOnly || sinceMs !== undefined;
           const pendingRows = hasFilters ? [] : pending;
-          const connectedById = hasFilters
-            ? new Map(
-                parseNodeList(await callGatewayCli("node.list", opts, {})).map((node) => [
-                  node.nodeId,
-                  node,
-                ]),
-              )
-            : null;
-          const filteredPaired = paired.filter((node) => {
+          const liveNodes = parseNodeList(await callGatewayCli("node.list", opts, {}));
+          const connectedById = new Map(liveNodes.map((node) => [node.nodeId, node] as const));
+          const pairedNodes = mergePairedNodes(paired, liveNodes);
+          const filteredPaired = pairedNodes.filter((node) => {
             if (connectedOnly) {
-              const live = connectedById?.get(node.nodeId);
+              const live = connectedById.get(node.nodeId);
               if (!live?.connected) {
                 return false;
               }
             }
             if (sinceMs !== undefined) {
-              const live = connectedById?.get(node.nodeId);
+              const live = connectedById.get(node.nodeId);
               const lastConnectedAtMs =
                 typeof node.lastConnectedAtMs === "number"
                   ? node.lastConnectedAtMs
@@ -357,7 +382,9 @@ export function registerNodesStatusCommands(nodes: Command) {
             return true;
           });
           const filteredLabel =
-            hasFilters && filteredPaired.length !== paired.length ? ` (of ${paired.length})` : "";
+            hasFilters && filteredPaired.length !== pairedNodes.length
+              ? ` (of ${pairedNodes.length})`
+              : "";
           defaultRuntime.log(
             `Pending: ${pendingRows.length} · Paired: ${filteredPaired.length}${filteredLabel}`,
           );
@@ -381,7 +408,7 @@ export function registerNodesStatusCommands(nodes: Command) {
 
           if (filteredPaired.length > 0) {
             const pairedRows = filteredPaired.map((n) => {
-              const live = connectedById?.get(n.nodeId);
+              const live = connectedById.get(n.nodeId);
               const lastConnectedAtMs =
                 typeof n.lastConnectedAtMs === "number"
                   ? n.lastConnectedAtMs

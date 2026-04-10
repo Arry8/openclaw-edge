@@ -8,10 +8,13 @@ import {
   createMessageToolCardSchema,
 } from "../../plugin-sdk/channel-actions.js";
 type CreateMessageTool = typeof import("./message-tool.js").createMessageTool;
+type ResetPluginRuntimeStateForTest =
+  typeof import("../../plugins/runtime.js").resetPluginRuntimeStateForTest;
 type SetActivePluginRegistry = typeof import("../../plugins/runtime.js").setActivePluginRegistry;
 type CreateTestRegistry = typeof import("../../test-utils/channel-plugins.js").createTestRegistry;
 
 let createMessageTool: CreateMessageTool;
+let resetPluginRuntimeStateForTest: ResetPluginRuntimeStateForTest;
 let setActivePluginRegistry: SetActivePluginRegistry;
 let createTestRegistry: CreateTestRegistry;
 
@@ -22,7 +25,7 @@ type MessageToolDiscoveryContext = Parameters<DescribeMessageTool>[0];
 type MessageToolSchema = NonNullable<ReturnType<DescribeMessageTool>>["schema"];
 
 function createDiscordMessageToolComponentsSchema() {
-  return Type.Object({ type: Type.Literal("discord-components") });
+  return Type.Optional(Type.Object({ type: Type.Literal("discord-components") }));
 }
 
 function createSlackMessageToolBlocksSchema() {
@@ -62,6 +65,70 @@ const mocks = vi.hoisted(() => ({
     resolvedConfig: config,
     diagnostics: [],
   })),
+  getScopedChannelsCommandSecretTargets: vi.fn(
+    ({
+      config,
+      channel,
+      accountId,
+    }: {
+      config?: { channels?: Record<string, unknown> };
+      channel?: string | null;
+      accountId?: string | null;
+    }) => {
+      const allowedPaths = new Set<string>();
+      const targetIds = new Set<string>();
+      const scopedChannel = channel?.trim();
+      const scopedAccountId = accountId?.trim();
+      const scopedConfig =
+        scopedChannel && config?.channels && typeof config.channels[scopedChannel] === "object"
+          ? (config.channels[scopedChannel] as Record<string, unknown>)
+          : null;
+      if (!scopedChannel || !scopedConfig) {
+        return { targetIds };
+      }
+
+      const maybeCollectSecretPath = (path: string, value: unknown) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return;
+        }
+        const record = value as Record<string, unknown>;
+        if (typeof record.source === "string" && typeof record.id === "string") {
+          targetIds.add(path);
+          allowedPaths.add(path);
+        }
+      };
+
+      maybeCollectSecretPath(`channels.${scopedChannel}.token`, scopedConfig.token);
+      maybeCollectSecretPath(`channels.${scopedChannel}.botToken`, scopedConfig.botToken);
+      if (scopedAccountId) {
+        const accountRecord =
+          scopedConfig.accounts &&
+          typeof scopedConfig.accounts === "object" &&
+          !Array.isArray(scopedConfig.accounts) &&
+          typeof (scopedConfig.accounts as Record<string, unknown>)[scopedAccountId] === "object"
+            ? ((scopedConfig.accounts as Record<string, unknown>)[scopedAccountId] as Record<
+                string,
+                unknown
+              >)
+            : null;
+        if (accountRecord) {
+          maybeCollectSecretPath(
+            `channels.${scopedChannel}.accounts.${scopedAccountId}.token`,
+            accountRecord.token,
+          );
+          maybeCollectSecretPath(
+            `channels.${scopedChannel}.accounts.${scopedAccountId}.botToken`,
+            accountRecord.botToken,
+          );
+        }
+      }
+
+      return {
+        targetIds,
+        ...(allowedPaths.size > 0 ? { allowedPaths } : {}),
+      };
+    },
+  ),
 }));
 
 vi.mock("../../infra/outbound/message-action-runner.js", async () => {
@@ -74,8 +141,9 @@ vi.mock("../../infra/outbound/message-action-runner.js", async () => {
   };
 });
 
-vi.mock("../../config/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../config/config.js")>();
+vi.mock("../../config/config.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../config/config.js")>("../../config/config.js");
   return {
     ...actual,
     loadConfig: mocks.loadConfig,
@@ -84,6 +152,10 @@ vi.mock("../../config/config.js", async (importOriginal) => {
 
 vi.mock("../../cli/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: mocks.resolveCommandSecretRefsViaGateway,
+}));
+
+vi.mock("../../cli/command-secret-targets.js", () => ({
+  getScopedChannelsCommandSecretTargets: mocks.getScopedChannelsCommandSecretTargets,
 }));
 
 function mockSendResult(overrides: { channel?: string; to?: string } = {}) {
@@ -108,18 +180,22 @@ function getActionEnum(properties: Record<string, unknown>) {
 }
 
 beforeAll(async () => {
-  ({ setActivePluginRegistry } = await import("../../plugins/runtime.js"));
+  ({ resetPluginRuntimeStateForTest, setActivePluginRegistry } =
+    await import("../../plugins/runtime.js"));
   ({ createTestRegistry } = await import("../../test-utils/channel-plugins.js"));
   ({ createMessageTool } = await import("./message-tool.js"));
 });
 
 beforeEach(() => {
+  resetPluginRuntimeStateForTest();
   mocks.runMessageAction.mockReset();
   mocks.loadConfig.mockReset().mockReturnValue({});
   mocks.resolveCommandSecretRefsViaGateway.mockReset().mockImplementation(async ({ config }) => ({
     resolvedConfig: config,
     diagnostics: [],
   }));
+  mocks.getScopedChannelsCommandSecretTargets.mockClear();
+  setActivePluginRegistry(createTestRegistry([]));
 });
 
 function createChannelPlugin(params: {
@@ -170,17 +246,28 @@ async function executeSend(params: {
   action: Record<string, unknown>;
   toolOptions?: Partial<Parameters<typeof createMessageTool>[0]>;
 }) {
+  return executeAction({
+    toolOptions: params.toolOptions,
+    action: {
+      action: "send",
+      ...params.action,
+    },
+  });
+}
+
+async function executeAction(params: {
+  action: Record<string, unknown>;
+  toolOptions?: Partial<Parameters<typeof createMessageTool>[0]>;
+}) {
   const tool = createMessageTool({
     config: {} as never,
     runMessageAction: mocks.runMessageAction as never,
     ...params.toolOptions,
   });
-  await tool.execute("1", {
-    action: "send",
-    ...params.action,
-  });
+  await tool.execute("1", params.action);
   return mocks.runMessageAction.mock.calls[0]?.[0] as
     | {
+        action?: string;
         params?: Record<string, unknown>;
         sandboxRoot?: string;
         requesterSenderId?: string;
@@ -220,7 +307,7 @@ describe("message tool secret scoping", () => {
       message: "hi",
     });
 
-    const secretResolveCall = mocks.resolveCommandSecretRefsViaGateway.mock.calls[0]?.[0] as {
+    const secretResolveCall = mocks.resolveCommandSecretRefsViaGateway.mock.calls.at(-1)?.[0] as {
       targetIds?: Set<string>;
       allowedPaths?: Set<string>;
     };
@@ -321,7 +408,107 @@ describe("message tool path passthrough", () => {
     });
 
     expect(call?.params?.[field]).toBe(value);
+    expect(call?.params?.message).toBe("");
     expect(call?.params?.media).toBeUndefined();
+  });
+
+  it("preserves empty emoji values for react cleanup semantics", async () => {
+    mockSendResult({ to: "telegram:123" });
+
+    const call = await executeAction({
+      action: {
+        action: "react",
+        target: "telegram:123",
+        emoji: "",
+      },
+    });
+
+    expect(call?.action).toBe("react");
+    expect(call?.params?.emoji).toBe("");
+  });
+
+  it("preserves empty button arrays for edit semantics", async () => {
+    mockSendResult({ to: "telegram:123" });
+
+    const call = await executeAction({
+      action: {
+        action: "edit",
+        target: "telegram:123",
+        buttons: [],
+      },
+    });
+
+    expect(call?.action).toBe("edit");
+    expect(call?.params?.buttons).toEqual([]);
+  });
+
+  it("strips empty legacy target placeholders before send normalization", async () => {
+    mockSendResult({ to: "channel:C123" });
+
+    const call = await executeSend({
+      action: {
+        channel: "slack",
+        target: "channel:C123",
+        to: "",
+        channelId: "",
+        targets: [],
+        message: "hi",
+      },
+    });
+
+    expect(call?.params?.target).toBe("channel:C123");
+    expect(call?.params?.to).toBeUndefined();
+    expect(call?.params?.channelId).toBeUndefined();
+    expect(call?.params?.targets).toBeUndefined();
+  });
+
+  it("keeps explicit zero-valued poll durations while stripping inert poll defaults", async () => {
+    mockSendResult({ to: "channel:C123" });
+
+    const call = await executeSend({
+      action: {
+        channel: "slack",
+        target: "channel:C123",
+        message: "hi",
+        pollDurationHours: 0,
+        poll_duration_seconds: "0 ",
+        pollAnonymous: false,
+        poll_public: " false ",
+        pollMulti: false,
+        pollOption: [],
+        poll_option: ["", "   "],
+        poll_question: "",
+      },
+    });
+
+    expect(call?.params?.pollDurationHours).toBe(0);
+    expect(call?.params?.poll_duration_seconds).toBe("0 ");
+    expect(call?.params?.pollAnonymous).toBeUndefined();
+    expect(call?.params?.poll_public).toBeUndefined();
+    expect(call?.params?.pollMulti).toBeUndefined();
+    expect(call?.params?.pollOption).toBeUndefined();
+    expect(call?.params?.poll_option).toBeUndefined();
+    expect(call?.params?.poll_question).toBeUndefined();
+  });
+
+  it("keeps poll params when action trims to poll", async () => {
+    mockSendResult({ to: "channel:C123" });
+
+    const call = await executeAction({
+      action: {
+        action: "poll ",
+        channel: "slack",
+        target: "channel:C123",
+        pollDurationSeconds: 60,
+        poll_public: "false",
+        pollOption: ["Yes", "No"],
+      },
+    });
+
+    expect(call?.action).toBe("poll");
+    expect(call?.params?.pollDurationSeconds).toBe(60);
+    expect(call?.params?.poll_public).toBe("false");
+    expect(call?.params?.pollOption).toEqual(["Yes", "No"]);
   });
 });
 
@@ -544,6 +731,24 @@ describe("message tool schema scoping", () => {
 
     expect(schema.properties?.buttons).toBeDefined();
     expect(schema.required ?? []).not.toContain("buttons");
+  });
+
+  it("keeps components schema optional so plain sends do not require components", () => {
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "discord", source: "test", plugin: discordPlugin }]),
+    );
+
+    const tool = createMessageTool({
+      config: {} as never,
+      currentChannelProvider: "discord",
+    });
+    const schema = tool.parameters as {
+      properties?: Record<string, unknown>;
+      required?: string[];
+    };
+
+    expect(schema.properties?.components).toBeDefined();
+    expect(schema.required ?? []).not.toContain("components");
   });
 
   it("hides telegram poll extras when telegram polls are disabled in scoped mode", () => {
@@ -863,6 +1068,69 @@ describe("message tool description", () => {
 
     expect(tool.description).toContain("Current channel (bluebubbles) supports:");
     expect(tool.description).not.toContain("Other configured channels");
+  });
+
+  it("includes the thread read hint when the current channel supports read", () => {
+    const signalPlugin = createChannelPlugin({
+      id: "signal",
+      label: "Signal",
+      docsPath: "/channels/signal",
+      blurb: "Signal test plugin.",
+      actions: ["send", "read", "react"],
+    });
+
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "signal", source: "test", plugin: signalPlugin }]),
+    );
+
+    const tool = createMessageTool({
+      config: {} as never,
+      currentChannelProvider: "signal",
+    });
+
+    expect(tool.description).toContain('Use action="read" with threadId');
+  });
+
+  it("omits the thread read hint when the current channel does not support read", () => {
+    const signalPlugin = createChannelPlugin({
+      id: "signal",
+      label: "Signal",
+      docsPath: "/channels/signal",
+      blurb: "Signal test plugin.",
+      actions: ["send", "react"],
+    });
+
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "signal", source: "test", plugin: signalPlugin }]),
+    );
+
+    const tool = createMessageTool({
+      config: {} as never,
+      currentChannelProvider: "signal",
+    });
+
+    expect(tool.description).not.toContain('Use action="read" with threadId');
+  });
+
+  it("includes the thread read hint in the generic fallback when configured actions include read", () => {
+    const signalPlugin = createChannelPlugin({
+      id: "signal",
+      label: "Signal",
+      docsPath: "/channels/signal",
+      blurb: "Signal test plugin.",
+      actions: ["read"],
+    });
+
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "signal", source: "test", plugin: signalPlugin }]),
+    );
+
+    const tool = createMessageTool({
+      config: {} as never,
+    });
+
+    expect(tool.description).toContain("Supports actions:");
+    expect(tool.description).toContain('Use action="read" with threadId');
   });
 });
 

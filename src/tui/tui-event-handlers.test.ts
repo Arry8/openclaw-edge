@@ -77,7 +77,9 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     const chatLog = createMockChatLog();
     const btw = createMockBtwPresenter();
     const tui = { requestRender: vi.fn() } as unknown as MockTui & HandlerTui;
-    const setActivityStatus = vi.fn();
+    const setActivityStatus = vi.fn((text: string) => {
+      state.activityStatus = text;
+    });
     const loadHistory = vi.fn();
     const localRunIds = new Set<string>();
     const localBtwRunIds = new Set<string>();
@@ -116,6 +118,7 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     state?: Partial<TuiStateAccess>;
     chatLog?: HandlerChatLog;
     btw?: HandlerBtwPresenter;
+    refreshSessionInfo?: () => Promise<void>;
   }) => {
     const state = makeState(params?.state);
     const context = makeContext(state);
@@ -126,6 +129,7 @@ describe("tui-event-handlers: handleAgentEvent", () => {
       tui: context.tui,
       state,
       setActivityStatus: context.setActivityStatus,
+      refreshSessionInfo: params?.refreshSessionInfo,
       loadHistory: context.loadHistory,
       noteLocalRunId: context.noteLocalRunId,
       isLocalRunId: context.isLocalRunId,
@@ -396,6 +400,170 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     expect(tui.requestRender).not.toHaveBeenCalled();
   });
 
+  it("clears orphaned streaming when final arrives inactive but no runs remain in flight", () => {
+    // Local BTW runs skip the "capture activeChatRunId when null" branch, so final can keep
+    // wasActiveRun === false while deltas still set streaming — the only way to hit
+    // shouldClearOrphanedActivityStatus() without a second concurrent chat run.
+    const { state, chatLog, setActivityStatus, handleChatEvent, noteLocalBtwRunId } =
+      createHandlersHarness({
+        state: { activeChatRunId: null },
+      });
+    noteLocalBtwRunId("run-orphan");
+
+    handleChatEvent({
+      runId: "run-orphan",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "partial" },
+    });
+    expect(state.activeChatRunId).toBeNull();
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-orphan",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done" }] },
+    });
+
+    expect(chatLog.finalizeAssistant).toHaveBeenCalled();
+    expect(setActivityStatus).toHaveBeenCalledWith("idle");
+  });
+
+  it("orphan-clear sets idle, not error, when inactive local BTW final has stopReason error", () => {
+    const { state, chatLog, setActivityStatus, handleChatEvent, noteLocalBtwRunId } =
+      createHandlersHarness({
+        state: { activeChatRunId: null },
+      });
+    noteLocalBtwRunId("run-btw-err");
+
+    handleChatEvent({
+      runId: "run-btw-err",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "partial" },
+    });
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-btw-err",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { stopReason: "error", content: [{ type: "text", text: "failed" }] },
+    });
+
+    expect(chatLog.finalizeAssistant).toHaveBeenCalled();
+    expect(setActivityStatus).toHaveBeenCalledWith("idle");
+    expect(setActivityStatus).not.toHaveBeenCalledWith("error");
+  });
+
+  it("orphan-clear sets idle, not error, when inactive local BTW run ends in chat error state", () => {
+    const { state, setActivityStatus, handleChatEvent, noteLocalBtwRunId } = createHandlersHarness({
+      state: { activeChatRunId: null },
+    });
+    noteLocalBtwRunId("run-btw-chat-err");
+
+    handleChatEvent({
+      runId: "run-btw-chat-err",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "partial" },
+    });
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-btw-chat-err",
+      sessionKey: state.currentSessionKey,
+      state: "error",
+      errorMessage: "gateway timeout",
+    });
+
+    expect(setActivityStatus).toHaveBeenCalledWith("idle");
+    expect(setActivityStatus).not.toHaveBeenCalledWith("error");
+  });
+
+  it("does not overwrite terminal error status when late inactive final arrives after active run failure", () => {
+    // Regression: run B ends with error (active), then run A's late final arrives inactive.
+    // The orphan path must NOT overwrite the error status with idle.
+    const { state, setActivityStatus, handleChatEvent } = createHandlersHarness({
+      state: { activeChatRunId: null },
+    });
+
+    // Run A delta — becomes active
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "a-partial" },
+    });
+    expect(state.activeChatRunId).toBe("run-a");
+
+    // Simulate activeChatRunId cleared externally (failover / reassignment)
+    state.activeChatRunId = null;
+
+    // Run B delta — becomes active since pointer was cleared
+    handleChatEvent({
+      runId: "run-b",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "b-partial" },
+    });
+    expect(state.activeChatRunId).toBe("run-b");
+
+    // Run B ends with error (active run)
+    handleChatEvent({
+      runId: "run-b",
+      sessionKey: state.currentSessionKey,
+      state: "error",
+      errorMessage: "backend failure",
+    });
+    expect(state.activityStatus).toBe("error");
+    setActivityStatus.mockClear();
+
+    // Run A's late final arrives — inactive, should NOT overwrite error
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done" }] },
+    });
+
+    expect(setActivityStatus).not.toHaveBeenCalledWith("idle");
+    expect(state.activityStatus).toBe("error");
+  });
+
+  it("does not clear activity on inactive final when another run is still in flight", () => {
+    const { state, chatLog, setActivityStatus, handleChatEvent } = createHandlersHarness({
+      state: { activeChatRunId: null },
+    });
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "a" },
+    });
+    handleChatEvent({
+      runId: "run-b",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "b" },
+    });
+    expect(state.activeChatRunId).toBe("run-a");
+    state.activeChatRunId = "run-b";
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done a" }] },
+    });
+
+    expect(chatLog.finalizeAssistant).toHaveBeenCalled();
+    expect(setActivityStatus).not.toHaveBeenCalled();
+  });
+
   it("suppresses tool events when verbose is off", () => {
     const { chatLog, tui, handleAgentEvent } = createHandlersHarness({
       state: {
@@ -528,6 +696,16 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     });
 
     expect(chatLog.updateAssistant).toHaveBeenLastCalledWith("continued", "run-active");
+    expect(loadHistory).not.toHaveBeenCalled();
+
+    loadHistory.mockClear();
+    handleChatEvent({
+      runId: "run-active",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done" }] },
+    });
+    expect(loadHistory).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses non-local empty final placeholders during concurrent runs", () => {
@@ -549,6 +727,283 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     expect(chatLog.dropAssistant).toHaveBeenCalledWith("run-other");
     expect(loadHistory).not.toHaveBeenCalled();
     expect(state.activeChatRunId).toBe("run-active");
+  });
+
+  it("stale streaming resets on event gap", () => {
+    const { state, chatLog, setActivityStatus, loadHistory, handleChatEvent, handleEventGap } =
+      createHandlersHarness({
+        state: { activeChatRunId: null },
+      });
+
+    handleChatEvent({
+      runId: "run-stale",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "partial" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-stale");
+    setActivityStatus.mockClear();
+    loadHistory.mockClear();
+
+    handleEventGap();
+
+    expect(state.activeChatRunId).toBeNull();
+    expect(setActivityStatus).toHaveBeenCalledWith("idle");
+    expect(loadHistory).toHaveBeenCalledTimes(1);
+
+    handleChatEvent({
+      runId: "run-fresh",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "fresh" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-fresh");
+    expect(chatLog.updateAssistant).toHaveBeenLastCalledWith("fresh", "run-fresh");
+  });
+
+  it("does not clear optimistic local messages when a gap arrives before first run event", () => {
+    const refreshSessionInfo = vi.fn().mockResolvedValue(undefined);
+    const { state, loadHistory, handleEventGap } = createHandlersHarness({
+      state: { activeChatRunId: null, pendingOptimisticUserMessage: true },
+      refreshSessionInfo,
+    });
+
+    handleEventGap();
+
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(refreshSessionInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not clear active streaming run while still receiving events", () => {
+    const { state, chatLog, setActivityStatus, handleChatEvent } = createHandlersHarness({
+      state: { activeChatRunId: null },
+    });
+
+    handleChatEvent({
+      runId: "run-live",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "first" },
+    });
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-live",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "second" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-live");
+    expect(setActivityStatus).toHaveBeenCalledWith("streaming");
+    expect(chatLog.updateAssistant).toHaveBeenLastCalledWith("second", "run-live");
+  });
+
+  it("keeps pending optimistic binding for the next real run after an event gap", () => {
+    const { state, isLocalRunId, handleChatEvent, handleEventGap } = createHandlersHarness({
+      state: { activeChatRunId: null, pendingOptimisticUserMessage: false },
+    });
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "A1" },
+    });
+    expect(state.activeChatRunId).toBe("run-a");
+
+    // User submitted another message while run-a was active.
+    state.pendingOptimisticUserMessage = true;
+
+    handleEventGap();
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    // A resumed delta for run-a should stay recoverable but must not consume the pending flag.
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "late A" },
+    });
+    expect(state.activeChatRunId).toBe("run-a");
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+    expect(isLocalRunId("run-a")).toBe(false);
+
+    // Pre-gap run reaches a terminal state; pending optimistic binding is still intact.
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done A" }] },
+    });
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    // First delta from the next run should now claim optimistic local binding.
+    handleChatEvent({
+      runId: "run-b",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "B1" },
+    });
+    expect(state.activeChatRunId).toBe("run-b");
+    expect(state.pendingOptimisticUserMessage).toBe(false);
+    expect(isLocalRunId("run-b")).toBe(true);
+  });
+
+  it("does not let a foreign post-gap run consume pending optimistic binding", () => {
+    const { state, isLocalRunId, handleChatEvent, handleEventGap } = createHandlersHarness({
+      state: { activeChatRunId: null, pendingOptimisticUserMessage: false },
+    });
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "A1" },
+    });
+    state.pendingOptimisticUserMessage = true;
+
+    handleEventGap();
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    handleChatEvent({
+      runId: "run-foreign",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "foreign" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-foreign");
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+    expect(isLocalRunId("run-foreign")).toBe(false);
+
+    handleChatEvent({
+      runId: "run-foreign",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "foreign done" }] },
+    });
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    handleChatEvent({
+      runId: "run-foreign-2",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "foreign 2" },
+    });
+    expect(state.activeChatRunId).toBe("run-foreign-2");
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+    expect(isLocalRunId("run-foreign-2")).toBe(false);
+  });
+
+  it("preserves gap guard across repeated gap callbacks without an active run", () => {
+    const { state, isLocalRunId, handleChatEvent, handleEventGap } = createHandlersHarness({
+      state: { activeChatRunId: null, pendingOptimisticUserMessage: false },
+    });
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "A1" },
+    });
+    state.pendingOptimisticUserMessage = true;
+
+    handleEventGap({ reload: false });
+    handleEventGap({ reload: false });
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "late A" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-a");
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+    expect(isLocalRunId("run-a")).toBe(false);
+  });
+
+  it("allows a known local post-gap run to claim pending optimistic binding", () => {
+    const { state, isLocalRunId, noteLocalRunId, handleChatEvent, handleEventGap } =
+      createHandlersHarness({
+        state: { activeChatRunId: null, pendingOptimisticUserMessage: false },
+      });
+
+    handleChatEvent({
+      runId: "run-a",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "A1" },
+    });
+    state.pendingOptimisticUserMessage = true;
+
+    handleEventGap({ reload: false });
+    expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(true);
+
+    // Simulate a locally-sent run id that arrives after the pre-gap run never terminated.
+    noteLocalRunId("run-b");
+
+    handleChatEvent({
+      runId: "run-b",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "B1" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-b");
+    expect(state.pendingOptimisticUserMessage).toBe(false);
+    expect(isLocalRunId("run-b")).toBe(true);
+  });
+
+  it("keeps the pre-gap run recoverable until a real terminal event arrives", () => {
+    const { state, chatLog, setActivityStatus, handleChatEvent, handleEventGap } =
+      createHandlersHarness({
+        state: { activeChatRunId: null },
+      });
+
+    handleChatEvent({
+      runId: "run-resume",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "before gap" },
+    });
+
+    handleEventGap();
+    chatLog.updateAssistant.mockClear();
+    chatLog.finalizeAssistant.mockClear();
+    setActivityStatus.mockClear();
+
+    handleChatEvent({
+      runId: "run-resume",
+      sessionKey: state.currentSessionKey,
+      state: "delta",
+      message: { content: "after gap" },
+    });
+
+    expect(state.activeChatRunId).toBe("run-resume");
+    expect(chatLog.updateAssistant).toHaveBeenLastCalledWith("after gap", "run-resume");
+
+    handleChatEvent({
+      runId: "run-resume",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: { content: [{ type: "text", text: "done" }] },
+    });
+
+    expect(chatLog.finalizeAssistant).toHaveBeenCalledWith("done", "run-resume");
+    expect(state.activeChatRunId).toBeNull();
+    expect(setActivityStatus).toHaveBeenCalledWith("idle");
   });
 
   it("renders final error text when chat final has no content but includes event errorMessage", () => {
@@ -595,6 +1050,28 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     expect(chatLog.finalizeAssistant).not.toHaveBeenCalled();
   });
 
+  it("shows awaiting follow-up when a final assistant message contains the sessions_yield marker", () => {
+    const { state, setActivityStatus, handleChatEvent } = createHandlersHarness({
+      state: { activeChatRunId: "run-yield" },
+    });
+
+    handleChatEvent({
+      runId: "run-yield",
+      sessionKey: state.currentSessionKey,
+      state: "final",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "Waiting for child completion.\n\n[Context: The previous turn ended intentionally via sessions_yield while waiting for a follow-up event.]",
+          },
+        ],
+      },
+    });
+
+    expect(setActivityStatus).toHaveBeenCalledWith("awaiting follow-up");
+  });
+
   it("reloads history when a local run ends without a displayable final message", () => {
     const { state, loadHistory, noteLocalRunId, handleChatEvent } = createHandlersHarness({
       state: { activeChatRunId: "run-local-silent" },
@@ -611,43 +1088,34 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     expect(loadHistory).toHaveBeenCalledTimes(1);
   });
 
-  it("does not reload history for local run with empty final when another run is active (#53115)", () => {
+  it("defers local empty-final history refresh when activeChatRunId has no chat events yet", () => {
     const { state, loadHistory, noteLocalRunId, handleChatEvent } = createHandlersHarness({
-      state: { activeChatRunId: "run-main" },
+      state: { activeChatRunId: "run-newer" },
     });
-
-    noteLocalRunId("run-local-empty");
+    noteLocalRunId("run-local-silent");
 
     handleChatEvent({
-      runId: "run-local-empty",
+      runId: "run-local-silent",
       sessionKey: state.currentSessionKey,
       state: "final",
     });
-
-    expect(state.activeChatRunId).toBe("run-main");
     expect(loadHistory).not.toHaveBeenCalled();
-  });
 
-  it("flushes deferred history reload after the newer local run finishes", () => {
-    const { state, loadHistory, noteLocalRunId, handleChatEvent } = createHandlersHarness({
-      state: { activeChatRunId: "run-main" },
-    });
-
-    noteLocalRunId("run-local-empty");
     handleChatEvent({
-      runId: "run-local-empty",
+      runId: "run-newer",
       sessionKey: state.currentSessionKey,
-      state: "final",
+      state: "delta",
+      message: { content: "first" },
     });
+    expect(loadHistory).not.toHaveBeenCalled();
 
-    noteLocalRunId("run-main");
+    loadHistory.mockClear();
     handleChatEvent({
-      runId: "run-main",
+      runId: "run-newer",
       sessionKey: state.currentSessionKey,
       state: "final",
       message: { content: [{ type: "text", text: "done" }] },
     });
-
     expect(loadHistory).toHaveBeenCalledTimes(1);
   });
 });

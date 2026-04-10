@@ -23,12 +23,25 @@ Auth profiles are **per-agent**. Each agent reads from its own:
 ~/.openclaw/agents/<agentId>/agent/auth-profiles.json
 ```
 
+`sessions_history` is the safer cross-session recall path here too: it returns
+a bounded, sanitized view, not a raw transcript dump. Assistant recall strips
+thinking tags, `<relevant-memories>` scaffolding, plain-text tool-call XML
+payloads (including `<tool_call>...</tool_call>`,
+`<function_call>...</function_call>`, `<tool_calls>...</tool_calls>`,
+`<function_calls>...</function_calls>`, and truncated tool-call blocks),
+downgraded tool-call scaffolding, leaked ASCII/full-width model control
+tokens, and malformed MiniMax tool-call XML before redaction/truncation.
+
 Main agent credentials are **not** shared automatically. Never reuse `agentDir`
 across agents (it causes auth/session collisions). If you want to share creds,
 copy `auth-profiles.json` into the other agent's `agentDir`.
 
-Skills are per-agent via each workspace’s `skills/` folder, with shared skills
-available from `~/.openclaw/skills`. See [Skills: per-agent vs shared](/tools/skills#per-agent-vs-shared-skills).
+Skills are loaded from each agent workspace plus shared roots such as
+`~/.openclaw/skills`, then filtered by the effective agent skill allowlist when
+configured. Use `agents.defaults.skills` for a shared baseline and
+`agents.list[].skills` for per-agent replacement. See
+[Skills: per-agent vs shared](/tools/skills#per-agent-vs-shared-skills) and
+[Skills: agent skill allowlists](/tools/skills#agent-skill-allowlists).
 
 The Gateway can host **one agent** (default) or **many agents** side-by-side.
 
@@ -540,6 +553,71 @@ Notes:
   binary, ensure `exec` is allowed and the binary exists in the sandbox.
 - For stricter gating, set `agents.list[].groupChat.mentionPatterns` and keep
   group allowlists enabled for the channel.
+
+## Multiple Telegram agents in one group
+
+Put two or more Telegram bot accounts into a single group so users can
+@-mention the right agent for the job. Each bot needs its own BotFather token
+and a separate channel account.
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        name: "Assistant",
+        workspace: "~/.openclaw/workspace",
+        identity: { name: "Assistant", emoji: "🤖" },
+      },
+      {
+        id: "marketing",
+        name: "MarketingBot",
+        workspace: "~/.openclaw/workspace-marketing",
+        identity: { name: "MarketingBot", emoji: "📢" },
+      },
+    ],
+  },
+  channels: {
+    telegram: {
+      enabled: true,
+      groupPolicy: "open",
+      accounts: {
+        default: {
+          botToken: "TOKEN_FOR_ASSISTANT",
+          groupPolicy: "open",
+          allowFrom: [123456789],
+          groupAllowFrom: [123456789],
+        },
+        marketing: {
+          botToken: "TOKEN_FOR_MARKETING_BOT",
+          groupPolicy: "open",
+          allowFrom: [123456789],
+          groupAllowFrom: [123456789],
+        },
+      },
+    },
+  },
+  bindings: [
+    { agentId: "main", match: { channel: "telegram", accountId: "default" } },
+    { agentId: "marketing", match: { channel: "telegram", accountId: "marketing" } },
+  ],
+}
+```
+
+Important setup steps:
+
+1. **Disable Privacy Mode** for each bot in @BotFather (`/setprivacy` → Disable),
+   otherwise bots only see `/commands` and direct replies in groups.
+2. **Re-add bots** to the group after changing privacy mode — Telegram caches
+   the setting per-group and only applies changes on re-join.
+3. `groupPolicy` must be `"open"` (or `"allowlist"` with your user ID in
+   `groupAllowFrom`). Note that `groupAllowFrom` filters by **sender user ID**,
+   not by group chat ID. `allowFrom` is for DM access; `groupAllowFrom` is for
+   group sender filtering (falls back to `allowFrom` when unset).
+4. Per-account `groupPolicy` overrides the top-level `channels.telegram.groupPolicy`.
+   If you only want one account open for groups, set `groupPolicy` on that
+   account and leave the top-level restrictive.
 
 ## Per-Agent Sandbox and Tool Configuration
 

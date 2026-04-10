@@ -3,6 +3,7 @@ import {
   resolveAgentDir,
   resolveDefaultAgentId,
   resolveSessionAgentId,
+  resolveAgentModelFallbacksOverride,
 } from "../../agents/agent-scope.js";
 import { resolveFastModeState } from "../../agents/fast-mode.js";
 import { resolveModelAuthLabel } from "../../agents/model-auth-label.js";
@@ -22,6 +23,7 @@ import {
   resolveUsageProviderId,
 } from "../../infra/provider-usage.js";
 import type { MediaUnderstandingDecision } from "../../media-understanding/types.js";
+import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
 import {
   listTasksForAgentIdForStatus,
   listTasksForSessionKeyForStatus,
@@ -36,9 +38,9 @@ import { resolveSelectedAndActiveModel } from "../model-runtime.js";
 import { buildStatusMessage } from "../status.js";
 import type { ElevatedLevel, ReasoningLevel, ThinkLevel, VerboseLevel } from "../thinking.js";
 import type { ReplyPayload } from "../types.js";
+import { buildSubagentsStatusLine } from "./commands-status-subagents.js";
 import type { CommandContext } from "./commands-types.js";
 import { getFollowupQueueDepth, resolveQueueSettings } from "./queue.js";
-import { resolveSubagentLabel } from "./subagents-utils.js";
 
 // Some usage endpoints only work with CLI/session OAuth tokens, not API keys.
 // Skip those probes when the active auth mode cannot satisfy the endpoint.
@@ -59,7 +61,7 @@ function shouldLoadUsageSummary(params: {
   if (!USAGE_OAUTH_ONLY_PROVIDERS.has(params.provider)) {
     return true;
   }
-  const auth = params.selectedModelAuth?.trim().toLowerCase();
+  const auth = normalizeOptionalLowercaseString(params.selectedModelAuth);
   return Boolean(auth?.startsWith("oauth") || auth?.startsWith("token"));
 }
 
@@ -69,12 +71,15 @@ function formatSessionTaskLine(sessionKey: string): string | undefined {
   if (!task) {
     return undefined;
   }
+  // /status should reflect actionable state. Completed-success output is already delivered
+  // through task-specific channels and should not be replayed in the status card.
+  if (snapshot.activeCount === 0 && snapshot.recentFailureCount === 0) {
+    return undefined;
+  }
   const headline =
     snapshot.activeCount > 0
       ? `${snapshot.activeCount} active · ${snapshot.totalCount} total`
-      : snapshot.recentFailureCount > 0
-        ? `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"}`
-        : "recently finished";
+      : `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"}`;
   const title = formatTaskStatusTitle(task);
   const detail = formatTaskStatusDetail(task);
   const parts = [headline, task.runtime, title, detail].filter(Boolean);
@@ -83,10 +88,14 @@ function formatSessionTaskLine(sessionKey: string): string | undefined {
 
 function formatAgentTaskCountsLine(agentId: string): string | undefined {
   const snapshot = buildTaskStatusSnapshot(listTasksForAgentIdForStatus(agentId));
-  if (snapshot.totalCount === 0) {
+  if (snapshot.activeCount === 0 && snapshot.recentFailureCount === 0) {
     return undefined;
   }
-  return `📌 Tasks: ${snapshot.activeCount} active · ${snapshot.totalCount} total · agent-local`;
+  const summary =
+    snapshot.activeCount > 0
+      ? `${snapshot.activeCount} active · ${snapshot.totalCount} total`
+      : `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"} · ${snapshot.totalCount} total`;
+  return `📌 Tasks: ${summary} · agent-local`;
 }
 
 export async function buildStatusReply(params: {
@@ -149,6 +158,7 @@ export async function buildStatusText(params: {
   primaryModelLabelOverride?: string;
   modelAuthOverride?: string;
   activeModelAuthOverride?: string;
+  includeTranscriptUsage?: boolean;
 }): Promise<string> {
   const {
     cfg,
@@ -271,22 +281,11 @@ export async function buildStatusText(params: {
     }
     const runs = listControlledSubagentRuns(requesterKey);
     const verboseEnabled = resolvedVerboseLevel && resolvedVerboseLevel !== "off";
-    if (runs.length > 0) {
-      const active = runs.filter(
-        (entry) => !entry.endedAt || countPendingDescendantRuns(entry.childSessionKey) > 0,
-      );
-      const done = runs.length - active.length;
-      if (verboseEnabled) {
-        const labels = active
-          .map((entry) => resolveSubagentLabel(entry, ""))
-          .filter(Boolean)
-          .slice(0, 3);
-        const labelText = labels.length ? ` (${labels.join(", ")})` : "";
-        subagentsLine = `🤖 Subagents: ${active.length} active${labelText} · ${done} done`;
-      } else if (active.length > 0) {
-        subagentsLine = `🤖 Subagents: ${active.length} active`;
-      }
-    }
+    subagentsLine = buildSubagentsStatusLine({
+      runs,
+      verboseEnabled,
+      pendingDescendantsForRun: (entry) => countPendingDescendantRuns(entry.childSessionKey),
+    });
   }
   const groupActivation = isGroup
     ? (normalizeGroupActivation(sessionEntry?.groupActivation) ?? defaultGroupActivation())
@@ -302,6 +301,7 @@ export async function buildStatusText(params: {
       agentId: statusAgentId,
       sessionEntry,
     }).enabled;
+  const agentFallbacksOverride = resolveAgentModelFallbacksOverride(cfg, statusAgentId);
   const statusText = buildStatusMessage({
     config: cfg,
     agent: {
@@ -309,6 +309,7 @@ export async function buildStatusText(params: {
       model: {
         ...toAgentModelListLike(agentDefaults.model),
         primary: params.primaryModelLabelOverride ?? `${provider}/${model}`,
+        ...(agentFallbacksOverride === undefined ? {} : { fallbacks: agentFallbacksOverride }),
       },
       ...(typeof contextTokens === "number" && contextTokens > 0 ? { contextTokens } : {}),
       thinkingDefault: agentConfig?.thinkingDefault ?? agentDefaults.thinkingDefault,
@@ -345,7 +346,7 @@ export async function buildStatusText(params: {
     subagentsLine,
     taskLine,
     mediaDecisions: params.mediaDecisions,
-    includeTranscriptUsage: false,
+    includeTranscriptUsage: params.includeTranscriptUsage ?? true,
   });
 
   return statusText;

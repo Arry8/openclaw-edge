@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import {
   readJsonWebhookBodyOrReject,
   resolveWebhookTargetWithAuthOrReject,
@@ -15,8 +16,14 @@ import type {
 } from "./types.js";
 
 function extractBearerToken(header: unknown): string {
-  const authHeader = Array.isArray(header) ? String(header[0] ?? "") : String(header ?? "");
-  return authHeader.toLowerCase().startsWith("bearer ")
+  const authHeader = Array.isArray(header)
+    ? typeof header[0] === "string"
+      ? header[0]
+      : ""
+    : typeof header === "string"
+      ? header
+      : "";
+  return normalizeLowercaseStringOrEmpty(authHeader).startsWith("bearer ")
     ? authHeader.slice("bearer ".length).trim()
     : "";
 }
@@ -63,7 +70,10 @@ function parseGoogleChatInboundPayload(
       user: chat.user,
       eventTime: chat.eventTime,
     };
-    addOnBearerToken = String(rawObj.authorizationEventObject?.systemIdToken ?? "").trim();
+    addOnBearerToken =
+      typeof rawObj.authorizationEventObject?.systemIdToken === "string"
+        ? rawObj.authorizationEventObject.systemIdToken.trim()
+        : "";
   }
 
   const event = eventPayload as GoogleChatEvent;
@@ -143,6 +153,11 @@ export function createGoogleChatWebhookRequestHandler(params: {
                 audience: target.audience,
                 expectedAddOnPrincipal: target.account.config.appPrincipal,
               });
+              if (!verification.ok) {
+                target.runtime.warn?.(
+                  `[${target.account.accountId}] Google Chat auth rejected: ${verification.reason ?? "unknown reason"}`,
+                );
+              }
               return verification.ok;
             },
           });
@@ -178,6 +193,11 @@ export function createGoogleChatWebhookRequestHandler(params: {
                 audience: target.audience,
                 expectedAddOnPrincipal: target.account.config.appPrincipal,
               });
+              if (!verification.ok) {
+                target.runtime.warn?.(
+                  `[${target.account.accountId}] Google Chat add-on auth rejected: ${verification.reason ?? "unknown reason"}`,
+                );
+              }
               return verification.ok;
             },
           });
@@ -194,6 +214,19 @@ export function createGoogleChatWebhookRequestHandler(params: {
 
         const dispatchTarget = selectedTarget;
         dispatchTarget.statusSink?.({ lastInboundAt: Date.now() });
+
+        // For synchronous responses in spaces, we need to return a proper message
+        const evtType = (parsedEvent.type ?? (parsedEvent as { eventType?: string }).eventType)?.toUpperCase();
+        const isGroup = parsedEvent.space?.type?.toUpperCase() !== "DM";
+
+        // For ADDED_TO_SPACE events in groups, return an acknowledgment
+        if (isGroup && evtType === "ADDED_TO_SPACE") {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ text: "Hello!" }));
+          return true;
+        }
+
         params.processEvent(parsedEvent, dispatchTarget).catch((err) => {
           dispatchTarget.runtime.error?.(
             `[${dispatchTarget.account.accountId}] Google Chat webhook failed: ${String(err)}`,

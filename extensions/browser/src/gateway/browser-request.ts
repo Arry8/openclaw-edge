@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "openclaw/plugin-sdk/text-runtime";
 import {
   ErrorCodes,
   applyBrowserProxyPaths,
@@ -17,6 +22,8 @@ import {
   type GatewayRequestHandlers,
   type NodeSession,
 } from "../core-api.js";
+
+const logBrowserProxy = createSubsystemLogger("browser-proxy");
 
 type BrowserRequestParams = {
   method?: string;
@@ -44,14 +51,11 @@ function isBrowserNode(node: NodeSession) {
 }
 
 function normalizeNodeKey(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
+  return normalizeLowercaseStringOrEmpty(value).replace(/[^a-z0-9]+/g, "");
 }
 
 function resolveBrowserNode(nodes: NodeSession[], query: string): NodeSession | null {
-  const q = query.trim();
+  const q = normalizeOptionalString(query) ?? "";
   if (!q) {
     return null;
   }
@@ -96,12 +100,12 @@ function resolveBrowserNodeTarget(params: {
   }
   const browserNodes = params.nodes.filter((node) => isBrowserNode(node));
   if (browserNodes.length === 0) {
-    if (policy?.node?.trim()) {
+    if (normalizeOptionalString(policy?.node)) {
       throw new Error("No connected browser-capable nodes.");
     }
     return null;
   }
-  const requested = policy?.node?.trim() || "";
+  const requested = normalizeOptionalString(policy?.node) ?? "";
   if (requested) {
     const resolved = resolveBrowserNode(browserNodes, requested);
     if (!resolved) {
@@ -132,8 +136,8 @@ export async function handleBrowserGatewayRequest({
   context,
 }: Parameters<GatewayRequestHandlers["browser.request"]>[0]) {
   const typed = params as BrowserRequestParams;
-  const methodRaw = typeof typed.method === "string" ? typed.method.trim().toUpperCase() : "";
-  const path = typeof typed.path === "string" ? typed.path.trim() : "";
+  const methodRaw = (normalizeOptionalString(typed.method) ?? "").toUpperCase();
+  const path = normalizeOptionalString(typed.path) ?? "";
   const query = typed.query && typeof typed.query === "object" ? typed.query : undefined;
   const body = typed.body;
   const timeoutMs =
@@ -183,11 +187,25 @@ export async function handleBrowserGatewayRequest({
 
   if (nodeTarget) {
     const allowlist = resolveNodeCommandAllowlist(cfg, nodeTarget);
-    const allowed = isNodeCommandAllowed({
-      command: "browser.proxy",
-      declaredCommands: nodeTarget.commands,
-      allowlist,
-    });
+    // When a node advertises the "browser" capability but its declared commands
+    // list is empty (handshake serialisation bug), fall back to the capability
+    // check so the browser proxy request is not rejected.
+    const hasBrowserCap =
+      Array.isArray(nodeTarget.caps) && nodeTarget.caps.includes("browser");
+    const capsFallback =
+      hasBrowserCap && nodeTarget.commands.length === 0 && allowlist.has("browser.proxy");
+    if (capsFallback) {
+      logBrowserProxy.warn(
+        `browser.proxy authorized via caps fallback — node ${nodeTarget.nodeId} declared no commands (possible handshake bug)`,
+      );
+    }
+    const allowed = capsFallback
+        ? ({ ok: true } as const)
+        : isNodeCommandAllowed({
+            command: "browser.proxy",
+            declaredCommands: nodeTarget.commands,
+            allowlist,
+          });
     if (!allowed.ok) {
       const platform = nodeTarget.platform ?? "unknown";
       const hint = `node command not allowed: ${allowed.reason} (platform: ${platform}, command: browser.proxy)`;

@@ -16,6 +16,7 @@ const hoisted = vi.hoisted(() => ({
   requireApiKeyMock: vi.fn((auth: { apiKey?: string }) => auth.apiKey ?? ""),
   setRuntimeApiKeyMock: vi.fn(),
   discoverModelsMock: vi.fn(),
+  resolveModelWithRegistryMock: vi.fn(),
   fetchMock: vi.fn(),
 }));
 const {
@@ -26,19 +27,22 @@ const {
   requireApiKeyMock,
   setRuntimeApiKeyMock,
   discoverModelsMock,
+  resolveModelWithRegistryMock,
   fetchMock,
 } = hoisted;
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("@mariozechner/pi-ai", async () => {
+  const actual = await vi.importActual<typeof import("@mariozechner/pi-ai")>("@mariozechner/pi-ai");
   return {
     ...actual,
     complete: completeMock,
   };
 });
 
-vi.mock("../agents/models-config.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../agents/models-config.js")>()),
+vi.mock("../agents/models-config.js", async () => ({
+  ...(await vi.importActual<typeof import("../agents/models-config.js")>(
+    "../agents/models-config.js",
+  )),
   ensureOpenClawModelsJson: ensureOpenClawModelsJsonMock,
 }));
 
@@ -53,6 +57,10 @@ vi.mock("../agents/pi-model-discovery-runtime.js", () => ({
     setRuntimeApiKey: setRuntimeApiKeyMock,
   }),
   discoverModels: discoverModelsMock,
+}));
+
+vi.mock("../agents/pi-embedded-runner/model.js", () => ({
+  resolveModelWithRegistry: resolveModelWithRegistryMock,
 }));
 
 const { describeImageWithModel } = await import("./image.js");
@@ -77,13 +85,12 @@ describe("describeImageWithModel", () => {
       })),
       text: vi.fn(async () => ""),
     });
-    discoverModelsMock.mockReturnValue({
-      find: vi.fn(() => ({
-        provider: "minimax-portal",
-        id: "MiniMax-VL-01",
-        input: ["text", "image"],
-        baseUrl: "https://api.minimax.io/anthropic",
-      })),
+    discoverModelsMock.mockReturnValue({ find: vi.fn(() => null) });
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "minimax-portal",
+      id: "MiniMax-VL-01",
+      input: ["text", "image"],
+      baseUrl: "https://api.minimax.io/anthropic",
     });
   });
 
@@ -108,29 +115,31 @@ describe("describeImageWithModel", () => {
     expect(getApiKeyForModelMock).toHaveBeenCalled();
     expect(requireApiKeyMock).toHaveBeenCalled();
     expect(setRuntimeApiKeyMock).toHaveBeenCalledWith("minimax-portal", "oauth-test");
-    expect(fetchMock).toHaveBeenCalledWith("https://api.minimax.io/v1/coding_plan/vlm", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer oauth-test",
-        "Content-Type": "application/json",
-        "MM-API-Source": "OpenClaw",
-      },
-      body: JSON.stringify({
-        prompt: "Describe the image.",
-        image_url: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`,
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.minimax.io/v1/coding_plan/vlm",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer oauth-test",
+          "Content-Type": "application/json",
+          "MM-API-Source": "OpenClaw",
+        },
+        body: JSON.stringify({
+          prompt: "Describe the image.",
+          image_url: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`,
+        }),
+        signal: expect.any(AbortSignal),
       }),
-    });
+    );
     expect(completeMock).not.toHaveBeenCalled();
   });
 
   it("uses generic completion for non-canonical minimax-portal image models", async () => {
-    discoverModelsMock.mockReturnValue({
-      find: vi.fn(() => ({
-        provider: "minimax-portal",
-        id: "custom-vision",
-        input: ["text", "image"],
-        baseUrl: "https://api.minimax.io/anthropic",
-      })),
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "minimax-portal",
+      id: "custom-vision",
+      input: ["text", "image"],
+      baseUrl: "https://api.minimax.io/anthropic",
     });
     completeMock.mockResolvedValue({
       role: "assistant",
@@ -163,13 +172,11 @@ describe("describeImageWithModel", () => {
   });
 
   it("passes image prompt as system instructions for codex image requests", async () => {
-    discoverModelsMock.mockReturnValue({
-      find: vi.fn(() => ({
-        provider: "openai-codex",
-        id: "gpt-5.4",
-        input: ["text", "image"],
-        baseUrl: "https://chatgpt.com/backend-api",
-      })),
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "openai-codex",
+      id: "gpt-5.4",
+      input: ["text", "image"],
+      baseUrl: "https://chatgpt.com/backend-api",
     });
     completeMock.mockResolvedValue({
       role: "assistant",
@@ -224,17 +231,12 @@ describe("describeImageWithModel", () => {
   });
 
   it("normalizes deprecated google flash ids before lookup and keeps profile auth selection", async () => {
-    const findMock = vi.fn((provider: string, modelId: string) => {
-      expect(provider).toBe("google");
-      expect(modelId).toBe("gemini-3-flash-preview");
-      return {
-        provider: "google",
-        id: "gemini-3-flash-preview",
-        input: ["text", "image"],
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      };
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "google",
+      id: "gemini-3-flash-preview",
+      input: ["text", "image"],
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     });
-    discoverModelsMock.mockReturnValue({ find: findMock });
     completeMock.mockResolvedValue({
       role: "assistant",
       api: "google-generative-ai",
@@ -262,7 +264,9 @@ describe("describeImageWithModel", () => {
       text: "flash ok",
       model: "gemini-3-flash-preview",
     });
-    expect(findMock).toHaveBeenCalledOnce();
+    expect(resolveModelWithRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google", modelId: "gemini-3-flash-preview" }),
+    );
     expect(getApiKeyForModelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: "google:default",
@@ -272,17 +276,12 @@ describe("describeImageWithModel", () => {
   });
 
   it("normalizes gemini 3.1 flash-lite ids before lookup and keeps profile auth selection", async () => {
-    const findMock = vi.fn((provider: string, modelId: string) => {
-      expect(provider).toBe("google");
-      expect(modelId).toBe("gemini-3.1-flash-lite-preview");
-      return {
-        provider: "google",
-        id: "gemini-3.1-flash-lite-preview",
-        input: ["text", "image"],
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      };
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "google",
+      id: "gemini-3.1-flash-lite-preview",
+      input: ["text", "image"],
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     });
-    discoverModelsMock.mockReturnValue({ find: findMock });
     completeMock.mockResolvedValue({
       role: "assistant",
       api: "google-generative-ai",
@@ -310,12 +309,174 @@ describe("describeImageWithModel", () => {
       text: "flash lite ok",
       model: "gemini-3.1-flash-lite-preview",
     });
-    expect(findMock).toHaveBeenCalledOnce();
+    expect(resolveModelWithRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google", modelId: "gemini-3.1-flash-lite-preview" }),
+    );
     expect(getApiKeyForModelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: "google:default",
       }),
     );
     expect(setRuntimeApiKeyMock).toHaveBeenCalledWith("google", "oauth-test");
+  });
+
+  it("resolves custom provider image models via config fallback when not in registry (#33185)", async () => {
+    // Simulate resolveModelWithRegistry returning an ad-hoc model with input: ["text"]
+    // (the default when model ID matching fails due to provider-prefixed IDs).
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "vllm",
+      id: "Qwen3.5",
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      input: ["text"],
+      contextWindow: 128000,
+      maxTokens: 8192,
+    });
+    completeMock.mockResolvedValue({
+      role: "assistant",
+      api: "openai-completions",
+      provider: "vllm",
+      model: "Qwen3.5",
+      stopReason: "stop",
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "custom vision ok" }],
+    });
+
+    const cfg = {
+      models: {
+        providers: {
+          vllm: {
+            baseUrl: "http://127.0.0.1:1234/v1",
+            apiKey: "vllm-local", // pragma: allowlist secret
+            api: "openai-completions" as const,
+            models: [
+              {
+                id: "vllm/Qwen3.5",
+                name: "Qwen3.5",
+                reasoning: false,
+                input: ["image", "text"] as Array<"text" | "image">,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128000,
+                maxTokens: 8192,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = await describeImageWithModel({
+      cfg,
+      agentDir: "/tmp/openclaw-agent",
+      provider: "vllm",
+      model: "Qwen3.5",
+      buffer: Buffer.from("png-bytes"),
+      fileName: "image.png",
+      mime: "image/png",
+      prompt: "Describe the image.",
+      timeoutMs: 1000,
+    });
+
+    expect(result).toEqual({
+      text: "custom vision ok",
+      model: "Qwen3.5",
+    });
+    expect(resolveModelWithRegistryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "vllm",
+        modelId: "Qwen3.5",
+      }),
+    );
+    expect(completeMock).toHaveBeenCalledOnce();
+  });
+
+  it("prefers exact provider alias over normalized lookup for config fallback (#33185)", async () => {
+    // When provider is "nvidia-api", resolvedRef.provider normalizes to "nvidia".
+    // If the config contains both "nvidia" and "nvidia-api" entries, the exact
+    // params.provider key must be used so the nvidia-api/<model> definition is
+    // found rather than falling into the "nvidia" block.
+    resolveModelWithRegistryMock.mockReturnValue({
+      provider: "nvidia",
+      id: "meta-llama",
+      api: "openai-completions",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+      input: ["text"],
+      contextWindow: 128000,
+      maxTokens: 4096,
+    });
+    completeMock.mockResolvedValue({
+      role: "assistant",
+      api: "openai-completions",
+      provider: "nvidia",
+      model: "meta-llama",
+      stopReason: "stop",
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "nvidia vision ok" }],
+    });
+
+    const cfg = {
+      models: {
+        providers: {
+          nvidia: {
+            baseUrl: "https://integrate.api.nvidia.com/v1",
+            apiKey: "nvidia-key", // pragma: allowlist secret
+            api: "openai-completions" as const,
+            models: [],
+          },
+          "nvidia-api": {
+            baseUrl: "https://integrate.api.nvidia.com/v1",
+            apiKey: "nvidia-key", // pragma: allowlist secret
+            api: "openai-completions" as const,
+            models: [
+              {
+                id: "nvidia-api/meta-llama",
+                name: "meta-llama",
+                reasoning: false,
+                input: ["image", "text"] as Array<"text" | "image">,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128000,
+                maxTokens: 4096,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = await describeImageWithModel({
+      cfg,
+      agentDir: "/tmp/openclaw-agent",
+      provider: "nvidia-api",
+      model: "meta-llama",
+      buffer: Buffer.from("png-bytes"),
+      fileName: "image.png",
+      mime: "image/png",
+      prompt: "Describe the image.",
+      timeoutMs: 1000,
+    });
+
+    expect(result).toEqual({
+      text: "nvidia vision ok",
+      model: "meta-llama",
+    });
+    expect(completeMock).toHaveBeenCalledOnce();
+  });
+
+  it("throws Unknown model when custom provider model is not resolvable at all (#33185)", async () => {
+    resolveModelWithRegistryMock.mockReturnValue(undefined);
+
+    await expect(
+      describeImageWithModel({
+        cfg: {},
+        agentDir: "/tmp/openclaw-agent",
+        provider: "nonexistent",
+        model: "fake-model",
+        buffer: Buffer.from("png-bytes"),
+        fileName: "image.png",
+        mime: "image/png",
+        prompt: "Describe the image.",
+        timeoutMs: 1000,
+      }),
+    ).rejects.toThrow("Unknown model: nonexistent/fake-model");
   });
 });

@@ -1,38 +1,63 @@
 #!/usr/bin/env node
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
+import { AgentSideConnection, PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
+import type { Stream } from "@agentclientprotocol/sdk";
 import { loadConfig } from "../config/config.js";
-import { buildGatewayConnectionDetails } from "../gateway/call.js";
+import { resolveGatewayClientBootstrap } from "../gateway/client-bootstrap.js";
 import { GatewayClient } from "../gateway/client.js";
-import { resolveGatewayConnectionAuth } from "../gateway/connection-auth.js";
 import { isMainModule } from "../infra/is-main.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { readSecretFromFile } from "./secret-file.js";
 import { AcpGatewayAgent } from "./translator.js";
 import { normalizeAcpProvenanceMode, type AcpServerOptions } from "./types.js";
 
+// Some MCP-native clients (e.g. VS Code 1.113+, Cursor) send the MCP date-string
+// protocolVersion (like "2025-11-25") when connecting to an ACP server.  The ACP
+// SDK expects protocolVersion to be a uint16 integer (0-65535) and rejects the
+// string with -32602 Invalid params.  This wrapper coerces non-integer values to
+// the current ACP PROTOCOL_VERSION so the initialize handshake succeeds.
+function coerceAcpStream(stream: Stream): Stream {
+  const transform = new TransformStream<Record<string, unknown>, Record<string, unknown>>({
+    transform(message, controller) {
+      if (
+        message &&
+        typeof message === "object" &&
+        "method" in message &&
+        message.method === "initialize" &&
+        "params" in message &&
+        message.params &&
+        typeof message.params === "object"
+      ) {
+        const params = message.params as Record<string, unknown>;
+        if ("protocolVersion" in params && typeof params.protocolVersion !== "number") {
+          controller.enqueue({
+            ...message,
+            params: { ...params, protocolVersion: PROTOCOL_VERSION },
+          });
+          return;
+        }
+      }
+      controller.enqueue(message);
+    },
+  });
+  return {
+    readable: (stream.readable as ReadableStream<Record<string, unknown>>).pipeThrough(transform),
+    writable: stream.writable,
+  } as unknown as Stream;
+}
+
 export async function serveAcpGateway(opts: AcpServerOptions = {}): Promise<void> {
   const cfg = loadConfig();
-  const connection = buildGatewayConnectionDetails({
+  const bootstrap = await resolveGatewayClientBootstrap({
     config: cfg,
-    url: opts.gatewayUrl,
-  });
-  const gatewayUrlOverrideSource =
-    connection.urlSource === "cli --url"
-      ? "cli"
-      : connection.urlSource === "env OPENCLAW_GATEWAY_URL"
-        ? "env"
-        : undefined;
-  const creds = await resolveGatewayConnectionAuth({
-    config: cfg,
+    gatewayUrl: opts.gatewayUrl,
     explicitAuth: {
       token: opts.gatewayToken,
       password: opts.gatewayPassword,
     },
     env: process.env,
-    urlOverride: gatewayUrlOverrideSource ? connection.url : undefined,
-    urlOverrideSource: gatewayUrlOverrideSource,
   });
 
   let agent: AcpGatewayAgent | null = null;
@@ -64,13 +89,14 @@ export async function serveAcpGateway(opts: AcpServerOptions = {}): Promise<void
   };
 
   const gateway = new GatewayClient({
-    url: connection.url,
-    token: creds.token,
-    password: creds.password,
+    url: bootstrap.url,
+    token: bootstrap.auth.token,
+    password: bootstrap.auth.password,
     clientName: GATEWAY_CLIENT_NAMES.CLI,
     clientDisplayName: "ACP",
     clientVersion: "acp",
     mode: GATEWAY_CLIENT_MODES.CLI,
+    deviceIdentity: opts.noDeviceIdentity ? null : undefined,
     onEvent: (evt) => {
       void agent?.handleGatewayEvent(evt);
     },
@@ -122,7 +148,7 @@ export async function serveAcpGateway(opts: AcpServerOptions = {}): Promise<void
 
   const input = Writable.toWeb(process.stdout);
   const output = Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>;
-  const stream = ndJsonStream(input, output);
+  const stream = coerceAcpStream(ndJsonStream(input, output));
 
   new AgentSideConnection((conn: AgentSideConnection) => {
     agent = new AcpGatewayAgent(conn, gateway, opts);
@@ -199,22 +225,30 @@ function parseArgs(args: string[]): AcpServerOptions {
       opts.verbose = true;
       continue;
     }
+    if (arg === "--skip-device-identity") {
+      opts.noDeviceIdentity = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
     }
   }
-  if (opts.gatewayToken?.trim() && tokenFile?.trim()) {
+  const gatewayToken = normalizeOptionalString(opts.gatewayToken);
+  const gatewayPassword = normalizeOptionalString(opts.gatewayPassword);
+  const normalizedTokenFile = normalizeOptionalString(tokenFile);
+  const normalizedPasswordFile = normalizeOptionalString(passwordFile);
+  if (gatewayToken && normalizedTokenFile) {
     throw new Error("Use either --token or --token-file.");
   }
-  if (opts.gatewayPassword?.trim() && passwordFile?.trim()) {
+  if (gatewayPassword && normalizedPasswordFile) {
     throw new Error("Use either --password or --password-file.");
   }
-  if (tokenFile?.trim()) {
-    opts.gatewayToken = readSecretFromFile(tokenFile, "Gateway token");
+  if (normalizedTokenFile) {
+    opts.gatewayToken = readSecretFromFile(normalizedTokenFile, "Gateway token");
   }
-  if (passwordFile?.trim()) {
-    opts.gatewayPassword = readSecretFromFile(passwordFile, "Gateway password");
+  if (normalizedPasswordFile) {
+    opts.gatewayPassword = readSecretFromFile(normalizedPasswordFile, "Gateway password");
   }
   return opts;
 }
@@ -236,6 +270,7 @@ Options:
   --reset-session         Reset the session key before first use
   --no-prefix-cwd         Do not prefix prompts with the working directory
   --provenance <mode>     ACP provenance mode: off, meta, or meta+receipt
+  --skip-device-identity  Skip device identity (use token-only auth)
   --verbose, -v           Verbose logging to stderr
   --help, -h              Show this help message
 `);

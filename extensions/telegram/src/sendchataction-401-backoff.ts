@@ -4,6 +4,7 @@ import {
   sleepWithAbort,
   type BackoffPolicy,
 } from "openclaw/plugin-sdk/runtime-env";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 
 export type TelegramSendChatActionLogger = (message: string) => void;
 
@@ -46,6 +47,8 @@ export type CreateTelegramSendChatActionHandlerParams = {
   sendChatActionFn: SendChatActionFn;
   logger: TelegramSendChatActionLogger;
   maxConsecutive401?: number;
+  /** Max consecutive transient network errors before suspending (default: 5). */
+  maxConsecutiveTransient?: number;
 };
 
 const BACKOFF_POLICY: BackoffPolicy = {
@@ -60,7 +63,25 @@ function is401Error(error: unknown): boolean {
     return false;
   }
   const message = error instanceof Error ? error.message : JSON.stringify(error);
-  return message.includes("401") || message.toLowerCase().includes("unauthorized");
+  return (
+    message.includes("401") || normalizeLowercaseStringOrEmpty(message).includes("unauthorized")
+  );
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+  const message = error instanceof Error ? error.message : JSON.stringify(error);
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("network request for") ||
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("etimedout") ||
+    lower.includes("fetch failed") ||
+    lower.includes("socket hang up")
+  );
 }
 
 /**
@@ -76,12 +97,15 @@ export function createTelegramSendChatActionHandler({
   sendChatActionFn,
   logger,
   maxConsecutive401 = 10,
+  maxConsecutiveTransient = 5,
 }: CreateTelegramSendChatActionHandlerParams): TelegramSendChatActionHandler {
   let consecutive401Failures = 0;
+  let consecutiveTransientFailures = 0;
   let suspended = false;
 
   const reset = () => {
     consecutive401Failures = 0;
+    consecutiveTransientFailures = 0;
     suspended = false;
   };
 
@@ -94,25 +118,33 @@ export function createTelegramSendChatActionHandler({
       return;
     }
 
-    if (consecutive401Failures > 0) {
-      const backoffMs = computeBackoff(BACKOFF_POLICY, consecutive401Failures);
+    const totalFailures = consecutive401Failures + consecutiveTransientFailures;
+    if (totalFailures > 0) {
+      const backoffMs = computeBackoff(BACKOFF_POLICY, totalFailures);
       logger(
         `sendChatAction backoff: waiting ${backoffMs}ms before retry ` +
-          `(failure ${consecutive401Failures}/${maxConsecutive401})`,
+          `(failure ${totalFailures}/${consecutive401Failures > 0 ? maxConsecutive401 : maxConsecutiveTransient})`,
       );
       await sleepWithAbort(backoffMs);
     }
 
     try {
       await sendChatActionFn(chatId, action, threadParams);
-      // Success: reset failure counter
+      // Success: reset all failure counters
       if (consecutive401Failures > 0) {
         logger(`sendChatAction recovered after ${consecutive401Failures} consecutive 401 failures`);
-        consecutive401Failures = 0;
       }
+      if (consecutiveTransientFailures > 0) {
+        logger(
+          `sendChatAction recovered after ${consecutiveTransientFailures} consecutive network failures`,
+        );
+      }
+      consecutive401Failures = 0;
+      consecutiveTransientFailures = 0;
     } catch (error) {
       if (is401Error(error)) {
         consecutive401Failures++;
+        consecutiveTransientFailures = 0;
 
         if (consecutive401Failures >= maxConsecutive401) {
           suspended = true;
@@ -127,6 +159,22 @@ export function createTelegramSendChatActionHandler({
               `Retrying with exponential backoff.`,
           );
         }
+      } else if (isTransientNetworkError(error)) {
+        consecutiveTransientFailures++;
+        consecutive401Failures = 0;
+
+        if (consecutiveTransientFailures >= maxConsecutiveTransient) {
+          suspended = true;
+          logger(
+            `sendChatAction suspended after ${consecutiveTransientFailures} consecutive network failures. ` +
+              `Will resume on reset.`,
+          );
+        } else if (consecutiveTransientFailures === 1) {
+          // Log only on first transient failure to avoid spam
+          logger(`sendChatAction transient network error, retrying with backoff`);
+        }
+        // Swallow transient errors — sendChatAction is best-effort
+        return;
       }
       throw error;
     }

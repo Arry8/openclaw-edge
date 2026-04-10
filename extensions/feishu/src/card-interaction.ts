@@ -1,3 +1,5 @@
+import { isRecord } from "./comment-shared.js";
+
 export const FEISHU_CARD_INTERACTION_VERSION = "ocf1";
 
 export type FeishuCardInteractionKind = "button" | "quick" | "meta";
@@ -24,6 +26,8 @@ export type FeishuCardInteractionEnvelope = {
     s?: string;
     e?: number;
     t?: "p2p" | "group";
+    /** Optional card content to update the message to after this action is processed. */
+    uc?: Record<string, unknown>;
   };
 };
 
@@ -52,10 +56,6 @@ export type DecodedFeishuCardAction =
       kind: "invalid";
       reason: FeishuCardInteractionReason;
     };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isInteractionKind(value: unknown): value is FeishuCardInteractionKind {
   return value === "button" || value === "quick" || value === "meta";

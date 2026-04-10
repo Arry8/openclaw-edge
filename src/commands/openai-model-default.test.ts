@@ -1,20 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
-  applyGoogleGeminiModelDefault,
-  GOOGLE_GEMINI_DEFAULT_MODEL,
-} from "../plugin-sdk/google.js";
-import {
-  applyOpenAIConfig,
-  applyOpenAIProviderConfig,
-  OPENAI_DEFAULT_MODEL,
-} from "../plugin-sdk/openai.js";
-import type { WizardPrompter } from "../wizard/prompts.js";
-import { applyDefaultModelChoice } from "./auth-choice.default-model.js";
-import {
   applyOpencodeZenModelDefault,
   OPENCODE_ZEN_DEFAULT_MODEL,
-} from "./opencode-zen-model-default.js";
+} from "../plugin-sdk/opencode.js";
+import type { WizardPrompter } from "../wizard/prompts.js";
+import { applyDefaultModelChoice } from "./auth-choice.default-model.js";
 
 function makePrompter(): WizardPrompter {
   return {
@@ -45,52 +36,50 @@ function expectConfigUnchanged(
   expect(applied.next).toEqual(cfg);
 }
 
-type SharedDefaultModelCase = {
-  apply: (cfg: OpenClawConfig) => { changed: boolean; next: OpenClawConfig };
-  defaultModel: string;
-  overrideConfig: OpenClawConfig;
-  alreadyDefaultConfig: OpenClawConfig;
-};
-
-const SHARED_DEFAULT_MODEL_CASES: SharedDefaultModelCase[] = [
-  {
-    apply: applyGoogleGeminiModelDefault,
-    defaultModel: GOOGLE_GEMINI_DEFAULT_MODEL,
-    overrideConfig: {
-      agents: { defaults: { model: { primary: "anthropic/claude-opus-4-5" } } },
-    } as OpenClawConfig,
-    alreadyDefaultConfig: {
-      agents: { defaults: { model: { primary: GOOGLE_GEMINI_DEFAULT_MODEL } } },
-    } as OpenClawConfig,
-  },
-  {
-    apply: applyOpencodeZenModelDefault,
-    defaultModel: OPENCODE_ZEN_DEFAULT_MODEL,
-    overrideConfig: {
-      agents: { defaults: { model: "anthropic/claude-opus-4-5" } },
-    } as OpenClawConfig,
-    alreadyDefaultConfig: {
-      agents: { defaults: { model: OPENCODE_ZEN_DEFAULT_MODEL } },
-    } as OpenClawConfig,
-  },
-];
-
 describe("applyDefaultModelChoice", () => {
-  it("ensures allowlist entry exists when returning an agent override", async () => {
+  it("does not override agent model when inherited default exists", async () => {
     const defaultModel = "vercel-ai-gateway/anthropic/claude-opus-4.6";
     const noteAgentModel = vi.fn(async () => {});
     const applied = await applyDefaultModelChoice({
-      config: {},
+      config: {
+        agents: {
+          defaults: {
+            model: "claude-3.5-sonnet",
+          },
+        },
+      },
       setDefaultModel: false,
       defaultModel,
-      // Simulate a provider function that does not explicitly add the entry.
       applyProviderConfig: (config: OpenClawConfig) => config,
       applyDefaultConfig: (config: OpenClawConfig) => config,
       noteAgentModel,
       prompter: makePrompter(),
     });
 
-    expect(noteAgentModel).toHaveBeenCalledWith(defaultModel);
+    // When setDefaultModel is false and inherited default exists,
+    // agent should inherit from agents.defaults.model instead of
+    // baking in the provider's defaultModel. See issue #24170.
+    expect(noteAgentModel).not.toHaveBeenCalled();
+    expect(applied.agentModelOverride).toBeUndefined();
+    expect(applied.config.agents?.defaults?.models?.[defaultModel]).toEqual({});
+  });
+
+  it("returns agentModelOverride when no inherited default exists", async () => {
+    const defaultModel = "vercel-ai-gateway/anthropic/claude-opus-4.6";
+    const noteAgentModel = vi.fn(async () => {});
+    const applied = await applyDefaultModelChoice({
+      config: {},
+      setDefaultModel: false,
+      defaultModel,
+      applyProviderConfig: (config: OpenClawConfig) => config,
+      applyDefaultConfig: (config: OpenClawConfig) => config,
+      noteAgentModel,
+      prompter: makePrompter(),
+    });
+
+    // When no inherited default model exists, we must return the provider's
+    // default as agentModelOverride to avoid creating an agent with no model.
+    expect(noteAgentModel).not.toHaveBeenCalled();
     expect(applied.agentModelOverride).toBe(defaultModel);
     expect(applied.config.agents?.defaults?.models?.[defaultModel]).toEqual({});
   });
@@ -135,65 +124,21 @@ describe("applyDefaultModelChoice", () => {
   });
 });
 
-describe("shared default model behavior", () => {
+describe("applyOpencodeZenModelDefault", () => {
   it("sets defaults when model is unset", () => {
-    for (const testCase of SHARED_DEFAULT_MODEL_CASES) {
-      const cfg: OpenClawConfig = { agents: { defaults: {} } };
-      const applied = testCase.apply(cfg);
-      expectPrimaryModelChanged(applied, testCase.defaultModel);
-    }
+    const cfg: OpenClawConfig = { agents: { defaults: {} } };
+    const applied = applyOpencodeZenModelDefault(cfg);
+    expectPrimaryModelChanged(applied, OPENCODE_ZEN_DEFAULT_MODEL);
   });
 
   it("overrides existing models", () => {
-    for (const testCase of SHARED_DEFAULT_MODEL_CASES) {
-      const applied = testCase.apply(testCase.overrideConfig);
-      expectPrimaryModelChanged(applied, testCase.defaultModel);
-    }
+    const cfg = {
+      agents: { defaults: { model: "anthropic/claude-opus-4-6" } },
+    } as OpenClawConfig;
+    const applied = applyOpencodeZenModelDefault(cfg);
+    expectPrimaryModelChanged(applied, OPENCODE_ZEN_DEFAULT_MODEL);
   });
 
-  it("no-ops when already on the target default", () => {
-    for (const testCase of SHARED_DEFAULT_MODEL_CASES) {
-      const applied = testCase.apply(testCase.alreadyDefaultConfig);
-      expectConfigUnchanged(applied, testCase.alreadyDefaultConfig);
-    }
-  });
-});
-
-describe("applyOpenAIProviderConfig", () => {
-  it("adds allowlist entry for default model", () => {
-    const next = applyOpenAIProviderConfig({});
-    expect(Object.keys(next.agents?.defaults?.models ?? {})).toContain(OPENAI_DEFAULT_MODEL);
-  });
-
-  it("preserves existing alias for default model", () => {
-    const next = applyOpenAIProviderConfig({
-      agents: {
-        defaults: {
-          models: {
-            [OPENAI_DEFAULT_MODEL]: { alias: "My GPT" },
-          },
-        },
-      },
-    });
-    expect(next.agents?.defaults?.models?.[OPENAI_DEFAULT_MODEL]?.alias).toBe("My GPT");
-  });
-});
-
-describe("applyOpenAIConfig", () => {
-  it("sets default when model is unset", () => {
-    const next = applyOpenAIConfig({});
-    expect(next.agents?.defaults?.model).toEqual({ primary: OPENAI_DEFAULT_MODEL });
-  });
-
-  it("overrides model.primary when model object already exists", () => {
-    const next = applyOpenAIConfig({
-      agents: { defaults: { model: { primary: "anthropic/claude-opus-4-6", fallbacks: [] } } },
-    });
-    expect(next.agents?.defaults?.model).toEqual({ primary: OPENAI_DEFAULT_MODEL, fallbacks: [] });
-  });
-});
-
-describe("applyOpencodeZenModelDefault", () => {
   it("no-ops when already legacy opencode-zen default", () => {
     const cfg = {
       agents: { defaults: { model: "opencode-zen/claude-opus-4-5" } },
@@ -207,7 +152,7 @@ describe("applyOpencodeZenModelDefault", () => {
       agents: {
         defaults: {
           model: {
-            primary: "anthropic/claude-opus-4-5",
+            primary: "anthropic/claude-opus-4-6",
             fallbacks: ["google/gemini-3-pro"],
           },
         },
@@ -219,5 +164,13 @@ describe("applyOpencodeZenModelDefault", () => {
       primary: OPENCODE_ZEN_DEFAULT_MODEL,
       fallbacks: ["google/gemini-3-pro"],
     });
+  });
+
+  it("no-ops when already on the current default", () => {
+    const cfg = {
+      agents: { defaults: { model: OPENCODE_ZEN_DEFAULT_MODEL } },
+    } as OpenClawConfig;
+    const applied = applyOpencodeZenModelDefault(cfg);
+    expectConfigUnchanged(applied, cfg);
   });
 });

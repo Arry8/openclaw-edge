@@ -6,9 +6,10 @@ import type { SecretInput } from "../config/types.secrets.js";
 import {
   isMemoryMultimodalEnabled,
   normalizeMemoryMultimodalSettings,
+  supportsMemoryMultimodalEmbeddings,
   type MemoryMultimodalSettings,
-} from "../plugin-sdk/memory-core-host-multimodal.js";
-import { getMemoryEmbeddingProvider } from "../plugins/memory-embedding-providers.js";
+} from "../memory-host-sdk/multimodal.js";
+import { getMemoryEmbeddingProvider } from "../plugins/memory-embedding-provider-runtime.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 
@@ -22,6 +23,7 @@ export type ResolvedMemorySearchConfig = {
     baseUrl?: string;
     apiKey?: SecretInput;
     headers?: Record<string, string>;
+    nonBatchConcurrency?: number;
     batch?: {
       enabled: boolean;
       wait: boolean;
@@ -91,6 +93,8 @@ export type ResolvedMemorySearchConfig = {
   };
 };
 
+export type ResolvedMemorySearchSyncConfig = ResolvedMemorySearchConfig["sync"];
+
 const DEFAULT_CHUNK_TOKENS = 400;
 const DEFAULT_CHUNK_OVERLAP = 80;
 const DEFAULT_WATCH_DEBOUNCE_MS = 1500;
@@ -140,6 +144,7 @@ function resolveStorePath(agentId: string, raw?: string): string {
 }
 
 function mergeConfig(
+  cfg: OpenClawConfig,
   defaults: MemorySearchConfig | undefined,
   overrides: MemorySearchConfig | undefined,
   agentId: string,
@@ -148,12 +153,13 @@ function mergeConfig(
   const sessionMemory =
     overrides?.experimental?.sessionMemory ?? defaults?.experimental?.sessionMemory ?? false;
   const provider = overrides?.provider ?? defaults?.provider ?? "auto";
-  const primaryAdapter = provider === "auto" ? undefined : getMemoryEmbeddingProvider(provider);
+  const primaryAdapter =
+    provider === "auto" ? undefined : getMemoryEmbeddingProvider(provider, cfg);
   const defaultRemote = defaults?.remote;
   const overrideRemote = overrides?.remote;
   const fallback = overrides?.fallback ?? defaults?.fallback ?? "none";
   const fallbackAdapter =
-    fallback && fallback !== "none" ? getMemoryEmbeddingProvider(fallback) : undefined;
+    fallback && fallback !== "none" ? getMemoryEmbeddingProvider(fallback, cfg) : undefined;
   const hasRemoteConfig = Boolean(
     overrideRemote?.baseUrl ||
     overrideRemote?.apiKey ||
@@ -184,6 +190,8 @@ function mergeConfig(
         baseUrl: overrideRemote?.baseUrl ?? defaultRemote?.baseUrl,
         apiKey: overrideRemote?.apiKey ?? defaultRemote?.apiKey,
         headers: overrideRemote?.headers ?? defaultRemote?.headers,
+        nonBatchConcurrency:
+          overrideRemote?.nonBatchConcurrency ?? defaultRemote?.nonBatchConcurrency,
         batch,
       }
     : undefined;
@@ -222,30 +230,7 @@ function mergeConfig(
     tokens: overrides?.chunking?.tokens ?? defaults?.chunking?.tokens ?? DEFAULT_CHUNK_TOKENS,
     overlap: overrides?.chunking?.overlap ?? defaults?.chunking?.overlap ?? DEFAULT_CHUNK_OVERLAP,
   };
-  const sync = {
-    onSessionStart: overrides?.sync?.onSessionStart ?? defaults?.sync?.onSessionStart ?? true,
-    onSearch: overrides?.sync?.onSearch ?? defaults?.sync?.onSearch ?? true,
-    watch: overrides?.sync?.watch ?? defaults?.sync?.watch ?? true,
-    watchDebounceMs:
-      overrides?.sync?.watchDebounceMs ??
-      defaults?.sync?.watchDebounceMs ??
-      DEFAULT_WATCH_DEBOUNCE_MS,
-    intervalMinutes: overrides?.sync?.intervalMinutes ?? defaults?.sync?.intervalMinutes ?? 0,
-    sessions: {
-      deltaBytes:
-        overrides?.sync?.sessions?.deltaBytes ??
-        defaults?.sync?.sessions?.deltaBytes ??
-        DEFAULT_SESSION_DELTA_BYTES,
-      deltaMessages:
-        overrides?.sync?.sessions?.deltaMessages ??
-        defaults?.sync?.sessions?.deltaMessages ??
-        DEFAULT_SESSION_DELTA_MESSAGES,
-      postCompactionForce:
-        overrides?.sync?.sessions?.postCompactionForce ??
-        defaults?.sync?.sessions?.postCompactionForce ??
-        true,
-    },
-  };
+  const sync = resolveSyncConfig(defaults, overrides);
   const query = {
     maxResults: overrides?.query?.maxResults ?? defaults?.query?.maxResults ?? DEFAULT_MAX_RESULTS,
     minScore: overrides?.query?.minScore ?? defaults?.query?.minScore ?? DEFAULT_MIN_SCORE,
@@ -366,24 +351,67 @@ function mergeConfig(
   };
 }
 
+function resolveSyncConfig(
+  defaults: MemorySearchConfig | undefined,
+  overrides: MemorySearchConfig | undefined,
+): ResolvedMemorySearchSyncConfig {
+  return {
+    onSessionStart: overrides?.sync?.onSessionStart ?? defaults?.sync?.onSessionStart ?? true,
+    onSearch: overrides?.sync?.onSearch ?? defaults?.sync?.onSearch ?? true,
+    watch: overrides?.sync?.watch ?? defaults?.sync?.watch ?? true,
+    watchDebounceMs:
+      overrides?.sync?.watchDebounceMs ??
+      defaults?.sync?.watchDebounceMs ??
+      DEFAULT_WATCH_DEBOUNCE_MS,
+    intervalMinutes: overrides?.sync?.intervalMinutes ?? defaults?.sync?.intervalMinutes ?? 0,
+    sessions: {
+      deltaBytes:
+        overrides?.sync?.sessions?.deltaBytes ??
+        defaults?.sync?.sessions?.deltaBytes ??
+        DEFAULT_SESSION_DELTA_BYTES,
+      deltaMessages:
+        overrides?.sync?.sessions?.deltaMessages ??
+        defaults?.sync?.sessions?.deltaMessages ??
+        DEFAULT_SESSION_DELTA_MESSAGES,
+      postCompactionForce:
+        overrides?.sync?.sessions?.postCompactionForce ??
+        defaults?.sync?.sessions?.postCompactionForce ??
+        true,
+    },
+  };
+}
+
 export function resolveMemorySearchConfig(
   cfg: OpenClawConfig,
   agentId: string,
 ): ResolvedMemorySearchConfig | null {
   const defaults = cfg.agents?.defaults?.memorySearch;
   const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
-  const resolved = mergeConfig(defaults, overrides, agentId);
+  const resolved = mergeConfig(cfg, defaults, overrides, agentId);
   if (!resolved.enabled) {
     return null;
   }
   const multimodalActive = isMemoryMultimodalEnabled(resolved.multimodal);
   const multimodalProvider =
-    resolved.provider === "auto" ? undefined : getMemoryEmbeddingProvider(resolved.provider);
+    resolved.provider === "auto" ? undefined : getMemoryEmbeddingProvider(resolved.provider, cfg);
+  const builtinMultimodalSupport =
+    resolved.provider === "auto"
+      ? false
+      : supportsMemoryMultimodalEmbeddings({
+          provider: resolved.provider,
+          model: resolved.model,
+        });
   if (
     multimodalActive &&
-    !multimodalProvider?.supportsMultimodalEmbeddings?.({
-      model: resolved.model,
-    })
+    !(
+      // Fall back to the built-in helper when the provider is not registered yet
+      // or when a registered adapter does not implement multimodal capability checks.
+      (
+        multimodalProvider?.supportsMultimodalEmbeddings?.({
+          model: resolved.model,
+        }) ?? builtinMultimodalSupport
+      )
+    )
   ) {
     throw new Error(
       "agents.*.memorySearch.multimodal requires a provider adapter that supports multimodal embeddings for the configured model.",
@@ -395,4 +423,17 @@ export function resolveMemorySearchConfig(
     );
   }
   return resolved;
+}
+
+export function resolveMemorySearchSyncConfig(
+  cfg: OpenClawConfig,
+  agentId: string,
+): ResolvedMemorySearchSyncConfig | null {
+  const defaults = cfg.agents?.defaults?.memorySearch;
+  const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
+  const enabled = overrides?.enabled ?? defaults?.enabled ?? true;
+  if (!enabled) {
+    return null;
+  }
+  return resolveSyncConfig(defaults, overrides);
 }

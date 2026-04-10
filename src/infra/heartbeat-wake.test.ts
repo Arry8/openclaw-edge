@@ -112,6 +112,19 @@ describe("heartbeat-wake", () => {
     });
   });
 
+  it("retries failed runs after the default retry delay", async () => {
+    vi.useFakeTimers();
+    const handler = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "failed", reason: "temporary error" })
+      .mockResolvedValueOnce({ status: "ran", durationMs: 1 });
+    await expectRetryAfterDefaultDelay({
+      handler,
+      initialReason: "exec-event",
+      expectedRetryReason: "exec-event",
+    });
+  });
+
   it("stale disposer does not clear a newer handler", async () => {
     vi.useFakeTimers();
     const handlerA = vi.fn().mockResolvedValue({ status: "ran", durationMs: 1 });
@@ -281,6 +294,64 @@ describe("heartbeat-wake", () => {
       agentId: "ops",
       sessionKey: "agent:ops:discord:channel:alerts",
     });
+  });
+
+  it("suppresses rapid subagent stream wakes within cooldown (issue #56049)", async () => {
+    vi.useFakeTimers();
+    const handler = vi.fn().mockResolvedValue({ status: "ran", durationMs: 1 });
+    setHeartbeatWakeHandler(handler);
+
+    // First subagent stream wake should fire normally
+    requestHeartbeatNow({
+      reason: "acp:spawn:stream",
+      sessionKey: "agent:main:telegram:group:-1001",
+      coalesceMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // Second subagent stream wake within cooldown should be suppressed
+    requestHeartbeatNow({
+      reason: "acp:spawn:stream",
+      sessionKey: "agent:main:telegram:group:-1001",
+      coalesceMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handler).toHaveBeenCalledTimes(1); // still 1 — suppressed
+
+    // Non-subagent wake for same target should still fire
+    requestHeartbeatNow({
+      reason: "exec-event",
+      sessionKey: "agent:main:telegram:group:-1001",
+      coalesceMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows subagent stream wake after cooldown expires", async () => {
+    vi.useFakeTimers();
+    const handler = vi.fn().mockResolvedValue({ status: "ran", durationMs: 1 });
+    setHeartbeatWakeHandler(handler);
+
+    requestHeartbeatNow({
+      reason: "acp:spawn:stream",
+      sessionKey: "agent:main:discord:channel:alerts",
+      coalesceMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // Advance past the 60s cooldown
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    requestHeartbeatNow({
+      reason: "acp:spawn:stream",
+      sessionKey: "agent:main:discord:channel:alerts",
+      coalesceMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it("executes distinct targeted wakes queued in the same coalescing window", async () => {

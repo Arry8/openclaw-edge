@@ -13,7 +13,6 @@
   border: 1px solid var(--border);
   background: var(--panel);
   overflow: hidden;
-  overflow: clip;
   animation: config-enter 0.3s var(--ease-out);
 }
 
@@ -177,8 +176,6 @@
   min-width: 0;
   background: var(--panel);
   overflow: hidden;
-  /* fallback for older browsers */
-  overflow: clip;
 }
 
 /* Actions Bar */
@@ -331,6 +328,10 @@
 }
 
 .config-diff__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
   transition: transform var(--duration-normal) var(--ease-out);
@@ -341,7 +342,7 @@
   height: 100%;
 }
 
-.config-diff[open] .config-diff__chevron {
+.config-diff[open] > .config-diff__summary .config-diff__chevron {
   transform: rotate(180deg);
 }
 
@@ -480,7 +481,7 @@
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.02em;
-  color: var(--text-strong);
+  color: var(--accent);
 }
 
 .settings-appearance__hint {
@@ -550,7 +551,7 @@
 .settings-theme-card__label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--accent);
 }
 
 /* Roundness options */
@@ -1348,6 +1349,10 @@
 }
 
 .cfg-object__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   color: var(--muted);
@@ -1359,7 +1364,7 @@
   height: 100%;
 }
 
-.cfg-object[open] .cfg-object__chevron {
+.cfg-object[open] > .cfg-object__header .cfg-object__chevron {
   transform: rotate(180deg);
 }
 

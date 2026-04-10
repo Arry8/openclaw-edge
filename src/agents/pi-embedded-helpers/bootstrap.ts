@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/config.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { truncateUtf16Safe } from "../../utils.js";
-import type { WorkspaceBootstrapFile } from "../workspace.js";
+import { DEFAULT_BOOTSTRAP_FILENAME, type WorkspaceBootstrapFile } from "../workspace.js";
 import type { EmbeddedContextFile } from "./types.js";
 
 type ContentBlockWithSignature = {
@@ -82,12 +83,22 @@ export function stripThoughtSignatures<T>(
   }) as T;
 }
 
-export const DEFAULT_BOOTSTRAP_MAX_CHARS = 20_000;
+export const DEFAULT_BOOTSTRAP_MAX_CHARS = 40_000;
 export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
+// Continuation defaults: ~75% reduction — keeps the most important content
+// from each file (head/tail trimming) while freeing context window space.
+export const DEFAULT_BOOTSTRAP_CONTINUATION_MAX_CHARS = 5_000;
+export const DEFAULT_BOOTSTRAP_CONTINUATION_TOTAL_MAX_CHARS = 40_000;
 export const DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE = "once";
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
 const BOOTSTRAP_HEAD_RATIO = 0.7;
 const BOOTSTRAP_TAIL_RATIO = 0.2;
+
+const BOOTSTRAP_PRIORITY_BY_FILENAME: Readonly<Record<string, number>> = {
+  "SOUL.md": 0,
+  "HARD_EXECUTION_RULES.md": 1,
+  "AGENTS.md": 2,
+};
 
 type TrimBootstrapResult = {
   content: string;
@@ -110,6 +121,22 @@ export function resolveBootstrapTotalMaxChars(cfg?: OpenClawConfig): number {
     return Math.floor(raw);
   }
   return DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS;
+}
+
+export function resolveBootstrapContinuationMaxChars(cfg?: OpenClawConfig): number {
+  const raw = cfg?.agents?.defaults?.bootstrapContinuationMaxChars;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return Math.floor(raw);
+  }
+  return DEFAULT_BOOTSTRAP_CONTINUATION_MAX_CHARS;
+}
+
+export function resolveBootstrapContinuationTotalMaxChars(cfg?: OpenClawConfig): number {
+  const raw = cfg?.agents?.defaults?.bootstrapContinuationTotalMaxChars;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return Math.floor(raw);
+  }
+  return DEFAULT_BOOTSTRAP_CONTINUATION_TOTAL_MAX_CHARS;
 }
 
 export function resolveBootstrapPromptTruncationWarningMode(
@@ -171,6 +198,35 @@ function clampToBudget(content: string, budget: number): string {
   return `${truncateUtf16Safe(content, safe)}…`;
 }
 
+function resolveBootstrapPriority(file: WorkspaceBootstrapFile): number {
+  const pathValue = typeof file.path === "string" ? file.path.trim() : "";
+  const baseName = pathValue ? path.basename(pathValue) : file.name;
+  return BOOTSTRAP_PRIORITY_BY_FILENAME[baseName] ?? 100;
+}
+
+function orderBootstrapFiles(files: WorkspaceBootstrapFile[]): WorkspaceBootstrapFile[] {
+  return [...files]
+    .map((file, index) => ({ file, index }))
+    .toSorted((left, right) => {
+      const priorityDelta =
+        resolveBootstrapPriority(left.file) - resolveBootstrapPriority(right.file);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.file);
+}
+
+function summarizeSkippedBootstrapFiles(files: WorkspaceBootstrapFile[]): string {
+  const names = files
+    .map((file) => file.name)
+    .filter((name, index, arr) => arr.indexOf(name) === index)
+    .slice(0, 4);
+  const suffix = files.length > names.length ? ` (+${files.length - names.length} more)` : "";
+  return `${names.join(", ")}${suffix}`;
+}
+
 export async function ensureSessionHeader(params: {
   sessionFile: string;
   sessionId: string;
@@ -206,11 +262,19 @@ export function buildBootstrapContextFiles(
   );
   let remainingTotalChars = totalMaxChars;
   const result: EmbeddedContextFile[] = [];
-  for (const file of files) {
+  const orderedFiles = orderBootstrapFiles(files);
+  for (let index = 0; index < orderedFiles.length; index += 1) {
+    const file = orderedFiles[index];
     if (remainingTotalChars <= 0) {
+      const skipped = orderedFiles.slice(index);
+      if (skipped.length > 0) {
+        opts?.warn?.(
+          `bootstrap total budget exhausted (${totalMaxChars}); dropped: ${summarizeSkippedBootstrapFiles(skipped)}`,
+        );
+      }
       break;
     }
-    const pathValue = typeof file.path === "string" ? file.path.trim() : "";
+    const pathValue = normalizeOptionalString(file.path) ?? "";
     if (!pathValue) {
       opts?.warn?.(
         `skipping bootstrap file "${file.name}" — missing or invalid "path" field (hook may have used "filePath" instead)`,
@@ -218,6 +282,12 @@ export function buildBootstrapContextFiles(
       continue;
     }
     if (file.missing) {
+      // BOOTSTRAP.md is intentionally deleted after initial setup ("Follow it, figure
+      // out who you are, then delete it"). Skip the [MISSING] marker so users who have
+      // completed onboarding don't see noisy context injections every session.
+      if (file.name === DEFAULT_BOOTSTRAP_FILENAME) {
+        continue;
+      }
       const missingText = `[MISSING] Expected at: ${pathValue}`;
       const cappedMissingText = clampToBudget(missingText, remainingTotalChars);
       if (!cappedMissingText) {
@@ -231,8 +301,9 @@ export function buildBootstrapContextFiles(
       continue;
     }
     if (remainingTotalChars < MIN_BOOTSTRAP_FILE_BUDGET_CHARS) {
+      const skipped = orderedFiles.slice(index);
       opts?.warn?.(
-        `remaining bootstrap budget is ${remainingTotalChars} chars (<${MIN_BOOTSTRAP_FILE_BUDGET_CHARS}); skipping additional bootstrap files`,
+        `remaining bootstrap budget is ${remainingTotalChars} chars (<${MIN_BOOTSTRAP_FILE_BUDGET_CHARS}); skipping: ${summarizeSkippedBootstrapFiles(skipped)}`,
       );
       break;
     }

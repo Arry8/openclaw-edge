@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { truncateText } from "./format.ts";
+import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
 const allowedTags = [
   "a",
@@ -38,6 +39,7 @@ const allowedTags = [
 
 const allowedAttrs = [
   "class",
+  "hidden",
   "href",
   "rel",
   "target",
@@ -116,7 +118,7 @@ function installHooks() {
 
     node.setAttribute("rel", "noreferrer noopener");
     node.setAttribute("target", "_blank");
-    if (href.toLowerCase().includes("tail")) {
+    if (normalizeLowercaseStringOrEmpty(href).includes("tail")) {
       node.classList.add(TAIL_LINK_BLUR_CLASS);
     }
   });
@@ -252,7 +254,7 @@ htmlEscapeRenderer.code = ({
     .replace(/"/g, "&quot;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  const copyBtn = `<button type="button" class="code-block-copy" data-code="${attrSafe}" aria-label="Copy code"><span class="code-block-copy__idle">Copy</span><span class="code-block-copy__done">Copied!</span></button>`;
+  const copyBtn = `<button type="button" class="code-block-copy" data-code="${attrSafe}" aria-label="Copy code"><span class="code-block-copy__idle">Copy</span><span class="code-block-copy__done" hidden>Copied!</span></button>`;
   const header = `<div class="code-block-header">${langLabel}${copyBtn}</div>`;
 
   const trimmed = text.trim();

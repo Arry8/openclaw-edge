@@ -3,12 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_GATEWAY_PORT } from "../../config/paths.js";
-import { quoteCmdScriptArg } from "../../daemon/cmd-argv.js";
 import {
   resolveGatewayLaunchAgentLabel,
   resolveGatewaySystemdServiceName,
   resolveGatewayWindowsTaskName,
 } from "../../daemon/constants.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 
 /**
  * Shell-escape a string for embedding in single-quoted shell arguments.
@@ -26,7 +26,7 @@ function isBatchSafe(value: string): boolean {
 }
 
 function resolveSystemdUnit(env: NodeJS.ProcessEnv): string {
-  const override = env.OPENCLAW_SYSTEMD_UNIT?.trim();
+  const override = normalizeOptionalString(env.OPENCLAW_SYSTEMD_UNIT);
   if (override) {
     return override.endsWith(".service") ? override : `${override}.service`;
   }
@@ -34,7 +34,7 @@ function resolveSystemdUnit(env: NodeJS.ProcessEnv): string {
 }
 
 function resolveLaunchdLabel(env: NodeJS.ProcessEnv): string {
-  const override = env.OPENCLAW_LAUNCHD_LABEL?.trim();
+  const override = normalizeOptionalString(env.OPENCLAW_LAUNCHD_LABEL);
   if (override) {
     return override;
   }
@@ -86,7 +86,7 @@ rm -f "$0"
       const uid = process.getuid ? process.getuid() : 501;
       // Resolve HOME at generation time via env/process.env to match launchd.ts,
       // and shell-escape the label in the plist filename to prevent injection.
-      const home = env.HOME?.trim() || process.env.HOME || os.homedir();
+      const home = normalizeOptionalString(env.HOME) || process.env.HOME || os.homedir();
       const plistPath = path.join(home, "Library", "LaunchAgents", `${label}.plist`);
       const escapedPlistPath = shellEscape(plistPath);
       filename = `openclaw-restart-${timestamp}.sh`;
@@ -159,17 +159,55 @@ del "%~f0"
  * `spawn({ detached: true })` + `unref()` ensures the script survives
  * the parent's exit.
  *
+ * On Windows, `windowsHide: true` on `spawn("cmd.exe", ...)` does not
+ * reliably hide console windows created by child processes within the
+ * batch script (e.g. `netstat | findstr` pipelines).  To guarantee a
+ * fully hidden execution, we write a small VBScript wrapper that invokes
+ * the batch script via `WScript.Shell.Run` with `intWindowStyle = 0`
+ * (hidden).  The VBScript self-deletes after launching the batch.
+ *
  * Resolves immediately after spawning; the script runs independently.
  */
 export async function runRestartScript(scriptPath: string): Promise<void> {
-  const isWindows = process.platform === "win32";
-  const file = isWindows ? "cmd.exe" : "/bin/sh";
-  const args = isWindows ? ["/d", "/s", "/c", quoteCmdScriptArg(scriptPath)] : [scriptPath];
+  if (process.platform === "win32") {
+    // Write a VBScript wrapper that runs the batch script fully hidden.
+    // VBScript does not use \ as an escape character, so only quotes need doubling.
+    const vbsPath = scriptPath.replace(/\.bat$/i, ".vbs");
+    const quotedBat = scriptPath.replace(/"/g, '""');
+    // Quote scheme: 4 quotes before + 5 after the path.
+    // VBScript decodes "" → " so ws.Run receives: cmd.exe /d /s /c ""<path>""
+    // cmd.exe /s /c strips the outer pair, leaving "<path>" as the argument.
+    const vbsContent = [
+      'Set ws = CreateObject("WScript.Shell")',
+      `ws.Run "cmd.exe /d /s /c """"${quotedBat}""""", 0, False`,
+      // Self-cleanup: delete the VBScript wrapper.
+      'Set fso = CreateObject("Scripting.FileSystemObject")',
+      "fso.DeleteFile WScript.ScriptFullName",
+    ].join("\r\n");
+    try {
+      await fs.writeFile(vbsPath, vbsContent, "utf8");
+    } catch {
+      // Fall back: run the bat directly (console flash may be visible but restart succeeds).
+      const child = spawn("cmd.exe", ["/d", "/s", "/c", scriptPath], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.unref();
+      return;
+    }
+    const child = spawn("wscript.exe", [vbsPath], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.unref();
+    return;
+  }
 
-  const child = spawn(file, args, {
+  const child = spawn("/bin/sh", [scriptPath], {
     detached: true,
     stdio: "ignore",
-    windowsHide: true,
   });
   child.unref();
 }

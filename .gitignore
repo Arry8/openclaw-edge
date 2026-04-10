@@ -1,10 +1,14 @@
 node_modules
 **/node_modules/
+
+# Content pipeline outputs (generated, not versioned)
+outputs/
+data/research/
 .env
 docker-compose.override.yml
 docker-compose.extra.yml
 dist
-dist-runtime
+dist-runtime/
 pnpm-lock.yaml
 bun.lock
 bun.lockb
@@ -32,6 +36,18 @@ apps/android/app/build/
 apps/android/.cxx/
 apps/android/.kotlin/
 apps/android/benchmark/results/
+
+# Python artifacts
+**/__pycache__/
+*.pyc
+
+# npm lockfiles (repo uses pnpm)
+package-lock.json
+ui/package-lock.json
+
+# Generated gateway test helper ESM shims (produced locally during tests/build)
+src/gateway/test-helpers*.js
+src/gateway/test-helpers*.js.d.ts
 
 # Bun build artifacts
 *.bun-build
@@ -95,6 +111,10 @@ USER.md
 # local tooling
 .serena/
 
+# Local IBM WML bridge files
+scripts/dev/.env.ibm-wml
+scripts/dev/ibm-wml-bridge.log
+
 # Agent credentials and memory (NEVER COMMIT)
 /memory/
 .agent/*.json
@@ -126,6 +146,7 @@ dist/protocol.schema.json
 # Synthing
 **/.stfolder/
 .dev-state
+state.json
 docs/superpowers/plans/2026-03-10-collapsed-side-nav.md
 docs/superpowers/specs/2026-03-10-collapsed-side-nav-design.md
 .gitignore
@@ -135,9 +156,21 @@ ui/src/ui/__screenshots__
 ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 docs/superpowers
+skills/Pulaoecho-voice-assistant/certs/
+skills/Pulaoecho-voice-assistant/config.json.example
+skills/Pulaoecho-voice-assistant/pulaoecho-voice-assistant.log
+
+# Generated docs baseline artifacts (locally generated, only hashes tracked)
+docs/.generated/*.json
+docs/.generated/*.jsonl
 
 # Deprecated changelog fragment workflow
 changelog/fragments/
 
 # Local scratch workspace
 .tmp/
+.artifacts/
+test/fixtures/openclaw-vitest-unit-report.json
+analysis/
+.artifacts/qa-e2e/
+extensions/qa-lab/web/dist/

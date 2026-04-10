@@ -19,6 +19,8 @@ OpenClaw pulls environment variables from multiple sources. The rule is **never 
 4. **Config `env` block** in `~/.openclaw/openclaw.json` (applied only if missing).
 5. **Optional login-shell import** (`env.shellEnv.enabled` or `OPENCLAW_LOAD_SHELL_ENV=1`), applied only for missing expected keys.
 
+On Ubuntu fresh installs that use the default state dir, OpenClaw also treats `~/.config/openclaw/gateway.env` as a compatibility fallback after the global `.env`. If both files exist and disagree, OpenClaw keeps `~/.openclaw/.env` and prints a warning.
+
 If the config file is missing entirely, step 4 is skipped; shell import still runs if enabled.
 
 ## Config `env` block
@@ -72,6 +74,8 @@ to apply context-specific rules.
 
 - `OPENCLAW_THEME=light`: force the light TUI palette when your terminal has a light background.
 - `OPENCLAW_THEME=dark`: force the dark TUI palette.
+- `OPENCLAW_TUI_USER_BG=#RRGGBB`: override the TUI user-message background color.
+- `OPENCLAW_TUI_USER_TEXT=#RRGGBB`: override the TUI user-message text color.
 - `COLORFGBG`: if your terminal exports it, OpenClaw uses the background color hint to auto-pick the TUI palette.
 
 ## Env var substitution in config
@@ -127,7 +131,7 @@ When set, `OPENCLAW_HOME` replaces the system home directory (`$HOME` / `os.home
 <key>EnvironmentVariables</key>
 <dict>
   <key>OPENCLAW_HOME</key>
-  <string>/Users/kira</string>
+  <string>/Users/user</string>
 </dict>
 ```
 

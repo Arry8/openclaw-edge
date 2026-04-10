@@ -89,7 +89,7 @@ describe("waitForDiscordGatewayStop", () => {
 
     emitGatewayEvent(fatalEvent);
 
-    await expect(promise).rejects.toThrow("boom");
+    await expect(promise).rejects.toThrow("discord gateway fatal: Error: boom");
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(detachLifecycle).toHaveBeenCalledTimes(1);
   });
@@ -160,6 +160,48 @@ describe("waitForDiscordGatewayStop", () => {
     expect(detachLifecycle).toHaveBeenCalledTimes(1);
   });
 
+  it("catches and logs Carbon reconnect-exhausted throw from disconnect during abort", async () => {
+    const runtimeLog = vi.fn();
+    const abort = new AbortController();
+    const disconnect = vi.fn(() => {
+      throw new Error("Max reconnect attempts (0) reached after code 1005");
+    });
+    const detachLifecycle = vi.fn();
+    const promise = waitForDiscordGatewayStop({
+      gateway: { disconnect },
+      abortSignal: abort.signal,
+      gatewaySupervisor: { attachLifecycle: vi.fn(), detachLifecycle },
+      runtime: { log: runtimeLog, error: vi.fn(), exit: vi.fn() },
+    });
+
+    abort.abort();
+    await expect(promise).resolves.toBeUndefined();
+    expect(runtimeLog).toHaveBeenCalledWith(
+      expect.stringContaining("suppressed expected Carbon throw during disconnect"),
+    );
+    expect(detachLifecycle).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs non-Carbon errors from disconnect during abort at error level", async () => {
+    const runtimeError = vi.fn();
+    const abort = new AbortController();
+    const disconnect = vi.fn(() => {
+      throw new Error("unexpected internal state error");
+    });
+    const promise = waitForDiscordGatewayStop({
+      gateway: { disconnect },
+      abortSignal: abort.signal,
+      gatewaySupervisor: { attachLifecycle: vi.fn(), detachLifecycle: vi.fn() },
+      runtime: { log: vi.fn(), error: runtimeError, exit: vi.fn() },
+    });
+
+    abort.abort();
+    await expect(promise).resolves.toBeUndefined();
+    expect(runtimeError).toHaveBeenCalledWith(
+      expect.stringContaining("unexpected error during disconnect"),
+    );
+  });
+
   it("keeps the original rejection when disconnect emits another stop event", async () => {
     const firstEvent = createGatewayEvent("fatal", "first failure");
     const secondEvent = createGatewayEvent("fatal", "second failure");
@@ -178,7 +220,7 @@ describe("waitForDiscordGatewayStop", () => {
 
     emitGatewayEvent(firstEvent);
 
-    await expect(promise).rejects.toThrow("first failure");
+    await expect(promise).rejects.toThrow("discord gateway fatal: Error: first failure");
     expect(seenEvents.map((event) => event.message)).toEqual([
       firstEvent.message,
       secondEvent.message,

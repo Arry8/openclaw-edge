@@ -8,7 +8,7 @@ import {
 } from "../auto-reply/thinking.js";
 import type { SessionsPatchResult } from "../gateway/protocol/index.js";
 import { formatRelativeTimestamp } from "../infra/format-time/format-relative.ts";
-import { normalizeAgentId } from "../routing/session-key.js";
+import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
 import { helpText, parseCommand } from "./commands.js";
 import type { ChatLog } from "./components/chat-log.js";
 import {
@@ -54,6 +54,35 @@ function isBtwCommand(text: string): boolean {
   return /^\/btw(?::|\s|$)/i.test(text.trim());
 }
 
+export function buildSessionPickerSearchText(params: {
+  session: {
+    key: string;
+    displayName?: string;
+    label?: string;
+    subject?: string;
+    sessionId?: string;
+    lastMessagePreview?: string;
+    derivedTitle?: string;
+  };
+  formattedKey: string;
+}): string {
+  const parsed = parseAgentSessionKey(params.session.key);
+  const tailKey = parsed?.rest?.split(":").filter(Boolean).at(-1);
+  return [
+    params.formattedKey,
+    params.session.displayName,
+    params.session.label,
+    params.session.subject,
+    params.session.derivedTitle,
+    params.session.sessionId,
+    params.session.key,
+    tailKey,
+    params.session.lastMessagePreview,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function createCommandHandlers(context: CommandHandlerContext) {
   const {
     client,
@@ -72,6 +101,7 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     setActivityStatus,
     formatSessionKey,
     applySessionInfoFromPatch,
+    noteLocalRunId,
     noteLocalBtwRunId,
     forgetLocalRunId,
     forgetLocalBtwRunId,
@@ -182,16 +212,10 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           value: session.key,
           label,
           description,
-          searchText: [
-            session.displayName,
-            session.label,
-            session.subject,
-            session.sessionId,
-            session.key,
-            session.lastMessagePreview,
-          ]
-            .filter(Boolean)
-            .join(" "),
+          searchText: buildSessionPickerSearchText({
+            session,
+            formattedKey,
+          }),
         };
       });
       const selector = createFilterableSelectList(items, 9);
@@ -255,9 +279,9 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           }),
         );
         break;
-      case "status":
+      case "gateway-status":
         try {
-          const status = await client.getStatus();
+          const status = await client.getGatewayStatus();
           if (typeof status === "string") {
             chatLog.addSystem(status);
             break;
@@ -470,6 +494,11 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           // to other connected TUI clients sharing the original session key.
           const uniqueKey = `tui-${randomUUID()}`;
           await setSession(uniqueKey);
+          // Notify the gateway so hooks (command:new, session-memory, etc.)
+          // fire for the newly created session (#49918).
+          // Use state.currentSessionKey (resolved by setSession) to match the
+          // agent-scoped key the gateway expects — same pattern as /reset.
+          await client.resetSession(state.currentSessionKey, "new");
           chatLog.addSystem(`new session: ${uniqueKey}`);
         } catch (err) {
           chatLog.addSystem(`new session failed: ${sanitizeRenderableText(String(err))}`);
@@ -518,6 +547,7 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     const runId = randomUUID();
     try {
       if (!isBtw) {
+        noteLocalRunId(runId);
         chatLog.addUser(text);
         state.pendingOptimisticUserMessage = true;
         setActivityStatus("sending");

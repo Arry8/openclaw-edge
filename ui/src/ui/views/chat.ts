@@ -1,9 +1,13 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
+import type {
+  CompactionStatus as CompactionIndicatorStatus,
+  FallbackStatus as FallbackIndicatorStatus,
+} from "../app-tool-stream.ts";
 import {
   CHAT_ATTACHMENT_ACCEPT,
-  isSupportedChatAttachmentMimeType,
+  resolveSupportedChatAttachmentMimeType,
 } from "../chat/attachment-support.ts";
 import { DeletedMessages } from "../chat/deleted-messages.ts";
 import { exportChatMarkdown } from "../chat/export.ts";
@@ -13,7 +17,11 @@ import {
   renderStreamingGroup,
 } from "../chat/grouped-render.ts";
 import { InputHistory } from "../chat/input-history.ts";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
+import {
+  isInternalExecNotification,
+  normalizeMessage,
+  normalizeRoleForGrouping,
+} from "../chat/message-normalizer.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
 import { getPinnedMessageSummary } from "../chat/pinned-summary.ts";
 import { messageMatchesSearchQuery } from "../chat/search-match.ts";
@@ -27,29 +35,15 @@ import {
 } from "../chat/slash-commands.ts";
 import { isSttSupported, startStt, stopStt } from "../chat/speech.ts";
 import { icons } from "../icons.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { agentLogoUrl, resolveAgentAvatarUrl } from "./agents-utils.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
+import { renderSessionSidebar } from "../components/session-sidebar.ts";
 import "../components/resizable-divider.ts";
-
-export type CompactionIndicatorStatus = {
-  active: boolean;
-  startedAt: number | null;
-  completedAt: number | null;
-};
-
-export type FallbackIndicatorStatus = {
-  phase?: "active" | "cleared";
-  selected: string;
-  active: string;
-  previous?: string;
-  reason?: string;
-  attempts: string[];
-  occurredAt: number;
-};
 
 export type ChatProps = {
   sessionKey: string;
@@ -107,6 +101,13 @@ export type ChatProps = {
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
+  // Session sidebar props
+  sessionSidebarOpen?: boolean;
+  sessionSidebarOnClose?: () => void;
+  sessionSidebarOnNewSession?: () => void;
+  sessionSidebarOnSessionSelect?: (key: string) => void;
+  sessionSidebarLoading?: boolean;
+  sessionSidebarOnOpen?: () => void;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
 };
@@ -193,7 +194,7 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   if (!status) {
     return nothing;
   }
-  if (status.active) {
+  if (status.phase === "active") {
     return html`
       <div
         class="compaction-indicator compaction-indicator--active"
@@ -204,7 +205,18 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
       </div>
     `;
   }
-  if (status.completedAt) {
+  if (status.phase === "retrying") {
+    return html`
+      <div
+        class="compaction-indicator compaction-indicator--active"
+        role="status"
+        aria-live="polite"
+      >
+        ${icons.loader} Retrying after compaction...
+      </div>
+    `;
+  }
+  if (status.phase === "complete" && status.completedAt) {
     const elapsed = Date.now() - status.completedAt;
     if (elapsed < COMPACTION_TOAST_DURATION_MS) {
       return html`
@@ -295,10 +307,9 @@ function renderContextNotice(
   session: GatewaySessionRow | undefined,
   defaultContextTokens: number | null,
 ) {
-  if (session?.totalTokensFresh === false) {
-    return nothing;
-  }
-  const used = session?.totalTokens ?? 0;
+  // Use currentWindowTokens if available (post-compaction), fall back to totalTokens (lifetime)
+  // Note: We no longer hide when totalTokensFresh=false because currentWindowTokens is valid
+  const used = session?.currentWindowTokens ?? session?.totalTokens ?? 0;
   const limit = session?.contextTokens ?? defaultContextTokens ?? 0;
   if (!used || !limit) {
     return nothing;
@@ -324,8 +335,8 @@ function renderContextNotice(
     <div class="context-notice" role="status" style="--ctx-color:${color};--ctx-bg:${bg}">
       <svg
         class="context-notice__icon"
-        width="24"
-        height="24"
+        width="16"
+        height="16"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -405,7 +416,8 @@ function handleFileSelect(e: Event, props: ChatProps) {
   const additions: ChatAttachment[] = [];
   let pending = 0;
   for (const file of input.files) {
-    if (!isSupportedChatAttachmentMimeType(file.type)) {
+    const mimeType = resolveSupportedChatAttachmentMimeType(file);
+    if (!mimeType) {
       continue;
     }
     pending++;
@@ -414,7 +426,7 @@ function handleFileSelect(e: Event, props: ChatProps) {
       additions.push({
         id: generateAttachmentId(),
         dataUrl: reader.result as string,
-        mimeType: file.type,
+        mimeType,
       });
       pending--;
       if (pending === 0) {
@@ -436,7 +448,8 @@ function handleDrop(e: DragEvent, props: ChatProps) {
   const additions: ChatAttachment[] = [];
   let pending = 0;
   for (const file of files) {
-    if (!isSupportedChatAttachmentMimeType(file.type)) {
+    const mimeType = resolveSupportedChatAttachmentMimeType(file);
+    if (!mimeType) {
       continue;
     }
     pending++;
@@ -445,7 +458,7 @@ function handleDrop(e: DragEvent, props: ChatProps) {
       additions.push({
         id: generateAttachmentId(),
         dataUrl: reader.result as string,
-        mimeType: file.type,
+        mimeType,
       });
       pending--;
       if (pending === 0) {
@@ -496,12 +509,12 @@ function updateSlashMenu(value: string, requestUpdate: () => void): void {
   // Arg mode: /command <partial-arg>
   const argMatch = value.match(/^\/(\S+)\s(.*)$/);
   if (argMatch) {
-    const cmdName = argMatch[1].toLowerCase();
-    const argFilter = argMatch[2].toLowerCase();
+    const cmdName = normalizeLowercaseStringOrEmpty(argMatch[1]);
+    const argFilter = normalizeLowercaseStringOrEmpty(argMatch[2]);
     const cmd = SLASH_COMMANDS.find((c) => c.name === cmdName);
     if (cmd?.argOptions?.length) {
       const filtered = argFilter
-        ? cmd.argOptions.filter((opt) => opt.toLowerCase().startsWith(argFilter))
+        ? cmd.argOptions.filter((opt) => normalizeLowercaseStringOrEmpty(opt).startsWith(argFilter))
         : cmd.argOptions;
       if (filtered.length > 0) {
         vs.slashMenuMode = "args";
@@ -884,7 +897,7 @@ function renderSlashMenu(
 
 export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
-  const isBusy = props.sending || props.stream !== null;
+  const isBusy = props.sending || props.stream !== null || props.canAbort;
   const canAbort = Boolean(props.canAbort && props.onAbort);
   const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
@@ -926,14 +939,29 @@ export function renderChat(props: ChatProps) {
     navigator.clipboard.writeText(code).then(
       () => {
         btn.classList.add("copied");
-        setTimeout(() => btn.classList.remove("copied"), 1500);
+        const idle = btn.querySelector(".code-block-copy__idle") as HTMLElement | null;
+        const done = btn.querySelector(".code-block-copy__done") as HTMLElement | null;
+        if (idle) idle.hidden = true;
+        if (done) done.hidden = false;
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          if (idle) idle.hidden = false;
+          if (done) done.hidden = true;
+        }, 1500);
       },
       () => {},
     );
   };
 
   const chatItems = buildChatItems(props);
-  const isEmpty = chatItems.length === 0 && !props.loading;
+  // Don't show the welcome screen when a context warning is also active (#44869).
+  // High-context sessions have accumulated history (even if compacted), and the
+  // welcome state + context-notice badge together overflow the flex layout,
+  // pushing .agent-chat__input below the overflow:hidden boundary of .card.chat.
+  const contextUsed = activeSession?.inputTokens ?? 0;
+  const contextLimit = activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? 0;
+  const hasContextWarning = Boolean(contextUsed && contextLimit && contextUsed / contextLimit >= 0.85);
+  const isEmpty = chatItems.length === 0 && !props.loading && !hasContextWarning;
 
   const thread = html`
     <div
@@ -1108,6 +1136,9 @@ export function renderChat(props: ChatProps) {
         if (prev !== null) {
           e.preventDefault();
           props.onDraftChange(prev);
+          // chatMessage is non-reactive; explicitly refresh so the
+          // textarea reflects the recalled history entry.
+          requestUpdate();
         }
         return;
       }
@@ -1115,6 +1146,9 @@ export function renderChat(props: ChatProps) {
         const next = inputHistory.down();
         e.preventDefault();
         props.onDraftChange(next ?? "");
+        // chatMessage is non-reactive; explicitly refresh so the
+        // textarea reflects the recalled history entry.
+        requestUpdate();
         return;
       }
     }
@@ -1130,6 +1164,39 @@ export function renderChat(props: ChatProps) {
       return;
     }
 
+    // Cmd+` for session sidebar toggle (Ctrl+\` on Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "`") {
+      e.preventDefault();
+      if (props.sessionSidebarOpen) {
+        props.sessionSidebarOnClose?.();
+      } else {
+        props.sessionSidebarOnOpen?.();
+      }
+      return;
+    }
+
+    // Cmd+\\ (Ctrl+Shift+\\) for session sidebar (alternative)
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "\\") {
+      e.preventDefault();
+      if (props.sessionSidebarOpen) {
+        props.sessionSidebarOnClose?.();
+      } else {
+        props.sessionSidebarOnOpen?.();
+      }
+      return;
+    }
+
+    // Cmd+N for new session (when not in input)
+    if ((e.metaKey || e.ctrlKey) && e.key === "n" && !vs.slashMenuOpen) {
+      // Only trigger when not typing in textarea (textarea has its own handler)
+      const target = e.target as HTMLElement;
+      if (target.tagName !== "TEXTAREA" && target.tagName !== "INPUT") {
+        e.preventDefault();
+        props.sessionSidebarOnNewSession?.();
+        return;
+      }
+    }
+
     // Send on Enter (without shift)
     if (e.key === "Enter" && !e.shiftKey) {
       if (e.isComposing || e.keyCode === 229) {
@@ -1142,9 +1209,16 @@ export function renderChat(props: ChatProps) {
       if (canCompose) {
         if (props.draft.trim()) {
           inputHistory.push(props.draft);
+          inputHistoryIndex = -1;
+          props.onSend();
         }
-        props.onSend();
       }
+      return;
+    }
+
+    // Allow Shift+Enter to fall through to default behavior (insert newline)
+    if (e.key === "Enter" && e.shiftKey) {
+      return;
     }
   };
 
@@ -1194,17 +1268,29 @@ export function renderChat(props: ChatProps) {
                 @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
               ></resizable-divider>
               <div class="chat-sidebar">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
-                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
-                  },
-                })}
+                ${
+                  props.sessionSidebarOpen
+                    ? renderSessionSidebar({
+                        sessions: props.sessions,
+                        activeSessionKey: props.sessionKey,
+                        onSessionSelect: (key) => props.sessionSidebarOnSessionSelect?.(key),
+                        onNewSession: () => props.sessionSidebarOnNewSession?.(),
+                        onClose: () => props.sessionSidebarOnClose?.(),
+                        loading: props.sessionSidebarLoading ?? false,
+                        basePath: props.basePath,
+                      })
+                    : renderMarkdownSidebar({
+                        content: props.sidebarContent ?? null,
+                        error: props.sidebarError ?? null,
+                        onClose: props.onCloseSidebar!,
+                        onViewRawText: () => {
+                          if (!props.sidebarContent || !props.onOpenSidebar) {
+                            return;
+                          }
+                          props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
+                        },
+                      })
+                }
               </div>
             `
           : nothing}
@@ -1369,6 +1455,14 @@ export function renderChat(props: ChatProps) {
             >
               ${icons.download}
             </button>
+            <button
+              class="btn btn--ghost ${props.sessionSidebarOpen ? "btn--active" : ""}"
+              @click=${() => props.sessionSidebarOnOpen?.()}
+              title="Session list"
+              aria-label="Open session list"
+            >
+              ${icons.panelLeftOpen}
+            </button>
 
             ${canAbort && (isBusy || props.sending)
               ? html`
@@ -1405,6 +1499,62 @@ export function renderChat(props: ChatProps) {
 }
 
 const CHAT_HISTORY_RENDER_LIMIT = 200;
+const CHAT_HISTORY_RENDER_CHAR_BUDGET = 240_000;
+
+function estimateMessageRenderChars(message: unknown): number {
+  const normalized = normalizeMessage(message);
+  const raw = message as Record<string, unknown>;
+  const rawContent = Array.isArray(raw.content) ? (raw.content as Record<string, unknown>[]) : [];
+  let chars = 0;
+  for (let i = 0; i < normalized.content.length; i++) {
+    const item = normalized.content[i];
+    const rawItem = rawContent[i] as Record<string, unknown> | undefined;
+    if (typeof item.text === "string") {
+      chars += item.text.length;
+    }
+    // tool_result blocks store output in `content`, not `text`
+    if (rawItem && typeof rawItem.content === "string") {
+      chars += rawItem.content.length;
+    }
+    if (typeof item.args === "string") {
+      chars += item.args.length;
+    } else if (item.args && typeof item.args === "object") {
+      try {
+        chars += JSON.stringify(item.args).length;
+      } catch {
+        // Ignore non-serializable tool args; text length is still counted.
+      }
+    }
+  }
+  return Math.max(chars, 1);
+}
+
+function resolveHistoryStartIndex(history: unknown[], showToolCalls: boolean): number {
+  const rawCap = CHAT_HISTORY_RENDER_LIMIT * 3;
+  let start = history.length;
+  let count = 0;
+  let chars = 0;
+  let rawCount = 0;
+  while (start > 0 && count < CHAT_HISTORY_RENDER_LIMIT) {
+    if (rawCount >= rawCap) {
+      break;
+    }
+    const msg = history[start - 1];
+    rawCount++;
+    if (!showToolCalls && normalizeMessage(msg).role.toLowerCase() === "toolresult") {
+      start--;
+      continue;
+    }
+    const nextChars = chars + estimateMessageRenderChars(msg);
+    if (count > 0 && nextChars > CHAT_HISTORY_RENDER_CHAR_BUDGET) {
+      break;
+    }
+    chars = nextChars;
+    start--;
+    count++;
+  }
+  return start;
+}
 
 function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   const result: Array<ChatItem | MessageGroup> = [];
@@ -1422,13 +1572,14 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
 
     const normalized = normalizeMessage(item.message);
     const role = normalizeRoleForGrouping(normalized.role);
-    const senderLabel = role.toLowerCase() === "user" ? (normalized.senderLabel ?? null) : null;
+    const senderLabel =
+      normalizeLowercaseStringOrEmpty(role) === "user" ? (normalized.senderLabel ?? null) : null;
     const timestamp = normalized.timestamp || Date.now();
 
     if (
       !currentGroup ||
       currentGroup.role !== role ||
-      (role.toLowerCase() === "user" && currentGroup.senderLabel !== senderLabel)
+      (normalizeLowercaseStringOrEmpty(role) === "user" && currentGroup.senderLabel !== senderLabel)
     ) {
       if (currentGroup) {
         result.push(currentGroup);
@@ -1457,14 +1608,24 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  const historyStart = Math.max(0, history.length - CHAT_HISTORY_RENDER_LIMIT);
+  const historyStart = resolveHistoryStartIndex(history, props.showToolCalls);
   if (historyStart > 0) {
+    let visibleCount = 0;
+    for (let i = historyStart; i < history.length; i++) {
+      if (
+        !props.showToolCalls &&
+        normalizeMessage(history[i]).role.toLowerCase() === "toolresult"
+      ) {
+        continue;
+      }
+      visibleCount++;
+    }
     items.push({
       kind: "message",
       key: "chat:history:notice",
       message: {
         role: "system",
-        content: `Showing last ${CHAT_HISTORY_RENDER_LIMIT} messages (${historyStart} hidden).`,
+        content: `Showing last ${visibleCount} messages (${historyStart} older messages hidden).`,
         timestamp: Date.now(),
       },
     });
@@ -1487,7 +1648,14 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
-    if (!props.showToolCalls && normalized.role.toLowerCase() === "toolresult") {
+    if (!props.showToolCalls && normalizeLowercaseStringOrEmpty(normalized.role) === "toolresult") {
+      continue;
+    }
+
+    // Hide internal exec notifications from user-visible chat.
+    // These are gateway-internal events (e.g. "Exec completed", "Exec failed")
+    // formatted by session-system-events that should not be shown to end users.
+    if (isInternalExecNotification(msg)) {
       continue;
     }
 

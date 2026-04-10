@@ -13,6 +13,7 @@ import type {
   MemoryQmdSearchMode,
 } from "../../../../src/config/types.memory.js";
 import { normalizeAgentId } from "../../../../src/routing/session-key.js";
+import { normalizeLowercaseStringOrEmpty } from "../../../../src/shared/string-coerce.js";
 import { resolveUserPath } from "../../../../src/utils.js";
 import { splitShellArgs } from "../../../../src/utils/shell-argv.js";
 
@@ -107,7 +108,7 @@ const DEFAULT_QMD_SCOPE: SessionSendPolicyConfig = {
 };
 
 function sanitizeName(input: string): string {
-  const lower = input.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const lower = normalizeLowercaseStringOrEmpty(input).replace(/[^a-z0-9-]+/g, "-");
   const trimmed = lower.replace(/^-+|-+$/g, "");
   return trimmed || "collection";
 }
@@ -317,6 +318,26 @@ function resolveMcporterConfig(raw?: MemoryQmdMcporterConfig): ResolvedQmdMcport
   return parsed;
 }
 
+function isCaseInsensitiveFilesystem(dir: string): boolean {
+  try {
+    // Probe with uppercase/lowercase stat. If both resolve to the same inode,
+    // the filesystem treats them as the same path -> case-insensitive.
+    const upper = dir.toUpperCase();
+    const lower = dir.toLowerCase();
+    if (upper === lower) {
+      return false; // conservative: assume case-sensitive when probe is inconclusive
+    }
+    const { ino: inoUpper } = fs.statSync(upper, { bigint: true });
+    const { ino: inoLower } = fs.statSync(lower, { bigint: true });
+    return inoUpper === inoLower;
+  } catch {
+    // Cannot stat the upper/lower paths — conservatively treat as case-sensitive
+    // so both collections are registered. Note: if QMD rejects the duplicate
+    // on macOS in this rare path, the memory-root collection may silently fail.
+    return false;
+  }
+}
+
 function resolveDefaultCollections(
   include: boolean,
   workspaceDir: string,
@@ -326,9 +347,15 @@ function resolveDefaultCollections(
   if (!include) {
     return [];
   }
+  const caseInsensitive = isCaseInsensitiveFilesystem(workspaceDir);
   const entries: Array<{ path: string; pattern: string; base: string }> = [
     { path: workspaceDir, pattern: "MEMORY.md", base: "memory-root" },
-    { path: workspaceDir, pattern: "memory.md", base: "memory-alt" },
+    // On case-insensitive filesystems (macOS), "memory.md" resolves to the same
+    // file as "MEMORY.md", causing QMD to reject the duplicate collection.
+    // Skip the lower-case variant to avoid the conflict.
+    ...(caseInsensitive
+      ? []
+      : [{ path: workspaceDir, pattern: "memory.md", base: "memory-alt" }]),
     { path: path.join(workspaceDir, "memory"), pattern: "**/*.md", base: "memory-dir" },
   ];
   return entries.map((entry) => ({

@@ -1,6 +1,7 @@
 import { readSnakeCaseParamRaw } from "./param-key.js";
+import { normalizeLowercaseStringOrEmpty } from "./shared/string-coerce.js";
 
-export type PollCreationParamKind = "string" | "stringArray" | "number" | "boolean";
+type PollCreationParamKind = "string" | "stringArray" | "number" | "boolean";
 
 export type PollCreationParamDef = {
   kind: PollCreationParamKind;
@@ -25,16 +26,19 @@ export const POLL_CREATION_PARAM_DEFS: Record<string, PollCreationParamDef> = {
 };
 
 export type SharedPollCreationParamName = keyof typeof SHARED_POLL_CREATION_PARAM_DEFS;
-export type TelegramPollCreationParamName = keyof typeof TELEGRAM_POLL_CREATION_PARAM_DEFS;
 export type PollCreationParamName = keyof typeof POLL_CREATION_PARAM_DEFS;
 
 export const POLL_CREATION_PARAM_NAMES = Object.keys(POLL_CREATION_PARAM_DEFS);
 export const SHARED_POLL_CREATION_PARAM_NAMES = Object.keys(
   SHARED_POLL_CREATION_PARAM_DEFS,
 ) as SharedPollCreationParamName[];
-export const TELEGRAM_POLL_CREATION_PARAM_NAMES = Object.keys(
-  TELEGRAM_POLL_CREATION_PARAM_DEFS,
-) as TelegramPollCreationParamName[];
+
+export function toSnakeCaseKey(key: string): string {
+  return key
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
 
 function readPollParamRaw(params: Record<string, unknown>, key: string): unknown {
   return readSnakeCaseParamRaw(params, key);
@@ -87,7 +91,7 @@ export function hasPollCreationParams(params: Record<string, unknown>): boolean 
       if (value === true) {
         return true;
       }
-      if (typeof value === "string" && value.trim().toLowerCase() === "true") {
+      if (typeof value === "string" && normalizeLowercaseStringOrEmpty(value) === "true") {
         return true;
       }
     }

@@ -5,6 +5,10 @@ import {
   executeWithApiKeyRotation,
 } from "../agents/api-key-rotation.js";
 import { requireApiKey, resolveApiKeyForProvider } from "../agents/model-auth.js";
+import {
+  mergeProviderRequestOverrides,
+  sanitizeConfiguredProviderRequest,
+} from "../agents/provider-request-config.js";
 import type { MsgContext } from "../auto-reply/templating.js";
 import { applyTemplate } from "../auto-reply/templating.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -17,12 +21,13 @@ import { resolveProxyFetchFromEnv } from "../infra/net/proxy-fetch.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import { runFfmpeg } from "../media/ffmpeg-exec.js";
 import { runExec } from "../process/exec.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { MediaAttachmentCache } from "./attachments.js";
 import {
   CLI_OUTPUT_MAX_BUFFER,
-  DEFAULT_AUDIO_MODELS,
   DEFAULT_TIMEOUT_SECONDS,
   MIN_AUDIO_FILE_BYTES,
+  resolveDefaultMediaModel,
 } from "./defaults.js";
 import { MediaUnderstandingSkipError } from "./errors.js";
 import { fileExists } from "./fs.js";
@@ -67,6 +72,28 @@ function trimOutput(text: string, maxChars?: number): string {
     return trimmed;
   }
   return trimmed.slice(0, maxChars).trim();
+}
+
+const KNOWN_AUDIO_HALLUCINATION_PATTERNS = [
+  /^\s*субтитры\s+сделал[аи]?\s+[\p{L}\d_. -]{2,}\s*$/iu,
+  /^\s*subtitles?\s+by\s+[\p{L}\d_. -]{2,}\s*$/iu,
+  /^\s*translated\s+by\s+[\p{L}\d_. -]{2,}\s*$/iu,
+];
+
+export function sanitizeAudioTranscript(text: string): string {
+  const trimmed = trimOutput(text);
+  if (!trimmed) {
+    return trimmed;
+  }
+  for (const pattern of KNOWN_AUDIO_HALLUCINATION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      if (shouldLogVerbose()) {
+        logVerbose(`audio-transcription: dropped known hallucination transcript: ${trimmed}`);
+      }
+      return "";
+    }
+  }
+  return trimmed;
 }
 
 function extractSherpaOnnxText(raw: string): string | null {
@@ -222,7 +249,7 @@ async function resolveCliMediaPath(params: {
     return params.mediaPath;
   }
 
-  const ext = path.extname(params.mediaPath).toLowerCase();
+  const ext = normalizeLowercaseStringOrEmpty(path.extname(params.mediaPath));
   if (ext === ".wav") {
     return params.mediaPath;
   }
@@ -368,6 +395,20 @@ function resolveEntryRunOptions(params: {
   return { maxBytes, maxChars, timeoutMs, prompt };
 }
 
+function resolveAudioRequestOverrides(config: MediaUnderstandingConfig | undefined): {
+  prompt?: string;
+  language?: string;
+} {
+  const overrides = (config ?? {}) as MediaUnderstandingConfig & {
+    _requestPromptOverride?: string;
+    _requestLanguageOverride?: string;
+  };
+  return {
+    prompt: overrides._requestPromptOverride,
+    language: overrides._requestLanguageOverride,
+  };
+}
+
 async function resolveProviderExecutionAuth(params: {
   providerId: string;
   cfg: OpenClawConfig;
@@ -410,7 +451,11 @@ async function resolveProviderExecutionContext(params: {
     ...sanitizeProviderHeaders(params.entry.headers as Record<string, unknown> | undefined),
   };
   const headers = Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined;
-  return { apiKeys, baseUrl, headers };
+  const request = mergeProviderRequestOverrides(
+    sanitizeConfiguredProviderRequest(params.config?.request),
+    sanitizeConfiguredProviderRequest(params.entry.request),
+  );
+  return { apiKeys, baseUrl, headers, request };
 }
 
 export function formatDecisionSummary(decision: MediaUnderstandingDecision): string {
@@ -522,13 +567,14 @@ export async function runProviderEntry(params: {
       throw new Error(`Audio transcription provider "${providerId}" not available.`);
     }
     const transcribeAudio = provider.transcribeAudio;
+    const requestOverrides = resolveAudioRequestOverrides(params.config);
     const media = await params.cache.getBuffer({
       attachmentIndex: params.attachmentIndex,
       maxBytes,
       timeoutMs,
     });
     assertMinAudioSize({ size: media.size, attachmentIndex: params.attachmentIndex });
-    const { apiKeys, baseUrl, headers } = await resolveProviderExecutionContext({
+    const { apiKeys, baseUrl, headers, request } = await resolveProviderExecutionContext({
       providerId,
       cfg,
       entry,
@@ -540,7 +586,14 @@ export async function runProviderEntry(params: {
       config: params.config,
       entry,
     });
-    const model = entry.model?.trim() || DEFAULT_AUDIO_MODELS[providerId] || entry.model;
+    const model =
+      entry.model?.trim() ||
+      resolveDefaultMediaModel({
+        cfg,
+        providerId,
+        capability: "audio",
+      }) ||
+      entry.model;
     const result = await executeWithApiKeyRotation({
       provider: providerId,
       apiKeys,
@@ -552,9 +605,14 @@ export async function runProviderEntry(params: {
           apiKey,
           baseUrl,
           headers,
+          request,
           model,
-          language: entry.language ?? params.config?.language ?? cfg.tools?.media?.audio?.language,
-          prompt,
+          language:
+            requestOverrides.language ??
+            entry.language ??
+            params.config?.language ??
+            cfg.tools?.media?.audio?.language,
+          prompt: requestOverrides.prompt ?? prompt,
           query: providerQuery,
           timeoutMs,
           fetchFn,
@@ -563,7 +621,7 @@ export async function runProviderEntry(params: {
     return {
       kind: "audio.transcription",
       attachmentIndex: params.attachmentIndex,
-      text: trimOutput(result.text, maxChars),
+      text: trimOutput(sanitizeAudioTranscript(result.text), maxChars),
       provider: providerId,
       model: result.model ?? model,
     };
@@ -586,7 +644,7 @@ export async function runProviderEntry(params: {
       `Video attachment ${params.attachmentIndex + 1} base64 payload ${estimatedBase64Bytes} exceeds ${maxBase64Bytes}`,
     );
   }
-  const { apiKeys, baseUrl, headers } = await resolveProviderExecutionContext({
+  const { apiKeys, baseUrl, headers, request } = await resolveProviderExecutionContext({
     providerId,
     cfg,
     entry,
@@ -604,6 +662,7 @@ export async function runProviderEntry(params: {
         apiKey,
         baseUrl,
         headers,
+        request,
         model: entry.model,
         prompt,
         timeoutMs,
@@ -634,6 +693,7 @@ export async function runCliEntry(params: {
   if (!command) {
     throw new Error(`CLI entry missing command for ${capability}`);
   }
+  const requestOverrides = resolveAudioRequestOverrides(params.config);
   const { maxBytes, maxChars, timeoutMs, prompt } = resolveEntryRunOptions({
     capability,
     entry,
@@ -666,7 +726,8 @@ export async function runCliEntry(params: {
     MediaDir: path.dirname(mediaPath),
     OutputDir: outputDir,
     OutputBase: outputBase,
-    Prompt: prompt,
+    Prompt: requestOverrides.prompt ?? prompt,
+    ...(requestOverrides.language ? { Language: requestOverrides.language } : {}),
     MaxChars: maxChars,
   };
   const argv = [command, ...args].map((part, index) =>

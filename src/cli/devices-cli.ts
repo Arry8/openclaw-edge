@@ -7,8 +7,13 @@ import {
   summarizeDeviceTokens,
   type PairedDevice as InfraPairedDevice,
 } from "../infra/device-pairing.js";
-import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
+import { formatRelativeTimestamp, formatTimeAgo } from "../infra/format-time/format-relative.ts";
 import { defaultRuntime } from "../runtime.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+  normalizeStringifiedOptionalString,
+} from "../shared/string-coerce.js";
 import { getTerminalTableWidth, renderTable } from "../terminal/table.js";
 import { theme } from "../terminal/theme.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
@@ -32,6 +37,7 @@ type DeviceTokenSummary = {
   role: string;
   scopes?: string[];
   revokedAtMs?: number;
+  lastUsedAtMs?: number;
 };
 
 type PendingDevice = {
@@ -100,7 +106,7 @@ function normalizeErrorMessage(error: unknown): string {
 }
 
 function shouldUseLocalPairingFallback(opts: DevicesRpcOpts, error: unknown): boolean {
-  const message = normalizeErrorMessage(error).toLowerCase();
+  const message = normalizeLowercaseStringOrEmpty(normalizeErrorMessage(error));
   if (!message.includes("pairing required")) {
     return false;
   }
@@ -196,6 +202,22 @@ function selectLatestPendingRequest(pending: PendingDevice[] | undefined) {
   });
 }
 
+function latestTokenUsedAtMs(tokens: DeviceTokenSummary[] | undefined): number | undefined {
+  if (!tokens?.length) {
+    return undefined;
+  }
+  let latest: number | undefined;
+  for (const t of tokens) {
+    if (t.revokedAtMs != null) {
+      continue;
+    }
+    if (typeof t.lastUsedAtMs === "number" && (latest == null || t.lastUsedAtMs > latest)) {
+      latest = t.lastUsedAtMs;
+    }
+  }
+  return latest;
+}
+
 function formatTokenSummary(tokens: DeviceTokenSummary[] | undefined) {
   if (!tokens || tokens.length === 0) {
     return "none";
@@ -207,7 +229,7 @@ function formatTokenSummary(tokens: DeviceTokenSummary[] | undefined) {
 }
 
 function formatPendingRoles(request: PendingDevice): string {
-  const role = typeof request.role === "string" ? request.role.trim() : "";
+  const role = normalizeOptionalString(request.role) ?? "";
   if (role) {
     return role;
   }
@@ -233,8 +255,8 @@ function formatPendingScopes(request: PendingDevice): string {
 function resolveRequiredDeviceRole(
   opts: DevicesRpcOpts,
 ): { deviceId: string; role: string } | null {
-  const deviceId = String(opts.device ?? "").trim();
-  const role = String(opts.role ?? "").trim();
+  const deviceId = normalizeStringifiedOptionalString(opts.device) ?? "";
+  const role = normalizeStringifiedOptionalString(opts.role) ?? "";
   if (deviceId && role) {
     return { deviceId, role };
   }
@@ -299,6 +321,8 @@ export function registerDevicesCli(program: Command) {
                 { key: "Scopes", header: "Scopes", minWidth: 12, flex: true },
                 { key: "Tokens", header: "Tokens", minWidth: 12, flex: true },
                 { key: "IP", header: "IP", minWidth: 12 },
+                { key: "Created", header: "Created", minWidth: 10 },
+                { key: "Last Used", header: "Last Used", minWidth: 10 },
               ],
               rows: list.paired.map((device) => ({
                 Device: device.displayName || device.deviceId,
@@ -306,6 +330,14 @@ export function registerDevicesCli(program: Command) {
                 Scopes: device.scopes?.length ? device.scopes.join(", ") : "",
                 Tokens: formatTokenSummary(device.tokens),
                 IP: device.remoteIp ?? "",
+                Created: formatRelativeTimestamp(device.createdAtMs, {
+                  dateFallback: true,
+                  fallback: "",
+                }),
+                "Last Used": formatRelativeTimestamp(latestTokenUsedAtMs(device.tokens), {
+                  dateFallback: true,
+                  fallback: "",
+                }),
               })),
             }).trimEnd(),
           );
@@ -354,7 +386,7 @@ export function registerDevicesCli(program: Command) {
         const rejectedRequestIds: string[] = [];
         const paired = Array.isArray(list.paired) ? list.paired : [];
         for (const device of paired) {
-          const deviceId = typeof device.deviceId === "string" ? device.deviceId.trim() : "";
+          const deviceId = normalizeOptionalString(device.deviceId) ?? "";
           if (!deviceId) {
             continue;
           }
@@ -364,7 +396,7 @@ export function registerDevicesCli(program: Command) {
         if (opts.pending) {
           const pending = Array.isArray(list.pending) ? list.pending : [];
           for (const req of pending) {
-            const requestId = typeof req.requestId === "string" ? req.requestId.trim() : "";
+            const requestId = normalizeOptionalString(req.requestId) ?? "";
             if (!requestId) {
               continue;
             }

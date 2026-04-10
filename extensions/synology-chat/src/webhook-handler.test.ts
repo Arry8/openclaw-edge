@@ -10,6 +10,12 @@ const resolveLegacyWebhookNameToChatUserId = vi
 const { clearSynologyWebhookRateLimiterStateForTest, createWebhookHandler } =
   await import("./webhook-handler.js");
 
+type TestLog = {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
+
 function makeAccount(
   overrides: Partial<ResolvedSynologyChatAccount> = {},
 ): ResolvedSynologyChatAccount {
@@ -40,7 +46,7 @@ const validBody = makeFormBody({
 });
 
 async function runDangerousNameMatchReply(
-  log: { info: any; warn: any; error: any },
+  log: TestLog,
   options: {
     resolvedChatUserId?: number;
     accountIdSuffix: string;
@@ -61,7 +67,8 @@ async function runDangerousNameMatchReply(
   const res = makeRes();
   await handler(req, res);
 
-  expect(res._status).toBe(204);
+  expect(res._status).toBe(200);
+  expect(res._body).toBe('{"success":true}');
   expect(resolveLegacyWebhookNameToChatUserId).toHaveBeenCalledWith({
     incomingUrl: "https://nas.example.com/incoming",
     mutableWebhookUsername: "testuser",
@@ -73,7 +80,7 @@ async function runDangerousNameMatchReply(
 }
 
 describe("createWebhookHandler", () => {
-  let log: { info: any; warn: any; error: any };
+  let log: TestLog;
 
   beforeEach(() => {
     clearSynologyWebhookRateLimiterStateForTest();
@@ -121,6 +128,24 @@ describe("createWebhookHandler", () => {
     await handler(req, res);
 
     expect(res._status).toBe(405);
+  });
+
+  it("accepts HEAD probes with a 200 ACK and no body", async () => {
+    const deliver = vi.fn();
+    const handler = createWebhookHandler({
+      account: makeAccount(),
+      deliver,
+      log,
+    });
+
+    const req = makeReq("HEAD", "");
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._status).toBe(200);
+    expect(res._body).toBe("");
+    expect(res._headers["Content-Length"]).toBe(String(Buffer.byteLength('{"success":true}')));
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   it("returns 400 for missing required fields", async () => {
@@ -243,7 +268,7 @@ describe("createWebhookHandler", () => {
         break;
       }
 
-      if (res._status === 204) {
+      if (res._status === 200) {
         guessedToken = candidate;
         break;
       }
@@ -300,7 +325,7 @@ describe("createWebhookHandler", () => {
     const validRes = makeRes();
     await handler(validReq, validRes);
 
-    expect(validRes._status).toBe(204);
+    expect(validRes._status).toBe(200);
     expect(deliver).toHaveBeenCalledTimes(1);
   });
 
@@ -320,7 +345,7 @@ describe("createWebhookHandler", () => {
       (req.socket as { remoteAddress?: string }).remoteAddress = "203.0.113.20";
       const res = makeRes();
       await handler(req, res);
-      expect(res._status).toBe(204);
+      expect(res._status).toBe(200);
     }
 
     expect(deliver).toHaveBeenCalledTimes(11);
@@ -347,7 +372,8 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe('{"success":true}');
     expect(deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         body: "Hello from json",
@@ -377,7 +403,8 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe('{"success":true}');
     expect(deliver).toHaveBeenCalled();
   });
 
@@ -402,7 +429,8 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe('{"success":true}');
     expect(deliver).toHaveBeenCalled();
   });
 
@@ -450,7 +478,7 @@ describe("createWebhookHandler", () => {
     const req1 = makeReq("POST", validBody);
     const res1 = makeRes();
     await handler(req1, res1);
-    expect(res1._status).toBe(204);
+    expect(res1._status).toBe(200);
 
     // Second request should be rate limited
     const req2 = makeReq("POST", validBody);
@@ -479,12 +507,13 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe('{"success":true}');
     // deliver should have been called with the stripped text
     expect(deliver).toHaveBeenCalledWith(expect.objectContaining({ body: "Hello there" }));
   });
 
-  it("responds 204 immediately and delivers async", async () => {
+  it("responds 200 success immediately and delivers async", async () => {
     const deliver = vi.fn().mockResolvedValue("Bot reply");
     const handler = createWebhookHandler({
       account: makeAccount({ accountId: "async-test-" + Date.now() }),
@@ -496,8 +525,8 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
-    expect(res._body).toBe("");
+    expect(res._status).toBe(200);
+    expect(res._body).toBe('{"success":true}');
     expect(deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         body: "Hello bot",
@@ -522,7 +551,7 @@ describe("createWebhookHandler", () => {
     const res = makeRes();
     await handler(req, res);
 
-    expect(res._status).toBe(204);
+    expect(res._status).toBe(200);
     expect(resolveLegacyWebhookNameToChatUserId).not.toHaveBeenCalled();
     expect(deliver).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -2,6 +2,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import { buildGatewayConnectionDetails, callGateway } from "../gateway/call.js";
 import type { DoctorMemoryStatusPayload } from "../gateway/server-methods/doctor.js";
 import { collectChannelStatusIssues } from "../infra/channels-status-issues.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { note } from "../terminal/note.js";
 import { formatHealthCheckFailure } from "./health-format.js";
@@ -11,6 +12,11 @@ export type GatewayMemoryProbe = {
   checked: boolean;
   ready: boolean;
   error?: string;
+  fts?: {
+    enabled: boolean;
+    available: boolean;
+    error?: string;
+  };
 };
 
 export async function checkGatewayHealth(params: {
@@ -80,9 +86,10 @@ export async function probeGatewayMemoryStatus(params: {
       checked: true,
       ready: payload.embedding.ok,
       error: payload.embedding.error,
+      fts: payload.fts,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     return {
       checked: true,
       ready: false,

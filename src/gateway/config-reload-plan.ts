@@ -13,7 +13,9 @@ export type GatewayReloadPlan = {
   restartCron: boolean;
   restartHeartbeat: boolean;
   restartHealthMonitor: boolean;
+  regenerateModelsJson: boolean;
   restartChannels: Set<ChannelKind>;
+  restartChannelAccounts: Map<ChannelKind, Set<string>>;
   noopPaths: string[];
 };
 
@@ -29,6 +31,7 @@ type ReloadAction =
   | "restart-cron"
   | "restart-heartbeat"
   | "restart-health-monitor"
+  | "regenerate-models-json"
   | `restart-channel:${ChannelId}`;
 
 const BASE_RELOAD_RULES: ReloadRule[] = [
@@ -69,13 +72,22 @@ const BASE_RELOAD_RULES: ReloadRule[] = [
     actions: ["restart-heartbeat"],
   },
   {
+    prefix: "agents.defaults.models",
+    kind: "hot",
+    actions: ["restart-heartbeat"],
+  },
+  {
     prefix: "models",
+    kind: "hot",
+    actions: ["restart-heartbeat", "regenerate-models-json"],
+  },
+  {
+    prefix: "agents.list",
     kind: "hot",
     actions: ["restart-heartbeat"],
   },
   { prefix: "agent.heartbeat", kind: "hot", actions: ["restart-heartbeat"] },
   { prefix: "cron", kind: "hot", actions: ["restart-cron"] },
-  { prefix: "browser", kind: "restart" },
 ];
 
 const BASE_RELOAD_RULES_TAIL: ReloadRule[] = [
@@ -129,7 +141,32 @@ function listReloadRules(): ReloadRule[] {
       }),
     ),
   ]);
-  const rules = [...BASE_RELOAD_RULES, ...channelReloadRules, ...BASE_RELOAD_RULES_TAIL];
+  const pluginReloadRules: ReloadRule[] = (registry?.reloads ?? []).flatMap((entry) => [
+    ...(entry.registration.restartPrefixes ?? []).map(
+      (prefix): ReloadRule => ({
+        prefix,
+        kind: "restart",
+      }),
+    ),
+    ...(entry.registration.hotPrefixes ?? []).map(
+      (prefix): ReloadRule => ({
+        prefix,
+        kind: "hot",
+      }),
+    ),
+    ...(entry.registration.noopPrefixes ?? []).map(
+      (prefix): ReloadRule => ({
+        prefix,
+        kind: "none",
+      }),
+    ),
+  ]);
+  const rules = [
+    ...BASE_RELOAD_RULES,
+    ...pluginReloadRules,
+    ...channelReloadRules,
+    ...BASE_RELOAD_RULES_TAIL,
+  ];
   cachedReloadRules = rules;
   return rules;
 }
@@ -143,6 +180,24 @@ function matchRule(path: string): ReloadRule | null {
   return null;
 }
 
+function parseScopedChannelAccountPath(
+  path: string,
+): { channel: ChannelId; accountId: string } | null {
+  const parts = path.split(".");
+  if (parts.length < 4) {
+    return null;
+  }
+  if (parts[0] !== "channels" || parts[2] !== "accounts") {
+    return null;
+  }
+  const channel = parts[1];
+  const accountId = parts[3];
+  if (!channel || !accountId) {
+    return null;
+  }
+  return { channel: channel as ChannelId, accountId };
+}
+
 export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPlan {
   const plan: GatewayReloadPlan = {
     changedPaths,
@@ -154,14 +209,23 @@ export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPla
     restartCron: false,
     restartHeartbeat: false,
     restartHealthMonitor: false,
+    regenerateModelsJson: false,
     restartChannels: new Set(),
+    restartChannelAccounts: new Map(),
     noopPaths: [],
   };
 
-  const applyAction = (action: ReloadAction) => {
+  const applyAction = (action: ReloadAction, path: string) => {
     if (action.startsWith("restart-channel:")) {
       const channel = action.slice("restart-channel:".length) as ChannelId;
-      plan.restartChannels.add(channel);
+      const scopedAccount = parseScopedChannelAccountPath(path);
+      if (scopedAccount && scopedAccount.channel === channel) {
+        const accounts = plan.restartChannelAccounts.get(channel) ?? new Set();
+        accounts.add(scopedAccount.accountId);
+        plan.restartChannelAccounts.set(channel, accounts);
+      } else {
+        plan.restartChannels.add(channel);
+      }
       return;
     }
     switch (action) {
@@ -179,6 +243,9 @@ export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPla
         break;
       case "restart-health-monitor":
         plan.restartHealthMonitor = true;
+        break;
+      case "regenerate-models-json":
+        plan.regenerateModelsJson = true;
         break;
       default:
         break;
@@ -203,7 +270,13 @@ export function buildGatewayReloadPlan(changedPaths: string[]): GatewayReloadPla
     }
     plan.hotReasons.push(path);
     for (const action of rule.actions ?? []) {
-      applyAction(action);
+      applyAction(action, path);
+    }
+  }
+
+  if (plan.restartChannels.size > 0) {
+    for (const channel of plan.restartChannels) {
+      plan.restartChannelAccounts.delete(channel);
     }
   }
 

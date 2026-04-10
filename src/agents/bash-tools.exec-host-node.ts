@@ -7,16 +7,15 @@ import {
   evaluateShellAllowlist,
   hasDurableExecApproval,
   requiresExecApproval,
+  resolveExecApprovalAllowedDecisions,
   resolveExecApprovalsFromFile,
 } from "../infra/exec-approvals.js";
 import {
   describeInterpreterInlineEval,
   detectInterpreterInlineEvalArgv,
 } from "../infra/exec-inline-eval.js";
-import { detectCommandObfuscation } from "../infra/exec-obfuscation-detect.js";
 import { buildNodeShellCommand } from "../infra/node-shell.js";
 import { parsePreparedSystemRunPayload } from "../infra/system-run-approval-context.js";
-import { logInfo } from "../logger.js";
 import {
   buildExecApprovalRequesterContext,
   buildExecApprovalTurnSourceContext,
@@ -34,7 +33,7 @@ import { listNodes, resolveNodeIdFromList } from "./tools/nodes-utils.js";
 
 export type ExecuteNodeHostCommandParams = {
   command: string;
-  workdir: string;
+  workdir: string | undefined;
   env: Record<string, string>;
   requestedEnv?: Record<string, string>;
   requestedNode?: string;
@@ -49,6 +48,7 @@ export type ExecuteNodeHostCommandParams = {
   security: ExecSecurity;
   ask: ExecAsk;
   strictInlineEval?: boolean;
+  denylist?: readonly string[];
   timeoutSec?: number;
   defaultTimeoutSec: number;
   approvalRunningNoticeMs: number;
@@ -107,7 +107,7 @@ export async function executeNodeHostCommand(
       params: {
         command: argv,
         rawCommand: params.command,
-        cwd: params.workdir,
+        ...(params.workdir != null ? { cwd: params.workdir } : {}),
         agentId: params.agentId,
         sessionKey: params.sessionKey,
       },
@@ -128,6 +128,7 @@ export async function executeNodeHostCommand(
   const baseAllowlistEval = evaluateShellAllowlist({
     command: params.command,
     allowlist: [],
+    denylist: params.denylist,
     safeBins: new Set(),
     cwd: params.workdir,
     env: params.env,
@@ -135,6 +136,10 @@ export async function executeNodeHostCommand(
     trustedSafeBinDirs: params.trustedSafeBinDirs,
   });
   let analysisOk = baseAllowlistEval.analysisOk;
+  if (baseAllowlistEval.denylistDenied) {
+    const matchedPattern = baseAllowlistEval.denylistPattern ?? "<unknown>";
+    throw new Error(`exec denied by denylist pattern: ${matchedPattern}`);
+  }
   let allowlistSatisfied = false;
   let durableApprovalSatisfied = false;
   const inlineEvalHit =
@@ -167,12 +172,13 @@ export async function executeNodeHostCommand(
         const resolved = resolveExecApprovalsFromFile({
           file: approvalsFile as ExecApprovalsFile,
           agentId: params.agentId,
-          overrides: { security: "allowlist" },
+          overrides: { security: "full" },
         });
         // Allowlist-only precheck; safe bins are node-local and may diverge.
         const allowlistEval = evaluateShellAllowlist({
           command: params.command,
           allowlist: resolved.allowlist,
+          denylist: params.denylist,
           safeBins: new Set(),
           cwd: params.workdir,
           env: params.env,
@@ -192,13 +198,6 @@ export async function executeNodeHostCommand(
       // Fall back to requiring approval if node approvals cannot be fetched.
     }
   }
-  const obfuscation = detectCommandObfuscation(params.command);
-  if (obfuscation.detected) {
-    logInfo(
-      `exec: obfuscation detected (node=${nodeQuery ?? "default"}): ${obfuscation.reasons.join(", ")}`,
-    );
-    params.warnings.push(`⚠️ Obfuscated command detected: ${obfuscation.reasons.join("; ")}`);
-  }
   const requiresAsk =
     requiresExecApproval({
       ask: hostAsk,
@@ -206,9 +205,7 @@ export async function executeNodeHostCommand(
       analysisOk,
       allowlistSatisfied,
       durableApprovalSatisfied,
-    }) ||
-    inlineEvalHit !== null ||
-    obfuscation.detected;
+    }) || inlineEvalHit !== null;
   const invokeTimeoutMs = Math.max(
     10_000,
     (typeof params.timeoutSec === "number" ? params.timeoutSec : params.defaultTimeoutSec) * 1000 +
@@ -226,6 +223,7 @@ export async function executeNodeHostCommand(
       params: {
         command: runArgv,
         rawCommand: runRawCommand,
+        systemRunPlan: prepared.plan,
         cwd: runCwd,
         env: nodeEnv,
         timeoutMs: typeof params.timeoutSec === "number" ? params.timeoutSec * 1000 : undefined,
@@ -289,12 +287,18 @@ export async function executeNodeHostCommand(
         preResolvedDecision,
       })
     ) {
-      const { approvedByAsk, deniedReason } = execHostShared.createExecApprovalDecisionState({
-        decision: preResolvedDecision,
-        askFallback,
-        obfuscationDetected: obfuscation.detected,
+      const { baseDecision, approvedByAsk, deniedReason } =
+        execHostShared.createExecApprovalDecisionState({
+          decision: preResolvedDecision,
+          askFallback,
+        });
+      const strictInlineEvalDecision = execHostShared.enforceStrictInlineEvalApprovalBoundary({
+        baseDecision,
+        approvedByAsk,
+        deniedReason,
+        requiresInlineEvalApproval: inlineEvalHit !== null,
       });
-      if (deniedReason || !approvedByAsk) {
+      if (strictInlineEvalDecision.deniedReason || !strictInlineEvalDecision.approvedByAsk) {
         throw new Error(
           execHostShared.buildHeadlessExecApprovalDeniedMessage({
             trigger: params.trigger,
@@ -305,13 +309,13 @@ export async function executeNodeHostCommand(
           }),
         );
       }
-      inlineApprovedByAsk = approvedByAsk;
-      inlineApprovalDecision = approvedByAsk ? "allow-once" : null;
+      inlineApprovedByAsk = strictInlineEvalDecision.approvedByAsk;
+      inlineApprovalDecision = strictInlineEvalDecision.approvedByAsk ? "allow-once" : null;
       inlineApprovalId = approvalId;
     } else {
       const followupTarget = execHostShared.buildExecApprovalFollowupTarget({
         approvalId,
-        sessionKey: params.notifySessionKey,
+        sessionKey: params.notifySessionKey ?? params.sessionKey,
         turnSourceChannel: params.turnSourceChannel,
         turnSourceTo: params.turnSourceTo,
         turnSourceAccountId: params.turnSourceAccountId,
@@ -339,7 +343,6 @@ export async function executeNodeHostCommand(
         } = execHostShared.createExecApprovalDecisionState({
           decision,
           askFallback,
-          obfuscationDetected: obfuscation.detected,
         });
         let approvedByAsk = initialApprovedByAsk;
         let approvalDecision: "allow-once" | "allow-always" | null = null;
@@ -353,6 +356,16 @@ export async function executeNodeHostCommand(
         } else if (decision === "allow-always") {
           approvedByAsk = true;
           approvalDecision = "allow-always";
+        }
+
+        ({ approvedByAsk, deniedReason } = execHostShared.enforceStrictInlineEvalApprovalBoundary({
+          baseDecision,
+          approvedByAsk,
+          deniedReason,
+          requiresInlineEvalApproval: inlineEvalHit !== null,
+        }));
+        if (deniedReason) {
+          approvalDecision = null;
         }
 
         if (deniedReason) {
@@ -415,6 +428,7 @@ export async function executeNodeHostCommand(
         initiatingSurface,
         sentApproverDms,
         unavailableReason,
+        allowedDecisions: resolveExecApprovalAllowedDecisions({ ask: hostAsk }),
         nodeId,
       });
     }

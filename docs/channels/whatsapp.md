@@ -11,10 +11,9 @@ Status: production-ready via WhatsApp Web (Baileys). Gateway owns linked session
 
 ## Install (on demand)
 
-- Onboarding (`openclaw onboard`) and `openclaw channels add --channel whatsapp`
-  prompt to install the WhatsApp plugin the first time you select it.
-- `openclaw channels login --channel whatsapp` also offers the install flow when
-  the plugin is not present yet.
+- Onboarding (`openclaw onboard`), `openclaw channels add --channel whatsapp`,
+  and `openclaw channels login --channel whatsapp` prompt to install the
+  WhatsApp plugin the first time you select it.
 - Dev channel + git checkout: defaults to the local plugin path.
 - Stable/Beta: defaults to the npm package `@openclaw/whatsapp`.
 
@@ -68,6 +67,8 @@ openclaw channels login --channel whatsapp
 openclaw channels login --channel whatsapp --account work
 ```
 
+    Current login is QR-based. If you are pairing from a remote/headless machine, plan for a reliable way to deliver the QR as an image/file to the phone that will scan it.
+
   </Step>
 
   <Step title="Start the gateway">
@@ -84,6 +85,13 @@ openclaw gateway
 openclaw pairing list whatsapp
 openclaw pairing approve whatsapp <CODE>
 ```
+  </Step>
+
+  <Step title="Message yourself on WhatsApp to talk to OpenClaw">
+
+  </Step>
+
+  <Step title="Message yourself on WhatsApp to talk to OpenClaw">
 
     Pairing requests expire after 1 hour. Pending requests are capped at 3 per channel.
 
@@ -93,6 +101,12 @@ openclaw pairing approve whatsapp <CODE>
 <Note>
 OpenClaw recommends running WhatsApp on a separate number when possible. (The channel metadata and setup flow are optimized for that setup, but personal-number setups are also supported.)
 </Note>
+
+<Warning>
+The current WhatsApp login flow is QR-only. In remote/headless setups, relaying a terminal-rendered QR through screenshots, PDFs, or chat attachments can be brittle because the QR may refresh or expire before it is scanned.
+
+If you are not physically near the target machine, prefer a direct QR image handoff path (for example, a saved PNG or an HTTP-served QR image) over manual terminal capture. Phone-number / pairing-code login would be a better fit for these environments, but is not documented as part of the current channel setup flow.
+</Warning>
 
 ## Deployment patterns
 
@@ -136,6 +150,19 @@ OpenClaw recommends running WhatsApp on a separate number when possible. (The ch
     There is no separate Twilio WhatsApp messaging channel in the built-in chat-channel registry.
 
   </Accordion>
+
+  <Accordion title="Remote/headless pairing caveat">
+    Current setup assumes you can scan a live WhatsApp QR quickly.
+
+    In remote/headless environments, QR delivery itself can become the hard part:
+
+    - terminal-rendered QR output is easy to mangle in SSH / narrow terminals
+    - screenshot/PDF relays can lag behind QR refresh or expiry
+    - messaging the QR to another surface is workable, but still more fragile than a first-class export or pairing-code flow
+
+    If this is your deployment pattern, treat WhatsApp setup as requiring an explicit QR handoff plan.
+
+  </Accordion>
 </AccordionGroup>
 
 ## Runtime model
@@ -145,6 +172,7 @@ OpenClaw recommends running WhatsApp on a separate number when possible. (The ch
 - Status and broadcast chats are ignored (`@status`, `@broadcast`).
 - Direct chats use DM session rules (`session.dmScope`; default `main` collapses DMs to the agent main session).
 - Group sessions are isolated (`agent:<agentId>:whatsapp:group:<jid>`).
+- WhatsApp Web transport honors standard proxy environment variables on the gateway host (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` / lowercase variants). Prefer host-level proxy config over channel-specific WhatsApp proxy settings.
 
 ## Access control and activation
 

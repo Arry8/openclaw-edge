@@ -40,6 +40,7 @@ export function buildSystemdUnit({
   programArguments,
   workingDirectory,
   environment,
+  environmentFile,
 }: GatewayServiceRenderArgs): string {
   const execStart = programArguments.map(systemdEscapeArg).join(" ");
   const descriptionValue = description?.trim() || "OpenClaw Gateway";
@@ -48,12 +49,22 @@ export function buildSystemdUnit({
   const workingDirLine = workingDirectory
     ? `WorkingDirectory=${systemdEscapeArg(workingDirectory)}`
     : null;
+  let envFileLine: string | null = null;
+  if (environmentFile?.trim()) {
+    const envFilePath = environmentFile.trim();
+    assertNoSystemdLineBreaks(envFilePath, "Systemd EnvironmentFile path");
+    envFileLine = `EnvironmentFile=${systemdEscapeArg(envFilePath)}`;
+  }
   const envLines = renderEnvLines(environment);
   return [
     "[Unit]",
     descriptionLine,
     "After=network-online.target",
     "Wants=network-online.target",
+    // Prevent infinite crash loops (e.g. port conflict) from exhausting system
+    // resources. After 5 failures within 120s, systemd stops retrying.
+    "StartLimitIntervalSec=120",
+    "StartLimitBurst=5",
     "",
     "[Service]",
     `ExecStart=${execStart}`,
@@ -66,6 +77,7 @@ export function buildSystemdUnit({
     // orphan ACP/runtime workers behind.
     "KillMode=control-group",
     workingDirLine,
+    envFileLine,
     ...envLines,
     "",
     "[Install]",
@@ -98,7 +110,7 @@ export function parseSystemdEnvAssignment(raw: string): { key: string; value: st
         escapeNext = false;
         continue;
       }
-      if (ch === "\\\\") {
+      if (ch === "\\") {
         escapeNext = true;
         continue;
       }

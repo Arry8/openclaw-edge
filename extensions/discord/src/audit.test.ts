@@ -1,25 +1,24 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  auditDiscordChannelPermissionsWithFetcher,
+  collectDiscordAuditChannelIdsForGuilds,
+} from "./audit-core.js";
 
-const sendModule = await import("./send.js");
 const fetchChannelPermissionsDiscordMock = vi.fn();
-vi.spyOn(sendModule, "fetchChannelPermissionsDiscord").mockImplementation(
-  fetchChannelPermissionsDiscordMock,
-);
 
-let auditDiscordChannelPermissions: typeof import("./audit.js").auditDiscordChannelPermissions;
-let collectDiscordAuditChannelIds: typeof import("./audit.js").collectDiscordAuditChannelIds;
+function readDiscordGuilds(cfg: OpenClawConfig) {
+  const guilds = cfg.channels?.discord?.guilds;
+  expect(guilds).toBeDefined();
+  return guilds ?? {};
+}
 
 describe("discord audit", () => {
-  beforeAll(async () => {
-    ({ collectDiscordAuditChannelIds, auditDiscordChannelPermissions } =
-      await import("./audit.js"));
-  });
-
   beforeEach(() => {
     fetchChannelPermissionsDiscordMock.mockReset();
   });
 
-  it("collects numeric channel ids and counts unresolved keys", async () => {
+  it("collects numeric channel ids even when config uses allow=false and counts unresolved keys", async () => {
     const cfg = {
       channels: {
         discord: {
@@ -37,13 +36,10 @@ describe("discord audit", () => {
           },
         },
       },
-    } as unknown as import("openclaw/plugin-sdk/config-runtime").OpenClawConfig;
+    } as unknown as OpenClawConfig;
 
-    const collected = collectDiscordAuditChannelIds({
-      cfg,
-      accountId: "default",
-    });
-    expect(collected.channelIds).toEqual(["111"]);
+    const collected = collectDiscordAuditChannelIdsForGuilds(readDiscordGuilds(cfg));
+    expect(collected.channelIds).toEqual(["111", "222"]);
     expect(collected.unresolvedChannels).toBe(1);
 
     fetchChannelPermissionsDiscordMock.mockResolvedValueOnce({
@@ -52,14 +48,22 @@ describe("discord audit", () => {
       raw: "0",
       isDm: false,
     });
+    fetchChannelPermissionsDiscordMock.mockResolvedValueOnce({
+      channelId: "222",
+      permissions: ["ViewChannel", "SendMessages"],
+      raw: "0",
+      isDm: false,
+    });
 
-    const audit = await auditDiscordChannelPermissions({
+    const audit = await auditDiscordChannelPermissionsWithFetcher({
       token: "t",
       accountId: "default",
       channelIds: collected.channelIds,
       timeoutMs: 1000,
+      fetchChannelPermissions: fetchChannelPermissionsDiscordMock,
     });
     expect(audit.ok).toBe(false);
+    expect(audit.channels).toHaveLength(2);
     expect(audit.channels[0]?.channelId).toBe("111");
     expect(audit.channels[0]?.missing).toContain("SendMessages");
   });
@@ -81,9 +85,9 @@ describe("discord audit", () => {
           },
         },
       },
-    } as unknown as import("openclaw/plugin-sdk/config-runtime").OpenClawConfig;
+    } as unknown as OpenClawConfig;
 
-    const collected = collectDiscordAuditChannelIds({ cfg, accountId: "default" });
+    const collected = collectDiscordAuditChannelIdsForGuilds(readDiscordGuilds(cfg));
     expect(collected.channelIds).toEqual(["111"]);
     expect(collected.unresolvedChannels).toBe(0);
   });
@@ -104,9 +108,9 @@ describe("discord audit", () => {
           },
         },
       },
-    } as unknown as import("openclaw/plugin-sdk/config-runtime").OpenClawConfig;
+    } as unknown as OpenClawConfig;
 
-    const collected = collectDiscordAuditChannelIds({ cfg, accountId: "default" });
+    const collected = collectDiscordAuditChannelIdsForGuilds(readDiscordGuilds(cfg));
     expect(collected.channelIds).toEqual([]);
     expect(collected.unresolvedChannels).toBe(0);
   });
@@ -131,10 +135,39 @@ describe("discord audit", () => {
           },
         },
       },
-    } as unknown as import("openclaw/plugin-sdk/config-runtime").OpenClawConfig;
+    } as unknown as OpenClawConfig;
 
-    const collected = collectDiscordAuditChannelIds({ cfg, accountId: "default" });
+    const collected = collectDiscordAuditChannelIdsForGuilds(readDiscordGuilds(cfg));
     expect(collected.channelIds).toEqual(["111"]);
     expect(collected.unresolvedChannels).toBe(1);
+  });
+
+  it("audits channels concurrently while preserving configured order", async () => {
+    let activeRequests = 0;
+    let maxConcurrentRequests = 0;
+    fetchChannelPermissionsDiscordMock.mockImplementation(async (channelId: string) => {
+      activeRequests += 1;
+      maxConcurrentRequests = Math.max(maxConcurrentRequests, activeRequests);
+      const delayMs = channelId === "111" ? 15 : channelId === "222" ? 1 : 5;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      activeRequests -= 1;
+      return {
+        channelId,
+        permissions: ["ViewChannel", "SendMessages"],
+        raw: "0",
+        isDm: false,
+      };
+    });
+
+    const audit = await auditDiscordChannelPermissionsWithFetcher({
+      token: "t",
+      accountId: "default",
+      channelIds: ["111", "222", "333"],
+      timeoutMs: 1000,
+      fetchChannelPermissions: fetchChannelPermissionsDiscordMock,
+    });
+
+    expect(maxConcurrentRequests).toBeGreaterThan(1);
+    expect(audit.channels.map((channel) => channel.channelId)).toEqual(["111", "222", "333"]);
   });
 });

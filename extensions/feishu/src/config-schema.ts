@@ -97,6 +97,7 @@ const FeishuToolsConfigSchema = z
     chat: z.boolean().optional(), // Chat info + member query operations (default: true)
     wiki: z.boolean().optional(), // Knowledge base operations (default: true, requires doc)
     drive: z.boolean().optional(), // Cloud storage operations (default: true)
+    bitable: z.boolean().optional(), // Bitable operations (default: true)
     perm: z.boolean().optional(), // Permission management (default: false, sensitive)
     scopes: z.boolean().optional(), // App scopes diagnostic (default: true)
   })
@@ -138,6 +139,19 @@ const ReactionNotificationModeSchema = z.enum(["off", "own", "all"]).optional();
  */
 const ReplyInThreadSchema = z.enum(["disabled", "enabled"]).optional();
 
+/**
+ * Reply-to mode for controlling whether bot replies are attached to the
+ * triggering message or sent as standalone messages in the chat.
+ *
+ * - "off": Send replies as new top-level messages (not attached to any message)
+ * - "first": Reply to the first message in the conversation (default for groups)
+ * - "all": Reply to every triggering message
+ *
+ * In group chats, "off" prevents replies from being collapsed under the
+ * original message, keeping them visible in the main chat flow.
+ */
+const ReplyToModeSchema = z.enum(["off", "first", "all"]).optional();
+
 export const FeishuGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -172,6 +186,7 @@ const FeishuSharedConfigShape = {
   chunkMode: z.enum(["length", "newline"]).optional(),
   blockStreamingCoalesce: BlockStreamingCoalesceSchema,
   mediaMaxMb: z.number().positive().optional(),
+  mediaLocalRoots: z.union([z.array(z.string()), z.literal("any")]).optional(),
   httpTimeoutMs: z.number().int().positive().max(300_000).optional(),
   heartbeat: ChannelHeartbeatVisibilitySchema,
   renderMode: RenderModeSchema,
@@ -179,9 +194,15 @@ const FeishuSharedConfigShape = {
   tools: FeishuToolsConfigSchema,
   actions: ChannelActionsSchema,
   replyInThread: ReplyInThreadSchema,
+  replyToMode: ReplyToModeSchema,
   reactionNotifications: ReactionNotificationModeSchema,
   typingIndicator: z.boolean().optional(),
   resolveSenderNames: z.boolean().optional(),
+  /** Emoji type name (Feishu API format, e.g. "THUMBSUP", "Celebrate") to use as the
+   * typing indicator reaction. Follows the same priority chain as other channels:
+   * account → channel → messages.ackReaction → identity.emoji → "Typing" (Feishu default).
+   * See: https://open.feishu.cn/document/server-docs/im-v1/message-reaction/emojis-introduce */
+  ackReaction: z.string().optional(),
 };
 
 /**

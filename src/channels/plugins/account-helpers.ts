@@ -8,6 +8,7 @@ import {
   normalizeAccountId,
   normalizeOptionalAccountId,
 } from "../../routing/session-key.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import type { ChannelAccountSnapshot } from "./types.core.js";
 
 export function createAccountListHelpers(
@@ -50,8 +51,54 @@ export function createAccountListHelpers(
   }
 
   function listAccountIds(cfg: OpenClawConfig): string[] {
+    // If the base channel config has its own tokens (botToken/appToken/token),
+    // include the default account alongside named accounts so both providers start —
+    // but only when at least one named account carries its own per-account auth.
+    // When every named account inherits the base tokens, injecting default would
+    // start a duplicate provider on the same credentials.
+    const configuredIds = listConfiguredAccountIds(cfg);
+    const channel = cfg.channels?.[channelKey];
+    const base = channel as Record<string, unknown> | undefined;
+    const isTruthy = (v: unknown): boolean =>
+      typeof v === "string" ? v.trim().length > 0 : Boolean(v);
+    const baseTokenFields = (["botToken", "appToken", "token"] as const).filter((f) =>
+      isTruthy(base?.[f]),
+    );
+
+    let implicitId: string | undefined;
+    if (baseTokenFields.length > 0 && configuredIds.length > 0) {
+      const accounts = (base?.accounts ?? {}) as Record<string, Record<string, unknown>>;
+      const normalizeId = options?.normalizeAccountId ?? normalizeAccountId;
+      const normalizedToRaw = new Map<string, string>();
+      for (const key of Object.keys(accounts)) {
+        const normalized = normalizeId(key);
+        if (normalized && !normalizedToRaw.has(normalized)) {
+          normalizedToRaw.set(normalized, key);
+        }
+      }
+      const enabledIds = configuredIds.filter((id) => {
+        const rawKey = normalizedToRaw.get(id) ?? id;
+        const acct = accounts[rawKey];
+        return !acct || acct["enabled"] !== false;
+      });
+      const everyAccountHasOwnTokens =
+        enabledIds.length > 0 &&
+        enabledIds.every((id) => {
+          const rawKey = normalizedToRaw.get(id) ?? id;
+          const acct = accounts[rawKey];
+          if (!acct) {
+            return false;
+          }
+          return baseTokenFields.every((f) => isTruthy(acct[f]));
+        });
+      if (everyAccountHasOwnTokens) {
+        implicitId = DEFAULT_ACCOUNT_ID;
+      }
+    }
+
     return listCombinedAccountIds({
-      configuredAccountIds: listConfiguredAccountIds(cfg),
+      configuredAccountIds: configuredIds,
+      implicitAccountId: implicitId,
       fallbackAccountIdWhenEmpty: DEFAULT_ACCOUNT_ID,
     });
   }
@@ -188,10 +235,7 @@ export function describeAccountSnapshot<
 }): ChannelAccountSnapshot {
   return {
     accountId: String(params.account.accountId ?? DEFAULT_ACCOUNT_ID),
-    name:
-      typeof params.account.name === "string" && params.account.name.trim()
-        ? params.account.name
-        : undefined,
+    name: normalizeOptionalString(params.account.name),
     enabled: params.account.enabled !== false,
     configured: params.configured,
     ...params.extra,

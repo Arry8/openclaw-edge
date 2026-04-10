@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { buildChannelConfigSchema } from "./config-schema.js";
+import { AllowFromEntrySchema, buildChannelConfigSchema, emptyChannelConfigSchema } from "./config-schema.js";
 
 describe("buildChannelConfigSchema", () => {
   it("builds json schema when toJSONSchema is available", () => {
@@ -44,5 +44,34 @@ describe("buildChannelConfigSchema", () => {
       success: true,
       data: { enabled: true },
     });
+  });
+});
+
+describe("emptyChannelConfigSchema", () => {
+  it("accepts undefined and empty objects only", () => {
+    const result = emptyChannelConfigSchema();
+
+    expect(result.runtime?.safeParse(undefined)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(result.runtime?.safeParse({})).toEqual({
+      success: true,
+      data: {},
+    });
+    expect(result.runtime?.safeParse({ enabled: true })).toEqual({
+      success: false,
+      issues: [{ path: [], message: "config must be empty" }],
+    });
+  });
+});
+
+describe("AllowFromEntrySchema", () => {
+  it("passes string values through unchanged", () => {
+    expect(AllowFromEntrySchema.parse("+19175551234")).toBe("+19175551234");
+  });
+
+  it("transforms numeric entries to +-prefixed E.164 strings", () => {
+    expect(AllowFromEntrySchema.parse(19175551234)).toBe("+19175551234");
   });
 });

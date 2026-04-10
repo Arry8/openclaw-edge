@@ -40,8 +40,10 @@ function resolveMemoryFlushGateState<
   }
 
   const contextWindow = Math.max(1, Math.floor(params.contextWindowTokens));
-  const reserveTokens = Math.max(0, Math.floor(params.reserveTokensFloor));
   const softThreshold = Math.max(0, Math.floor(params.softThresholdTokens));
+  // Clamp reserve so the flush threshold stays positive even for small context windows.
+  const maxReserve = Math.max(0, contextWindow - softThreshold - 1);
+  const reserveTokens = Math.min(Math.max(0, Math.floor(params.reserveTokensFloor)), maxReserve);
   const threshold = Math.max(0, contextWindow - reserveTokens - softThreshold);
   if (threshold <= 0) {
     return null;
@@ -97,12 +99,22 @@ export function shouldRunPreflightCompaction(params: {
  * Returns true when a memory flush has already been performed for the current
  * compaction cycle. This prevents repeated flush runs within the same cycle —
  * important for both the token-based and transcript-size–based trigger paths.
+ *
+ * Note: When compactionCount is 0 (never compacted), we always return false
+ * to allow the first memory flush. This fixes the edge case where both
+ * compactionCount and memoryFlushCompactionCount are 0, which previously
+ * incorrectly returned true (0 === 0), blocking the first flush.
  */
 export function hasAlreadyFlushedForCurrentCompaction(
   entry: Pick<SessionEntry, "compactionCount" | "memoryFlushCompactionCount">,
 ): boolean {
   const compactionCount = entry.compactionCount ?? 0;
   const lastFlushAt = entry.memoryFlushCompactionCount;
+  // When compactionCount is 0, the session has never been compacted.
+  // Allow flush in this case to enable first-time memory flush.
+  if (compactionCount === 0) {
+    return false;
+  }
   return typeof lastFlushAt === "number" && lastFlushAt === compactionCount;
 }
 

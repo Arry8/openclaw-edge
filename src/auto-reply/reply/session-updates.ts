@@ -1,8 +1,15 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { canExecRequestNode } from "../../agents/exec-defaults.js";
 import { buildWorkspaceSkillSnapshot } from "../../agents/skills.js";
-import { ensureSkillsWatcher, getSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
+import { matchesSkillFilter, normalizeSkillFilterForComparison } from "../../agents/skills/filter.js";
+import {
+  ensureSkillsWatcher,
+  getSkillsSnapshotVersion,
+  shouldRefreshSnapshotForVersion,
+} from "../../agents/skills/refresh.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   resolveSessionFilePath,
@@ -10,9 +17,43 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { resolveStableSessionEndTranscript } from "../../gateway/session-transcript-files.fs.js";
+import { logVerbose } from "../../globals.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
+import { buildSessionEndHookPayload, buildSessionStartHookPayload } from "./session-hooks.js";
 export { drainFormattedSystemEvents } from "./session-system-events.js";
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).toSorted(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+    .join(",")}}`;
+}
+
+function resolveEligibilitySignature(params: {
+  cfg: OpenClawConfig;
+  skillFilter?: string[];
+  remoteEligibility: ReturnType<typeof getRemoteSkillEligibility>;
+}): string {
+  const payload = {
+    skills: params.cfg.skills ?? {},
+    skillFilter: normalizeSkillFilterForComparison(params.skillFilter),
+    path: process.env.PATH ?? "",
+    remote: params.remoteEligibility,
+  };
+  return crypto.createHash("sha256").update(stableStringify(payload)).digest("hex");
+}
 
 async function persistSessionEntryUpdate(params: {
   sessionStore?: Record<string, SessionEntry>;
@@ -33,6 +74,52 @@ async function persistSessionEntryUpdate(params: {
   await updateSessionStore(params.storePath, (store) => {
     store[params.sessionKey!] = { ...store[params.sessionKey!], ...params.nextEntry };
   });
+}
+
+function emitCompactionSessionLifecycleHooks(params: {
+  cfg: OpenClawConfig;
+  sessionKey: string;
+  storePath?: string;
+  previousEntry: SessionEntry;
+  nextEntry: SessionEntry;
+}) {
+  const hookRunner = getGlobalHookRunner();
+  if (!hookRunner) {
+    return;
+  }
+
+  if (hookRunner.hasHooks("session_end")) {
+    const transcript = resolveStableSessionEndTranscript({
+      sessionId: params.previousEntry.sessionId,
+      storePath: params.storePath,
+      sessionFile: params.previousEntry.sessionFile,
+      agentId: resolveAgentIdFromSessionKey(params.sessionKey),
+    });
+    const payload = buildSessionEndHookPayload({
+      sessionId: params.previousEntry.sessionId,
+      sessionKey: params.sessionKey,
+      cfg: params.cfg,
+      reason: "compaction",
+      sessionFile: transcript.sessionFile,
+      transcriptArchived: transcript.transcriptArchived,
+      nextSessionId: params.nextEntry.sessionId,
+    });
+    void hookRunner.runSessionEnd(payload.event, payload.context).catch((err) => {
+      logVerbose(`session_end hook failed: ${String(err)}`);
+    });
+  }
+
+  if (hookRunner.hasHooks("session_start")) {
+    const payload = buildSessionStartHookPayload({
+      sessionId: params.nextEntry.sessionId,
+      sessionKey: params.sessionKey,
+      cfg: params.cfg,
+      resumedFrom: params.previousEntry.sessionId,
+    });
+    void hookRunner.runSessionStart(payload.event, payload.context).catch((err) => {
+      logVerbose(`session_start hook failed: ${String(err)}`);
+    });
+  }
 }
 
 export async function ensureSkillSnapshot(params: {
@@ -75,11 +162,34 @@ export async function ensureSkillSnapshot(params: {
 
   let nextEntry = sessionEntry;
   let systemSent = sessionEntry?.systemSent ?? false;
-  const remoteEligibility = getRemoteSkillEligibility();
+  const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
+  const remoteEligibility = getRemoteSkillEligibility({
+    advertiseExecNode: canExecRequestNode({
+      cfg,
+      sessionEntry,
+      sessionKey,
+      agentId: sessionAgentId,
+    }),
+  });
+  const eligibilitySignature = resolveEligibilitySignature({ cfg, skillFilter, remoteEligibility });
   const snapshotVersion = getSkillsSnapshotVersion(workspaceDir);
+  const existingSnapshot = nextEntry?.skillsSnapshot;
   ensureSkillsWatcher({ workspaceDir, config: cfg });
   const shouldRefreshSnapshot =
-    snapshotVersion > 0 && (nextEntry?.skillsSnapshot?.version ?? 0) < snapshotVersion;
+    shouldRefreshSnapshotForVersion(existingSnapshot?.version, snapshotVersion) ||
+    !matchesSkillFilter(existingSnapshot?.skillFilter, skillFilter) ||
+    (existingSnapshot !== undefined &&
+      existingSnapshot.eligibilitySignature !== eligibilitySignature);
+  const buildSnapshot = () => ({
+    ...buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: cfg,
+      agentId: sessionAgentId,
+      skillFilter,
+      eligibility: { remote: remoteEligibility },
+      snapshotVersion,
+    }),
+    eligibilitySignature,
+  });
 
   if (isFirstTurnInSession && sessionStore && sessionKey) {
     const current = nextEntry ??
@@ -88,41 +198,30 @@ export async function ensureSkillSnapshot(params: {
         updatedAt: Date.now(),
       };
     const skillSnapshot =
-      isFirstTurnInSession || !current.skillsSnapshot || shouldRefreshSnapshot
-        ? buildWorkspaceSkillSnapshot(workspaceDir, {
-            config: cfg,
-            skillFilter,
-            eligibility: { remote: remoteEligibility },
-            snapshotVersion,
-          })
-        : current.skillsSnapshot;
+      !current.skillsSnapshot || shouldRefreshSnapshot ? buildSnapshot() : current.skillsSnapshot;
     nextEntry = {
       ...current,
       sessionId: sessionId ?? current.sessionId ?? crypto.randomUUID(),
       updatedAt: Date.now(),
-      systemSent: true,
       skillsSnapshot: skillSnapshot,
+      // Note: systemSent is intentionally NOT persisted here.
+      // It must only be persisted after a successful LLM response,
+      // otherwise an API error (e.g. insufficient credits) leaves
+      // systemSent=true on disk while the system prompt was never
+      // actually delivered — corrupting all subsequent sessions.
     };
     await persistSessionEntryUpdate({ sessionStore, sessionKey, storePath, nextEntry });
     systemSent = true;
   }
 
-  const skillsSnapshot = shouldRefreshSnapshot
-    ? buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: cfg,
-        skillFilter,
-        eligibility: { remote: remoteEligibility },
-        snapshotVersion,
-      })
-    : (nextEntry?.skillsSnapshot ??
-      (isFirstTurnInSession
-        ? undefined
-        : buildWorkspaceSkillSnapshot(workspaceDir, {
-            config: cfg,
-            skillFilter,
-            eligibility: { remote: remoteEligibility },
-            snapshotVersion,
-          })));
+  const hasFreshSnapshotInEntry =
+    Boolean(nextEntry?.skillsSnapshot) &&
+    (nextEntry?.skillsSnapshot !== existingSnapshot || !shouldRefreshSnapshot);
+  const skillsSnapshot = hasFreshSnapshotInEntry
+    ? nextEntry?.skillsSnapshot
+    : shouldRefreshSnapshot || !nextEntry?.skillsSnapshot
+      ? buildSnapshot()
+      : nextEntry.skillsSnapshot;
   if (
     skillsSnapshot &&
     sessionStore &&
@@ -151,6 +250,7 @@ export async function incrementCompactionCount(params: {
   sessionStore?: Record<string, SessionEntry>;
   sessionKey?: string;
   storePath?: string;
+  cfg?: OpenClawConfig;
   now?: number;
   amount?: number;
   /** Token count after compaction - if provided, updates session token counts */
@@ -163,6 +263,7 @@ export async function incrementCompactionCount(params: {
     sessionStore,
     sessionKey,
     storePath,
+    cfg,
     now = Date.now(),
     amount = 1,
     tokensAfter,
@@ -213,6 +314,15 @@ export async function incrementCompactionCount(params: {
       };
     });
   }
+  if (newSessionId && newSessionId !== entry.sessionId && cfg) {
+    emitCompactionSessionLifecycleHooks({
+      cfg,
+      sessionKey,
+      storePath,
+      previousEntry: entry,
+      nextEntry: sessionStore[sessionKey],
+    });
+  }
   return nextCount;
 }
 
@@ -245,11 +355,19 @@ function resolveCompactionSessionFile(params: {
 
 function canonicalizeAbsoluteSessionFilePath(filePath: string): string {
   const resolved = path.resolve(filePath);
-  try {
-    const parentDir = fs.realpathSync(path.dirname(resolved));
-    return path.join(parentDir, path.basename(resolved));
-  } catch {
-    return resolved;
+  const missingSegments: string[] = [];
+  let cursor = resolved;
+  while (true) {
+    try {
+      return path.join(fs.realpathSync(cursor), ...missingSegments.toReversed());
+    } catch {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) {
+        return resolved;
+      }
+      missingSegments.push(path.basename(cursor));
+      cursor = parent;
+    }
   }
 }
 
@@ -258,7 +376,7 @@ function rewriteSessionFileForNewSessionId(params: {
   previousSessionId: string;
   nextSessionId: string;
 }): string | undefined {
-  const trimmed = params.sessionFile?.trim();
+  const trimmed = normalizeOptionalString(params.sessionFile);
   if (!trimmed) {
     return undefined;
   }

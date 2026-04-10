@@ -1,4 +1,6 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { resolveDefaultDiscordAccountId } from "../accounts.js";
+import { createDiscordRuntimeAccountContext } from "../client.js";
 import { readDiscordComponentSpec } from "../components.js";
 import {
   assertMediaNotDataUrl,
@@ -14,6 +16,7 @@ import {
   withNormalizedTimestamp,
   readBooleanParam,
 } from "../runtime-api.js";
+import { sendDiscordComponentMessage } from "../send.components.js";
 import {
   createThreadDiscord,
   deleteMessageDiscord,
@@ -29,7 +32,6 @@ import {
   removeOwnReactionsDiscord,
   removeReactionDiscord,
   searchMessagesDiscord,
-  sendDiscordComponentMessage,
   sendMessageDiscord,
   sendPollDiscord,
   sendStickerDiscord,
@@ -108,6 +110,18 @@ export async function handleDiscordMessagingAction(
     );
   const accountId = readStringParam(params, "accountId");
   const cfgOptions = cfg ? { cfg } : {};
+  const reactionRuntimeOptions = cfg
+    ? createDiscordRuntimeAccountContext({
+        cfg,
+        accountId: accountId ?? resolveDefaultDiscordAccountId(cfg),
+      })
+    : accountId
+      ? { accountId }
+      : undefined;
+  const withReactionRuntimeOptions = <T extends Record<string, unknown>>(extra?: T) => ({
+    ...(reactionRuntimeOptions ?? cfgOptions),
+    ...extra,
+  });
   const normalizeMessage = (message: unknown) => {
     if (!message || typeof message !== "object") {
       return message;
@@ -130,47 +144,28 @@ export async function handleDiscordMessagingAction(
         removeErrorMessage: "Emoji is required to remove a Discord reaction.",
       });
       if (remove) {
-        if (accountId) {
-          await discordMessagingActionRuntime.removeReactionDiscord(channelId, messageId, emoji, {
-            ...cfgOptions,
-            accountId,
-          });
-        } else {
-          await discordMessagingActionRuntime.removeReactionDiscord(
-            channelId,
-            messageId,
-            emoji,
-            cfgOptions,
-          );
-        }
-        return jsonResult({ ok: true, removed: emoji });
-      }
-      if (isEmpty) {
-        const removed = accountId
-          ? await discordMessagingActionRuntime.removeOwnReactionsDiscord(channelId, messageId, {
-              ...cfgOptions,
-              accountId,
-            })
-          : await discordMessagingActionRuntime.removeOwnReactionsDiscord(
-              channelId,
-              messageId,
-              cfgOptions,
-            );
-        return jsonResult({ ok: true, removed: removed.removed });
-      }
-      if (accountId) {
-        await discordMessagingActionRuntime.reactMessageDiscord(channelId, messageId, emoji, {
-          ...cfgOptions,
-          accountId,
-        });
-      } else {
-        await discordMessagingActionRuntime.reactMessageDiscord(
+        await discordMessagingActionRuntime.removeReactionDiscord(
           channelId,
           messageId,
           emoji,
-          cfgOptions,
+          withReactionRuntimeOptions(),
         );
+        return jsonResult({ ok: true, removed: emoji });
       }
+      if (isEmpty) {
+        const removed = await discordMessagingActionRuntime.removeOwnReactionsDiscord(
+          channelId,
+          messageId,
+          withReactionRuntimeOptions(),
+        );
+        return jsonResult({ ok: true, removed: removed.removed });
+      }
+      await discordMessagingActionRuntime.reactMessageDiscord(
+        channelId,
+        messageId,
+        emoji,
+        withReactionRuntimeOptions(),
+      );
       return jsonResult({ ok: true, added: emoji });
     }
     case "reactions": {
@@ -185,11 +180,7 @@ export async function handleDiscordMessagingAction(
       const reactions = await discordMessagingActionRuntime.fetchReactionsDiscord(
         channelId,
         messageId,
-        {
-          ...cfgOptions,
-          ...(accountId ? { accountId } : {}),
-          limit,
-        },
+        withReactionRuntimeOptions({ limit }),
       );
       return jsonResult({ ok: true, reactions });
     }
@@ -316,14 +307,14 @@ export async function handleDiscordMessagingAction(
         Array.isArray(rawComponents) || typeof rawComponents === "function"
           ? (rawComponents as DiscordSendComponents)
           : undefined;
-      const content = readStringParam(params, "content", {
-        required: !asVoice && !componentSpec && !components,
-        allowEmpty: true,
-      });
       const mediaUrl =
         readStringParam(params, "mediaUrl", { trim: false }) ??
         readStringParam(params, "path", { trim: false }) ??
         readStringParam(params, "filePath", { trim: false });
+      const content = readStringParam(params, "content", {
+        required: !asVoice && !componentSpec && !components && !mediaUrl,
+        allowEmpty: true,
+      });
       const filename = readStringParam(params, "filename");
       const replyTo = readStringParam(params, "replyTo");
       const rawEmbeds = params.embeds;
@@ -572,6 +563,31 @@ export async function handleDiscordMessagingAction(
           })
         : await discordMessagingActionRuntime.listPinsDiscord(channelId, cfgOptions);
       return jsonResult({ ok: true, pins: pins.map((pin) => normalizeMessage(pin)) });
+    }
+    case "uploadFile": {
+      if (!isActionEnabled("messages")) {
+        throw new Error("Discord file uploads are disabled.");
+      }
+      const to = readStringParam(params, "to", { required: true });
+      const filePath =
+        readStringParam(params, "filePath", { trim: false }) ??
+        readStringParam(params, "path", { trim: false }) ??
+        readStringParam(params, "media", { trim: false });
+      if (!filePath) {
+        throw new Error("upload-file requires filePath, path, or media");
+      }
+      assertMediaNotDataUrl(filePath);
+      const initialComment = readStringParam(params, "initialComment", { allowEmpty: true }) ?? "";
+      const filename = readStringParam(params, "filename");
+      const result = await discordMessagingActionRuntime.sendMessageDiscord(to, initialComment, {
+        ...cfgOptions,
+        ...(accountId ? { accountId } : {}),
+        mediaUrl: filePath,
+        filename: filename ?? undefined,
+        mediaLocalRoots: options?.mediaLocalRoots,
+        mediaReadFile: options?.mediaReadFile,
+      });
+      return jsonResult({ ok: true, result });
     }
     case "searchMessages": {
       if (!isActionEnabled("search")) {

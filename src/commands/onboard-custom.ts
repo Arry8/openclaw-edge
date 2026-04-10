@@ -2,10 +2,15 @@ import { CONTEXT_WINDOW_HARD_MIN_TOKENS } from "../agents/context-window-guard.j
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { buildModelAliasIndex, modelKey } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { ModelProviderConfig } from "../config/types.models.js";
+import type { ModelDefinitionConfig, ModelProviderConfig } from "../config/types.models.js";
 import { isSecretRef, type SecretInput } from "../config/types.secrets.js";
-import { OLLAMA_DEFAULT_BASE_URL } from "../plugin-sdk/ollama-surface.js";
+import { OLLAMA_DEFAULT_BASE_URL } from "../plugins/provider-model-defaults.js";
 import type { RuntimeEnv } from "../runtime.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../shared/string-coerce.js";
 import { fetchWithTimeout } from "../utils/fetch-timeout.js";
 import {
   normalizeSecretInput,
@@ -32,7 +37,7 @@ function normalizeContextWindowForCustomModel(value: unknown): number {
 function isAzureFoundryUrl(baseUrl: string): boolean {
   try {
     const url = new URL(baseUrl);
-    const host = url.hostname.toLowerCase();
+    const host = normalizeLowercaseStringOrEmpty(url.hostname);
     return host.endsWith(".services.ai.azure.com");
   } catch {
     return false;
@@ -42,7 +47,7 @@ function isAzureFoundryUrl(baseUrl: string): boolean {
 function isAzureOpenAiUrl(baseUrl: string): boolean {
   try {
     const url = new URL(baseUrl);
-    const host = url.hostname.toLowerCase();
+    const host = normalizeLowercaseStringOrEmpty(url.hostname);
     return host.endsWith(".openai.azure.com");
   } catch {
     return false;
@@ -53,6 +58,25 @@ function isAzureUrl(baseUrl: string): boolean {
   return isAzureFoundryUrl(baseUrl) || isAzureOpenAiUrl(baseUrl);
 }
 
+function isLikelyVisionModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return (
+    id.includes("claude-3") ||
+    id.includes("claude-sonnet") ||
+    id.includes("claude-haiku") ||
+    id.includes("claude-opus") ||
+    id.includes("gpt-4o") ||
+    id.includes("gpt-4.1") ||
+    /(^|[^a-z0-9])gpt-5($|[-._])/i.test(id) ||
+    /(^|[^a-z0-9])o(1|3)($|[-._])/i.test(id) ||
+    id.includes("gemini") ||
+    id.includes("qwen-vl") ||
+    id.includes("vision") ||
+    id.includes("-vl") ||
+    id.endsWith("vl")
+  );
+}
+
 /**
  * Transforms an Azure AI Foundry/OpenAI URL to include the deployment path.
  * Azure requires: https://host/openai/deployments/<model-id>/chat/completions?api-version=2024-xx-xx-preview
@@ -60,8 +84,8 @@ function isAzureUrl(baseUrl: string): boolean {
  * The api-version will be handled by the Azure OpenAI client or as a query param.
  *
  * Example:
- *   https://my-resource.services.ai.azure.com + gpt-5-nano
- *   => https://my-resource.services.ai.azure.com/openai/deployments/gpt-5-nano
+ *   https://my-resource.services.ai.azure.com + gpt-5.4-nano
+ *   => https://my-resource.services.ai.azure.com/openai/deployments/gpt-5.4-nano
  */
 function transformAzureUrl(baseUrl: string, modelId: string): string {
   const normalizedUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
@@ -92,7 +116,10 @@ function transformAzureConfigUrl(baseUrl: string): string {
 
 function hasSameHost(a: string, b: string): boolean {
   try {
-    return new URL(a).hostname.toLowerCase() === new URL(b).hostname.toLowerCase();
+    return (
+      normalizeLowercaseStringOrEmpty(new URL(a).hostname) ===
+      normalizeLowercaseStringOrEmpty(new URL(b).hostname)
+    );
   } catch {
     return false;
   }
@@ -185,7 +212,7 @@ const COMPATIBILITY_OPTIONS: Array<{
 ];
 
 function normalizeEndpointId(raw: string): string {
-  const trimmed = raw.trim().toLowerCase();
+  const trimmed = normalizeOptionalLowercaseString(raw);
   if (!trimmed) {
     return "";
   }
@@ -195,7 +222,7 @@ function normalizeEndpointId(raw: string): string {
 function buildEndpointIdFromUrl(baseUrl: string): string {
   try {
     const url = new URL(baseUrl);
-    const host = url.hostname.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    const host = normalizeLowercaseStringOrEmpty(url.hostname.replace(/[^a-z0-9]+/gi, "-"));
     const port = url.port ? `-${url.port}` : "";
     const candidate = `custom-${host}${port}`;
     return normalizeEndpointId(candidate) || "custom";
@@ -246,7 +273,7 @@ function resolveAliasError(params: {
     cfg: params.cfg,
     defaultProvider: DEFAULT_PROVIDER,
   });
-  const aliasKey = normalized.toLowerCase();
+  const aliasKey = normalizeLowercaseStringOrEmpty(normalized);
   const existing = aliasIndex.byAlias.get(aliasKey);
   if (!existing) {
     return undefined;
@@ -524,7 +551,7 @@ function resolveProviderApi(
 }
 
 function parseCustomApiCompatibility(raw?: string): CustomApiCompatibility {
-  const compatibilityRaw = raw?.trim().toLowerCase();
+  const compatibilityRaw = normalizeOptionalLowercaseString(raw);
   if (!compatibilityRaw) {
     return "openai";
   }
@@ -569,8 +596,8 @@ export function resolveCustomProviderId(
 export function parseNonInteractiveCustomApiFlags(
   params: ParseNonInteractiveCustomApiFlagsParams,
 ): ParsedNonInteractiveCustomApiFlags {
-  const baseUrl = params.baseUrl?.trim() ?? "";
-  const modelId = params.modelId?.trim() ?? "";
+  const baseUrl = normalizeOptionalString(params.baseUrl) ?? "";
+  const modelId = normalizeOptionalString(params.modelId) ?? "";
   if (!baseUrl || !modelId) {
     throw new CustomApiError(
       "missing_required",
@@ -581,8 +608,8 @@ export function parseNonInteractiveCustomApiFlags(
     );
   }
 
-  const apiKey = params.apiKey?.trim();
-  const providerId = params.providerId?.trim();
+  const apiKey = normalizeOptionalString(params.apiKey);
+  const providerId = normalizeOptionalString(params.providerId);
   if (providerId && !normalizeEndpointId(providerId)) {
     throw new CustomApiError(
       "invalid_provider_id",
@@ -599,7 +626,7 @@ export function parseNonInteractiveCustomApiFlags(
 }
 
 export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): CustomApiResult {
-  const baseUrl = params.baseUrl.trim();
+  const baseUrl = normalizeOptionalString(params.baseUrl) ?? "";
   try {
     new URL(baseUrl);
   } catch {
@@ -613,7 +640,7 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
     );
   }
 
-  const modelId = params.modelId.trim();
+  const modelId = normalizeOptionalString(params.modelId) ?? "";
   if (!modelId) {
     throw new CustomApiError("invalid_model_id", "Custom provider model ID is required.");
   }
@@ -631,7 +658,7 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
   const providers = params.config.models?.providers ?? {};
 
   const modelRef = modelKey(providerId, modelId);
-  const alias = params.alias?.trim() ?? "";
+  const alias = normalizeOptionalString(params.alias) ?? "";
   const aliasError = resolveAliasError({
     raw: alias,
     cfg: params.config,
@@ -645,6 +672,7 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
   const existingModels = Array.isArray(existingProvider?.models) ? existingProvider.models : [];
   const hasModel = existingModels.some((model) => model.id === modelId);
   const isLikelyReasoningModel = isAzure && /\b(o[134]|gpt-([5-9]|\d{2,}))\b/i.test(modelId);
+  const isLikelyVisionCapableModel = isLikelyVisionModel(modelId);
   const nextModel = isAzure
     ? {
         id: modelId,
@@ -663,16 +691,33 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
         name: `${modelId} (Custom Provider)`,
         contextWindow: DEFAULT_CONTEXT_WINDOW,
         maxTokens: DEFAULT_MAX_TOKENS,
-        input: ["text"] as ["text"],
+        input: isLikelyVisionCapableModel
+          ? (["text", "image"] as Array<"text" | "image">)
+          : (["text"] as ["text"]),
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         reasoning: false,
       };
+  const shouldUpgradeNonAzureVisionInput = (model: ModelDefinitionConfig): boolean => {
+    if (isAzure || !isLikelyVisionCapableModel) {
+      return false;
+    }
+    if (!Array.isArray(model.input) || model.input.length !== 1 || model.input[0] !== "text") {
+      return false;
+    }
+    // Only auto-upgrade models that still look auto-generated by onboard.
+    // If users renamed/tuned the model, preserve explicit text-only intent.
+    return model.name === `${modelId} (Custom Provider)`;
+  };
+
   const mergedModels = hasModel
     ? existingModels.map((model) =>
         model.id === modelId
           ? {
               ...model,
               ...(isAzure ? nextModel : {}),
+              ...(shouldUpgradeNonAzureVisionInput(model)
+                ? ({ input: ["text", "image"] } as { input: Array<"text" | "image"> })
+                : {}),
               name: model.name ?? nextModel.name,
               cost: model.cost ?? nextModel.cost,
               contextWindow: normalizeContextWindowForCustomModel(model.contextWindow),

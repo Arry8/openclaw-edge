@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { normalizeOptionalString, readStringValue } from "openclaw/plugin-sdk/text-runtime";
 import {
   DEFAULT_AI_SNAPSHOT_MAX_CHARS,
   browserAct,
@@ -22,6 +23,43 @@ const browserToolActionDeps = {
   imageResultFromFile,
   loadConfig,
 };
+
+const BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS = 5_000;
+
+type BrowserActRequest = Parameters<typeof browserAct>[1];
+type BrowserActRequestWithTimeout = BrowserActRequest & { timeoutMs?: number };
+
+function normalizePositiveTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function withConfiguredActTimeout(request: BrowserActRequest): BrowserActRequest {
+  const typedRequest = request as BrowserActRequestWithTimeout;
+  const explicitTimeout = normalizePositiveTimeoutMs(typedRequest.timeoutMs);
+  if (explicitTimeout !== undefined) {
+    return request;
+  }
+  const cfg = browserToolActionDeps.loadConfig();
+  const configuredTimeout = normalizePositiveTimeoutMs(cfg.browser?.actionTimeoutMs);
+  return { ...typedRequest, timeoutMs: configuredTimeout ?? 20_000 } as BrowserActRequest;
+}
+
+function resolveActProxyTimeoutMs(request: BrowserActRequest): number | undefined {
+  const candidateTimeouts: number[] = [];
+  const explicitTimeout = normalizePositiveTimeoutMs(
+    (request as BrowserActRequestWithTimeout).timeoutMs,
+  );
+  if (explicitTimeout !== undefined) {
+    candidateTimeouts.push(explicitTimeout + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+  }
+  if (request.kind === "wait") {
+    const waitDuration = normalizePositiveTimeoutMs(request.timeMs);
+    if (waitDuration !== undefined) {
+      candidateTimeouts.push(waitDuration + BROWSER_ACT_REQUEST_TIMEOUT_SLACK_MS);
+    }
+  }
+  return candidateTimeouts.length ? Math.max(...candidateTimeouts) : undefined;
+}
 
 export const __testing = {
   setDepsForTest(
@@ -53,6 +91,8 @@ type BrowserProxyRequest = (opts: {
   timeoutMs?: number;
   profile?: string;
 }) => Promise<unknown>;
+
+const SNAPSHOT_STALE_TARGET_RETRY_DELAYS_MS = [150, 300, 450] as const;
 
 function wrapBrowserExternalJson(params: {
   kind: "snapshot" | "console" | "tabs";
@@ -106,7 +146,7 @@ function formatConsoleToolResult(result: {
     content: [{ type: "text" as const, text: wrapped.wrappedText }],
     details: {
       ...wrapped.safeDetails,
-      targetId: typeof result.targetId === "string" ? result.targetId : undefined,
+      targetId: readStringValue(result.targetId),
       messageCount: Array.isArray(result.messages) ? result.messages.length : undefined,
     },
   };
@@ -130,10 +170,81 @@ function isChromeStaleTargetError(profile: string | undefined, err: unknown): bo
   return msg.includes("404:") && msg.includes("tab not found");
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractTabTargetIds(tabs: unknown[]): string[] {
+  const targetIds: string[] = [];
+  for (const tab of tabs) {
+    const targetId =
+      tab && typeof tab === "object" && "targetId" in tab
+        ? (tab as { targetId?: unknown }).targetId
+        : undefined;
+    if (typeof targetId !== "string") {
+      continue;
+    }
+    const trimmed = targetId.trim();
+    if (trimmed) {
+      targetIds.push(trimmed);
+    }
+  }
+  return targetIds;
+}
+
+async function readTabsForSnapshotRetry(params: {
+  baseUrl?: string;
+  profile?: string;
+  proxyRequest: BrowserProxyRequest | null;
+}): Promise<string[]> {
+  const tabs = params.proxyRequest
+    ? ((
+        (await params.proxyRequest({
+          method: "GET",
+          path: "/tabs",
+          profile: params.profile,
+        })) as { tabs?: unknown[] }
+      ).tabs ?? [])
+    : await browserToolActionDeps.browserTabs(params.baseUrl, { profile: params.profile });
+  return extractTabTargetIds(tabs);
+}
+
+async function callSnapshot(params: {
+  baseUrl?: string;
+  profile?: string;
+  proxyRequest: BrowserProxyRequest | null;
+  snapshotQuery: {
+    format?: "ai" | "aria";
+    targetId?: string;
+    limit?: number;
+    maxChars?: number;
+    refs?: "aria" | "role";
+    interactive?: boolean;
+    compact?: boolean;
+    depth?: number;
+    selector?: string;
+    frame?: string;
+    labels?: boolean;
+    mode?: "efficient";
+  };
+}) {
+  return params.proxyRequest
+    ? ((await params.proxyRequest({
+        method: "GET",
+        path: "/snapshot",
+        profile: params.profile,
+        query: params.snapshotQuery,
+      })) as Awaited<ReturnType<typeof browserSnapshot>>)
+    : await browserToolActionDeps.browserSnapshot(params.baseUrl, {
+        ...params.snapshotQuery,
+        profile: params.profile,
+      });
+}
+
 function stripTargetIdFromActRequest(
   request: Parameters<typeof browserAct>[1],
 ): Parameters<typeof browserAct>[1] | null {
-  const targetId = typeof request.targetId === "string" ? request.targetId.trim() : undefined;
+  const targetId = normalizeOptionalString(request.targetId);
   if (!targetId) {
     return null;
   }
@@ -194,7 +305,7 @@ export async function executeSnapshotAction(params: {
   const refs: "aria" | "role" | undefined =
     input.refs === "aria" || input.refs === "role" ? input.refs : undefined;
   const hasMaxChars = Object.hasOwn(input, "maxChars");
-  const targetId = typeof input.targetId === "string" ? input.targetId.trim() : undefined;
+  const targetId = normalizeOptionalString(input.targetId);
   const limit =
     typeof input.limit === "number" && Number.isFinite(input.limit) ? input.limit : undefined;
   const maxChars =
@@ -205,8 +316,8 @@ export async function executeSnapshotAction(params: {
   const compact = typeof input.compact === "boolean" ? input.compact : undefined;
   const depth =
     typeof input.depth === "number" && Number.isFinite(input.depth) ? input.depth : undefined;
-  const selector = typeof input.selector === "string" ? input.selector.trim() : undefined;
-  const frame = typeof input.frame === "string" ? input.frame.trim() : undefined;
+  const selector = normalizeOptionalString(input.selector);
+  const frame = normalizeOptionalString(input.frame);
   const resolvedMaxChars =
     format === "ai"
       ? hasMaxChars
@@ -231,17 +342,55 @@ export async function executeSnapshotAction(params: {
     labels,
     mode,
   };
-  const snapshot = proxyRequest
-    ? ((await proxyRequest({
-        method: "GET",
-        path: "/snapshot",
+  const snapshot = await (async (): Promise<Awaited<ReturnType<typeof browserSnapshot>>> => {
+    try {
+      return await callSnapshot({
+        baseUrl,
         profile,
-        query: snapshotQuery,
-      })) as Awaited<ReturnType<typeof browserSnapshot>>)
-    : await browserToolActionDeps.browserSnapshot(baseUrl, {
-        ...snapshotQuery,
-        profile,
+        proxyRequest,
+        snapshotQuery,
       });
+    } catch (err) {
+      const requestedTargetId = typeof targetId === "string" && targetId ? targetId : undefined;
+      if (!requestedTargetId || !isChromeStaleTargetError(profile, err)) {
+        throw err;
+      }
+
+      let resolvedTargetId: string | undefined = requestedTargetId;
+      for (const delayMs of SNAPSHOT_STALE_TARGET_RETRY_DELAYS_MS) {
+        await sleep(delayMs);
+        const tabTargetIds = await readTabsForSnapshotRetry({
+          baseUrl,
+          profile,
+          proxyRequest,
+        }).catch((): string[] => []);
+        if (tabTargetIds.includes(requestedTargetId)) {
+          resolvedTargetId = requestedTargetId;
+        } else if (tabTargetIds.length === 1) {
+          resolvedTargetId = tabTargetIds[0];
+        }
+
+        try {
+          return await callSnapshot({
+            baseUrl,
+            profile,
+            proxyRequest,
+            snapshotQuery: {
+              ...snapshotQuery,
+              targetId: resolvedTargetId,
+            },
+          });
+        } catch {
+          // Continue bounded retries.
+        }
+      }
+
+      throw new Error(
+        `Chrome tab not found (stale targetId?). Retry action=tabs profile="${profile}" and use one of the returned targetIds.`,
+        { cause: err },
+      );
+    }
+  })();
   if (snapshot.format === "ai") {
     const extractedText = snapshot.snapshot ?? "";
     const wrappedSnapshot = wrapExternalContent(extractedText, {
@@ -314,8 +463,8 @@ export async function executeConsoleAction(params: {
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
   const { input, baseUrl, profile, proxyRequest } = params;
-  const level = typeof input.level === "string" ? input.level.trim() : undefined;
-  const targetId = typeof input.targetId === "string" ? input.targetId.trim() : undefined;
+  const level = normalizeOptionalString(input.level);
+  const targetId = normalizeOptionalString(input.targetId);
   if (proxyRequest) {
     const result = (await proxyRequest({
       method: "GET",
@@ -343,21 +492,23 @@ export async function executeActAction(params: {
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
   const { request, baseUrl, profile, proxyRequest } = params;
+  const effectiveRequest = withConfiguredActTimeout(request);
   try {
     const result = proxyRequest
       ? await proxyRequest({
           method: "POST",
           path: "/act",
           profile,
-          body: request,
+          body: effectiveRequest,
+          timeoutMs: resolveActProxyTimeoutMs(effectiveRequest),
         })
-      : await browserToolActionDeps.browserAct(baseUrl, request, {
+      : await browserToolActionDeps.browserAct(baseUrl, effectiveRequest, {
           profile,
         });
     return jsonResult(result);
   } catch (err) {
     if (isChromeStaleTargetError(profile, err)) {
-      const retryRequest = stripTargetIdFromActRequest(request);
+      const retryRequest = stripTargetIdFromActRequest(effectiveRequest);
       const tabs = proxyRequest
         ? ((
             (await proxyRequest({
@@ -369,7 +520,7 @@ export async function executeActAction(params: {
         : await browserToolActionDeps.browserTabs(baseUrl, { profile }).catch(() => []);
       // Some user-browser targetIds can go stale between snapshots and actions.
       // Only retry safe read-only actions, and only when exactly one tab remains attached.
-      if (retryRequest && canRetryChromeActWithoutTargetId(request) && tabs.length === 1) {
+      if (retryRequest && canRetryChromeActWithoutTargetId(effectiveRequest) && tabs.length === 1) {
         try {
           const retryResult = proxyRequest
             ? await proxyRequest({
@@ -377,6 +528,7 @@ export async function executeActAction(params: {
                 path: "/act",
                 profile,
                 body: retryRequest,
+                timeoutMs: resolveActProxyTimeoutMs(retryRequest),
               })
             : await browserToolActionDeps.browserAct(baseUrl, retryRequest, {
                 profile,

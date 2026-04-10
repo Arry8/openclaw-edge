@@ -26,6 +26,7 @@ import { readSessionMessages } from "../../gateway/session-utils.fs.js";
 import { logVerbose } from "../../globals.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { resolveMemoryFlushPlan } from "../../plugins/memory-state.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import type { TemplateContext } from "../templating.js";
 import type { VerboseLevel } from "../thinking.js";
 import type { GetReplyOptions } from "../types.js";
@@ -41,10 +42,11 @@ import {
 } from "./memory-flush.js";
 import { readPostCompactionContext } from "./post-compaction-context.js";
 import { refreshQueuedFollowupSession, type FollowupRun } from "./queue.js";
+import type { ReplyOperation } from "./reply-run-registry.js";
 import { incrementCompactionCount } from "./session-updates.js";
 
 export function estimatePromptTokensForMemoryFlush(prompt?: string): number | undefined {
-  const trimmed = prompt?.trim();
+  const trimmed = normalizeOptionalString(prompt);
   if (!trimmed) {
     return undefined;
   }
@@ -111,10 +113,10 @@ function resolveSessionLogPath(
   }
 
   try {
-    const transcriptPath = (
-      sessionEntry as (SessionEntry & { transcriptPath?: string }) | undefined
-    )?.transcriptPath?.trim();
-    const sessionFile = sessionEntry?.sessionFile?.trim() || transcriptPath;
+    const transcriptPath = normalizeOptionalString(
+      (sessionEntry as (SessionEntry & { transcriptPath?: string }) | undefined)?.transcriptPath,
+    );
+    const sessionFile = normalizeOptionalString(sessionEntry?.sessionFile) || transcriptPath;
     const agentId = resolveAgentIdFromSessionKey(sessionKey);
     const pathOpts = resolveSessionFilePathOptions({
       agentId,
@@ -170,7 +172,7 @@ async function appendPostCompactionRefreshPrompt(params: {
     return;
   }
 
-  const existingPrompt = params.followupRun.run.extraSystemPrompt?.trim();
+  const existingPrompt = normalizeOptionalString(params.followupRun.run.extraSystemPrompt);
   if (existingPrompt?.includes(refreshPrompt)) {
     return;
   }
@@ -259,7 +261,7 @@ function estimatePromptTokensFromSessionTranscript(params: {
   storePath?: string;
   sessionFile?: string;
 }): number | undefined {
-  const sessionId = params.sessionId?.trim();
+  const sessionId = normalizeOptionalString(params.sessionId);
   if (!sessionId) {
     return undefined;
   }
@@ -310,6 +312,7 @@ export async function runPreflightCompactionIfNeeded(params: {
   sessionKey?: string;
   storePath?: string;
   isHeartbeat: boolean;
+  replyOperation: ReplyOperation;
 }): Promise<SessionEntry | undefined> {
   if (!params.sessionKey) {
     return params.sessionEntry;
@@ -369,7 +372,12 @@ export async function runPreflightCompactionIfNeeded(params: {
       ? projectedTokenCount
       : undefined;
 
-  const threshold = contextWindowTokens - reserveTokensFloor - softThresholdTokens;
+  const maxPreflightReserve = Math.max(0, contextWindowTokens - softThresholdTokens - 1);
+  const clampedPreflightReserve = Math.min(reserveTokensFloor, maxPreflightReserve);
+  const threshold = Math.max(
+    0,
+    contextWindowTokens - clampedPreflightReserve - softThresholdTokens,
+  );
   logVerbose(
     `preflightCompaction check: sessionKey=${params.sessionKey} ` +
       `tokenCount=${tokenCountForCompaction ?? freshPersistedTokens ?? "undefined"} ` +
@@ -397,6 +405,7 @@ export async function runPreflightCompactionIfNeeded(params: {
       `threshold=${threshold}`,
   );
 
+  params.replyOperation.setPhase("preflight_compacting");
   const sessionFile = resolveSessionLogPath(
     entry.sessionId,
     entry.sessionFile ? entry : { ...entry, sessionFile: params.followupRun.run.sessionFile },
@@ -424,6 +433,7 @@ export async function runPreflightCompactionIfNeeded(params: {
     currentTokenCount: tokenCountForCompaction,
     senderIsOwner: params.followupRun.run.senderIsOwner,
     ownerNumbers: params.followupRun.run.ownerNumbers,
+    abortSignal: params.replyOperation.abortSignal,
   });
 
   if (!result?.ok || !result.compacted) {
@@ -434,6 +444,7 @@ export async function runPreflightCompactionIfNeeded(params: {
   }
 
   await incrementCompactionCount({
+    cfg: params.cfg,
     sessionEntry: entry,
     sessionStore: params.sessionStore,
     sessionKey: params.sessionKey,
@@ -447,6 +458,11 @@ export async function runPreflightCompactionIfNeeded(params: {
   entry = params.sessionStore?.[params.sessionKey] ?? entry;
   return entry ?? params.sessionEntry;
 }
+
+export type MemoryFlushResult = {
+  sessionEntry?: SessionEntry;
+  performedMemoryFlush: boolean;
+};
 
 export async function runMemoryFlushIfNeeded(params: {
   cfg: OpenClawConfig;
@@ -462,10 +478,15 @@ export async function runMemoryFlushIfNeeded(params: {
   sessionKey?: string;
   storePath?: string;
   isHeartbeat: boolean;
-}): Promise<SessionEntry | undefined> {
+  replyOperation: ReplyOperation;
+}): Promise<MemoryFlushResult> {
+  // Track whether this run performed a memory flush so we can suppress
+  // verbose notifications and system events in the parent run context.
+  let performedMemoryFlush = false;
+
   const memoryFlushPlan = resolveMemoryFlushPlan({ cfg: params.cfg });
   if (!memoryFlushPlan) {
-    return params.sessionEntry;
+    return { sessionEntry: params.sessionEntry, performedMemoryFlush: false };
   }
 
   const memoryFlushWritable = (() => {
@@ -506,8 +527,10 @@ export async function runMemoryFlushIfNeeded(params: {
   const hasFreshPersistedPromptTokens =
     typeof persistedPromptTokens === "number" && entry?.totalTokensFresh === true;
 
-  const flushThreshold =
-    contextWindowTokens - memoryFlushPlan.reserveTokensFloor - memoryFlushPlan.softThresholdTokens;
+  const softTokens = memoryFlushPlan.softThresholdTokens;
+  const maxReserve = Math.max(0, contextWindowTokens - softTokens - 1);
+  const clampedReserve = Math.min(memoryFlushPlan.reserveTokensFloor, maxReserve);
+  const flushThreshold = Math.max(0, contextWindowTokens - clampedReserve - softTokens);
 
   // When totals are stale/unknown, derive prompt + last output from transcript so memory
   // flush can still be evaluated against projected next-input size.
@@ -642,13 +665,14 @@ export async function runMemoryFlushIfNeeded(params: {
       !hasAlreadyFlushedForCurrentCompaction(entry));
 
   if (!shouldFlushMemory) {
-    return entry ?? params.sessionEntry;
+    return { sessionEntry: entry ?? params.sessionEntry, performedMemoryFlush: false };
   }
 
   logVerbose(
     `memoryFlush triggered: sessionKey=${params.sessionKey} tokenCount=${tokenCountForFlush ?? "undefined"} threshold=${flushThreshold}`,
   );
 
+  params.replyOperation.setPhase("memory_flushing");
   let activeSessionEntry = entry ?? params.sessionEntry;
   const activeSessionStore = params.sessionStore;
   let bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
@@ -704,6 +728,8 @@ export async function runMemoryFlushIfNeeded(params: {
           bootstrapPromptWarningSignaturesSeen,
           bootstrapPromptWarningSignature:
             bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
+          abortSignal: params.replyOperation.abortSignal,
+          replyOperation: params.replyOperation,
           onAgentEvent: (evt) => {
             if (evt.stream === "compaction") {
               const phase = typeof evt.data.phase === "string" ? evt.data.phase : "";
@@ -729,6 +755,7 @@ export async function runMemoryFlushIfNeeded(params: {
     if (memoryCompactionCompleted) {
       const previousSessionId = activeSessionEntry?.sessionId ?? params.followupRun.run.sessionId;
       const nextCount = await incrementCompactionCount({
+        cfg: params.cfg,
         sessionEntry: activeSessionEntry,
         sessionStore: activeSessionStore,
         sessionKey: params.sessionKey,
@@ -739,6 +766,7 @@ export async function runMemoryFlushIfNeeded(params: {
       if (updatedEntry) {
         activeSessionEntry = updatedEntry;
         params.followupRun.run.sessionId = updatedEntry.sessionId;
+        params.replyOperation.updateSessionId(updatedEntry.sessionId);
         if (updatedEntry.sessionFile) {
           params.followupRun.run.sessionFile = updatedEntry.sessionFile;
         }
@@ -769,6 +797,7 @@ export async function runMemoryFlushIfNeeded(params: {
         if (updatedEntry) {
           activeSessionEntry = updatedEntry;
           params.followupRun.run.sessionId = updatedEntry.sessionId;
+          params.replyOperation.updateSessionId(updatedEntry.sessionId);
           if (updatedEntry.sessionFile) {
             params.followupRun.run.sessionFile = updatedEntry.sessionFile;
           }
@@ -777,9 +806,10 @@ export async function runMemoryFlushIfNeeded(params: {
         logVerbose(`failed to persist memory flush metadata: ${String(err)}`);
       }
     }
+    performedMemoryFlush = true;
   } catch (err) {
     logVerbose(`memory flush run failed: ${String(err)}`);
   }
 
-  return activeSessionEntry;
+  return { sessionEntry: activeSessionEntry, performedMemoryFlush };
 }

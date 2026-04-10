@@ -3,6 +3,10 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveProviderStreamFn } from "../plugins/provider-runtime.js";
 import { ensureCustomApiRegistered } from "./custom-api-registry.js";
+import {
+  createBoundaryAwareStreamFnForModel,
+  createTransportAwareStreamFnForModel,
+} from "./provider-transport-stream.js";
 
 export function registerProviderStreamForModel<TApi extends Api>(params: {
   model: Model<TApi>;
@@ -11,7 +15,7 @@ export function registerProviderStreamForModel<TApi extends Api>(params: {
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): StreamFn | undefined {
-  const streamFn = resolveProviderStreamFn({
+  const providerStreamFn = resolveProviderStreamFn({
     provider: params.model.provider,
     config: params.cfg,
     workspaceDir: params.workspaceDir,
@@ -25,9 +29,13 @@ export function registerProviderStreamForModel<TApi extends Api>(params: {
       model: params.model,
     },
   });
-  if (!streamFn) {
+  const registryStreamFn =
+    (params.model.api === "ollama" ? createBoundaryAwareStreamFnForModel(params.model) : undefined) ??
+    providerStreamFn ??
+    createTransportAwareStreamFnForModel(params.model);
+  if (!registryStreamFn) {
     return undefined;
   }
-  ensureCustomApiRegistered(params.model.api, streamFn);
-  return streamFn;
+  ensureCustomApiRegistered(params.model.api, registryStreamFn);
+  return providerStreamFn ?? registryStreamFn;
 }

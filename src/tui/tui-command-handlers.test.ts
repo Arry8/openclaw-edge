@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCommandHandlers } from "./tui-command-handlers.js";
+import { buildSessionPickerSearchText, createCommandHandlers } from "./tui-command-handlers.js";
 
 type LoadHistoryMock = ReturnType<typeof vi.fn> & (() => Promise<void>);
 type SetActivityStatusMock = ReturnType<typeof vi.fn> & ((text: string) => void);
@@ -7,6 +7,7 @@ type SetSessionMock = ReturnType<typeof vi.fn> & ((key: string) => Promise<void>
 
 function createHarness(params?: {
   sendChat?: ReturnType<typeof vi.fn>;
+  getGatewayStatus?: ReturnType<typeof vi.fn>;
   patchSession?: ReturnType<typeof vi.fn>;
   resetSession?: ReturnType<typeof vi.fn>;
   setSession?: SetSessionMock;
@@ -18,9 +19,16 @@ function createHarness(params?: {
   activeChatRunId?: string | null;
 }) {
   const sendChat = params?.sendChat ?? vi.fn().mockResolvedValue({ runId: "r1" });
+  const getGatewayStatus = params?.getGatewayStatus ?? vi.fn().mockResolvedValue({});
   const patchSession = params?.patchSession ?? vi.fn().mockResolvedValue({});
   const resetSession = params?.resetSession ?? vi.fn().mockResolvedValue({ ok: true });
-  const setSession = params?.setSession ?? (vi.fn().mockResolvedValue(undefined) as SetSessionMock);
+  const setSession =
+    params?.setSession ??
+    (vi.fn(async (key: string) => {
+      // Simulate production behavior: setSession resolves and scopes the key
+      // under the current agent (e.g. "tui-<uuid>" → "agent:main:tui-<uuid>").
+      state.currentSessionKey = `agent:main:${key}`;
+    }) as SetSessionMock);
   const addUser = vi.fn();
   const addSystem = vi.fn();
   const requestRender = vi.fn();
@@ -40,7 +48,7 @@ function createHarness(params?: {
   };
 
   const { handleCommand } = createCommandHandlers({
-    client: { sendChat, patchSession, resetSession } as never,
+    client: { sendChat, getGatewayStatus, patchSession, resetSession } as never,
     chatLog: { addUser, addSystem } as never,
     tui: { requestRender } as never,
     opts: {},
@@ -65,6 +73,7 @@ function createHarness(params?: {
 
   return {
     handleCommand,
+    getGatewayStatus,
     sendChat,
     patchSession,
     resetSession,
@@ -81,6 +90,28 @@ function createHarness(params?: {
     state,
   };
 }
+
+describe("buildSessionPickerSearchText", () => {
+  it("includes named main session fragments and derived metadata", () => {
+    const searchText = buildSessionPickerSearchText({
+      formattedKey: "main:alpha",
+      session: {
+        key: "agent:main:main:alpha",
+        displayName: "Sprint Inbox",
+        label: "alpha",
+        subject: "Roadmap",
+        sessionId: "sess-123",
+        derivedTitle: "Alpha planning",
+        lastMessagePreview: "Let's ship this",
+      },
+    });
+
+    expect(searchText).toContain("main:alpha");
+    expect(searchText).toContain("agent:main:main:alpha");
+    expect(searchText).toContain("alpha");
+    expect(searchText).toContain("Alpha planning");
+  });
+});
 
 describe("tui command handlers", () => {
   it("renders the sending indicator before chat.send resolves", async () => {
@@ -127,12 +158,47 @@ describe("tui command handlers", () => {
     expect(requestRender).toHaveBeenCalled();
   });
 
-  it("defers local run binding until gateway events provide a real run id", async () => {
-    const { handleCommand, noteLocalRunId, state } = createHarness();
+  it("forwards /status to the shared gateway command path", async () => {
+    const { handleCommand, sendChat, addUser, addSystem } = createHarness();
+
+    await handleCommand("/status");
+
+    expect(addSystem).not.toHaveBeenCalled();
+    expect(addUser).toHaveBeenCalledWith("/status");
+    expect(sendChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+        message: "/status",
+      }),
+    );
+  });
+
+  it("keeps gateway diagnostics on /gateway-status", async () => {
+    const { handleCommand, getGatewayStatus, addSystem, addUser, sendChat } = createHarness({
+      getGatewayStatus: vi.fn().mockResolvedValue({
+        runtimeVersion: "1.2.3",
+        sessions: { count: 2, defaults: { model: "gpt-5.4", contextTokens: 200000 } },
+      }),
+    });
+
+    await handleCommand("/gateway-status");
+
+    expect(getGatewayStatus).toHaveBeenCalledTimes(1);
+    expect(addUser).not.toHaveBeenCalled();
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(addSystem).toHaveBeenCalledWith("Gateway status");
+    expect(addSystem).toHaveBeenCalledWith("Version: 1.2.3");
+  });
+
+  it("pre-tags outbound non-BTW sends with the local run id", async () => {
+    const { handleCommand, sendChat, noteLocalRunId, state } = createHarness();
 
     await handleCommand("/context");
 
-    expect(noteLocalRunId).not.toHaveBeenCalled();
+    const sentRunId = sendChat.mock.calls[0]?.[0]?.runId;
+    expect(typeof sentRunId).toBe("string");
+    expect(noteLocalRunId).toHaveBeenCalledTimes(1);
+    expect(noteLocalRunId).toHaveBeenCalledWith(sentRunId);
     expect(state.activeChatRunId).toBeNull();
     expect(state.pendingOptimisticUserMessage).toBe(true);
   });
@@ -162,23 +228,30 @@ describe("tui command handlers", () => {
 
   it("creates unique session for /new and resets shared session for /reset", async () => {
     const loadHistory = vi.fn().mockResolvedValue(undefined);
-    const setSessionMock = vi.fn().mockResolvedValue(undefined) as SetSessionMock;
-    const { handleCommand, resetSession } = createHarness({
+    const { handleCommand, resetSession, setSession } = createHarness({
       loadHistory,
-      setSession: setSessionMock,
     });
 
     await handleCommand("/new");
     await handleCommand("/reset");
 
     // /new creates a unique session key (isolates TUI client) (#39217)
-    expect(setSessionMock).toHaveBeenCalledTimes(1);
-    expect(setSessionMock).toHaveBeenCalledWith(
+    expect(setSession).toHaveBeenCalledTimes(1);
+    expect(setSession).toHaveBeenCalledWith(
       expect.stringMatching(/^tui-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/),
     );
-    // /reset still resets the shared session
-    expect(resetSession).toHaveBeenCalledTimes(1);
-    expect(resetSession).toHaveBeenCalledWith("agent:main:main", "reset");
+    // /new also calls resetSession to fire hooks (command:new, session-memory, etc.)
+    // Uses the resolved agent-scoped key (state.currentSessionKey) set by setSession.
+    // /reset resets the shared session (also using state.currentSessionKey).
+    expect(resetSession).toHaveBeenCalledTimes(2);
+    expect(resetSession).toHaveBeenCalledWith(
+      expect.stringMatching(/^agent:main:tui-[a-f0-9-]+$/),
+      "new",
+    );
+    expect(resetSession).toHaveBeenCalledWith(
+      expect.stringMatching(/^agent:main:tui-[a-f0-9-]+$/),
+      "reset",
+    );
     expect(loadHistory).toHaveBeenCalledTimes(1); // /reset calls loadHistory directly; /new does so indirectly via setSession
   });
 

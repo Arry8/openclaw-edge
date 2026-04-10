@@ -42,6 +42,9 @@ export const FeishuDocSchema = Type.Union([
   Type.Object({
     action: Type.Literal("create"),
     title: Type.String({ description: "Document title" }),
+    content: Type.Optional(
+      Type.String({ description: "Markdown content to populate the document (optional)" }),
+    ),
     folder_token: Type.Optional(Type.String({ description: "Target folder token (optional)" })),
     grant_to_requester: Type.Optional(
       Type.Boolean({
@@ -176,6 +179,43 @@ export const FeishuDocSchema = Type.Union([
       description:
         'Text with color markup. Tags: [red], [green], [blue], [orange], [yellow], [purple], [grey], [bold], [bg:yellow]. Example: "Revenue [green]+15%[/green] YoY"',
     }),
+  }),
+  // Transfer ownership
+  Type.Object({
+    action: Type.Literal("transfer"),
+    doc_token: Type.String({ description: "Document token" }),
+    member_type: Type.Union(
+      [Type.Literal("email"), Type.Literal("openid"), Type.Literal("userid")],
+      {
+        description: "New owner's member type",
+      },
+    ),
+    member_id: Type.String({ description: "New owner's ID (email, openid, or userid)" }),
+    type: Type.Optional(
+      Type.Union(
+        [Type.Literal("doc"), Type.Literal("docx"), Type.Literal("sheet"), Type.Literal("bitable")],
+        {
+          description: "File type (default: docx)",
+          default: "docx",
+        },
+      ),
+    ),
+    options: Type.Optional(
+      Type.Object({
+        need_notification: Type.Optional(
+          Type.Boolean({ description: "Notify new owner", default: true }),
+        ),
+        remove_old_owner: Type.Optional(
+          Type.Boolean({ description: "Remove old owner's permissions", default: false }),
+        ),
+        stay_put: Type.Optional(
+          Type.Boolean({ description: "Keep file in current location", default: false }),
+        ),
+        old_owner_perm: Type.Optional(
+          Type.String({ description: "Old owner's new permission level", default: "full_access" }),
+        ),
+      }),
+    ),
   }),
 ]);
 

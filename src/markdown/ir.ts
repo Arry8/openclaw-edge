@@ -91,6 +91,7 @@ type RenderState = RenderTarget & {
   env: RenderEnv;
   headingStyle: "none" | "bold";
   blockquotePrefix: string;
+  blockquoteDepth: number;
   enableSpoilers: boolean;
   tableMode: MarkdownTableMode;
   table: TableState | null;
@@ -242,6 +243,18 @@ function appendText(state: RenderState, value: string) {
   target.text += value;
 }
 
+function appendBlockquotePrefix(state: RenderState, depth = state.blockquoteDepth) {
+  if (depth <= 0 || !state.blockquotePrefix) {
+    return;
+  }
+  appendText(state, state.blockquotePrefix.repeat(depth));
+}
+
+function appendLineBreak(state: RenderState) {
+  appendText(state, "\n");
+  appendBlockquotePrefix(state);
+}
+
 function openStyle(state: RenderState, style: MarkdownStyle) {
   const target = resolveRenderTarget(state);
   target.openStyles.push({ style, start: target.text.length });
@@ -262,14 +275,57 @@ function closeStyle(state: RenderState, style: MarkdownStyle) {
   }
 }
 
-function appendParagraphSeparator(state: RenderState) {
+function appendParagraphSeparator(state: RenderState, options: { blockquoteDepth?: number } = {}) {
   if (state.env.listStack.length > 0) {
     return;
   }
   if (state.table) {
     return;
-  } // Don't add paragraph separators inside tables
-  state.text += "\n\n";
+  }
+  appendText(state, "\n\n");
+  if (options.blockquoteDepth) {
+    appendBlockquotePrefix(state, options.blockquoteDepth);
+  }
+}
+
+function tokenStartsBlockquoteContent(token: MarkdownToken | undefined) {
+  switch (token?.type) {
+    case "paragraph_open":
+    case "heading_open":
+    case "blockquote_open":
+    case "bullet_list_open":
+    case "ordered_list_open":
+    case "code_block":
+    case "fence":
+    case "html_block":
+    case "table_open":
+    case "hr":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function getParagraphSeparatorBlockquoteDepth(
+  tokens: MarkdownToken[],
+  currentIndex: number,
+  currentDepth: number,
+) {
+  let blockquoteDepth = currentDepth;
+  for (let index = currentIndex + 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (!token) {
+      continue;
+    }
+    if (token.type === "blockquote_close") {
+      blockquoteDepth = Math.max(0, blockquoteDepth - 1);
+      continue;
+    }
+    if (tokenStartsBlockquoteContent(token)) {
+      return blockquoteDepth;
+    }
+  }
+  return 0;
 }
 
 function appendListPrefix(state: RenderState) {
@@ -506,6 +562,117 @@ function renderTableAsBullets(state: RenderState) {
   }
 }
 
+const codeTableGraphemeSegmenter =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+const CODE_TABLE_EMOJI_PRESENTATION_RE = /\p{Emoji_Presentation}/u;
+const CODE_TABLE_EXTENDED_PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/u;
+const CODE_TABLE_REGIONAL_INDICATOR_RE = /\p{Regional_Indicator}/u;
+const CODE_TABLE_KEYCAP_SEQUENCE_RE = /^(?:[#*0-9]\uFE0F?\u20E3)$/u;
+
+function splitCodeTableGraphemes(input: string): string[] {
+  if (!input) {
+    return [];
+  }
+  if (!codeTableGraphemeSegmenter) {
+    return Array.from(input);
+  }
+  try {
+    return Array.from(codeTableGraphemeSegmenter.segment(input), (segment) => segment.segment);
+  } catch {
+    return Array.from(input);
+  }
+}
+
+function isCodeTableZeroWidthCodePoint(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+    codePoint === 0x200d
+  );
+}
+
+function isCodeTableFullWidthCodePoint(codePoint: number): boolean {
+  if (codePoint < 0x1100) {
+    return false;
+  }
+  return (
+    codePoint <= 0x115f ||
+    codePoint === 0x2329 ||
+    codePoint === 0x232a ||
+    (codePoint >= 0x2e80 && codePoint <= 0x3247 && codePoint !== 0x303f) ||
+    (codePoint >= 0x3250 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0x4e00 && codePoint <= 0xa4c6) ||
+    (codePoint >= 0xa960 && codePoint <= 0xa97c) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+    (codePoint >= 0xfe30 && codePoint <= 0xfe6b) ||
+    (codePoint >= 0xff01 && codePoint <= 0xff60) ||
+    (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+    (codePoint >= 0x1aff0 && codePoint <= 0x1aff3) ||
+    (codePoint >= 0x1aff5 && codePoint <= 0x1affb) ||
+    (codePoint >= 0x1affd && codePoint <= 0x1affe) ||
+    (codePoint >= 0x1b000 && codePoint <= 0x1b2ff) ||
+    (codePoint >= 0x1f200 && codePoint <= 0x1f251) ||
+    (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  );
+}
+
+function isWideCodeTableEmoji(grapheme: string): boolean {
+  if (CODE_TABLE_KEYCAP_SEQUENCE_RE.test(grapheme)) {
+    return true;
+  }
+  if (CODE_TABLE_REGIONAL_INDICATOR_RE.test(grapheme)) {
+    return true;
+  }
+  if (CODE_TABLE_EMOJI_PRESENTATION_RE.test(grapheme)) {
+    return true;
+  }
+  if (!grapheme.includes("\u200d") && !grapheme.includes("\uFE0F")) {
+    return false;
+  }
+  return CODE_TABLE_EXTENDED_PICTOGRAPHIC_RE.test(grapheme);
+}
+
+function codeTableGraphemeWidth(grapheme: string): number {
+  if (!grapheme) {
+    return 0;
+  }
+  if (isWideCodeTableEmoji(grapheme)) {
+    return 2;
+  }
+
+  let sawPrintable = false;
+  for (const char of grapheme) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint == null) {
+      continue;
+    }
+    if (isCodeTableZeroWidthCodePoint(codePoint)) {
+      continue;
+    }
+    if (isCodeTableFullWidthCodePoint(codePoint)) {
+      return 2;
+    }
+    sawPrintable = true;
+  }
+  return sawPrintable ? 1 : 0;
+}
+
+// Code-mode tables need display-width padding so CJK and emoji cells stay aligned.
+function codeTableDisplayWidth(input: string): number {
+  return splitCodeTableGraphemes(input).reduce(
+    (sum, grapheme) => sum + codeTableGraphemeWidth(grapheme),
+    0,
+  );
+}
+
 function renderTableAsCode(state: RenderState) {
   if (!state.table) {
     return;
@@ -522,7 +689,7 @@ function renderTableAsCode(state: RenderState) {
   const updateWidths = (cells: TableCell[]) => {
     for (let i = 0; i < columnCount; i += 1) {
       const cell = cells[i];
-      const width = cell?.text.length ?? 0;
+      const width = codeTableDisplayWidth(cell?.text ?? "");
       if (widths[i] < width) {
         widths[i] = width;
       }
@@ -544,7 +711,7 @@ function renderTableAsCode(state: RenderState) {
         // Use text-only append to avoid overlapping styles with code_block
         appendCellTextOnly(state, cell);
       }
-      const pad = widths[i] - (cell?.text.length ?? 0);
+      const pad = widths[i] - codeTableDisplayWidth(cell?.text ?? "");
       if (pad > 0) {
         state.text += " ".repeat(pad);
       }
@@ -578,7 +745,8 @@ function renderTableAsCode(state: RenderState) {
 }
 
 function renderTokens(tokens: MarkdownToken[], state: RenderState): void {
-  for (const token of tokens) {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
     switch (token.type) {
       case "inline":
         if (token.children) {
@@ -633,10 +801,15 @@ function renderTokens(tokens: MarkdownToken[], state: RenderState): void {
         break;
       case "softbreak":
       case "hardbreak":
-        appendText(state, "\n");
+        appendLineBreak(state);
         break;
       case "paragraph_close":
-        appendParagraphSeparator(state);
+        appendParagraphSeparator(state, {
+          blockquoteDepth:
+            state.blockquoteDepth > 0
+              ? getParagraphSeparatorBlockquoteDepth(tokens, index, state.blockquoteDepth)
+              : 0,
+        });
         break;
       case "heading_open":
         if (state.headingStyle === "bold") {
@@ -647,16 +820,23 @@ function renderTokens(tokens: MarkdownToken[], state: RenderState): void {
         if (state.headingStyle === "bold") {
           closeStyle(state, "bold");
         }
-        appendParagraphSeparator(state);
+        appendParagraphSeparator(state, {
+          blockquoteDepth:
+            state.blockquoteDepth > 0
+              ? getParagraphSeparatorBlockquoteDepth(tokens, index, state.blockquoteDepth)
+              : 0,
+        });
         break;
       case "blockquote_open":
-        if (state.blockquotePrefix) {
-          state.text += state.blockquotePrefix;
-        }
+        appendBlockquotePrefix(state, 1);
+        state.blockquoteDepth += 1;
         openStyle(state, "blockquote");
         break;
       case "blockquote_close":
         closeStyle(state, "blockquote");
+        if (state.blockquoteDepth > 0) {
+          state.blockquoteDepth -= 1;
+        }
         break;
       case "bullet_list_open":
         // Add newline before nested list starts (so nested items appear on new line)
@@ -935,6 +1115,7 @@ export function markdownToIRWithMeta(
     env,
     headingStyle: options.headingStyle ?? "none",
     blockquotePrefix: options.blockquotePrefix ?? "",
+    blockquoteDepth: 0,
     enableSpoilers: options.enableSpoilers ?? false,
     tableMode,
     table: null,

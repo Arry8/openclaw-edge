@@ -88,11 +88,13 @@ async function openVerifiedLocalFile(
 ): Promise<SafeOpenResult> {
   // Reject directories before opening so we never surface EISDIR to callers (e.g. tool
   // results that get sent to messaging channels). See openclaw/openclaw#31186.
+  let isSymlink = false;
   try {
     const preStat = await fs.lstat(filePath);
     if (preStat.isDirectory()) {
       throw new SafeOpenError("not-file", "not a file");
     }
+    isSymlink = preStat.isSymbolicLink();
   } catch (err) {
     if (err instanceof SafeOpenError) {
       throw err;
@@ -102,13 +104,12 @@ async function openVerifiedLocalFile(
 
   let handle: FileHandle;
   try {
-    handle = await fs.open(filePath, OPEN_READ_FLAGS);
+    // For symlinks, don't use O_NOFOLLOW to avoid ELOOP on Linux/macOS
+    const openFlags = isSymlink ? fsConstants.O_RDONLY : OPEN_READ_FLAGS;
+    handle = await fs.open(filePath, openFlags);
   } catch (err) {
     if (isNotFoundPathError(err)) {
       throw new SafeOpenError("not-found", "file not found");
-    }
-    if (isSymlinkOpenError(err)) {
-      throw new SafeOpenError("symlink", "symlink open blocked", { cause: err });
     }
     // Defensive: if open still throws EISDIR (e.g. race), sanitize so it never leaks.
     if (hasNodeErrorCode(err, "EISDIR")) {
@@ -119,16 +120,15 @@ async function openVerifiedLocalFile(
 
   try {
     const [stat, lstat] = await Promise.all([handle.stat(), fs.lstat(filePath)]);
-    if (lstat.isSymbolicLink()) {
-      throw new SafeOpenError("symlink", "symlink not allowed");
-    }
+    // Allow symlinks - they will be resolved via realpath below
     if (!stat.isFile()) {
       throw new SafeOpenError("not-file", "not a file");
     }
     if (options?.rejectHardlinks && stat.nlink > 1) {
       throw new SafeOpenError("invalid-path", "hardlinked path not allowed");
     }
-    if (!sameFileIdentity(stat, lstat)) {
+    // For symlinks, stat and lstat will differ - skip identity check
+    if (!lstat.isSymbolicLink() && !sameFileIdentity(stat, lstat)) {
       throw new SafeOpenError("path-mismatch", "path changed during read");
     }
 
@@ -338,16 +338,46 @@ async function verifyAtomicWriteResult(params: {
 }): Promise<void> {
   const rootReal = await fs.realpath(params.rootDir);
   const rootWithSep = ensureTrailingSep(rootReal);
-  const opened = await openVerifiedLocalFile(params.targetPath, { rejectHardlinks: true });
   try {
-    if (!sameFileIdentity(opened.stat, params.expectedIdentity)) {
-      throw new SafeOpenError("path-mismatch", "path changed during write");
+    const opened = await openVerifiedLocalFile(params.targetPath, { rejectHardlinks: true });
+    try {
+      if (!sameFileIdentity(opened.stat, params.expectedIdentity)) {
+        throw new SafeOpenError("path-mismatch", "path changed during write");
+      }
+      if (!isPathInside(rootWithSep, opened.realPath)) {
+        throw new SafeOpenError("outside-workspace", "file is outside workspace root");
+      }
+    } finally {
+      await opened.handle.close().catch(() => {});
     }
-    if (!isPathInside(rootWithSep, opened.realPath)) {
-      throw new SafeOpenError("outside-workspace", "file is outside workspace root");
+    return;
+  } catch (err) {
+    if (!hasNodeErrorCode(err, "EACCES") && !hasNodeErrorCode(err, "EPERM")) {
+      throw err;
     }
-  } finally {
-    await opened.handle.close().catch(() => {});
+  }
+
+  const lstat = await fs.lstat(params.targetPath);
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
+    throw new SafeOpenError("invalid-path", "path is not a regular file under root");
+  }
+  if (lstat.nlink > 1) {
+    throw new SafeOpenError("invalid-path", "hardlinked path not allowed");
+  }
+  if (!sameFileIdentity(lstat, params.expectedIdentity)) {
+    throw new SafeOpenError("path-mismatch", "path changed during write");
+  }
+
+  const realPath = await fs.realpath(params.targetPath);
+  if (!isPathInside(rootWithSep, realPath)) {
+    throw new SafeOpenError("outside-workspace", "file is outside workspace root");
+  }
+  const realStat = await fs.stat(realPath);
+  if (!realStat.isFile() || !sameFileIdentity(realStat, lstat)) {
+    throw new SafeOpenError("path-mismatch", "path changed during write");
+  }
+  if (realStat.nlink > 1) {
+    throw new SafeOpenError("invalid-path", "hardlinked path not allowed");
   }
 }
 
@@ -384,6 +414,7 @@ export async function openWritableFileWithinRoot(params: {
   relativePath: string;
   mkdir?: boolean;
   mode?: number;
+  createMode?: number;
   truncateExisting?: boolean;
   append?: boolean;
 }): Promise<SafeWritableOpenResult> {
@@ -415,9 +446,23 @@ export async function openWritableFileWithinRoot(params: {
     if (!isNotFoundPathError(err)) {
       throw err;
     }
+    // File doesn't exist yet (ENOENT). On Windows, O_NOFOLLOW is unavailable,
+    // so open(O_CREAT) would follow directory junctions. Resolve the parent
+    // directory to verify it is inside the workspace root before creating.
+    if (!SUPPORTS_NOFOLLOW) {
+      const parentDir = path.dirname(resolved);
+      const parentReal = await fs.realpath(parentDir);
+      if (!isPathInside(rootWithSep, parentReal) && parentReal !== rootReal) {
+        throw new SafeOpenError(
+          "outside-workspace",
+          "parent directory resolves outside workspace root",
+        );
+      }
+      ioPath = path.join(parentReal, path.basename(resolved));
+    }
   }
 
-  const fileMode = params.mode ?? 0o600;
+  const fileMode = params.createMode ?? params.mode ?? 0o600;
 
   let handle: FileHandle;
   let createdForWrite = false;
@@ -601,8 +646,9 @@ export async function writeFileWithinRoot(params: {
   data: string | Buffer;
   encoding?: BufferEncoding;
   mkdir?: boolean;
+  createMode?: number;
 }): Promise<void> {
-  if (process.platform === "win32") {
+  if (process.platform === "win32" || process.platform === "freebsd") {
     await writeFileWithinRootLegacy(params);
     return;
   }
@@ -610,6 +656,7 @@ export async function writeFileWithinRoot(params: {
   const pinned = await resolvePinnedWriteTargetWithinRoot({
     rootDir: params.rootDir,
     relativePath: params.relativePath,
+    createMode: params.createMode,
   });
 
   const identity = await runPinnedWriteHelper({
@@ -646,6 +693,7 @@ export async function copyFileWithinRoot(params: {
   maxBytes?: number;
   mkdir?: boolean;
   rejectSourceHardlinks?: boolean;
+  createMode?: number;
 }): Promise<void> {
   const source = await openVerifiedLocalFile(params.sourcePath, {
     rejectHardlinks: params.rejectSourceHardlinks,
@@ -659,7 +707,7 @@ export async function copyFileWithinRoot(params: {
   }
 
   try {
-    if (process.platform === "win32") {
+    if (process.platform === "win32" || process.platform === "freebsd") {
       await copyFileWithinRootLegacy(params, source);
       return;
     }
@@ -667,6 +715,7 @@ export async function copyFileWithinRoot(params: {
     const pinned = await resolvePinnedWriteTargetWithinRoot({
       rootDir: params.rootDir,
       relativePath: params.relativePath,
+      createMode: params.createMode,
     });
     const sourceStream = source.handle.createReadStream();
     const identity = await runPinnedWriteHelper({
@@ -702,6 +751,7 @@ export async function writeFileFromPathWithinRoot(params: {
   relativePath: string;
   sourcePath: string;
   mkdir?: boolean;
+  createMode?: number;
 }): Promise<void> {
   await copyFileWithinRoot({
     sourcePath: params.sourcePath,
@@ -709,12 +759,14 @@ export async function writeFileFromPathWithinRoot(params: {
     relativePath: params.relativePath,
     mkdir: params.mkdir,
     rejectSourceHardlinks: true,
+    createMode: params.createMode,
   });
 }
 
 async function resolvePinnedWriteTargetWithinRoot(params: {
   rootDir: string;
   relativePath: string;
+  createMode?: number;
 }): Promise<{
   rootReal: string;
   targetPath: string;
@@ -744,7 +796,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
   if (!basename || basename === "." || basename === "/") {
     throw new SafeOpenError("invalid-path", "invalid target path");
   }
-  let mode = 0o600;
+  let mode = params.createMode ?? 0o600;
   try {
     const opened = await openFileWithinRoot({
       rootDir: params.rootDir,
@@ -760,7 +812,33 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
       await opened.handle.close().catch(() => {});
     }
   } catch (err) {
-    if (!(err instanceof SafeOpenError) || err.code !== "not-found") {
+    if (err instanceof SafeOpenError && err.code === "not-found") {
+      // keep create-mode default for missing targets
+    } else if (hasNodeErrorCode(err, "EACCES") || hasNodeErrorCode(err, "EPERM")) {
+      const lstat = await fs.lstat(resolved);
+      if (lstat.isSymbolicLink() || !lstat.isFile()) {
+        throw new SafeOpenError("invalid-path", "path is not a regular file under root", {
+          cause: err,
+        });
+      }
+      if (lstat.nlink > 1) {
+        throw new SafeOpenError("invalid-path", "hardlinked path not allowed", { cause: err });
+      }
+      const realPath = await fs.realpath(resolved);
+      if (!isPathInside(rootWithSep, realPath)) {
+        throw new SafeOpenError("outside-workspace", "file is outside workspace root", {
+          cause: err,
+        });
+      }
+      const realStat = await fs.stat(realPath);
+      if (!realStat.isFile() || !sameFileIdentity(realStat, lstat)) {
+        throw new SafeOpenError("path-mismatch", "path changed during write", { cause: err });
+      }
+      if (realStat.nlink > 1) {
+        throw new SafeOpenError("invalid-path", "hardlinked path not allowed", { cause: err });
+      }
+      mode = realStat.mode & 0o777;
+    } else {
       throw err;
     }
   }
@@ -771,7 +849,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
     relativeParentPath:
       path.posix.dirname(relativePosix) === "." ? "" : path.posix.dirname(relativePosix),
     basename,
-    mode: mode || 0o600,
+    mode,
   };
 }
 
@@ -869,9 +947,14 @@ function normalizePinnedWriteError(error: unknown): Error {
   if (error instanceof SafeOpenError) {
     return error;
   }
-  return new SafeOpenError("invalid-path", "path is not a regular file under root", {
-    cause: error instanceof Error ? error : undefined,
-  });
+  const causeMessage = error instanceof Error ? error.message : String(error);
+  return new SafeOpenError(
+    "invalid-path",
+    `pinned write failed: ${causeMessage || "unknown error"}`,
+    {
+      cause: error instanceof Error ? error : undefined,
+    },
+  );
 }
 
 function normalizePinnedPathError(error: unknown): Error {
@@ -914,6 +997,7 @@ async function writeFileWithinRootLegacy(params: {
   data: string | Buffer;
   encoding?: BufferEncoding;
   mkdir?: boolean;
+  createMode?: number;
 }): Promise<void> {
   const target = await openWritableFileWithinRoot({
     rootDir: params.rootDir,
@@ -931,7 +1015,7 @@ async function writeFileWithinRootLegacy(params: {
       tempPath,
       data: params.data,
       encoding: params.encoding,
-      mode: targetMode || 0o600,
+      mode: targetMode ?? params.createMode ?? 0o600,
     });
     await fs.rename(tempPath, destinationPath);
     tempPath = null;
@@ -982,7 +1066,7 @@ async function copyFileWithinRootLegacy(
     targetClosedByUs = true;
 
     tempPath = buildAtomicWriteTempPath(destinationPath);
-    tempHandle = await fs.open(tempPath, OPEN_WRITE_CREATE_FLAGS, targetMode || 0o600);
+    tempHandle = await fs.open(tempPath, OPEN_WRITE_CREATE_FLAGS, targetMode ?? 0o600);
     const sourceStream = source.handle.createReadStream();
     const targetStream = tempHandle.createWriteStream();
     sourceStream.once("close", () => {

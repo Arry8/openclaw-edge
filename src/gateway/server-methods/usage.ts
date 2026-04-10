@@ -22,8 +22,10 @@ import {
 } from "../../infra/session-cost-usage.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolvePreferredSessionKeyForSessionIdMatches } from "../../sessions/session-id-resolution.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
   buildUsageAggregateTail,
+  sortUsageRankingEntries,
   mergeUsageDailyLatency,
   mergeUsageLatency,
 } from "../../shared/usage-aggregates.js";
@@ -60,6 +62,72 @@ type CostUsageCacheEntry = {
 };
 
 const costUsageCache = new Map<string, CostUsageCacheEntry>();
+
+function createEmptyCostUsageTotals(): CostUsageSummary["totals"] {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    inputCost: 0,
+    outputCost: 0,
+    cacheReadCost: 0,
+    cacheWriteCost: 0,
+    missingCostEntries: 0,
+  };
+}
+
+function mergeCostUsageTotals(
+  target: CostUsageSummary["totals"],
+  source: Partial<CostUsageSummary["totals"]> | undefined,
+): void {
+  if (!source) {
+    return;
+  }
+  target.input += source.input ?? 0;
+  target.output += source.output ?? 0;
+  target.cacheRead += source.cacheRead ?? 0;
+  target.cacheWrite += source.cacheWrite ?? 0;
+  target.totalTokens += source.totalTokens ?? 0;
+  target.totalCost += source.totalCost ?? 0;
+  target.inputCost += source.inputCost ?? 0;
+  target.outputCost += source.outputCost ?? 0;
+  target.cacheReadCost += source.cacheReadCost ?? 0;
+  target.cacheWriteCost += source.cacheWriteCost ?? 0;
+  target.missingCostEntries += source.missingCostEntries ?? 0;
+}
+
+function mergeCostUsageSummaries(params: {
+  summaries: CostUsageSummary[];
+  startMs: number;
+  endMs: number;
+}): CostUsageSummary {
+  const totals = createEmptyCostUsageTotals();
+  const dailyMap = new Map<string, CostUsageSummary["daily"][number]>();
+
+  for (const summary of params.summaries) {
+    mergeCostUsageTotals(totals, summary.totals);
+    for (const day of summary.daily ?? []) {
+      const existing =
+        dailyMap.get(day.date) ??
+        ({
+          date: day.date,
+          ...createEmptyCostUsageTotals(),
+        } satisfies CostUsageSummary["daily"][number]);
+      mergeCostUsageTotals(existing, day);
+      dailyMap.set(day.date, existing);
+    }
+  }
+
+  return {
+    updatedAt: Date.now(),
+    days: Math.ceil((params.endMs - params.startMs) / DAY_MS) + 1,
+    daily: Array.from(dailyMap.values()).toSorted((a, b) => a.date.localeCompare(b.date)),
+    totals,
+  };
+}
 
 function resolveSessionUsageFileOrRespond(
   key: string,
@@ -301,7 +369,11 @@ async function loadCostUsageSummaryCached(params: {
   endMs: number;
   config: ReturnType<typeof loadConfig>;
 }): Promise<CostUsageSummary> {
-  const cacheKey = `${params.startMs}-${params.endMs}`;
+  const agentIds = listAgentsForGateway(params.config)
+    .agents.map((agent) => agent.id)
+    .toSorted();
+  const effectiveAgentIds = agentIds.length ? agentIds : ["main"];
+  const cacheKey = `${params.startMs}-${params.endMs}-${effectiveAgentIds.join(",")}`;
   const now = Date.now();
   const cached = costUsageCache.get(cacheKey);
   if (cached?.summary && cached.updatedAt && now - cached.updatedAt < COST_USAGE_CACHE_TTL_MS) {
@@ -316,11 +388,23 @@ async function loadCostUsageSummaryCached(params: {
   }
 
   const entry: CostUsageCacheEntry = cached ?? {};
-  const inFlight = loadCostUsageSummary({
-    startMs: params.startMs,
-    endMs: params.endMs,
-    config: params.config,
-  })
+  const inFlight = Promise.all(
+    effectiveAgentIds.map((agentId) =>
+      loadCostUsageSummary({
+        startMs: params.startMs,
+        endMs: params.endMs,
+        config: params.config,
+        agentId,
+      }),
+    ),
+  )
+    .then((summaries) =>
+      mergeCostUsageSummaries({
+        summaries,
+        startMs: params.startMs,
+        endMs: params.endMs,
+      }),
+    )
     .then((summary) => {
       costUsageCache.set(cacheKey, { summary, updatedAt: Date.now() });
       return summary;
@@ -404,7 +488,7 @@ export const usageHandlers: GatewayRequestHandlers = {
     });
     const limit = typeof p.limit === "number" && Number.isFinite(p.limit) ? p.limit : 50;
     const includeContextWeight = p.includeContextWeight ?? false;
-    const specificKey = typeof p.key === "string" ? p.key.trim() : null;
+    const specificKey = normalizeOptionalString(p.key) ?? null;
 
     // Load session store for named sessions
     const { storePath, store } = loadCombinedSessionStoreForGateway(config);
@@ -520,8 +604,9 @@ export const usageHandlers: GatewayRequestHandlers = {
     // Sort by most recent first
     mergedEntries.sort((a, b) => b.updatedAt - a.updatedAt);
 
-    // Apply limit
+    // Apply limit only to the returned session list; aggregates should cover all entries.
     const limitedEntries = mergedEntries.slice(0, limit);
+    const limitedEntryKeys = new Set(limitedEntries.map((entry) => `${entry.key}::${entry.sessionId}`));
 
     // Load usage for each session
     const sessions: SessionUsageEntry[] = [];
@@ -605,7 +690,7 @@ export const usageHandlers: GatewayRequestHandlers = {
       target.missingCostEntries += source.missingCostEntries;
     };
 
-    for (const merged of limitedEntries) {
+    for (const merged of mergedEntries) {
       const agentId = parseAgentSessionKey(merged.key)?.agentId;
       const usage = await loadSessionCostSummary({
         sessionId: merged.sessionId,
@@ -631,8 +716,11 @@ export const usageHandlers: GatewayRequestHandlers = {
         aggregateTotals.missingCostEntries += usage.missingCostEntries;
       }
 
-      const channel = merged.storeEntry?.channel ?? merged.storeEntry?.origin?.provider;
-      const chatType = merged.storeEntry?.chatType ?? merged.storeEntry?.origin?.chatType;
+      // Origin provider is the channel that *originated* the message; storeEntry.channel
+      // is the delivery/group channel set by deriveGroupSessionPatch. For usage attribution
+      // the originating channel is the correct bucket key (#52436).
+      const channel = merged.storeEntry?.origin?.provider ?? merged.storeEntry?.channel;
+      const chatType = merged.storeEntry?.origin?.chatType ?? merged.storeEntry?.chatType;
 
       if (usage) {
         if (usage.messageCounts) {
@@ -749,24 +837,26 @@ export const usageHandlers: GatewayRequestHandlers = {
         }
       }
 
-      sessions.push({
-        key: merged.key,
-        label: merged.label,
-        sessionId: merged.sessionId,
-        updatedAt: merged.updatedAt,
-        agentId,
-        channel,
-        chatType,
-        origin: merged.storeEntry?.origin,
-        modelOverride: merged.storeEntry?.modelOverride,
-        providerOverride: merged.storeEntry?.providerOverride,
-        modelProvider: merged.storeEntry?.modelProvider,
-        model: merged.storeEntry?.model,
-        usage,
-        contextWeight: includeContextWeight
-          ? (merged.storeEntry?.systemPromptReport ?? null)
-          : undefined,
-      });
+      if (limitedEntryKeys.has(`${merged.key}::${merged.sessionId}`)) {
+        sessions.push({
+          key: merged.key,
+          label: merged.label,
+          sessionId: merged.sessionId,
+          updatedAt: merged.updatedAt,
+          agentId,
+          channel,
+          chatType,
+          origin: merged.storeEntry?.origin,
+          modelOverride: merged.storeEntry?.modelOverride,
+          providerOverride: merged.storeEntry?.providerOverride,
+          modelProvider: merged.storeEntry?.modelProvider,
+          model: merged.storeEntry?.model,
+          usage,
+          contextWeight: includeContextWeight
+            ? (merged.storeEntry?.systemPromptReport ?? null)
+            : undefined,
+        });
+      }
     }
 
     // Format dates back to YYYY-MM-DD strings
@@ -806,9 +896,9 @@ export const usageHandlers: GatewayRequestHandlers = {
         }
         return (b.totals?.totalTokens ?? 0) - (a.totals?.totalTokens ?? 0);
       }),
-      byAgent: Array.from(byAgentMap.entries())
-        .map(([id, totals]) => ({ agentId: id, totals }))
-        .toSorted((a, b) => (b.totals?.totalCost ?? 0) - (a.totals?.totalCost ?? 0)),
+      byAgent: sortUsageRankingEntries(
+        Array.from(byAgentMap.entries()).map(([id, totals]) => ({ agentId: id, totals })),
+      ),
       ...tail,
     };
 
@@ -824,7 +914,7 @@ export const usageHandlers: GatewayRequestHandlers = {
     respond(true, result, undefined);
   },
   "sessions.usage.timeseries": async ({ respond, params }) => {
-    const key = typeof params?.key === "string" ? params.key.trim() : null;
+    const key = normalizeOptionalString(params?.key) ?? null;
     if (!key) {
       respond(
         false,
@@ -861,7 +951,7 @@ export const usageHandlers: GatewayRequestHandlers = {
     respond(true, timeseries, undefined);
   },
   "sessions.usage.logs": async ({ respond, params }) => {
-    const key = typeof params?.key === "string" ? params.key.trim() : null;
+    const key = normalizeOptionalString(params?.key) ?? null;
     if (!key) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "key is required for logs"));
       return;

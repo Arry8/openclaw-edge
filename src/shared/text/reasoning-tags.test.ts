@@ -51,6 +51,11 @@ describe("stripReasoningTagsFromText", () => {
         expected: "X  Y",
       },
       {
+        name: "strips antml namespaced thinking tags",
+        input: "Before <antml:thinking>secret</antml:thinking> after",
+        expected: "Before  after",
+      },
+      {
         name: "strips multiple reasoning blocks",
         input: "<think>first</think>A<think>second</think>B",
         expected: "AB",
@@ -194,10 +199,41 @@ describe("stripReasoningTagsFromText", () => {
         input: "A <THINK>hidden</THINK> <Thinking>also hidden</Thinking> B",
         expected: "A   B",
       },
+      {
+        input: "A <ANTML:THINKING hidden='1'>secret</ANTML:THINKING> B",
+        expected: "A  B",
+      },
     ] as const)("handles unicode/attributes/case-insensitive names: %j", (testCase) => {
       expectStrippedCase(testCase);
     });
 
+    it("handles bare 'thought\\n' duplication (Gemini 3.0 Flash #32721)", () => {
+      const cases = [
+        {
+          input: "Answer 42. thought\\nAnswer 42",
+          expected: "Answer 42. "
+        },
+        {
+          input: "Resp ✨thought\\nResp",
+          expected: "Resp ✨"
+        },
+        {
+          input: "No dup thought\\nextra",
+          expected: "No dup thought\\nextra" // no match
+        },
+        {
+          input: "thought\\nsuffix",
+          expected: "thought\\nsuffix" // no prefix
+        },
+        {
+          input: "Thought:\nrepeat",
+          expected: "Thought:\nrepeat" // casing
+        },
+      ] as const;
+      for (const { input, expected } of cases) {
+        expect(stripReasoningTagsFromText(input, { mode: "strict" })).toBe(expected);
+      }
+    });
     it("handles long content and pathological backtick patterns efficiently", () => {
       const longContent = "x".repeat(10000);
       expect(stripReasoningTagsFromText(`<think>${longContent}</think>visible`)).toBe("visible");
@@ -232,6 +268,71 @@ describe("stripReasoningTagsFromText", () => {
       },
     ] as const)("$name", (testCase) => {
       expectStrippedCase(testCase);
+    });
+  });
+
+  describe("finalText option (issue #49104)", () => {
+    it("preserves unclosed <think> as literal text when meaningful content precedes it", () => {
+      const cases = [
+        {
+          name: "mid-sentence mention",
+          input: "use the <think> tag for reasoning",
+          expected: "use the <think> tag for reasoning",
+        },
+        {
+          name: "quoted mention without backticks",
+          input: 'Good — confirmed ("Reasoning OFF — hide <think>"). Status: active.',
+          expected: 'Good — confirmed ("Reasoning OFF — hide <think>"). Status: active.',
+        },
+        {
+          name: "tag at end of text",
+          input: "here is <think>",
+          expected: "here is <think>",
+        },
+      ] as const;
+      for (const { name, input, expected } of cases) {
+        expect(stripReasoningTagsFromText(input, { mode: "strict", finalText: true }), name).toBe(
+          expected,
+        );
+      }
+    });
+
+    it("still strips unclosed <think> at start (likely reasoning leak)", () => {
+      expect(
+        stripReasoningTagsFromText("<think>partial reasoning", {
+          mode: "strict",
+          finalText: true,
+        }),
+      ).toBe("");
+    });
+
+    it("still strips unclosed <think> when only whitespace precedes it", () => {
+      expect(
+        stripReasoningTagsFromText("  <think>partial reasoning", {
+          mode: "strict",
+          finalText: true,
+        }),
+      ).toBe("");
+    });
+
+    it("strips closed reasoning blocks and preserves unclosed literal mentions", () => {
+      const input = "<think>reasoning here</think>Answer mentioning <think> tag.";
+      expect(stripReasoningTagsFromText(input, { mode: "strict", finalText: true })).toBe(
+        "Answer mentioning <think> tag.",
+      );
+    });
+
+    it("does not change behavior without finalText flag (backward compat)", () => {
+      expect(stripReasoningTagsFromText("use the <think> tag", { mode: "strict" })).toBe("use the");
+    });
+
+    it("handles closed tags normally with finalText", () => {
+      expect(
+        stripReasoningTagsFromText("Hello <think>hidden</think> world", {
+          mode: "strict",
+          finalText: true,
+        }),
+      ).toBe("Hello  world");
     });
   });
 

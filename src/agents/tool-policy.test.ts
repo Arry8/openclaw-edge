@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { DEFAULT_GATEWAY_HTTP_TOOL_DENY } from "../security/dangerous-tools.js";
+import { DEFAULT_TOOL_ALLOW, DEFAULT_TOOL_DENY } from "./sandbox/constants.js";
 import { isToolAllowed, resolveSandboxToolPolicyForAgent } from "./sandbox/tool-policy.js";
 import type { SandboxToolPolicy } from "./sandbox/types.js";
 import { TOOL_POLICY_CONFORMANCE } from "./tool-policy.conformance.js";
 import {
   applyOwnerOnlyToolPolicy,
+  collectExplicitAllowlist,
   expandToolGroups,
   isOwnerOnlyToolName,
   normalizeToolName,
+  resolveOwnerOnlyToolApprovalClass,
   resolveToolProfilePolicy,
   TOOL_GROUPS,
 } from "./tool-policy.js";
@@ -17,24 +21,20 @@ function createOwnerPolicyTools() {
   return [
     {
       name: "read",
-      // oxlint-disable-next-line typescript/no-explicit-any
       execute: async () => ({ content: [], details: {} }) as any,
     },
     {
       name: "cron",
       ownerOnly: true,
-      // oxlint-disable-next-line typescript/no-explicit-any
       execute: async () => ({ content: [], details: {} }) as any,
     },
     {
       name: "gateway",
       ownerOnly: true,
-      // oxlint-disable-next-line typescript/no-explicit-any
       execute: async () => ({ content: [], details: {} }) as any,
     },
     {
       name: "whatsapp_login",
-      // oxlint-disable-next-line typescript/no-explicit-any
       execute: async () => ({ content: [], details: {} }) as any,
     },
   ] as unknown as AnyAgentTool[];
@@ -84,6 +84,28 @@ describe("tool-policy", () => {
     expect(isOwnerOnlyToolName("read")).toBe(false);
   });
 
+  it("exposes stable approval classes for shared owner-only fallbacks", () => {
+    expect(resolveOwnerOnlyToolApprovalClass("whatsapp_login")).toBe("interactive");
+    expect(resolveOwnerOnlyToolApprovalClass("cron")).toBe("control_plane");
+    expect(resolveOwnerOnlyToolApprovalClass("gateway")).toBe("control_plane");
+    expect(resolveOwnerOnlyToolApprovalClass("nodes")).toBe("exec_capable");
+    expect(resolveOwnerOnlyToolApprovalClass("read")).toBeUndefined();
+  });
+
+  it("keeps ACP owner-only backstops aligned with the HTTP deny list", () => {
+    const sharedBackstops = DEFAULT_GATEWAY_HTTP_TOOL_DENY.flatMap((name) => {
+      const approvalClass = resolveOwnerOnlyToolApprovalClass(name);
+      return approvalClass ? ([[name, approvalClass]] as const) : [];
+    });
+
+    expect(Object.fromEntries(sharedBackstops)).toEqual({
+      cron: "control_plane",
+      gateway: "control_plane",
+      nodes: "exec_capable",
+      whatsapp_login: "interactive",
+    });
+  });
+
   it("strips owner-only tools for non-owner senders", async () => {
     const tools = createOwnerPolicyTools();
     const filtered = applyOwnerOnlyToolPolicy(tools, false);
@@ -101,7 +123,6 @@ describe("tool-policy", () => {
       {
         name: "custom_admin_tool",
         ownerOnly: true,
-        // oxlint-disable-next-line typescript/no-explicit-any
         execute: async () => ({ content: [], details: {} }) as any,
       },
     ] as unknown as AnyAgentTool[];
@@ -109,16 +130,24 @@ describe("tool-policy", () => {
     expect(applyOwnerOnlyToolPolicy(tools, true)).toHaveLength(1);
   });
 
+  it("preserves explicit alsoAllow hints when allow is empty", () => {
+    expect(
+      collectExplicitAllowlist([
+        {
+          allow: ["*", "optional-demo"],
+        },
+      ]),
+    ).toContain("optional-demo");
+  });
+
   it("strips nodes for non-owner senders via fallback policy", () => {
     const tools = [
       {
         name: "read",
-        // oxlint-disable-next-line typescript/no-explicit-any
         execute: async () => ({ content: [], details: {} }) as any,
       },
       {
         name: "nodes",
-        // oxlint-disable-next-line typescript/no-explicit-any
         execute: async () => ({ content: [], details: {} }) as any,
       },
     ] as unknown as AnyAgentTool[];
@@ -223,5 +252,60 @@ describe("resolveSandboxToolPolicyForAgent", () => {
     const resolved = resolveSandboxToolPolicyForAgent(cfg, undefined);
     expect(resolved.allow).toEqual(["read"]);
     expect(resolved.deny).toEqual(["image"]);
+  });
+
+  it("default sandbox policy allows cron (gateway-routed, not containerized)", () => {
+    const resolved = resolveSandboxToolPolicyForAgent(undefined, undefined);
+    const policy: SandboxToolPolicy = { allow: resolved.allow, deny: resolved.deny };
+    expect(isToolAllowed(policy, "cron")).toBe(true);
+    expect(DEFAULT_TOOL_ALLOW).toContain("cron");
+    expect(DEFAULT_TOOL_DENY).not.toContain("cron");
+  });
+
+  it("default sandbox policy exposes cron but still strips browser (#50303)", () => {
+    const resolved = resolveSandboxToolPolicyForAgent(undefined, undefined);
+    const policy: SandboxToolPolicy = { allow: resolved.allow, deny: resolved.deny };
+
+    // cron is gateway-routed via WebSocket RPC — should be allowed in sandbox
+    expect(isToolAllowed(policy, "cron")).toBe(true);
+    // browser requires container execution — should remain denied
+    expect(isToolAllowed(policy, "browser")).toBe(false);
+    // gateway exposes admin actions — should remain denied
+    expect(isToolAllowed(policy, "gateway")).toBe(false);
+  });
+});
+
+describe("collectExplicitAllowlist", () => {
+  it("collects entries from allow", () => {
+    expect(collectExplicitAllowlist([{ allow: ["read", "write"] }])).toEqual(["read", "write"]);
+  });
+
+  it("collects entries from alsoAllow when allow is absent", () => {
+    expect(collectExplicitAllowlist([{ alsoAllow: ["openrag_search"] }])).toEqual([
+      "openrag_search",
+    ]);
+  });
+
+  it("collects entries from both allow and alsoAllow", () => {
+    expect(
+      collectExplicitAllowlist([{ allow: ["read"], alsoAllow: ["openrag_search"] }]),
+    ).toEqual(["read", "openrag_search"]);
+  });
+
+  it("returns empty array when policy has neither allow nor alsoAllow", () => {
+    expect(collectExplicitAllowlist([{ deny: ["exec"] }])).toEqual([]);
+  });
+
+  it("returns empty array for undefined policies", () => {
+    expect(collectExplicitAllowlist([undefined, undefined])).toEqual([]);
+  });
+
+  it("collects alsoAllow across multiple policies", () => {
+    expect(
+      collectExplicitAllowlist([
+        { alsoAllow: ["openrag_search"] },
+        { alsoAllow: ["custom_tool"] },
+      ]),
+    ).toEqual(["openrag_search", "custom_tool"]);
   });
 });

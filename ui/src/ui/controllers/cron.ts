@@ -2,6 +2,7 @@ import { t } from "../../i18n/index.ts";
 import { DEFAULT_CRON_FORM } from "../app-defaults.ts";
 import { toNumber } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type {
   CronJob,
   CronDeliveryStatus,
@@ -142,8 +143,8 @@ export function validateCronForm(form: CronFormState): CronFieldErrors {
   if (form.payloadKind === "agentTurn") {
     const timeoutRaw = form.timeoutSeconds.trim();
     if (timeoutRaw) {
-      const timeout = toNumber(timeoutRaw, 0);
-      if (timeout <= 0) {
+      const timeout = Number(timeoutRaw);
+      if (!Number.isFinite(timeout) || timeout < 0) {
         errors.timeoutSeconds = "cron.errors.timeoutInvalid";
       }
     }
@@ -458,12 +459,18 @@ function jobToForm(job: CronJob, prev: CronFormState): CronFormState {
     staggerUnit: "seconds",
     sessionTarget: job.sessionTarget,
     wakeMode: job.wakeMode,
-    payloadKind: job.payload.kind,
-    payloadText: job.payload.kind === "systemEvent" ? job.payload.text : job.payload.message,
-    payloadModel: job.payload.kind === "agentTurn" ? (job.payload.model ?? "") : "",
-    payloadThinking: job.payload.kind === "agentTurn" ? (job.payload.thinking ?? "") : "",
+    // falls back to agentTurn for legacy/incomplete jobs with undefined payload
+    payloadKind: job.payload?.kind ?? "agentTurn",
+    payloadText:
+      job.payload?.kind === "systemEvent"
+        ? job.payload.text
+        : job.payload?.kind === "agentTurn"
+          ? job.payload.message
+          : "",
+    payloadModel: job.payload?.kind === "agentTurn" ? (job.payload.model ?? "") : "",
+    payloadThinking: job.payload?.kind === "agentTurn" ? (job.payload.thinking ?? "") : "",
     payloadLightContext:
-      job.payload.kind === "agentTurn" ? job.payload.lightContext === true : false,
+      job.payload?.kind === "agentTurn" ? job.payload.lightContext === true : false,
     deliveryMode: job.delivery?.mode ?? "none",
     deliveryChannel: job.delivery?.channel ?? CRON_CHANNEL_LAST,
     deliveryTo: job.delivery?.to ?? "",
@@ -497,7 +504,7 @@ function jobToForm(job: CronJob, prev: CronFormState): CronFormState {
     failureAlertAccountId:
       failureAlert && typeof failureAlert === "object" ? (failureAlert.accountId ?? "") : "",
     timeoutSeconds:
-      job.payload.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
+      job.payload?.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
         ? String(job.payload.timeoutSeconds)
         : "",
   };
@@ -584,9 +591,13 @@ export function buildCronPayload(form: CronFormState) {
   if (thinking) {
     payload.thinking = thinking;
   }
-  const timeoutSeconds = toNumber(form.timeoutSeconds, 0);
-  if (timeoutSeconds > 0) {
-    payload.timeoutSeconds = timeoutSeconds;
+  const timeoutRaw = form.timeoutSeconds.trim();
+  if (timeoutRaw) {
+    const timeout = Number(timeoutRaw);
+    if (!Number.isFinite(timeout) || timeout < 0) {
+      throw new Error(t("cron.errors.timeoutInvalid"));
+    }
+    payload.timeoutSeconds = timeout;
   }
   if (form.payloadLightContext) {
     payload.lightContext = true;
@@ -649,7 +660,7 @@ export async function addCronJob(state: CronState) {
       : undefined;
     if (payload.kind === "agentTurn") {
       const existingLightContext =
-        editingJob?.payload.kind === "agentTurn" ? editingJob.payload.lightContext : undefined;
+        editingJob?.payload?.kind === "agentTurn" ? editingJob.payload.lightContext : undefined;
       if (
         !form.payloadLightContext &&
         state.cronEditingJobId &&
@@ -900,13 +911,13 @@ export function startCronEdit(state: CronState, job: CronJob) {
 function buildCloneName(name: string, existingNames: Set<string>) {
   const base = name.trim() || "Job";
   const first = `${base} copy`;
-  if (!existingNames.has(first.toLowerCase())) {
+  if (!existingNames.has(normalizeLowercaseStringOrEmpty(first))) {
     return first;
   }
   let index = 2;
   while (index < 1000) {
     const next = `${base} copy ${index}`;
-    if (!existingNames.has(next.toLowerCase())) {
+    if (!existingNames.has(normalizeLowercaseStringOrEmpty(next))) {
       return next;
     }
     index += 1;
@@ -917,7 +928,9 @@ function buildCloneName(name: string, existingNames: Set<string>) {
 export function startCronClone(state: CronState, job: CronJob) {
   clearCronEditState(state);
   state.cronRunsJobId = job.id;
-  const existingNames = new Set(state.cronJobs.map((entry) => entry.name.trim().toLowerCase()));
+  const existingNames = new Set(
+    state.cronJobs.map((entry) => normalizeLowercaseStringOrEmpty(entry.name)),
+  );
   const cloned = jobToForm(job, state.cronForm);
   cloned.name = buildCloneName(job.name, existingNames);
   state.cronForm = cloned;

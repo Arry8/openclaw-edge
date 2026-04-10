@@ -5,13 +5,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Mock the runtime-exported backoff sleep that the handler actually imports.
-vi.mock("openclaw/plugin-sdk/runtime-env", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/runtime-env")>();
-  return {
-    ...actual,
-    sleepWithAbort: mocks.sleepWithAbort,
-  };
-});
+vi.mock("openclaw/plugin-sdk/runtime-env", () => ({
+  computeBackoff: vi.fn((_policy, attempt: number) => attempt * 1000),
+  sleepWithAbort: mocks.sleepWithAbort,
+}));
 
 let createTelegramSendChatActionHandler: typeof import("./sendchataction-401-backoff.js").createTelegramSendChatActionHandler;
 
@@ -100,13 +97,14 @@ describe("createTelegramSendChatActionHandler", () => {
     expect(logger).toHaveBeenCalledWith(expect.stringContaining("recovered"));
   });
 
-  it("does not count non-401 errors toward suspension", async () => {
+  it("does not count non-401 non-transient errors toward suspension", async () => {
     const fn = vi.fn().mockRejectedValue(make500Error());
     const logger = vi.fn();
     const handler = createTelegramSendChatActionHandler({
       sendChatActionFn: fn,
       logger,
       maxConsecutive401: 2,
+      maxConsecutiveTransient: 2,
     });
 
     await expect(handler.sendChatAction(123, "typing")).rejects.toThrow("500");
@@ -114,6 +112,64 @@ describe("createTelegramSendChatActionHandler", () => {
     await expect(handler.sendChatAction(123, "typing")).rejects.toThrow("500");
 
     expect(handler.isSuspended()).toBe(false);
+  });
+
+  it("applies backoff and swallows transient network errors", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("Network request for 'sendChatAction' failed!"));
+    const logger = vi.fn();
+    const handler = createTelegramSendChatActionHandler({
+      sendChatActionFn: fn,
+      logger,
+      maxConsecutiveTransient: 3,
+    });
+
+    // Transient errors are swallowed (not re-thrown)
+    await handler.sendChatAction(123, "typing");
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("transient network error"));
+
+    // Second call should trigger backoff
+    await handler.sendChatAction(123, "typing");
+    expect(mocks.sleepWithAbort).toHaveBeenCalled();
+  });
+
+  it("suspends after maxConsecutiveTransient network failures", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("Network request for 'sendChatAction' failed!"));
+    const logger = vi.fn();
+    const handler = createTelegramSendChatActionHandler({
+      sendChatActionFn: fn,
+      logger,
+      maxConsecutiveTransient: 2,
+    });
+
+    await handler.sendChatAction(123, "typing");
+    await handler.sendChatAction(123, "typing");
+
+    expect(handler.isSuspended()).toBe(true);
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("suspended"));
+  });
+
+  it("resets transient failure counter on success", async () => {
+    let callCount = 0;
+    const fn = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount <= 2) {
+        throw new Error("Network request for 'sendChatAction' failed!");
+      }
+      return Promise.resolve(true);
+    });
+    const logger = vi.fn();
+    const handler = createTelegramSendChatActionHandler({
+      sendChatActionFn: fn,
+      logger,
+      maxConsecutiveTransient: 5,
+    });
+
+    await handler.sendChatAction(123, "typing");
+    await handler.sendChatAction(123, "typing");
+    await handler.sendChatAction(123, "typing");
+
+    expect(handler.isSuspended()).toBe(false);
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("recovered"));
   });
 
   it("reset() clears suspension", async () => {

@@ -3,17 +3,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Bot } from "grammy";
-import {
-  normalizeTelegramCommandName,
-  TELEGRAM_COMMAND_NAME_PATTERN,
-} from "openclaw/plugin-sdk/config-runtime";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
+import { normalizeOptionalString, readStringValue } from "openclaw/plugin-sdk/text-runtime";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
+import { normalizeTelegramCommandName, TELEGRAM_COMMAND_NAME_PATTERN } from "./command-config.js";
 
 export const TELEGRAM_MAX_COMMANDS = 100;
+export const TELEGRAM_TOTAL_COMMAND_TEXT_BUDGET = 5700;
 const TELEGRAM_COMMAND_RETRY_RATIO = 0.8;
+const TELEGRAM_MIN_COMMAND_DESCRIPTION_LENGTH = 1;
+/** Maximum number of times to retry a rate-limited command sync operation. */
+const TELEGRAM_COMMAND_SYNC_RATE_LIMIT_RETRIES = 3;
 
 export type TelegramMenuCommand = {
   command: string;
@@ -25,12 +27,92 @@ type TelegramPluginCommandSpec = {
   description: unknown;
 };
 
+function countTelegramCommandText(value: string): number {
+  return Array.from(value).length;
+}
+
+function truncateTelegramCommandText(value: string, maxLength: number): string {
+  if (maxLength <= 0) {
+    return "";
+  }
+  const chars = Array.from(value);
+  if (chars.length <= maxLength) {
+    return value;
+  }
+  if (maxLength === 1) {
+    return chars[0] ?? "";
+  }
+  return `${chars.slice(0, maxLength - 1).join("")}…`;
+}
+
+function fitTelegramCommandsWithinTextBudget(
+  commands: TelegramMenuCommand[],
+  maxTotalChars: number,
+): {
+  commands: TelegramMenuCommand[];
+  descriptionTrimmed: boolean;
+  textBudgetDropCount: number;
+} {
+  let candidateCommands = [...commands];
+  while (candidateCommands.length > 0) {
+    const commandNameChars = candidateCommands.reduce(
+      (total, command) => total + countTelegramCommandText(command.command),
+      0,
+    );
+    const descriptionBudget = maxTotalChars - commandNameChars;
+    const minimumDescriptionBudget =
+      candidateCommands.length * TELEGRAM_MIN_COMMAND_DESCRIPTION_LENGTH;
+    if (descriptionBudget < minimumDescriptionBudget) {
+      candidateCommands = candidateCommands.slice(0, -1);
+      continue;
+    }
+
+    const descriptionCap = Math.max(
+      TELEGRAM_MIN_COMMAND_DESCRIPTION_LENGTH,
+      Math.floor(descriptionBudget / candidateCommands.length),
+    );
+    let descriptionTrimmed = false;
+    const fittedCommands = candidateCommands.map((command) => {
+      const description = truncateTelegramCommandText(command.description, descriptionCap);
+      if (description !== command.description) {
+        descriptionTrimmed = true;
+        return { ...command, description };
+      }
+      return command;
+    });
+    return {
+      commands: fittedCommands,
+      descriptionTrimmed,
+      textBudgetDropCount: commands.length - fittedCommands.length,
+    };
+  }
+
+  return {
+    commands: [],
+    descriptionTrimmed: false,
+    textBudgetDropCount: commands.length,
+  };
+}
+
 function readErrorTextField(value: unknown, key: "description" | "message"): string | undefined {
   if (!value || typeof value !== "object" || !(key in value)) {
     return undefined;
   }
-  const text = (value as Record<"description" | "message", unknown>)[key];
-  return typeof text === "string" ? text : undefined;
+  return readStringValue((value as Record<"description" | "message", unknown>)[key]);
+}
+
+/**
+ * Extract the retry-after delay in seconds from a Telegram 429 rate-limit error.
+ * Returns undefined if the error is not a 429 or the delay cannot be parsed.
+ */
+function extractRateLimitRetryAfterSeconds(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const maybe = err as { error_code?: unknown; description?: unknown };
+  if (maybe.error_code !== 429) return undefined;
+  const desc = typeof maybe.description === "string" ? maybe.description : "";
+  const match = /retry after (\d+)/i.exec(desc);
+  if (match?.[1]) return parseInt(match[1], 10);
+  return undefined;
 }
 
 function isBotCommandsTooMuchError(err: unknown): boolean {
@@ -63,9 +145,9 @@ function formatTelegramCommandRetrySuccessLog(params: {
 }): string {
   const omittedCount = Math.max(0, params.initialCount - params.acceptedCount);
   return (
-    `Telegram accepted ${params.acceptedCount} commands after BOT_COMMANDS_TOO_MUCH ` +
-    `(started with ${params.initialCount}; omitted ${omittedCount}). ` +
-    "Reduce plugin/skill/custom commands to expose more menu entries."
+    `Telegram accepted ${params.acceptedCount} of ${params.initialCount} commands after BOT_COMMANDS_TOO_MUCH ` +
+    `(omitted ${omittedCount}). ` +
+    "To reduce: set commands.nativeSkills: false or reduce plugin/custom commands."
   );
 }
 
@@ -88,7 +170,7 @@ export function buildPluginTelegramMenuCommands(params: {
       );
       continue;
     }
-    const description = typeof spec.description === "string" ? spec.description.trim() : "";
+    const description = normalizeOptionalString(spec.description) ?? "";
     if (!description) {
       issues.push(`Plugin command "/${normalized}" is missing a description.`);
       continue;
@@ -112,18 +194,35 @@ export function buildPluginTelegramMenuCommands(params: {
 export function buildCappedTelegramMenuCommands(params: {
   allCommands: TelegramMenuCommand[];
   maxCommands?: number;
+  maxTotalChars?: number;
 }): {
   commandsToRegister: TelegramMenuCommand[];
   totalCommands: number;
   maxCommands: number;
   overflowCount: number;
+  maxTotalChars: number;
+  descriptionTrimmed: boolean;
+  textBudgetDropCount: number;
 } {
   const { allCommands } = params;
   const maxCommands = params.maxCommands ?? TELEGRAM_MAX_COMMANDS;
+  const maxTotalChars = params.maxTotalChars ?? TELEGRAM_TOTAL_COMMAND_TEXT_BUDGET;
   const totalCommands = allCommands.length;
   const overflowCount = Math.max(0, totalCommands - maxCommands);
-  const commandsToRegister = allCommands.slice(0, maxCommands);
-  return { commandsToRegister, totalCommands, maxCommands, overflowCount };
+  const {
+    commands: commandsToRegister,
+    descriptionTrimmed,
+    textBudgetDropCount,
+  } = fitTelegramCommandsWithinTextBudget(allCommands.slice(0, maxCommands), maxTotalChars);
+  return {
+    commandsToRegister,
+    totalCommands,
+    maxCommands,
+    overflowCount,
+    maxTotalChars,
+    descriptionTrimmed,
+    textBudgetDropCount,
+  };
 }
 
 /** Compute a stable hash of the command list for change detection. */
@@ -169,7 +268,7 @@ async function writeCachedCommandHash(
     await fs.writeFile(filePath, hash, "utf-8");
   } catch {
     // Best-effort: failing to cache the hash just means the next restart
-    // will sync commands again, which is the pre-fix behaviour.
+    // will sync commands again, which is the pre-fix behavior.
   }
 }
 
@@ -216,12 +315,15 @@ export function syncTelegramMenuCommands(params: {
 
     let retryCommands = commandsToRegister;
     const initialCommandCount = commandsToRegister.length;
+    // Track 429 retry attempts separately from BOT_COMMANDS_TOO_MUCH shrink retries.
+    let rateLimitRetries = 0;
     while (retryCommands.length > 0) {
       try {
         await withTelegramApiErrorLogging({
           operation: "setMyCommands",
           runtime,
-          shouldLog: (err) => !isBotCommandsTooMuchError(err),
+          shouldLog: (err) =>
+            !isBotCommandsTooMuchError(err) && extractRateLimitRetryAfterSeconds(err) === undefined,
           fn: () => bot.api.setMyCommands(retryCommands),
         });
         if (retryCommands.length < initialCommandCount) {
@@ -235,6 +337,25 @@ export function syncTelegramMenuCommands(params: {
         await writeCachedCommandHash(accountId, botIdentity, currentHash);
         return;
       } catch (err) {
+        // Handle 429 rate-limit: wait for the server-specified delay then retry.
+        const rateLimitDelaySecs = extractRateLimitRetryAfterSeconds(err);
+        if (rateLimitDelaySecs !== undefined) {
+          if (rateLimitRetries >= TELEGRAM_COMMAND_SYNC_RATE_LIMIT_RETRIES) {
+            runtime.error?.(
+              `Telegram setMyCommands rate-limited after ${rateLimitRetries} retries; giving up. ` +
+                "The command menu will be synced on the next gateway restart.",
+            );
+            return;
+          }
+          rateLimitRetries++;
+          runtime.log?.(
+            `Telegram setMyCommands rate-limited (retry after ${rateLimitDelaySecs}s); ` +
+              `will retry in ${rateLimitDelaySecs}s (attempt ${rateLimitRetries}/${TELEGRAM_COMMAND_SYNC_RATE_LIMIT_RETRIES}).`,
+          );
+          await new Promise<void>((resolve) => setTimeout(resolve, rateLimitDelaySecs * 1000));
+          continue;
+        }
+
         if (!isBotCommandsTooMuchError(err)) {
           throw err;
         }
@@ -243,7 +364,7 @@ export function syncTelegramMenuCommands(params: {
           nextCount < retryCommands.length ? nextCount : retryCommands.length - 1;
         if (reducedCount <= 0) {
           runtime.error?.(
-            "Telegram rejected native command registration (BOT_COMMANDS_TOO_MUCH); leaving menu empty. Reduce commands or disable channels.telegram.commands.native.",
+            "Telegram rejected all command registration attempts (BOT_COMMANDS_TOO_MUCH); menu left empty. Set commands.nativeSkills: false to disable per-skill commands, or channels.telegram.commands.native: false to disable all native commands.",
           );
           return;
         }

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../config/config.js";
 import { logDebug, logWarn } from "../logger.js";
+import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { loadEmbeddedPiLspConfig } from "./embedded-pi-lsp.js";
 import {
   resolveStdioMcpServerLaunchConfig,
@@ -15,7 +16,10 @@ type LspSession = {
   serverName: string;
   process: ChildProcess;
   requestId: number;
-  pendingRequests: Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>;
+  pendingRequests: Map<
+    number,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+  >;
   buffer: string;
   initialized: boolean;
   capabilities: LspServerCapabilities;
@@ -87,18 +91,18 @@ function parseLspMessages(buffer: string): { messages: unknown[]; remaining: str
 function sendRequest(session: LspSession, method: string, params?: unknown): Promise<unknown> {
   const id = ++session.requestId;
   return new Promise((resolve, reject) => {
-    session.pendingRequests.set(id, { resolve, reject });
     const message = { jsonrpc: "2.0", id, method, params };
     const encoded = encodeLspMessage(message);
     session.process.stdin?.write(encoded, "utf-8");
 
     // Timeout after 10 seconds
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (session.pendingRequests.has(id)) {
         session.pendingRequests.delete(id);
         reject(new Error(`LSP request ${method} timed out`));
       }
     }, 10_000);
+    session.pendingRequests.set(id, { resolve, reject, timer });
   });
 }
 
@@ -116,6 +120,7 @@ function handleIncomingData(session: LspSession, chunk: string) {
     if ("id" in record && typeof record.id === "number") {
       const pending = session.pendingRequests.get(record.id);
       if (pending) {
+        clearTimeout(pending.timer);
         session.pendingRequests.delete(record.id);
         if ("error" in record) {
           pending.reject(new Error(JSON.stringify(record.error)));
@@ -168,6 +173,7 @@ async function disposeSession(session: LspSession) {
     }
   }
   for (const [, pending] of session.pendingRequests) {
+    clearTimeout(pending.timer);
     pending.reject(new Error("LSP session disposed"));
   }
   session.pendingRequests.clear();
@@ -308,7 +314,9 @@ export async function createBundleLspToolRuntime(params: {
   }
 
   const reservedNames = new Set(
-    Array.from(params.reservedToolNames ?? [], (name) => name.trim().toLowerCase()).filter(Boolean),
+    Array.from(params.reservedToolNames ?? [], (name) =>
+      normalizeOptionalLowercaseString(name),
+    ).filter(Boolean),
   );
   const sessions: LspSession[] = [];
   const tools: AnyAgentTool[] = [];
@@ -354,7 +362,10 @@ export async function createBundleLspToolRuntime(params: {
 
         const serverTools = buildLspTools(session);
         for (const tool of serverTools) {
-          const normalizedName = tool.name.trim().toLowerCase();
+          const normalizedName = normalizeOptionalLowercaseString(tool.name);
+          if (!normalizedName) {
+            continue;
+          }
           if (reservedNames.has(normalizedName)) {
             logWarn(
               `bundle-lsp: skipped tool "${tool.name}" from server "${serverName}" because the name already exists.`,

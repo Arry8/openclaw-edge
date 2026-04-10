@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { withTempDir } from "../test-helpers/temp-dir.js";
 import {
   CircularIncludeError,
   ConfigIncludeError,
@@ -570,6 +570,36 @@ describe("security: path traversal protection (CWE-22)", () => {
         expect(result).toEqual(expected);
       }
     });
+
+    it("drops blocked prototype keys while resolving include trees", () => {
+      const input = {
+        safe: 1,
+        nested: JSON.parse('{"ok":true,"__proto__":{"polluted":"nested"}}'),
+        rootPollution: JSON.parse('{"__proto__":{"polluted":"root"}}'),
+      };
+
+      const resolvedUnknown = resolveConfigIncludes(input, DEFAULT_BASE_PATH);
+      expect(resolvedUnknown).toBeTypeOf("object");
+      expect(resolvedUnknown).not.toBeNull();
+      const resolved = resolvedUnknown as Record<string, unknown>;
+
+      expect(Object.prototype.hasOwnProperty.call(resolved, "__proto__")).toBe(false);
+      expect(Object.keys(resolved)).toEqual(["safe", "nested", "rootPollution"]);
+      expect(resolved.polluted).toBeUndefined();
+      expect((resolved.nested as Record<string, unknown>).polluted).toBeUndefined();
+      expect((resolved.rootPollution as Record<string, unknown>).polluted).toBeUndefined();
+      expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it("ignores blocked sibling keys for include merges", () => {
+      const files = { [configPath("array.json")]: ["a", "b"] };
+      const input = JSON.parse('{"$include":"./array.json","__proto__":{"polluted":true}}');
+
+      const resolved = resolve(input, files);
+
+      expect(resolved).toEqual(["a", "b"]);
+      expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined();
+    });
   });
 
   describe("edge cases", () => {
@@ -595,8 +625,7 @@ describe("security: path traversal protection (CWE-22)", () => {
     });
 
     it("allows include files when the config root path is a symlink", async () => {
-      const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-includes-symlink-"));
-      try {
+      await withTempDir({ prefix: "openclaw-includes-symlink-" }, async (tempRoot) => {
         const realRoot = path.join(tempRoot, "real");
         const linkRoot = path.join(tempRoot, "link");
         await fs.mkdir(path.join(realRoot, "includes"), { recursive: true });
@@ -612,17 +641,14 @@ describe("security: path traversal protection (CWE-22)", () => {
           path.join(linkRoot, "openclaw.json"),
         );
         expect(result).toEqual({ logging: { redactSensitive: "tools" } });
-      } finally {
-        await fs.rm(tempRoot, { recursive: true, force: true });
-      }
+      });
     });
 
     it("rejects include files that are hardlinked aliases", async () => {
       if (process.platform === "win32") {
         return;
       }
-      const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-includes-hardlink-"));
-      try {
+      await withTempDir({ prefix: "openclaw-includes-hardlink-" }, async (tempRoot) => {
         const configDir = path.join(tempRoot, "config");
         const outsideDir = path.join(tempRoot, "outside");
         await fs.mkdir(configDir, { recursive: true });
@@ -645,14 +671,11 @@ describe("security: path traversal protection (CWE-22)", () => {
             path.join(configDir, "openclaw.json"),
           ),
         ).toThrow(/security checks|hardlink/i);
-      } finally {
-        await fs.rm(tempRoot, { recursive: true, force: true });
-      }
+      });
     });
 
     it("rejects oversized include files", async () => {
-      const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-includes-big-"));
-      try {
+      await withTempDir({ prefix: "openclaw-includes-big-" }, async (tempRoot) => {
         const configDir = path.join(tempRoot, "config");
         await fs.mkdir(configDir, { recursive: true });
         const includePath = path.join(configDir, "big.json5");
@@ -662,9 +685,7 @@ describe("security: path traversal protection (CWE-22)", () => {
         expect(() =>
           resolveConfigIncludes({ $include: "./big.json5" }, path.join(configDir, "openclaw.json")),
         ).toThrow(/security checks|max/i);
-      } finally {
-        await fs.rm(tempRoot, { recursive: true, force: true });
-      }
+      });
     });
   });
 });

@@ -8,6 +8,10 @@ import type { OpenClawConfig } from "../config/config.js";
 import { resolveChannelGroupToolsPolicy } from "../config/group-policy.js";
 import type { AgentToolsConfig } from "../config/types.tools.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+} from "../shared/string-coerce.js";
 import { normalizeMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentConfig, resolveAgentIdFromSessionKey } from "./agent-scope.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
@@ -89,7 +93,7 @@ export function resolveSubagentToolPolicy(cfg?: OpenClawConfig, depth?: number):
     ...(Array.isArray(configured?.deny) ? configured.deny : []),
   ];
   const mergedAllow = allow && alsoAllow ? Array.from(new Set([...allow, ...alsoAllow])) : allow;
-  return { allow: mergedAllow, deny };
+  return { allow: mergedAllow, alsoAllow, deny };
 }
 
 export function resolveSubagentToolPolicyForSession(
@@ -109,8 +113,13 @@ export function resolveSubagentToolPolicyForSession(
     ),
     ...(Array.isArray(configured?.deny) ? configured.deny : []),
   ];
+  // Merge allow + alsoAllow when both are present (keeps allow list accurate for
+  // access gating). When only alsoAllow is set, preserve it on the returned
+  // object so collectExplicitAllowlist() can build the plugin tool allowlist —
+  // callers that only gate on `allow` remain unaffected because allow stays
+  // undefined, but the alsoAllow entries are no longer silently dropped.
   const mergedAllow = allow && alsoAllow ? Array.from(new Set([...allow, ...alsoAllow])) : allow;
-  return { allow: mergedAllow, deny };
+  return { allow: mergedAllow, alsoAllow, deny };
 }
 
 export function filterToolsByPolicy(tools: AnyAgentTool[], policy?: SandboxToolPolicy) {
@@ -128,7 +137,7 @@ type ToolPolicyConfig = {
 };
 
 function normalizeProviderKey(value: string): string {
-  return value.trim().toLowerCase();
+  return normalizeLowercaseStringOrEmpty(value);
 }
 
 function resolveGroupContextFromSessionKey(sessionKey?: string | null): {
@@ -167,7 +176,7 @@ function resolveGroupContextFromSessionKey(sessionKey?: string | null): {
   if (!groupId) {
     return {};
   }
-  return { channel: channel.trim().toLowerCase(), groupId };
+  return { channel: normalizeLowercaseStringOrEmpty(channel), groupId };
 }
 
 function resolveProviderToolPolicy(params: {
@@ -195,7 +204,7 @@ function resolveProviderToolPolicy(params: {
   }
 
   const normalizedProvider = normalizeProviderKey(provider);
-  const rawModelId = params.modelId?.trim().toLowerCase();
+  const rawModelId = normalizeOptionalLowercaseString(params.modelId);
   const fullModelId =
     rawModelId && !rawModelId.includes("/") ? `${normalizedProvider}/${rawModelId}` : rawModelId;
 
@@ -221,18 +230,25 @@ function hasExplicitToolSection(section: unknown): boolean {
 function resolveImplicitProfileAlsoAllow(params: {
   globalTools?: OpenClawConfig["tools"];
   agentTools?: AgentToolsConfig;
+  /** When agent has explicit alsoAllow, skip global tool sections for implicit exposure. */
+  agentHasExplicitAlsoAllow?: boolean;
 }): string[] | undefined {
   const implicit = new Set<string>();
+  // When agent has explicit alsoAllow set, only agent-level tool sections should
+  // trigger implicit exposure. Global tool sections should not override agent's
+  // explicit restriction. This prevents tools.exec at global level from bypassing
+  // an agent's profile + alsoAllow restriction.
+  const useGlobalSections = !params.agentHasExplicitAlsoAllow;
   if (
     hasExplicitToolSection(params.agentTools?.exec) ||
-    hasExplicitToolSection(params.globalTools?.exec)
+    (useGlobalSections && hasExplicitToolSection(params.globalTools?.exec))
   ) {
     implicit.add("exec");
     implicit.add("process");
   }
   if (
     hasExplicitToolSection(params.agentTools?.fs) ||
-    hasExplicitToolSection(params.globalTools?.fs)
+    (useGlobalSections && hasExplicitToolSection(params.globalTools?.fs))
   ) {
     implicit.add("read");
     implicit.add("write");
@@ -271,9 +287,14 @@ export function resolveEffectiveToolPolicy(params: {
     modelProvider: params.modelProvider,
     modelId: params.modelId,
   });
+  const agentExplicitAlsoAllow = resolveExplicitProfileAlsoAllow(agentTools);
   const explicitProfileAlsoAllow =
-    resolveExplicitProfileAlsoAllow(agentTools) ?? resolveExplicitProfileAlsoAllow(globalTools);
-  const implicitProfileAlsoAllow = resolveImplicitProfileAlsoAllow({ globalTools, agentTools });
+    agentExplicitAlsoAllow ?? resolveExplicitProfileAlsoAllow(globalTools);
+  const implicitProfileAlsoAllow = resolveImplicitProfileAlsoAllow({
+    globalTools,
+    agentTools,
+    agentHasExplicitAlsoAllow: agentExplicitAlsoAllow !== undefined,
+  });
   const profileAlsoAllow =
     explicitProfileAlsoAllow || implicitProfileAlsoAllow
       ? Array.from(

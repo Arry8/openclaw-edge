@@ -1,8 +1,8 @@
 import path from "node:path";
 import {
   assertOkOrThrowHttpError,
-  normalizeBaseUrl,
   postTranscriptionRequest,
+  resolveProviderHttpRequestConfig,
   requireTranscriptionText,
 } from "./shared.js";
 import type { AudioTranscriptionRequest, AudioTranscriptionResult } from "./types.js";
@@ -10,6 +10,7 @@ import type { AudioTranscriptionRequest, AudioTranscriptionResult } from "./type
 type OpenAiCompatibleAudioParams = AudioTranscriptionRequest & {
   defaultBaseUrl: string;
   defaultModel: string;
+  provider?: string;
 };
 
 function resolveModel(model: string | undefined, fallback: string): string {
@@ -21,13 +22,29 @@ export async function transcribeOpenAiCompatibleAudio(
   params: OpenAiCompatibleAudioParams,
 ): Promise<AudioTranscriptionResult> {
   const fetchFn = params.fetchFn ?? fetch;
-  const baseUrl = normalizeBaseUrl(params.baseUrl, params.defaultBaseUrl);
-  const allowPrivate = Boolean(params.baseUrl?.trim());
+  const { baseUrl, allowPrivateNetwork, headers, dispatcherPolicy } =
+    resolveProviderHttpRequestConfig({
+      baseUrl: params.baseUrl,
+      defaultBaseUrl: params.defaultBaseUrl,
+      headers: params.headers,
+      request: params.request,
+      defaultHeaders: {
+        authorization: `Bearer ${params.apiKey}`,
+      },
+      provider: params.provider,
+      api: "openai-audio-transcriptions",
+      capability: "audio",
+      transport: "media-understanding",
+    });
   const url = `${baseUrl}/audio/transcriptions`;
 
   const model = resolveModel(params.model, params.defaultModel);
   const form = new FormData();
-  const fileName = params.fileName?.trim() || path.basename(params.fileName) || "audio";
+  const rawFileName = params.fileName?.trim() || path.basename(params.fileName) || "audio";
+  // OpenAI-compatible Whisper APIs validate file extension, not content.
+  // .aac is valid AAC audio but not in the accepted list; remap to .m4a
+  // which is the same codec in an MPEG-4 container that APIs accept.
+  const fileName = rawFileName.replace(/\.aac$/i, ".m4a");
   const bytes = new Uint8Array(params.buffer);
   const blob = new Blob([bytes], {
     type: params.mime ?? "application/octet-stream",
@@ -41,18 +58,15 @@ export async function transcribeOpenAiCompatibleAudio(
     form.append("prompt", params.prompt.trim());
   }
 
-  const headers = new Headers(params.headers);
-  if (!headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${params.apiKey}`);
-  }
-
   const { response: res, release } = await postTranscriptionRequest({
     url,
     headers,
     body: form,
     timeoutMs: params.timeoutMs,
     fetchFn,
-    allowPrivateNetwork: allowPrivate,
+    allowPrivateNetwork,
+    dispatcherPolicy,
+    pinDns: false,
   });
 
   try {

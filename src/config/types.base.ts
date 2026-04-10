@@ -4,9 +4,12 @@ export type ReplyMode = "text" | "command";
 export type TypingMode = "never" | "instant" | "thinking" | "message";
 export type SessionScope = "per-sender" | "global";
 export type DmScope = "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
-export type ReplyToMode = "off" | "first" | "all";
+export type ReplyToMode = "off" | "first" | "all" | "batched";
 export type GroupPolicy = "open" | "disabled" | "allowlist";
 export type DmPolicy = "pairing" | "allowlist" | "open" | "disabled";
+export type ContextVisibilityMode = "all" | "allowlist" | "allowlist_quote";
+export type TextChunkMode = "length" | "newline";
+export type StreamingMode = "off" | "partial" | "block" | "progress";
 
 export type OutboundRetryConfig = {
   /** Max retry attempts for outbound requests (default: 3). */
@@ -30,6 +33,50 @@ export type BlockStreamingChunkConfig = {
   maxChars?: number;
   breakPreference?: "paragraph" | "newline" | "sentence";
 };
+
+export type ChannelStreamingPreviewConfig = {
+  /** Chunking thresholds for preview-draft updates while streaming. */
+  chunk?: BlockStreamingChunkConfig;
+};
+
+export type ChannelStreamingBlockConfig = {
+  /** Enable chunked block-reply delivery for channels that support it. */
+  enabled?: boolean;
+  /** Merge streamed block replies before sending. */
+  coalesce?: BlockStreamingCoalesceConfig;
+};
+
+export type ChannelStreamingConfig = {
+  /**
+   * Preview streaming mode:
+   * - "off": disable preview updates
+   * - "partial": update one preview in place
+   * - "block": emit larger chunked preview updates
+   * - "progress": progress/status preview mode for channels that support it
+   */
+  mode?: StreamingMode;
+  /** Chunking mode for outbound text delivery. */
+  chunkMode?: TextChunkMode;
+  /**
+   * Channel-specific native transport streaming toggle.
+   * Used today by Slack's native stream API.
+   */
+  nativeTransport?: boolean;
+  preview?: ChannelStreamingPreviewConfig;
+  block?: ChannelStreamingBlockConfig;
+};
+
+export type ChannelDeliveryStreamingConfig = Pick<ChannelStreamingConfig, "chunkMode" | "block">;
+
+export type ChannelPreviewStreamingConfig = Pick<
+  ChannelStreamingConfig,
+  "mode" | "chunkMode" | "preview" | "block"
+>;
+
+export type SlackChannelStreamingConfig = Pick<
+  ChannelStreamingConfig,
+  "mode" | "chunkMode" | "preview" | "block" | "nativeTransport"
+>;
 
 export type MarkdownTableMode = "off" | "bullets" | "code" | "block";
 
@@ -116,6 +163,7 @@ export type SessionConfig = {
   resetByChannel?: Record<string, SessionResetConfig>;
   store?: string;
   typingIntervalSeconds?: number;
+  typingTtlSeconds?: number;
   typingMode?: TypingMode;
   /**
    * Max parent transcript token count allowed for thread/session forking.
@@ -129,6 +177,14 @@ export type SessionConfig = {
     /** Max ping-pong turns between requester/target (0–5). Default: 5. */
     maxPingPongTurns?: number;
   };
+  /**
+   * When enabled and dmScope is an isolated mode (per-peer / per-channel-peer /
+   * per-account-channel-peer), outbound messages sent via the message tool are
+   * also recorded as assistant messages in the target user's session transcript.
+   * This preserves conversation context so the target user's next reply includes
+   * the sent message in its history.  Default: false.
+   */
+  injectOutboundToTargetSession?: boolean;
   /** Shared defaults for thread-bound session routing across channels/providers. */
   threadBindings?: SessionThreadBindingsConfig;
   /** Automatic session store maintenance (pruning, capping, file rotation). */
@@ -191,6 +247,8 @@ export type DiagnosticsOtelConfig = {
   sampleRate?: number;
   /** Metric export interval (ms). */
   flushIntervalMs?: number;
+  /** Include message content (input/output text) in OTEL spans. Required for Langfuse evaluators. Default: false. */
+  includeContent?: boolean;
 };
 
 export type DiagnosticsCacheTraceConfig = {

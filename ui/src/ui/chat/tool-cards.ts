@@ -59,13 +59,32 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
   const canClick = Boolean(onOpenSidebar);
   const handleClick = canClick
     ? () => {
+        const rawCommand =
+          card.args && typeof (card.args as Record<string, unknown>).command === "string"
+            ? ((card.args as Record<string, unknown>).command as string).trim()
+            : undefined;
+        const hasUsableCommand = rawCommand !== undefined && rawCommand !== "";
+        const rawArgsJson =
+          card.args && typeof card.args === "object" && !hasUsableCommand
+            ? JSON.stringify(card.args, null, 2)
+            : undefined;
+        // Sanitize backticks so fenced code blocks are not broken by command content.
+        const safeForFence = (s: string) => s.replace(/`{3,}/g, (m) => m.replace(/`/g, "ˋ"));
+        const commandBlock = hasUsableCommand
+          ? `**Command:**\n\`\`\`\n${safeForFence(rawCommand)}\n\`\`\`\n\n`
+          : rawArgsJson !== undefined
+            ? `**Arguments:**\n\`\`\`json\n${safeForFence(rawArgsJson)}\n\`\`\`\n\n`
+            : detail
+              ? `**Command:** \`${detail}\`\n\n`
+              : "";
         if (hasText) {
-          onOpenSidebar!(formatToolOutputForSidebar(card.text!));
+          const output = formatToolOutputForSidebar(card.text!);
+          onOpenSidebar!(
+            `## ${display.label}\n\n${commandBlock}${commandBlock ? "**Output:**\n\n" : ""}${output}`,
+          );
           return;
         }
-        const info = `## ${display.label}\n\n${
-          detail ? `**Command:** \`${detail}\`\n\n` : ""
-        }*No output — tool completed successfully.*`;
+        const info = `## ${display.label}\n\n${commandBlock}*No output — tool completed successfully.*`;
         onOpenSidebar!(info);
       }
     : undefined;
@@ -146,6 +165,15 @@ function extractToolText(item: Record<string, unknown>): string | undefined {
   }
   if (typeof item.content === "string") {
     return item.content;
+  }
+  // Handle array content (e.g. [{type: "text", text: "..."}] from Anthropic-style tool results)
+  if (Array.isArray(item.content)) {
+    const parts = (item.content as Array<Record<string, unknown>>)
+      .filter((p) => p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text as string);
+    if (parts.length > 0) {
+      return parts.join("\n");
+    }
   }
   return undefined;
 }

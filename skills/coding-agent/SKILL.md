@@ -1,12 +1,12 @@
 ---
 name: coding-agent
-description: 'Delegate coding tasks to Codex, Claude Code, or Pi agents via background process. Use when: (1) building/creating new features or apps, (2) reviewing PRs (spawn in temp dir), (3) refactoring large codebases, (4) iterative coding that needs file exploration. NOT for: simple one-liner fixes (just edit), reading code (use read tool), thread-bound ACP harness requests in chat (for example spawn/run Codex or Claude Code in a Discord thread; use sessions_spawn with runtime:"acp"), or any work in ~/clawd workspace (never spawn agents here). Claude Code: use --print --permission-mode bypassPermissions (no PTY). Codex/Pi/OpenCode: pty:true required.'
+description: 'Delegate coding tasks to Codex, Claude Code, Cursor Agent, or Pi agents via background process. Use when: (1) building/creating new features or apps, (2) reviewing PRs (spawn in temp dir), (3) refactoring large codebases, (4) iterative coding that needs file exploration. NOT for: simple one-liner fixes (just edit), reading code (use read tool), thread-bound ACP harness requests in chat (for example spawn/run Codex or Claude Code in a Discord thread; use sessions_spawn with runtime:"acp"), or any work in ~/clawd workspace (never spawn agents here). Claude Code: use --print --permission-mode bypassPermissions (no PTY). Codex/Pi/OpenCode/Cursor Agent: pty:true required.'
 metadata:
   {
     "openclaw":
       {
         "emoji": "🧩",
-        "requires": { "anyBins": ["claude", "codex", "opencode", "pi"] },
+        "requires": { "anyBins": ["claude", "codex", "opencode", "pi", "cursor-agent", "agent"] },
         "install":
           [
             {
@@ -32,13 +32,13 @@ metadata:
 
 Use **bash** (with optional background mode) for all coding agent work. Simple and effective.
 
-## ⚠️ PTY Mode: Codex/Pi/OpenCode yes, Claude Code no
+## ⚠️ PTY Mode: Codex/Pi/OpenCode/Cursor Agent yes, Claude Code no
 
-For **Codex, Pi, and OpenCode**, PTY is still required (interactive terminal apps):
+For **Codex, Pi, OpenCode, and Cursor Agent**, PTY is still required (interactive terminal apps):
 
 ```bash
 # ✅ Correct for Codex/Pi/OpenCode
-bash pty:true command:"codex exec 'Your prompt'"
+bash pty:true command:"codex exec --yolo 'Your prompt'"
 ```
 
 For **Claude Code** (`claude` CLI), use `--print --permission-mode bypassPermissions` instead.
@@ -87,10 +87,10 @@ For quick prompts/chats, create a temp git repo and run:
 
 ```bash
 # Quick chat (Codex needs a git repo!)
-SCRATCH=$(mktemp -d) && cd $SCRATCH && git init && codex exec "Your prompt here"
+SCRATCH=$(mktemp -d) && cd $SCRATCH && git init && codex exec --yolo "Your prompt here"
 
 # Or in a real project - with PTY!
-bash pty:true workdir:~/Projects/myproject command:"codex exec 'Add error handling to the API calls'"
+bash pty:true workdir:~/Projects/myproject command:"codex exec --yolo 'Add error handling to the API calls'"
 ```
 
 **Why git init?** Codex refuses to run outside a trusted git directory. Creating a temp repo solves this for scratch work.
@@ -103,7 +103,7 @@ For longer tasks, use background mode with PTY:
 
 ```bash
 # Start agent in target directory (with PTY!)
-bash pty:true workdir:~/project background:true command:"codex exec --full-auto 'Build a snake game'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Build a snake game'"
 # Returns sessionId for tracking
 
 # Monitor progress
@@ -138,14 +138,16 @@ process action:kill sessionId:XXX
 | `--full-auto`   | Sandboxed but auto-approves in workspace           |
 | `--yolo`        | NO sandbox, NO approvals (fastest, most dangerous) |
 
+**Default stance:** when the workspace or user explicitly says to always use `--yolo`, obey literally and prefer `codex exec --yolo` for non-interactive Codex runs. Do not launch plain `codex` or plain `codex exec` without `--yolo` in that case.
+
 ### Building/Creating
 
 ```bash
-# Quick one-shot (auto-approves) - remember PTY!
-bash pty:true workdir:~/project command:"codex exec --full-auto 'Build a dark mode toggle'"
+# Quick one-shot (default to yolo) - remember PTY!
+bash pty:true workdir:~/project command:"codex exec --yolo 'Build a dark mode toggle'"
 
 # Background for longer work
-bash pty:true workdir:~/project background:true command:"codex --yolo 'Refactor the auth module'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Refactor the auth module'"
 ```
 
 ### Reviewing PRs
@@ -173,8 +175,8 @@ bash pty:true workdir:/tmp/pr-130-review command:"codex review --base main"
 git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 
 # Deploy the army - one Codex per PR (all with PTY!)
-bash pty:true workdir:~/project background:true command:"codex exec 'Review PR #86. git diff origin/main...origin/pr/86'"
-bash pty:true workdir:~/project background:true command:"codex exec 'Review PR #87. git diff origin/main...origin/pr/87'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Review PR #86. git diff origin/main...origin/pr/86'"
+bash pty:true workdir:~/project background:true command:"codex exec --yolo 'Review PR #87. git diff origin/main...origin/pr/87'"
 
 # Monitor all
 process action:list
@@ -182,6 +184,141 @@ process action:list
 # Post results to GitHub
 gh pr comment <PR#> --body "<review content>"
 ```
+
+---
+
+## Multi-Agent Orchestration (Experimental)
+
+Codex CLI (v0.111.0+) can spawn parallel sub-agents within a single session. Instead of one agent doing everything serially, you break the work into specialized parallel streams.
+
+> **Status:** This feature is `experimental` and may change. Enable it explicitly before use.
+
+### Enabling Multi-Agent
+
+Via CLI:
+```bash
+codex features enable multi_agent
+```
+
+Or in `~/.codex/config.toml`:
+```toml
+[features]
+multi_agent = true
+```
+
+Restart Codex after enabling.
+
+### Agent Roles
+
+Define specialized roles so agents stay in their lane. An explorer shouldn't rewrite files, and a worker shouldn't waste time mapping the codebase.
+
+In your project's `codex.toml` or `~/.codex/config.toml`:
+
+```toml
+[agents.explorer]
+model = "gpt-5.2-codex"          # fast model for scanning
+sandbox_permissions = ["disk-full-read-access"]  # read-only
+instructions = "Map the codebase. Gather evidence. Do not modify files."
+
+[agents.reviewer]
+model = "o3"                      # high-reasoning for correctness
+sandbox_permissions = ["disk-full-read-access"]
+instructions = "Review for security, correctness, and test coverage. Report risks as JSON."
+
+[agents.worker]
+model = "gpt-5.2-codex"
+sandbox_permissions = ["disk-full-read-access", "disk-write-access"]
+instructions = "Implement fixes. Commit after each change."
+```
+
+### CSV Batch Processing
+
+The `spawn_agents_on_csv` tool spawns one worker sub-agent per row. Each worker must call `report_agent_job_result` exactly once. If a worker exits without reporting, that row is marked failed in the output CSV.
+
+Tool parameters:
+- `csv_path`: source CSV file
+- `instruction`: worker prompt template with `{column_name}` placeholders
+- `id_column`: column to use as stable item ID
+- `output_schema`: JSON shape each worker must return
+- `output_csv_path`: where to write combined results
+- `max_concurrency`, `max_runtime_seconds`: job control
+
+```bash
+# Create a CSV with targets
+cat > /tmp/components.csv << 'EOF'
+path,owner
+src/api/auth.ts,backend-team
+src/api/payments.ts,backend-team
+src/components/UserForm.tsx,frontend-team
+src/lib/db.ts,backend-team
+EOF
+
+# Run Codex with a batch audit prompt
+bash pty:true workdir:~/project background:true command:"codex exec --full-auto '
+Call spawn_agents_on_csv with:
+- csv_path: /tmp/components.csv
+- id_column: path
+- instruction: \"Review {path} owned by {owner}. Return JSON with keys path, risk, summary, and follow_up via report_agent_job_result.\"
+- output_csv_path: /tmp/components-review.csv
+- output_schema: object with required string fields path, risk, summary, follow_up
+'"
+```
+
+The exported CSV includes original row data plus metadata: `job_id`, `item_id`, `status`, `last_error`, `result_json`.
+
+Related config settings:
+- `agents.max_threads`: max concurrent agent threads
+- `agents.job_max_runtime_seconds`: default per-worker timeout for CSV fan-out jobs (per-call `max_runtime_seconds` overrides this)
+
+### Mapping to OpenClaw Fleet
+
+If you run OpenClaw with a fleet of named agents, Codex multi-agent is a different layer:
+
+| Layer | What it does | Example |
+|-------|-------------|---------|
+| **OpenClaw fleet** | Routes tasks to the right agent (dev, research, deploy) | "Agent A handles code, Agent B handles research" |
+| **Codex multi-agent** | Parallelizes work within a single Codex session | "3 sub-agents audit 3 files simultaneously" |
+
+They compose well. Your OpenClaw orchestrator spawns a Codex agent for a coding task, and that Codex session internally fans out sub-agents for parallel work.
+
+**Prerequisite:** Run `codex features enable multi_agent` once before using these patterns. The feature must be enabled before Codex can spawn sub-agents.
+
+```bash
+# OpenClaw spawns one Codex session for a big audit
+# (multi_agent must already be enabled in ~/.codex/config.toml)
+bash pty:true workdir:~/project background:true command:"codex exec --full-auto '
+Spawn 3 parallel reviewers:
+1. Explorer: map all API routes and list them
+2. Reviewer: check auth middleware on each route
+3. Worker: fix any missing auth guards and commit
+'"
+```
+
+### Monitoring Sub-Agents
+
+Sub-agent activity shows up in the Codex CLI output. Use `process action:log` to watch from OpenClaw, or use `/agent` in the CLI to switch between active threads:
+
+```bash
+# From OpenClaw: watch sub-agent progress
+process action:log sessionId:XXX
+
+# From interactive Codex CLI:
+# /agent         - list active agent threads, switch between them
+# Ask Codex to steer, stop, or close a running sub-agent directly
+```
+
+For long-running or polling workflows, Codex has a built-in `monitor` role tuned for waiting and repeated status checks. The `wait` tool supports long polling windows (up to 1 hour per call).
+
+Currently visible only in CLI. IDE/app visibility is planned.
+
+### Tips and Gotchas
+
+- **Sub-agents inherit sandbox policy.** If the parent is `--full-auto`, sub-agents are sandboxed too. If `--yolo`, sub-agents get full access.
+- **Start small.** Try 2-3 sub-agents before scaling to 20. Debug one workflow first.
+- **CSV batches can be large** but respect `agents.max_threads`. Default concurrency is reasonable, don't crank it without testing.
+- **Failed sub-agents don't crash the parent.** The row is marked failed and the batch continues.
+- **Role separation matters.** A read-only explorer can't accidentally delete files. Use `sandbox_permissions` to enforce boundaries.
+- **This is experimental.** The API surface may change between Codex releases. Pin your Codex version for production workflows.
 
 ---
 
@@ -201,6 +338,99 @@ bash workdir:~/project background:true command:"claude --permission-mode bypassP
 
 ```bash
 bash pty:true workdir:~/project command:"opencode run 'Your task'"
+```
+
+---
+
+## Cursor Agent CLI
+
+**Binary note:** Cursor's official installer exposes `agent`. Some setups also provide or alias `cursor-agent`, but the examples below use the official `agent` binary so fresh installs work out of the box.
+
+### Installation
+
+Official Cursor docs: <https://cursor.com/docs/cli/installation>
+
+```bash
+# macOS / Linux / WSL
+curl https://cursor.com/install -fsS | bash
+
+# Verify
+agent --version
+```
+
+Post-install PATH fix if needed:
+
+```bash
+# bash
+export PATH="$HOME/.local/bin:$PATH"
+
+# zsh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+If your machine exposes `cursor-agent` instead of `agent`, substitute that name in the commands below.
+
+### Quick Start
+
+```bash
+# Auth check
+bash pty:true command:"agent status"
+
+# One-shot headless run
+bash pty:true workdir:~/project command:"agent --trust --yolo --print --output-format text 'Implement retry logic for API calls'"
+
+# Background run for longer tasks
+bash pty:true workdir:~/project background:true command:"agent --trust --yolo --print --output-format text 'Refactor auth module and summarize file-by-file changes'"
+```
+
+### ⚡ Best Practices (learned the hard way)
+
+**Output format:** Always use `--output-format text`. Alternatives:
+
+- `stream-json` produces noisy token-by-token deltas — unreadable in logs
+- `json` is a single blob at the end — no advantage over text
+- `text` gives clean, readable final output via `process log`
+
+**Keep prompts small and focused.** Cursor spends a long time thinking before acting. A big combined prompt (e.g. "create 20 files + tests + commit") can burn 10+ minutes just thinking and timeout with nothing written. Split into focused steps:
+
+- ✅ "Create the 7 Parse infrastructure files" (3-5 min)
+- ✅ "Create the 10 model files" (3-5 min)
+- ✅ "Create tests and commit everything" (3-5 min)
+- ❌ "Create Parse infra + models + tests + commit" (10+ min thinking, timeout)
+
+**Always use `--trust --yolo`** for autonomous headless work. Without `--trust`, Cursor prompts for workspace trust and hangs. Without `--yolo`, it asks for approval on file writes.
+
+**Silence during thinking is normal.** With `text` format, there's no output until thinking finishes and it starts acting. Don't kill the process just because it's quiet — check with `process poll`.
+
+**Set generous timeouts.** 600s (10 min) minimum for single-step tasks. 900s for anything involving build + test cycles.
+
+### Common Flags
+
+| Flag                       | Effect                                                    |
+| -------------------------- | --------------------------------------------------------- |
+| `--print` / `-p`           | Non-interactive/headless mode (best for automation)       |
+| `--output-format <format>` | `text`, `json`, or `stream-json` output in `--print` mode |
+| `--workspace <path>`       | Pin workspace explicitly instead of relying on CWD        |
+| `--mode plan\|ask`         | Read-only planning or Q&A mode                            |
+| `--model <model>`          | Pick a specific model                                     |
+| `--resume [chatId]`        | Resume an existing chat session                           |
+| `--continue`               | Resume the latest chat session                            |
+| `--approve-mcps`           | Auto-approve MCP servers (headless/print flows)           |
+
+### PR Review Example
+
+```bash
+REVIEW_DIR=$(mktemp -d)
+git clone https://github.com/user/repo.git "$REVIEW_DIR"
+cd "$REVIEW_DIR" && gh pr checkout 130
+
+bash pty:true workdir:"$REVIEW_DIR" command:"agent --trust --yolo --print --output-format text 'Review this PR against origin/main. Summarize risks, test gaps, and suggested fixes.'"
+```
+
+### Structured Output Example
+
+```bash
+bash pty:true workdir:~/project command:"agent --trust --yolo --print --output-format text 'Create a migration plan for the auth module'"
 ```
 
 ---
@@ -250,6 +480,105 @@ git worktree remove /tmp/issue-99
 
 ---
 
+
+---
+
+## Context Handoff (for persistent coding tools)
+
+When escalating tasks to a coding agent running outside of OpenClaw (e.g., Claude Code on the host, a persistent Codex session), use the structured handoff protocol instead of dumping context into the prompt.
+
+### Pre-flight: Context Snapshot
+
+Before escalating, generate a system state snapshot:
+
+```bash
+bash command:"~/.openclaw/scripts/context-snapshot.sh"
+```
+
+This writes `~/.openclaw/coding-agent/context/current.json` with:
+- Model health (provider status, quarantines, fallback chain)
+- Key drift check results
+- Repo health (GitHub repos, secrets)
+- Recent gateway errors (last 5)
+- Cron job status
+- Active incidents
+- Disk usage
+
+The coding tool reads this one file instead of re-running diagnostics. **Zero tokens, full awareness.**
+
+### Task Handoff: Inbox/Outbox
+
+Write a structured task to the inbox:
+
+```bash
+bash command:"cat > ~/.openclaw/coding-agent/inbox/$(date -u +%Y%m%d-%H%M%S)-task.json << 'TASK'
+{
+  \"agent\": \"<your agent ID>\",
+  \"urgency\": \"routine\",
+  \"task\": \"One-line summary of what you need\",
+  \"context\": \"What happened, what you tried, why you're escalating\",
+  \"files\": [\"/path/to/relevant/file\"],
+  \"errors\": \"Exact error text if any\",
+  \"outcome\": \"What success looks like\"
+}
+TASK"
+```
+
+The coding tool picks up tasks from `inbox/`, reads `context/current.json` for situational awareness, and writes results to `outbox/`:
+
+```json
+{
+  "timestamp": "2026-03-01T21:15:00Z",
+  "task": "Original task summary",
+  "status": "completed",
+  "filesChanged": [{"path": "/path/to/file", "action": "modified"}],
+  "restartNeeded": false,
+  "verify": ["Step 1 to verify", "Step 2 to verify"],
+  "notes": "Anything the agent should know"
+}
+```
+
+### Operational Database
+
+For queryable history, use the `ops-db.sh` wrapper around a local SQLite database:
+
+```bash
+# Record current provider health
+bash command:"~/.openclaw/scripts/ops-db.sh health snapshot"
+
+# Check latest provider status
+bash command:"~/.openclaw/scripts/ops-db.sh health latest"
+
+# Create a task for the coding tool
+bash command:"~/.openclaw/scripts/ops-db.sh task create myagent 'Fix auth handler' --urgency blocking --context 'Getting 500 errors on /api/auth'"
+
+# Log an incident
+bash command:"~/.openclaw/scripts/ops-db.sh incident open 'Provider X down' --provider x --severity high"
+
+# Check what happened recently
+bash command:"~/.openclaw/scripts/ops-db.sh config recent --limit 5"
+```
+
+The database (`~/.openclaw/ops.db`) is readable by both OpenClaw agents and the external coding tool. Run `ops-db.sh init` to set up the schema.
+
+### Setup
+
+The context handoff scripts are in `skills/coding-agent/scripts/`. Copy them to your scripts directory:
+
+```bash
+bash command:"cp ~/.openclaw/skills/coding-agent/scripts/*.sh ~/.openclaw/scripts/ && chmod +x ~/.openclaw/scripts/context-snapshot.sh ~/.openclaw/scripts/ops-db.sh"
+bash command:"cp ~/.openclaw/skills/coding-agent/scripts/ops-db-init.sql ~/.openclaw/scripts/"
+bash command:"~/.openclaw/scripts/ops-db.sh init"
+```
+
+Directory structure (created automatically by `context-snapshot.sh`):
+```
+~/.openclaw/coding-agent/
+├── inbox/    # Agents drop structured task requests
+├── outbox/   # Coding tool drops structured results
+└── context/  # Pre-bundled context snapshots
+```
+
 ## ⚠️ Rules
 
 1. **Use the right execution mode per agent**:
@@ -260,11 +589,13 @@ git worktree remove /tmp/issue-99
    - If an agent fails/hangs, respawn it or ask the user for direction, but don't silently take over.
 3. **Be patient** - don't kill sessions because they're "slow"
 4. **Monitor with process:log** - check progress without interfering
-5. **--full-auto for building** - auto-approves changes
-6. **vanilla for reviewing** - no special flags needed
+5. **Default to `--yolo` when the workspace/user says so** - prefer `codex exec --yolo` for non-interactive builds and implementation runs
+6. **Use review flags intentionally** - only drop `--yolo` if the user explicitly wants a safer/non-yolo path
 7. **Parallel is OK** - run many Codex processes at once for batch work
 8. **NEVER start Codex inside your OpenClaw state directory** (`$OPENCLAW_STATE_DIR`, default `~/.openclaw`) - it'll read your soul docs and get weird ideas about the org chart!
 9. **NEVER checkout branches in ~/Projects/openclaw/** - that's the LIVE OpenClaw instance!
+10. **Multi-agent: test roles before batch runs** - verify your Explorer/Reviewer/Worker configs work on a single file before unleashing a CSV batch across the whole repo
+11. **Multi-agent: read-only for exploration** - always use `disk-full-read-access` (no write) for explorer/reviewer roles. Only workers should write.
 
 ---
 

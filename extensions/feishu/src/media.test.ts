@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClawdbotConfig } from "../runtime-api.js";
 
 const createFeishuClientMock = vi.hoisted(() => vi.fn());
@@ -82,14 +82,16 @@ function mockResolvedFeishuAccount() {
 }
 
 describe("sendMediaFeishu msg_type routing", () => {
-  beforeEach(async () => {
-    vi.resetModules();
+  beforeAll(async () => {
     ({
       downloadImageFeishu,
       downloadMessageResourceFeishu,
       sanitizeFileNameForUpload,
       sendMediaFeishu,
     } = await import("./media.js"));
+  });
+
+  beforeEach(() => {
     vi.clearAllMocks();
     mockResolvedFeishuAccount();
 
@@ -183,6 +185,37 @@ describe("sendMediaFeishu msg_type routing", () => {
     expect(messageCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ msg_type: "audio" }),
+      }),
+    );
+  });
+
+  it("uses msg_type=audio for mp3 when audioAsVoice is true (#59588)", async () => {
+    await sendMediaFeishu({
+      cfg: emptyConfig,
+      to: "user:ou_target",
+      mediaBuffer: Buffer.from("tts-audio"),
+      fileName: "tts.mp3",
+      audioAsVoice: true,
+    });
+
+    expect(messageCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ msg_type: "audio" }),
+      }),
+    );
+  });
+
+  it("uses msg_type=file for mp3 without audioAsVoice", async () => {
+    await sendMediaFeishu({
+      cfg: emptyConfig,
+      to: "user:ou_target",
+      mediaBuffer: Buffer.from("music"),
+      fileName: "song.mp3",
+    });
+
+    expect(messageCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ msg_type: "file" }),
       }),
     );
   });
@@ -607,5 +640,122 @@ describe("downloadMessageResourceFeishu", () => {
       contentType: "video/mp4",
       fileName: "clip.mp4",
     });
+  });
+
+  it("retries with same type=file on 5xx server errors", async () => {
+    messageResourceGetMock
+      .mockRejectedValueOnce(new Error("Feishu message resource download failed: 502 Bad Gateway"))
+      .mockResolvedValueOnce(Buffer.from("recovered-data"));
+
+    const result = await downloadMessageResourceFeishu({
+      cfg: {} as any,
+      messageId: "om_ios_video",
+      fileKey: "file_key_ios",
+      type: "file",
+    });
+
+    expect(messageResourceGetMock).toHaveBeenCalledTimes(2);
+    // Both calls use type=file (no type switching)
+    expect(messageResourceGetMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ params: { type: "file" } }),
+    );
+    expect(messageResourceGetMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ params: { type: "file" } }),
+    );
+    expect(result.buffer).toEqual(Buffer.from("recovered-data"));
+  });
+
+  it("applies more retries for detected video files", async () => {
+    messageResourceGetMock
+      .mockRejectedValueOnce(new Error("Feishu message resource download failed: 502 Bad Gateway"))
+      .mockRejectedValueOnce(new Error("Feishu message resource download failed: 502 Bad Gateway"))
+      .mockResolvedValueOnce(Buffer.from("video-recovered"));
+
+    const result = await downloadMessageResourceFeishu({
+      cfg: {} as any,
+      messageId: "om_proactive",
+      fileKey: "file_key_vid",
+      type: "file",
+      content: { file_name: "recording.mp4" },
+    });
+
+    expect(messageResourceGetMock).toHaveBeenCalledTimes(3);
+    // All calls use type=file
+    for (let i = 1; i <= 3; i++) {
+      expect(messageResourceGetMock).toHaveBeenNthCalledWith(
+        i,
+        expect.objectContaining({ params: { type: "file" } }),
+      );
+    }
+    expect(result.buffer).toEqual(Buffer.from("video-recovered"));
+  });
+
+  it("does not fall back on 4xx errors", async () => {
+    messageResourceGetMock.mockRejectedValueOnce(
+      new Error("Feishu message resource download failed: 404 Not Found"),
+    );
+
+    await expect(
+      downloadMessageResourceFeishu({
+        cfg: {} as any,
+        messageId: "om_missing",
+        fileKey: "file_key_gone",
+        type: "file",
+      }),
+    ).rejects.toThrow("404 Not Found");
+
+    expect(messageResourceGetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fall back when type is image", async () => {
+    messageResourceGetMock.mockRejectedValueOnce(
+      new Error("Feishu message resource download failed: 502 Bad Gateway"),
+    );
+
+    await expect(
+      downloadMessageResourceFeishu({
+        cfg: {} as any,
+        messageId: "om_img_err",
+        fileKey: "img_key_err",
+        type: "image",
+      }),
+    ).rejects.toThrow("502 Bad Gateway");
+
+    expect(messageResourceGetMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isLikelyVideoFile", () => {
+  // Import dynamically to test the exported helper
+  let isLikelyVideoFile: (content: Record<string, unknown>) => boolean;
+  beforeEach(async () => {
+    const mod = await import("./media.js");
+    isLikelyVideoFile = mod.isLikelyVideoFile;
+  });
+
+  it("returns true when content has duration and image_key", () => {
+    expect(isLikelyVideoFile({ duration: 30, image_key: "img_thumb_123" })).toBe(true);
+  });
+
+  it("returns false when duration is missing", () => {
+    expect(isLikelyVideoFile({ image_key: "img_thumb_123" })).toBe(false);
+  });
+
+  it("returns false when image_key is missing", () => {
+    expect(isLikelyVideoFile({ duration: 30 })).toBe(false);
+  });
+
+  it("returns true for video file extensions", () => {
+    expect(isLikelyVideoFile({ file_name: "recording.mp4" })).toBe(true);
+    expect(isLikelyVideoFile({ file_name: "clip.MOV" })).toBe(true);
+    expect(isLikelyVideoFile({ fileName: "screen.webm" })).toBe(true);
+  });
+
+  it("returns false for non-video files", () => {
+    expect(isLikelyVideoFile({ file_name: "document.pdf" })).toBe(false);
+    expect(isLikelyVideoFile({ file_name: "photo.jpg" })).toBe(false);
+    expect(isLikelyVideoFile({})).toBe(false);
   });
 });

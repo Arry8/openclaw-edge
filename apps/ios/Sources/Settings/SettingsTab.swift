@@ -53,6 +53,7 @@ struct SettingsTab: View {
     @State private var selectedAgentPickerId: String = ""
 
     @State private var showResetOnboardingAlert: Bool = false
+    @State private var showGatewayProblemDetails: Bool = false
     @State private var activeFeatureHelp: FeatureHelp?
     @State private var suppressCredentialPersist: Bool = false
 
@@ -63,6 +64,20 @@ struct SettingsTab: View {
             Form {
                 Section {
                     DisclosureGroup(isExpanded: self.$gatewayExpanded) {
+                        if let gatewayProblem = self.appModel.lastGatewayProblem,
+                           !self.isGatewayConnected
+                        {
+                            GatewayProblemBanner(
+                                problem: gatewayProblem,
+                                primaryActionTitle: "Retry connection",
+                                onPrimaryAction: {
+                                    Task { await self.retryGatewayConnectionFromProblem() }
+                                },
+                                onShowDetails: {
+                                    self.showGatewayProblemDetails = true
+                                })
+                        }
+
                         if !self.isGatewayConnected {
                             Text(
                                 "1. Open a chat with your OpenClaw agent and send /pair\n"
@@ -123,7 +138,7 @@ struct SettingsTab: View {
                         if self.appModel.gatewayServerName == nil {
                             LabeledContent("Discovery", value: self.gatewayController.discoveryStatusText)
                         }
-                        LabeledContent("Status", value: self.appModel.gatewayStatusText)
+                        LabeledContent("Status", value: self.appModel.gatewayDisplayStatusText)
                         Toggle("Auto-connect on launch", isOn: self.$gatewayAutoConnect)
 
                         if let serverName = self.appModel.gatewayServerName {
@@ -339,6 +354,26 @@ struct SettingsTab: View {
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Speech-to-Text")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Picker("STT Model", selection: Bindable(self.appModel.talkMode).sttModelId) {
+                                    Text("Scribe v2 Realtime").tag("scribe_v2_realtime")
+                                }
+                                Picker("Language", selection: Bindable(self.appModel.talkMode).sttLanguageCode) {
+                                    Text("Auto-detect").tag("")
+                                    ForEach(Self.sttLanguages, id: \.code) { lang in
+                                        Text(lang.name).tag(lang.code)
+                                    }
+                                }
+                                Text(
+                                    "ElevenLabs STT is enabled when an API key is configured.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
                             self.featureToggle(
                                 "Show Talk Control",
                                 isOn: self.$talkButtonEnabled,
@@ -400,6 +435,16 @@ struct SettingsTab: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel("Close")
+                }
+            }
+            .sheet(isPresented: self.$showGatewayProblemDetails) {
+                if let gatewayProblem = self.appModel.lastGatewayProblem {
+                    GatewayProblemDetailsSheet(
+                        problem: gatewayProblem,
+                        primaryActionTitle: "Retry",
+                        onPrimaryAction: {
+                            Task { await self.retryGatewayConnectionFromProblem() }
+                        })
                 }
             }
             .alert("Reset Onboarding?", isPresented: self.$showResetOnboardingAlert) {
@@ -593,6 +638,9 @@ struct SettingsTab: View {
         if let server = self.appModel.gatewayServerName, self.isGatewayConnected {
             return server
         }
+        if let problem = self.appModel.lastGatewayProblem {
+            return problem.statusText
+        }
         let trimmed = self.appModel.gatewayStatusText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Not connected" : trimmed
     }
@@ -642,7 +690,7 @@ struct SettingsTab: View {
 
     private func gatewayDebugText() -> String {
         var lines: [String] = [
-            "gateway: \(self.appModel.gatewayStatusText)",
+            "gateway: \(self.appModel.gatewayDisplayStatusText)",
             "discovery: \(self.gatewayController.discoveryStatusText)",
         ]
         lines.append("server: \(self.appModel.gatewayServerName ?? "—")")
@@ -855,6 +903,114 @@ struct SettingsTab: View {
         return true
     }
 
+    // MARK: - STT Languages
+
+    private struct STTLanguage {
+        let code: String
+        let name: String
+    }
+
+    private static let sttLanguages: [STTLanguage] = [
+        // Common languages first
+        STTLanguage(code: "eng", name: "English"),
+        STTLanguage(code: "zho", name: "Mandarin Chinese"),
+        STTLanguage(code: "yue", name: "Cantonese"),
+        STTLanguage(code: "jpn", name: "Japanese"),
+        STTLanguage(code: "kor", name: "Korean"),
+        STTLanguage(code: "fra", name: "French"),
+        STTLanguage(code: "deu", name: "German"),
+        STTLanguage(code: "spa", name: "Spanish"),
+        STTLanguage(code: "por", name: "Portuguese"),
+        STTLanguage(code: "ita", name: "Italian"),
+        STTLanguage(code: "rus", name: "Russian"),
+        STTLanguage(code: "hin", name: "Hindi"),
+        STTLanguage(code: "ara", name: "Arabic"),
+        STTLanguage(code: "tha", name: "Thai"),
+        STTLanguage(code: "vie", name: "Vietnamese"),
+        STTLanguage(code: "ind", name: "Indonesian"),
+        STTLanguage(code: "msa", name: "Malay"),
+        STTLanguage(code: "tur", name: "Turkish"),
+        // Alphabetical
+        STTLanguage(code: "afr", name: "Afrikaans"),
+        STTLanguage(code: "amh", name: "Amharic"),
+        STTLanguage(code: "hye", name: "Armenian"),
+        STTLanguage(code: "asm", name: "Assamese"),
+        STTLanguage(code: "aze", name: "Azerbaijani"),
+        STTLanguage(code: "bel", name: "Belarusian"),
+        STTLanguage(code: "ben", name: "Bengali"),
+        STTLanguage(code: "bos", name: "Bosnian"),
+        STTLanguage(code: "bul", name: "Bulgarian"),
+        STTLanguage(code: "mya", name: "Burmese"),
+        STTLanguage(code: "cat", name: "Catalan"),
+        STTLanguage(code: "ceb", name: "Cebuano"),
+        STTLanguage(code: "nya", name: "Chichewa"),
+        STTLanguage(code: "hrv", name: "Croatian"),
+        STTLanguage(code: "ces", name: "Czech"),
+        STTLanguage(code: "dan", name: "Danish"),
+        STTLanguage(code: "nld", name: "Dutch"),
+        STTLanguage(code: "est", name: "Estonian"),
+        STTLanguage(code: "fil", name: "Filipino"),
+        STTLanguage(code: "fin", name: "Finnish"),
+        STTLanguage(code: "ful", name: "Fulah"),
+        STTLanguage(code: "glg", name: "Galician"),
+        STTLanguage(code: "lug", name: "Ganda"),
+        STTLanguage(code: "kat", name: "Georgian"),
+        STTLanguage(code: "ell", name: "Greek"),
+        STTLanguage(code: "guj", name: "Gujarati"),
+        STTLanguage(code: "hau", name: "Hausa"),
+        STTLanguage(code: "heb", name: "Hebrew"),
+        STTLanguage(code: "hun", name: "Hungarian"),
+        STTLanguage(code: "isl", name: "Icelandic"),
+        STTLanguage(code: "ibo", name: "Igbo"),
+        STTLanguage(code: "gle", name: "Irish"),
+        STTLanguage(code: "jav", name: "Javanese"),
+        STTLanguage(code: "kan", name: "Kannada"),
+        STTLanguage(code: "kaz", name: "Kazakh"),
+        STTLanguage(code: "khm", name: "Khmer"),
+        STTLanguage(code: "kur", name: "Kurdish"),
+        STTLanguage(code: "kir", name: "Kyrgyz"),
+        STTLanguage(code: "lao", name: "Lao"),
+        STTLanguage(code: "lav", name: "Latvian"),
+        STTLanguage(code: "lin", name: "Lingala"),
+        STTLanguage(code: "lit", name: "Lithuanian"),
+        STTLanguage(code: "luo", name: "Luo"),
+        STTLanguage(code: "ltz", name: "Luxembourgish"),
+        STTLanguage(code: "mkd", name: "Macedonian"),
+        STTLanguage(code: "mal", name: "Malayalam"),
+        STTLanguage(code: "mlt", name: "Maltese"),
+        STTLanguage(code: "mri", name: "Maori"),
+        STTLanguage(code: "mar", name: "Marathi"),
+        STTLanguage(code: "mon", name: "Mongolian"),
+        STTLanguage(code: "nep", name: "Nepali"),
+        STTLanguage(code: "nso", name: "Northern Sotho"),
+        STTLanguage(code: "nor", name: "Norwegian"),
+        STTLanguage(code: "oci", name: "Occitan"),
+        STTLanguage(code: "ori", name: "Odia"),
+        STTLanguage(code: "pus", name: "Pashto"),
+        STTLanguage(code: "fas", name: "Persian"),
+        STTLanguage(code: "pol", name: "Polish"),
+        STTLanguage(code: "pan", name: "Punjabi"),
+        STTLanguage(code: "ron", name: "Romanian"),
+        STTLanguage(code: "srp", name: "Serbian"),
+        STTLanguage(code: "sna", name: "Shona"),
+        STTLanguage(code: "snd", name: "Sindhi"),
+        STTLanguage(code: "slk", name: "Slovak"),
+        STTLanguage(code: "slv", name: "Slovenian"),
+        STTLanguage(code: "som", name: "Somali"),
+        STTLanguage(code: "swa", name: "Swahili"),
+        STTLanguage(code: "swe", name: "Swedish"),
+        STTLanguage(code: "tam", name: "Tamil"),
+        STTLanguage(code: "tgk", name: "Tajik"),
+        STTLanguage(code: "tel", name: "Telugu"),
+        STTLanguage(code: "ukr", name: "Ukrainian"),
+        STTLanguage(code: "urd", name: "Urdu"),
+        STTLanguage(code: "uzb", name: "Uzbek"),
+        STTLanguage(code: "cym", name: "Welsh"),
+        STTLanguage(code: "wol", name: "Wolof"),
+        STTLanguage(code: "xho", name: "Xhosa"),
+        STTLanguage(code: "zul", name: "Zulu"),
+    ]
+
     private static func probeTCP(host: String, port: Int, timeoutSeconds: Double) async -> Bool {
         await TCPProbe.probe(
             host: host,
@@ -889,6 +1045,9 @@ struct SettingsTab: View {
     }
 
     private var setupStatusLine: String? {
+        if let problem = self.appModel.lastGatewayProblem {
+            return problem.message
+        }
         let trimmedSetup = self.setupStatusText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let gatewayStatus = self.appModel.gatewayStatusText.trimmingCharacters(in: .whitespacesAndNewlines)
         if let friendly = self.friendlyGatewayMessage(from: gatewayStatus) { return friendly }
@@ -985,6 +1144,14 @@ struct SettingsTab: View {
 
     private static func httpURLString(host: String?, port: Int?, fallback: String) -> String {
         SettingsNetworkingHelpers.httpURLString(host: host, port: port, fallback: fallback)
+    }
+
+    private func retryGatewayConnectionFromProblem() async {
+        if self.manualGatewayEnabled || self.connectingGatewayID == "manual" {
+            await self.connectManual()
+            return
+        }
+        await self.connectLastKnown()
     }
 
     private func resetOnboarding() {

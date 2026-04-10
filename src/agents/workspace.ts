@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import syncFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -6,7 +7,9 @@ import { openBoundaryFile } from "../infra/boundary-file-read.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../routing/session-key.js";
+import { normalizeOptionalLowercaseString, readStringValue } from "../shared/string-coerce.js";
 import { resolveUserPath } from "../utils.js";
+import { resolveImports } from "./resolve-imports.js";
 import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
 
 export function resolveDefaultAgentWorkspaceDir(
@@ -15,7 +18,7 @@ export function resolveDefaultAgentWorkspaceDir(
 ): string {
   const home = resolveRequiredHomeDir(env, homedir);
   const profile = env.OPENCLAW_PROFILE?.trim();
-  if (profile && profile.toLowerCase() !== "default") {
+  if (profile && normalizeOptionalLowercaseString(profile) !== "default") {
     return path.join(home, ".openclaw", `workspace-${profile}`);
   }
   return path.join(home, ".openclaw", "workspace");
@@ -24,6 +27,7 @@ export function resolveDefaultAgentWorkspaceDir(
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
+export const DEFAULT_HARD_EXECUTION_RULES_FILENAME = "HARD_EXECUTION_RULES.md";
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
 export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
 export const DEFAULT_USER_FILENAME = "USER.md";
@@ -53,9 +57,59 @@ function workspaceFileIdentity(stat: syncFs.Stats, canonicalPath: string): strin
   return `${canonicalPath}|${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
 }
 
+/**
+ * Fallback reader for workspace bootstrap files that are symlinks pointing
+ * outside the workspace boundary.  Resolves the real path, opens a file
+ * descriptor, then validates via fstat and reads from the same fd to
+ * eliminate TOCTOU races (the target cannot be swapped between stat and read).
+ */
+async function readSymlinkedWorkspaceFile(filePath: string): Promise<WorkspaceGuardedReadResult> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    const realPath = await fs.realpath(filePath);
+    handle = await fs.open(realPath, "r");
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      return { ok: false, reason: "validation" };
+    }
+    if (stat.size > MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES) {
+      return { ok: false, reason: "validation" };
+    }
+    // Reject hardlinked targets so that the symlink fallback cannot bypass
+    // the hardlink rejection enforced by the primary boundary reader.
+    if (stat.nlink > 1) {
+      return { ok: false, reason: "validation" };
+    }
+
+    const identity = workspaceFileIdentity(stat, realPath);
+    const cached = workspaceFileCache.get(filePath);
+    if (cached && cached.identity === identity) {
+      return { ok: true, content: cached.content };
+    }
+
+    const content = await handle.readFile("utf-8");
+    workspaceFileCache.set(filePath, { content, identity });
+    return { ok: true, content };
+  } catch (error) {
+    workspaceFileCache.delete(filePath);
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP") {
+      return { ok: false, reason: "path", error };
+    }
+    return { ok: false, reason: "io", error };
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function readWorkspaceFileWithGuards(params: {
   filePath: string;
   workspaceDir: string;
+  /** When true, symlinks pointing outside the workspace boundary are followed
+   *  via the symlink fallback reader.  Should only be enabled for the fixed
+   *  set of top-level bootstrap files, not for extra/glob-resolved patterns. */
+  allowSymlinks?: boolean;
 }): Promise<WorkspaceGuardedReadResult> {
   const opened = await openBoundaryFile({
     absolutePath: params.filePath,
@@ -64,6 +118,22 @@ async function readWorkspaceFileWithGuards(params: {
     maxBytes: MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES,
   });
   if (!opened.ok) {
+    // If the boundary check rejected the file (e.g. symlink pointing outside
+    // the workspace), fall back to reading via the fd-based symlink reader.
+    // This is only allowed for top-level bootstrap files (allowSymlinks=true)
+    // so that extra bootstrap file patterns cannot abuse the fallback.
+    // Only attempt the fallback when the path is actually a symlink so that
+    // hardlink rejections and other validation failures are preserved.
+    if (params.allowSymlinks && opened.reason === "validation") {
+      try {
+        const lstat = await fs.lstat(params.filePath);
+        if (lstat.isSymbolicLink()) {
+          return readSymlinkedWorkspaceFile(params.filePath);
+        }
+      } catch {
+        // lstat failed — fall through to the original failure
+      }
+    }
     workspaceFileCache.delete(params.filePath);
     return opened;
   }
@@ -101,6 +171,55 @@ function stripFrontMatter(content: string): string {
   return trimmed;
 }
 
+const FALLBACK_WORKSPACE_TEMPLATES: Record<string, string> = {
+  "AGENTS.md": `# AGENTS.md
+
+This file was generated from a built-in fallback template because the packaged templates were missing.
+
+- If you're seeing this, your OpenClaw install is likely incomplete.
+- Fix: reinstall OpenClaw (or run \`openclaw update\`) so docs/reference/templates are present.
+
+## Quick start
+- Read SOUL.md + USER.md
+- Use memory/ daily logs for continuity
+`,
+  "SOUL.md": `# SOUL.md
+
+Fallback template (packaged templates were missing).
+
+- Be concise and useful.
+- Prefer evidence over guesses.
+`,
+  "TOOLS.md": `# TOOLS.md
+
+Fallback template (packaged templates were missing).
+
+Environment-specific notes go here.
+`,
+  "IDENTITY.md": `# IDENTITY.md
+
+Fallback template (packaged templates were missing).
+
+- Name: Paru
+`,
+  "USER.md": `# USER.md
+
+Fallback template (packaged templates were missing).
+
+- Preferred language: Chinese
+`,
+  "HEARTBEAT.md": `# HEARTBEAT.md
+
+# Keep this file empty (or with only comments) to skip heartbeat API calls.
+`,
+  "BOOTSTRAP.md": `# BOOTSTRAP.md
+
+Fallback template (packaged templates were missing).
+
+If this is your first run, reinstall OpenClaw so the real templates are available.
+`,
+};
+
 async function loadTemplate(name: string): Promise<string> {
   const cached = workspaceTemplateCache.get(name);
   if (cached) {
@@ -114,6 +233,10 @@ async function loadTemplate(name: string): Promise<string> {
       const content = await fs.readFile(templatePath, "utf-8");
       return stripFrontMatter(content);
     } catch {
+      const fallback = FALLBACK_WORKSPACE_TEMPLATES[name];
+      if (typeof fallback === "string") {
+        return stripFrontMatter(fallback);
+      }
       throw new Error(
         `Missing workspace template: ${name} (${templatePath}). Ensure docs/reference/templates are packaged.`,
       );
@@ -132,6 +255,7 @@ async function loadTemplate(name: string): Promise<string> {
 export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_AGENTS_FILENAME
   | typeof DEFAULT_SOUL_FILENAME
+  | typeof DEFAULT_HARD_EXECUTION_RULES_FILENAME
   | typeof DEFAULT_TOOLS_FILENAME
   | typeof DEFAULT_IDENTITY_FILENAME
   | typeof DEFAULT_USER_FILENAME
@@ -166,9 +290,10 @@ type WorkspaceSetupState = {
 };
 
 /** Set of recognized bootstrap filenames for runtime validation */
-const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
+export const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_SOUL_FILENAME,
+  DEFAULT_HARD_EXECUTION_RULES_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_USER_FILENAME,
@@ -204,6 +329,10 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 function resolveWorkspaceStatePath(dir: string): string {
+  return path.join(dir, WORKSPACE_STATE_FILENAME);
+}
+
+function resolveLegacyWorkspaceStatePath(dir: string): string {
   return path.join(dir, WORKSPACE_STATE_DIRNAME, WORKSPACE_STATE_FILENAME);
 }
 
@@ -217,14 +346,11 @@ function parseWorkspaceSetupState(raw: string): WorkspaceSetupState | null {
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    const legacyCompletedAt =
-      typeof parsed.onboardingCompletedAt === "string" ? parsed.onboardingCompletedAt : undefined;
+    const legacyCompletedAt = readStringValue(parsed.onboardingCompletedAt);
     return {
       version: WORKSPACE_STATE_VERSION,
-      bootstrapSeededAt:
-        typeof parsed.bootstrapSeededAt === "string" ? parsed.bootstrapSeededAt : undefined,
-      setupCompletedAt:
-        typeof parsed.setupCompletedAt === "string" ? parsed.setupCompletedAt : legacyCompletedAt,
+      bootstrapSeededAt: readStringValue(parsed.bootstrapSeededAt),
+      setupCompletedAt: readStringValue(parsed.setupCompletedAt) ?? legacyCompletedAt,
     };
   } catch {
     return null;
@@ -256,8 +382,13 @@ async function readWorkspaceSetupState(statePath: string): Promise<WorkspaceSetu
 }
 
 async function readWorkspaceSetupStateForDir(dir: string): Promise<WorkspaceSetupState> {
-  const statePath = resolveWorkspaceStatePath(resolveUserPath(dir));
-  return await readWorkspaceSetupState(statePath);
+  const resolved = resolveUserPath(dir);
+  const statePath = resolveWorkspaceStatePath(resolved);
+  const state = await readWorkspaceSetupState(statePath);
+  if (state.setupCompletedAt || state.bootstrapSeededAt) {
+    return state;
+  }
+  return await readWorkspaceSetupState(resolveLegacyWorkspaceStatePath(resolved));
 }
 
 export async function isWorkspaceSetupCompleted(dir: string): Promise<boolean> {
@@ -269,9 +400,8 @@ async function writeWorkspaceSetupState(
   statePath: string,
   state: WorkspaceSetupState,
 ): Promise<void> {
-  await fs.mkdir(path.dirname(statePath), { recursive: true });
   const payload = `${JSON.stringify(state, null, 2)}\n`;
-  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now().toString(36)}-${randomUUID()}`;
   try {
     await fs.writeFile(tmpPath, payload, { encoding: "utf-8" });
     await fs.rename(tmpPath, statePath);
@@ -327,6 +457,12 @@ async function ensureGitRepo(dir: string, isBrandNewWorkspace: boolean) {
 export async function ensureAgentWorkspace(params?: {
   dir?: string;
   ensureBootstrapFiles?: boolean;
+  /**
+   * List of optional bootstrap filenames to skip writing.
+   * Applies only to SOUL.md, USER.md, HEARTBEAT.md, IDENTITY.md.
+   * Required files (AGENTS.md, MEMORY.md, TOOLS.md) cannot be skipped.
+   */
+  skipOptionalBootstrapFiles?: string[];
 }): Promise<{
   dir: string;
   agentsPath?: string;
@@ -381,14 +517,37 @@ export async function ensureAgentWorkspace(params?: {
   const identityTemplate = await loadTemplate(DEFAULT_IDENTITY_FILENAME);
   const userTemplate = await loadTemplate(DEFAULT_USER_FILENAME);
   const heartbeatTemplate = await loadTemplate(DEFAULT_HEARTBEAT_FILENAME);
-  await writeFileIfMissing(agentsPath, agentsTemplate);
-  await writeFileIfMissing(soulPath, soulTemplate);
-  await writeFileIfMissing(toolsPath, toolsTemplate);
-  await writeFileIfMissing(identityPath, identityTemplate);
-  await writeFileIfMissing(userPath, userTemplate);
-  await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
+  // Determine which optional files should be skipped.
+  // Required files (AGENTS.md, MEMORY.md, TOOLS.md) are always written.
+  const OPTIONAL_BOOTSTRAP_FILES = new Set([
+    DEFAULT_SOUL_FILENAME,
+    DEFAULT_IDENTITY_FILENAME,
+    DEFAULT_USER_FILENAME,
+    DEFAULT_HEARTBEAT_FILENAME,
+  ]);
+  const skipSet = new Set(params?.skipOptionalBootstrapFiles ?? []);
+  const shouldWrite = (filename: string): boolean =>
+    !OPTIONAL_BOOTSTRAP_FILES.has(filename) || !skipSet.has(filename);
+
+  await writeFileIfMissing(agentsPath, agentsTemplate); // required — always written
+  if (shouldWrite(DEFAULT_SOUL_FILENAME)) {
+    await writeFileIfMissing(soulPath, soulTemplate);
+  }
+  await writeFileIfMissing(toolsPath, toolsTemplate); // required — always written
+  if (shouldWrite(DEFAULT_IDENTITY_FILENAME)) {
+    await writeFileIfMissing(identityPath, identityTemplate);
+  }
+  if (shouldWrite(DEFAULT_USER_FILENAME)) {
+    await writeFileIfMissing(userPath, userTemplate);
+  }
+  if (shouldWrite(DEFAULT_HEARTBEAT_FILENAME)) {
+    await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
+  }
 
   let state = await readWorkspaceSetupState(statePath);
+  if (!state.setupCompletedAt && !state.bootstrapSeededAt) {
+    state = await readWorkspaceSetupState(resolveLegacyWorkspaceStatePath(dir));
+  }
   let stateDirty = false;
   const markState = (next: Partial<WorkspaceSetupState>) => {
     state = { ...state, ...next };
@@ -409,9 +568,15 @@ export async function ensureAgentWorkspace(params?: {
     // Legacy migration path: if USER/IDENTITY diverged from templates, or if user-content
     // indicators exist, treat setup as complete and avoid recreating BOOTSTRAP for
     // already-configured workspaces.
+    // If IDENTITY or USER were intentionally skipped via skipOptionalBootstrapFiles,
+    // fall back to template content so the migration probe does not throw ENOENT.
     const [identityContent, userContent] = await Promise.all([
-      fs.readFile(identityPath, "utf-8"),
-      fs.readFile(userPath, "utf-8"),
+      shouldWrite(DEFAULT_IDENTITY_FILENAME)
+        ? fs.readFile(identityPath, "utf-8")
+        : Promise.resolve(identityTemplate),
+      shouldWrite(DEFAULT_USER_FILENAME)
+        ? fs.readFile(userPath, "utf-8")
+        : Promise.resolve(userTemplate),
     ]);
     const hasUserContent = await (async () => {
       const indicators = [
@@ -450,6 +615,11 @@ export async function ensureAgentWorkspace(params?: {
   if (stateDirty) {
     await writeWorkspaceSetupState(statePath, state);
   }
+
+  // Ensure the daily memory directory exists. Some installs/upgrades can leave workspaces
+  // without it, which breaks journaling and memory workflows.
+  await fs.mkdir(path.join(dir, "memory"), { recursive: true });
+
   await ensureGitRepo(dir, isBrandNewWorkspace);
 
   return {
@@ -482,6 +652,19 @@ async function resolveMemoryBootstrapEntry(
     }
   }
   return null;
+}
+
+async function resolveOptionalBootstrapEntry(
+  resolvedDir: string,
+  name: WorkspaceBootstrapFileName,
+): Promise<{ name: WorkspaceBootstrapFileName; filePath: string } | null> {
+  const filePath = path.join(resolvedDir, name);
+  try {
+    await fs.access(filePath);
+    return { name, filePath };
+  } catch {
+    return null;
+  }
 }
 
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
@@ -521,6 +704,14 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     },
   ];
 
+  const hardRulesEntry = await resolveOptionalBootstrapEntry(
+    resolvedDir,
+    DEFAULT_HARD_EXECUTION_RULES_FILENAME,
+  );
+  if (hardRulesEntry) {
+    entries.push(hardRulesEntry);
+  }
+
   const memoryEntry = await resolveMemoryBootstrapEntry(resolvedDir);
   if (memoryEntry) {
     entries.push(memoryEntry);
@@ -531,12 +722,19 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     const loaded = await readWorkspaceFileWithGuards({
       filePath: entry.filePath,
       workspaceDir: resolvedDir,
+      allowSymlinks: true,
     });
     if (loaded.ok) {
+      const content = await resolveImports(loaded.content, entry.filePath, {
+        boundaryDirs: [
+          path.join(resolveRequiredHomeDir(process.env, os.homedir), ".openclaw"),
+          resolvedDir,
+        ],
+      });
       result.push({
         name: entry.name,
         path: entry.filePath,
-        content: loaded.content,
+        content,
         missing: false,
       });
     } else {
@@ -550,8 +748,11 @@ const MINIMAL_BOOTSTRAP_ALLOWLIST = new Set([
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_SOUL_FILENAME,
+  DEFAULT_HARD_EXECUTION_RULES_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_USER_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
 ]);
 
 export function filterBootstrapFilesForSession(
@@ -621,10 +822,16 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
       workspaceDir: resolvedDir,
     });
     if (loaded.ok) {
+      const content = await resolveImports(loaded.content, filePath, {
+        boundaryDirs: [
+          path.join(resolveRequiredHomeDir(process.env, os.homedir), ".openclaw"),
+          resolvedDir,
+        ],
+      });
       files.push({
         name: baseName as WorkspaceBootstrapFileName,
         path: filePath,
-        content: loaded.content,
+        content,
         missing: false,
       });
       continue;

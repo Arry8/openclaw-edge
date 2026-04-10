@@ -1,3 +1,5 @@
+import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
+
 export const GATEWAY_CLIENT_IDS = {
   WEBCHAT_UI: "webchat-ui",
   CONTROL_UI: "openclaw-control-ui",
@@ -8,6 +10,7 @@ export const GATEWAY_CLIENT_IDS = {
   MACOS_APP: "openclaw-macos",
   IOS_APP: "openclaw-ios",
   ANDROID_APP: "openclaw-android",
+  HARMONYOS_APP: "openclaw-harmonyos",
   NODE_HOST: "node-host",
   TEST: "test",
   FINGERPRINT: "fingerprint",
@@ -53,7 +56,7 @@ const GATEWAY_CLIENT_ID_SET = new Set<GatewayClientId>(Object.values(GATEWAY_CLI
 const GATEWAY_CLIENT_MODE_SET = new Set<GatewayClientMode>(Object.values(GATEWAY_CLIENT_MODES));
 
 export function normalizeGatewayClientId(raw?: string | null): GatewayClientId | undefined {
-  const normalized = raw?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(raw);
   if (!normalized) {
     return undefined;
   }
@@ -67,7 +70,7 @@ export function normalizeGatewayClientName(raw?: string | null): GatewayClientNa
 }
 
 export function normalizeGatewayClientMode(raw?: string | null): GatewayClientMode | undefined {
-  const normalized = raw?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(raw);
   if (!normalized) {
     return undefined;
   }

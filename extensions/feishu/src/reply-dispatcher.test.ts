@@ -8,6 +8,7 @@ type StreamingSessionStub = {
   isActive: ReturnType<typeof vi.fn>;
 };
 
+const resolveAckReactionMock = vi.hoisted(() => vi.fn(() => "Typing"));
 const resolveFeishuAccountMock = vi.hoisted(() => vi.fn());
 const getFeishuRuntimeMock = vi.hoisted(() => vi.fn());
 const sendMessageFeishuMock = vi.hoisted(() => vi.fn());
@@ -21,6 +22,36 @@ const addTypingIndicatorMock = vi.hoisted(() => vi.fn(async () => ({ messageId: 
 const removeTypingIndicatorMock = vi.hoisted(() => vi.fn(async () => {}));
 const streamingInstances = vi.hoisted((): StreamingSessionStub[] => []);
 
+function mergeStreamingText(
+  previousText: string | undefined,
+  nextText: string | undefined,
+): string {
+  const previous = typeof previousText === "string" ? previousText : "";
+  const next = typeof nextText === "string" ? nextText : "";
+  if (!next) {
+    return previous;
+  }
+  if (!previous || next === previous) {
+    return next;
+  }
+  if (next.startsWith(previous) || next.includes(previous)) {
+    return next;
+  }
+  if (previous.startsWith(next) || previous.includes(next)) {
+    return previous;
+  }
+  const maxOverlap = Math.min(previous.length, next.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (previous.slice(-overlap) === next.slice(0, overlap)) {
+      return `${previous}${next.slice(overlap)}`;
+    }
+  }
+  return `${previous}${next}`;
+}
+
+vi.mock("openclaw/plugin-sdk/agent-runtime", () => ({
+  resolveAckReaction: resolveAckReactionMock,
+}));
 vi.mock("./accounts.js", () => ({
   resolveFeishuAccount: resolveFeishuAccountMock,
   resolveFeishuRuntimeAccount: resolveFeishuAccountMock,
@@ -38,10 +69,9 @@ vi.mock("./typing.js", () => ({
   addTypingIndicator: addTypingIndicatorMock,
   removeTypingIndicator: removeTypingIndicatorMock,
 }));
-vi.mock("./streaming-card.js", async () => {
-  const actual = await vi.importActual<typeof import("./streaming-card.js")>("./streaming-card.js");
+vi.mock("./streaming-card.js", () => {
   return {
-    mergeStreamingText: actual.mergeStreamingText,
+    mergeStreamingText,
     FeishuStreamingSession: class {
       active = false;
       start = vi.fn(async () => {
@@ -498,6 +528,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
   it("streams reasoning content as blockquote before answer", async () => {
     const { result, options } = createDispatcherHarness({
       runtime: createRuntimeLogger(),
+      allowReasoningPreview: true,
     });
 
     await options.onReplyStart?.();
@@ -531,13 +562,23 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     expect(closeArg).toContain("answer part final");
   });
 
-  it("provides onReasoningStream and onReasoningEnd when streaming is enabled", () => {
+  it("provides onReasoningStream and onReasoningEnd when reasoning previews are allowed", () => {
     const { result } = createDispatcherHarness({
       runtime: createRuntimeLogger(),
+      allowReasoningPreview: true,
     });
 
     expect(result.replyOptions.onReasoningStream).toBeTypeOf("function");
     expect(result.replyOptions.onReasoningEnd).toBeTypeOf("function");
+  });
+
+  it("omits reasoning callbacks unless reasoning previews are allowed", () => {
+    const { result } = createDispatcherHarness({
+      runtime: createRuntimeLogger(),
+    });
+
+    expect(result.replyOptions.onReasoningStream).toBeUndefined();
+    expect(result.replyOptions.onReasoningEnd).toBeUndefined();
   });
 
   it("omits reasoning callbacks when streaming is disabled", () => {
@@ -563,6 +604,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
   it("renders reasoning-only card when no answer text arrives", async () => {
     const { result, options } = createDispatcherHarness({
       runtime: createRuntimeLogger(),
+      allowReasoningPreview: true,
     });
 
     await options.onReplyStart?.();
@@ -582,6 +624,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
   it("ignores empty reasoning payloads", async () => {
     const { result, options } = createDispatcherHarness({
       runtime: createRuntimeLogger(),
+      allowReasoningPreview: true,
     });
 
     await options.onReplyStart?.();
@@ -598,6 +641,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
   it("deduplicates final text by raw answer payload, not combined card text", async () => {
     const { result, options } = createDispatcherHarness({
       runtime: createRuntimeLogger(),
+      allowReasoningPreview: true,
     });
 
     await options.onReplyStart?.();
@@ -714,5 +758,83 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     } finally {
       streamingInstances.push = origPush;
     }
+  });
+
+  it("falls back to plain text when card send fails (e.g. table limit exceeded)", async () => {
+    const convertMock = vi.fn((text: string) => text.replace(/\|/g, "-"));
+    getFeishuRuntimeMock.mockReturnValue({
+      channel: {
+        text: {
+          resolveTextChunkLimit: vi.fn(() => 4000),
+          resolveChunkMode: vi.fn(() => "line"),
+          resolveMarkdownTableMode: vi.fn(() => "bullet"),
+          convertMarkdownTables: convertMock,
+          chunkTextWithMode: vi.fn((text: string) => [text]),
+        },
+        reply: {
+          createReplyDispatcherWithTyping: createReplyDispatcherWithTypingMock,
+          resolveHumanDelayConfig: vi.fn(() => undefined),
+        },
+      },
+    });
+
+    // Simulate non-streaming card mode
+    resolveFeishuAccountMock.mockReturnValue({
+      accountId: "main",
+      appId: "app_id",
+      appSecret: "app_secret",
+      domain: "feishu",
+      config: {
+        renderMode: "card",
+        streaming: false,
+      },
+    });
+
+    const logMock = vi.fn();
+    const { options } = createDispatcherHarness({
+      runtime: { log: logMock, error: vi.fn() } as never,
+    });
+
+    // First call to sendStructuredCardFeishu fails (card table limit)
+    sendStructuredCardFeishuMock.mockRejectedValueOnce(new Error("card table number over limit"));
+
+    const tableMarkdown = "| Col1 | Col2 |\n|------|------|\n| a | b |";
+    await options.deliver({ text: tableMarkdown }, { kind: "final" });
+
+    // Card was attempted and failed
+    expect(sendStructuredCardFeishuMock).toHaveBeenCalledTimes(1);
+
+    // Fallback to plain text was used
+    expect(sendMessageFeishuMock).toHaveBeenCalledTimes(1);
+
+    // Markdown tables were converted exactly once (inside sendChunkedTextReply)
+    expect(convertMock).toHaveBeenCalledTimes(1);
+
+    // Warning was logged
+    expect(logMock).toHaveBeenCalledWith(
+      expect.stringContaining("card send failed, falling back to text"),
+    );
+  });
+
+  it("card fallback does not trigger when card send succeeds", async () => {
+    resolveFeishuAccountMock.mockReturnValue({
+      accountId: "main",
+      appId: "app_id",
+      appSecret: "app_secret",
+      domain: "feishu",
+      config: {
+        renderMode: "card",
+        streaming: false,
+      },
+    });
+
+    const { options } = createDispatcherHarness();
+
+    await options.deliver({ text: "```js\ncode\n```" }, { kind: "final" });
+
+    // Card send should succeed normally
+    expect(sendStructuredCardFeishuMock).toHaveBeenCalledTimes(1);
+    // No fallback to plain text
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
   });
 });

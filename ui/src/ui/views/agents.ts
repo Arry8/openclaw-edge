@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { t } from "../../i18n/index.ts";
 import type {
   AgentIdentityResult,
   AgentsFilesListResult,
@@ -159,7 +160,8 @@ export function renderAgents(props: AgentsProps) {
                 : agents.map(
                     (agent) => html`
                       <option value=${agent.id} ?selected=${agent.id === selectedId}>
-                        ${normalizeAgentLabel(agent)}${agentBadgeText(agent.id, defaultId)
+                        ${props.agentIdentityById[agent.id]?.name?.trim() ||
+                        normalizeAgentLabel(agent)}${agentBadgeText(agent.id, defaultId)
                           ? ` (${agentBadgeText(agent.id, defaultId)})`
                           : ""}
                       </option>
@@ -196,7 +198,7 @@ export function renderAgents(props: AgentsProps) {
               ?disabled=${props.loading}
               @click=${props.onRefresh}
             >
-              ${props.loading ? "Loading…" : "Refresh"}
+              ${props.loading ? t("common.loading") : t("common.refresh")}
             </button>
           </div>
         </div>

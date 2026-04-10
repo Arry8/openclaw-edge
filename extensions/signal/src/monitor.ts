@@ -1,4 +1,3 @@
-import { waitForTransportReady } from "openclaw/plugin-sdk/channel-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { SignalReactionNotificationMode } from "openclaw/plugin-sdk/config-runtime";
 import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
@@ -7,7 +6,8 @@ import {
   resolveDefaultGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "openclaw/plugin-sdk/config-runtime";
-import { saveMediaBuffer } from "openclaw/plugin-sdk/media-runtime";
+import { waitForTransportReady } from "openclaw/plugin-sdk/infra-runtime";
+import { estimateBase64DecodedBytes, saveMediaBuffer } from "openclaw/plugin-sdk/media-runtime";
 import { DEFAULT_GROUP_HISTORY_LIMIT, type HistoryEntry } from "openclaw/plugin-sdk/reply-history";
 import {
   deliverTextOrMediaReply,
@@ -24,10 +24,13 @@ import {
   type BackoffPolicy,
   type RuntimeEnv,
 } from "openclaw/plugin-sdk/runtime-env";
-import { normalizeStringEntries } from "openclaw/plugin-sdk/text-runtime";
-import { normalizeE164 } from "openclaw/plugin-sdk/text-runtime";
+import {
+  normalizeE164,
+  normalizeOptionalString,
+  normalizeStringEntries,
+} from "openclaw/plugin-sdk/text-runtime";
 import { resolveSignalAccount } from "./accounts.js";
-import { signalCheck, signalRpcRequest } from "./client.js";
+import { signalRpcRequest, signalCheck } from "./client-adapter.js";
 import { formatSignalDaemonExit, spawnSignalDaemon, type SignalDaemonHandle } from "./daemon.js";
 import { isSignalSenderAllowed, type resolveSignalSender } from "./identity.js";
 import { createSignalEventHandler } from "./monitor/event-handler.js";
@@ -164,7 +167,10 @@ function isSignalReactionMessage(
   }
   const emoji = reaction.emoji?.trim();
   const timestamp = reaction.targetSentTimestamp;
-  const hasTarget = Boolean(reaction.targetAuthor?.trim() || reaction.targetAuthorUuid?.trim());
+  const hasTarget = Boolean(
+    normalizeOptionalString(reaction.targetAuthor) ||
+    normalizeOptionalString(reaction.targetAuthorUuid),
+  );
   return Boolean(emoji && typeof timestamp === "number" && timestamp > 0 && hasTarget);
 }
 
@@ -257,7 +263,7 @@ async function fetchAttachment(params: {
   if (!attachment?.id) {
     return null;
   }
-  if (attachment.size && attachment.size > params.maxBytes) {
+  if (typeof attachment.size === "number" && attachment.size > params.maxBytes) {
     throw new Error(
       `Signal attachment ${attachment.id} exceeds ${(params.maxBytes / (1024 * 1024)).toFixed(0)}MB limit`,
     );
@@ -281,6 +287,11 @@ async function fetchAttachment(params: {
   });
   if (!result?.data) {
     return null;
+  }
+  if (estimateBase64DecodedBytes(result.data) > params.maxBytes) {
+    throw new Error(
+      `Signal attachment ${attachment.id} exceeds ${(params.maxBytes / (1024 * 1024)).toFixed(0)}MB limit`,
+    );
   }
   const buffer = Buffer.from(result.data, "base64");
   const saved = await saveMediaBuffer(
@@ -307,6 +318,9 @@ async function deliverReplies(params: {
     params;
   for (const payload of replies) {
     const reply = resolveSendableOutboundReplyParts(payload);
+    const replyTo = payload.replyToId ?? undefined;
+    const replyToAuthor = payload.replyToAuthor ?? undefined;
+    let sentCount = 0;
     const delivered = await deliverTextOrMediaReply({
       payload,
       text: reply.text,
@@ -317,7 +331,10 @@ async function deliverReplies(params: {
           account,
           maxBytes,
           accountId,
+          replyToId: sentCount === 0 ? replyTo : undefined,
+          quoteAuthor: sentCount === 0 ? replyToAuthor : undefined,
         });
+        sentCount += 1;
       },
       sendMedia: async ({ mediaUrl, caption }) => {
         await sendMessageSignal(target, caption ?? "", {
@@ -326,7 +343,10 @@ async function deliverReplies(params: {
           mediaUrl,
           maxBytes,
           accountId,
+          replyToId: sentCount === 0 ? replyTo : undefined,
+          quoteAuthor: sentCount === 0 ? replyToAuthor : undefined,
         });
+        sentCount += 1;
       },
     });
     if (delivered !== "empty") {
@@ -351,8 +371,9 @@ export async function monitorSignalProvider(opts: MonitorSignalOpts = {}): Promi
   const groupHistories = new Map<string, HistoryEntry[]>();
   const textLimit = resolveTextChunkLimit(cfg, "signal", accountInfo.accountId);
   const chunkMode = resolveChunkMode(cfg, "signal", accountInfo.accountId);
-  const baseUrl = opts.baseUrl?.trim() || accountInfo.baseUrl;
-  const account = opts.account?.trim() || accountInfo.config.account?.trim();
+  const baseUrl = normalizeOptionalString(opts.baseUrl) ?? accountInfo.baseUrl;
+  const account =
+    normalizeOptionalString(opts.account) ?? normalizeOptionalString(accountInfo.config.account);
   const dmPolicy = accountInfo.config.dmPolicy ?? "pairing";
   const allowFrom = normalizeAllowList(opts.allowFrom ?? accountInfo.config.allowFrom);
   const groupAllowFrom = normalizeAllowList(
@@ -383,6 +404,7 @@ export async function monitorSignalProvider(opts: MonitorSignalOpts = {}): Promi
   const waitForTransportReadyFn = opts.waitForTransportReady ?? waitForTransportReady;
 
   const autoStart = opts.autoStart ?? accountInfo.config.autoStart ?? !accountInfo.config.httpUrl;
+  const configuredApiMode = cfg.channels?.signal?.apiMode ?? "auto";
   const startupTimeoutMs = Math.min(
     120_000,
     Math.max(1_000, opts.startupTimeoutMs ?? accountInfo.config.startupTimeoutMs ?? 30_000),
@@ -390,6 +412,12 @@ export async function monitorSignalProvider(opts: MonitorSignalOpts = {}): Promi
   const readReceiptsViaDaemon = Boolean(autoStart && sendReadReceipts);
   const daemonLifecycle = createSignalDaemonLifecycle({ abortSignal: opts.abortSignal });
   let daemonHandle: SignalDaemonHandle | null = null;
+
+  if (autoStart && configuredApiMode === "container") {
+    throw new Error(
+      "channels.signal.autoStart=true is incompatible with channels.signal.apiMode=container",
+    );
+  }
 
   if (autoStart) {
     const cliPath = opts.cliPath ?? accountInfo.config.cliPath ?? "signal-cli";

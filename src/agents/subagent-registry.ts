@@ -1,12 +1,12 @@
 import { loadConfig } from "../config/config.js";
-import { ensureContextEnginesInitialized } from "../context-engine/init.js";
-import { resolveContextEngine } from "../context-engine/registry.js";
+import type { ensureContextEnginesInitialized as ensureContextEnginesInitializedFn } from "../context-engine/init.js";
+import type { resolveContextEngine as resolveContextEngineFn } from "../context-engine/registry.js";
 import type { SubagentEndReason } from "../context-engine/types.js";
 import { callGateway } from "../gateway/call.js";
 import { onAgentEvent } from "../infra/agent-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { type DeliveryContext, normalizeDeliveryContext } from "../utils/delivery-context.js";
-import { ensureRuntimePluginsLoaded } from "./runtime-plugins.js";
+import type { ensureRuntimePluginsLoaded as ensureRuntimePluginsLoadedFn } from "./runtime-plugins.js";
 import { resetAnnounceQueuesForTests } from "./subagent-announce-queue.js";
 import * as subagentAnnounceModule from "./subagent-announce.js";
 import type { SubagentRunOutcome } from "./subagent-announce.js";
@@ -20,6 +20,7 @@ import {
   emitSubagentEndedHookOnce,
   resolveLifecycleOutcomeFromRunOutcome,
 } from "./subagent-registry-completion.js";
+import { runOutcomesEqual } from "./subagent-registry-completion.js";
 import {
   ANNOUNCE_EXPIRY_MS,
   MAX_ANNOUNCE_RETRY_COUNT,
@@ -30,6 +31,7 @@ import {
   resolveSubagentSessionStatus,
   safeRemoveAttachmentsDir,
 } from "./subagent-registry-helpers.js";
+import { resolveArchiveAfterMs } from "./subagent-registry-helpers.js";
 import { createSubagentRegistryLifecycleController } from "./subagent-registry-lifecycle.js";
 import { subagentRuns } from "./subagent-registry-memory.js";
 import {
@@ -51,6 +53,7 @@ import {
   restoreSubagentRunsFromDisk,
 } from "./subagent-registry-state.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
+import { rehydrateSessionStoreEntries, routeResumedRun } from "./subagent-resume.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
 
 export type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -64,41 +67,43 @@ const log = createSubsystemLogger("agents/subagent-registry");
 type SubagentRegistryDeps = {
   callGateway: typeof callGateway;
   captureSubagentCompletionReply: typeof subagentAnnounceModule.captureSubagentCompletionReply;
-  ensureContextEnginesInitialized: typeof ensureContextEnginesInitialized;
-  ensureRuntimePluginsLoaded: typeof ensureRuntimePluginsLoaded;
   getSubagentRunsSnapshotForRead: typeof getSubagentRunsSnapshotForRead;
   loadConfig: typeof loadConfig;
   onAgentEvent: typeof onAgentEvent;
   persistSubagentRunsToDisk: typeof persistSubagentRunsToDisk;
   resolveAgentTimeoutMs: typeof resolveAgentTimeoutMs;
-  resolveContextEngine: typeof resolveContextEngine;
   restoreSubagentRunsFromDisk: typeof restoreSubagentRunsFromDisk;
   runSubagentAnnounceFlow: typeof subagentAnnounceModule.runSubagentAnnounceFlow;
+  ensureContextEnginesInitialized?: typeof ensureContextEnginesInitializedFn;
+  ensureRuntimePluginsLoaded?: typeof ensureRuntimePluginsLoadedFn;
+  resolveContextEngine?: typeof resolveContextEngineFn;
 };
 
 const defaultSubagentRegistryDeps: SubagentRegistryDeps = {
   callGateway,
   captureSubagentCompletionReply: (sessionKey) =>
     subagentAnnounceModule.captureSubagentCompletionReply(sessionKey),
-  ensureContextEnginesInitialized,
-  ensureRuntimePluginsLoaded,
   getSubagentRunsSnapshotForRead,
   loadConfig,
   onAgentEvent,
   persistSubagentRunsToDisk,
   resolveAgentTimeoutMs,
-  resolveContextEngine,
   restoreSubagentRunsFromDisk,
   runSubagentAnnounceFlow: (params) => subagentAnnounceModule.runSubagentAnnounceFlow(params),
 };
 
 let subagentRegistryDeps: SubagentRegistryDeps = defaultSubagentRegistryDeps;
+let subagentRegistryRuntimePromise: Promise<
+  typeof import("./subagent-registry.runtime.js")
+> | null = null;
 
 let sweeper: NodeJS.Timeout | null = null;
 let listenerStarted = false;
 let listenerStop: (() => void) | null = null;
 // Use var to avoid TDZ when init runs across circular imports during bootstrap.
 var restoreAttempted = false;
+const ORPHAN_RECOVERY_DEBOUNCE_MS = 1_000;
+let lastOrphanRecoveryScheduleAt = 0;
 const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
 /**
  * Embedded runs can emit transient lifecycle `error` events while provider/model
@@ -107,8 +112,57 @@ const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
  */
 const LIFECYCLE_ERROR_RETRY_GRACE_MS = 15_000;
 
+function loadSubagentRegistryRuntime() {
+  subagentRegistryRuntimePromise ??= import("./subagent-registry.runtime.js");
+  return subagentRegistryRuntimePromise;
+}
+
+async function ensureSubagentRegistryPluginRuntimeLoaded(params: {
+  config: ReturnType<typeof loadConfig>;
+  workspaceDir?: string;
+  allowGatewaySubagentBinding?: boolean;
+}) {
+  const ensureRuntimePluginsLoaded = subagentRegistryDeps.ensureRuntimePluginsLoaded;
+  if (ensureRuntimePluginsLoaded) {
+    ensureRuntimePluginsLoaded(params);
+    return;
+  }
+  const runtime = await loadSubagentRegistryRuntime();
+  runtime.ensureRuntimePluginsLoaded(params);
+}
+
+async function resolveSubagentRegistryContextEngine(cfg: ReturnType<typeof loadConfig>) {
+  const runtime = await loadSubagentRegistryRuntime();
+  const ensureContextEnginesInitialized =
+    subagentRegistryDeps.ensureContextEnginesInitialized ?? runtime.ensureContextEnginesInitialized;
+  const resolveContextEngine =
+    subagentRegistryDeps.resolveContextEngine ?? runtime.resolveContextEngine;
+  ensureContextEnginesInitialized();
+  return await resolveContextEngine(cfg);
+}
+
 function persistSubagentRuns() {
   subagentRegistryDeps.persistSubagentRunsToDisk(subagentRuns);
+}
+
+export function scheduleSubagentOrphanRecovery(params?: { delayMs?: number; maxRetries?: number }) {
+  const now = Date.now();
+  if (now - lastOrphanRecoveryScheduleAt < ORPHAN_RECOVERY_DEBOUNCE_MS) {
+    return;
+  }
+  lastOrphanRecoveryScheduleAt = now;
+  void import("./subagent-orphan-recovery.js").then(
+    ({ scheduleOrphanRecovery }) => {
+      scheduleOrphanRecovery({
+        getActiveRuns: () => subagentRuns,
+        delayMs: params?.delayMs,
+        maxRetries: params?.maxRetries,
+      });
+    },
+    () => {
+      // Ignore import failures — orphan recovery is best-effort.
+    },
+  );
 }
 
 const resumedRuns = new Set<string>();
@@ -181,13 +235,12 @@ async function notifyContextEngineSubagentEnded(params: {
 }) {
   try {
     const cfg = subagentRegistryDeps.loadConfig();
-    subagentRegistryDeps.ensureRuntimePluginsLoaded({
+    await ensureSubagentRegistryPluginRuntimeLoaded({
       config: cfg,
       workspaceDir: params.workspaceDir,
       allowGatewaySubagentBinding: true,
     });
-    subagentRegistryDeps.ensureContextEnginesInitialized();
-    const engine = await subagentRegistryDeps.resolveContextEngine(cfg);
+    const engine = await resolveSubagentRegistryContextEngine(cfg);
     if (!engine.onSubagentEnded) {
       return;
     }
@@ -225,7 +278,7 @@ async function emitSubagentEndedHookForRun(params: {
   accountId?: string;
 }) {
   const cfg = subagentRegistryDeps.loadConfig();
-  subagentRegistryDeps.ensureRuntimePluginsLoaded({
+  await ensureSubagentRegistryPluginRuntimeLoaded({
     config: cfg,
     workspaceDir: params.entry.workspaceDir,
     allowGatewaySubagentBinding: true,
@@ -349,14 +402,59 @@ function resumeSubagentRun(runId: string) {
     return;
   }
 
-  // Wait for completion again after restart.
+  // Classify the run and route to the appropriate recovery path.
   const cfg = subagentRegistryDeps.loadConfig();
   const waitTimeoutMs = resolveSubagentWaitTimeoutMs(cfg, entry.runTimeoutSeconds);
+  const handled = routeResumedRun({
+    runId,
+    entry,
+    waitTimeoutMs,
+    onCompleteReplay: async (replayRunId, endedAt) => {
+      await completeSubagentRun({
+        runId: replayRunId,
+        endedAt,
+        outcome: { status: "ok" },
+        reason: SUBAGENT_ENDED_REASON_COMPLETE,
+        sendFarewell: true,
+        accountId: entry.requesterOrigin?.accountId,
+        triggerCleanup: true,
+      });
+    },
+    onCompleteRedispatch: async (redispatchRunId, endedAt, outcome) => {
+      const runOutcome =
+        outcome.status === "error"
+          ? {
+              status: "error" as const,
+              error: (outcome as { status: string; error?: string }).error,
+            }
+          : outcome.status === "timeout"
+            ? { status: "timeout" as const }
+            : { status: "ok" as const };
+      await completeSubagentRun({
+        runId: redispatchRunId,
+        endedAt,
+        outcome: runOutcome,
+        reason:
+          outcome.status === "error" ? SUBAGENT_ENDED_REASON_ERROR : SUBAGENT_ENDED_REASON_COMPLETE,
+        sendFarewell: true,
+        accountId: entry.requesterOrigin?.accountId,
+        triggerCleanup: true,
+      });
+    },
+  });
+  if (handled) {
+    resumedRuns.add(runId);
+    return;
+  }
+
+  // Default: wait for completion (covers cases where the gateway dedupe cache
+  // still has a valid snapshot, or agent.wait returns a timeout result that
+  // completeSubagentRun can handle).
   void subagentRunManager.waitForSubagentCompletion(runId, waitTimeoutMs);
   resumedRuns.add(runId);
 }
 
-function restoreSubagentRunsOnce() {
+async function restoreSubagentRunsOnce(): Promise<void> {
   if (restoreAttempted) {
     return;
   }
@@ -369,12 +467,22 @@ function restoreSubagentRunsOnce() {
     if (restoredCount === 0) {
       return;
     }
-    if (
-      reconcileOrphanedRestoredRuns({
-        runs: subagentRuns,
-        resumedRuns,
-      })
-    ) {
+    // Capture restored run IDs BEFORE the async rehydration step.
+    // New runs may be registered into subagentRuns during the await window;
+    // we must only resume the runs that were restored from disk, not any
+    // newly-registered runs that arrived concurrently during gateway startup.
+    const restoredRunIds = new Set(subagentRuns.keys());
+    // Ordering: rehydrateSessionStoreEntries MUST run before
+    // reconcileOrphanedRestoredRuns.  The rehydration step injects synthetic
+    // session-store entries for runs whose store write fell inside the ~400 ms
+    // race window between sessions_spawn returning and the first store write
+    // completing.  reconcileOrphanedRestoredRuns reads the session store to
+    // determine the orphan reason; if it runs first it will mis-classify these
+    // runs as "missing-session-entry" orphans and prune them incorrectly.
+    // rehydrateSessionStoreEntries is async (writes via updateSessionStore to
+    // serialise concurrent store writers during startup through the lock).
+    await rehydrateSessionStoreEntries(subagentRuns);
+    if (reconcileOrphanedRestoredRuns({ runs: subagentRuns, resumedRuns })) {
       persistSubagentRuns();
     }
     if (subagentRuns.size === 0) {
@@ -385,22 +493,18 @@ function restoreSubagentRunsOnce() {
     if ([...subagentRuns.values()].some((entry) => entry.archiveAtMs)) {
       startSweeper();
     }
-    for (const runId of subagentRuns.keys()) {
-      resumeSubagentRun(runId);
+    // Only resume the runs that were present before the async rehydration step.
+    // Runs registered concurrently during the await window will be managed by
+    // their own lifecycle and must not be routed through restart recovery.
+    for (const runId of restoredRunIds) {
+      if (subagentRuns.has(runId)) {
+        resumeSubagentRun(runId);
+      }
     }
 
-    // Schedule orphan recovery for subagent sessions that were aborted
-    // by a SIGUSR1 reload. This runs after a short delay to let the
-    // gateway fully bootstrap first. Dynamic import to avoid increasing
-    // startup memory footprint. (#47711)
-    void import("./subagent-orphan-recovery.js").then(
-      ({ scheduleOrphanRecovery }) => {
-        scheduleOrphanRecovery({ getActiveRuns: () => subagentRuns });
-      },
-      () => {
-        // Ignore import failures — orphan recovery is best-effort.
-      },
-    );
+    // Cold-start restore path: queue the same recovery pass that restart
+    // startup also uses so resumed children are handled through one seam.
+    scheduleSubagentOrphanRecovery();
   } catch {
     // ignore restore failures
   }
@@ -540,7 +644,11 @@ const subagentRunManager = createSubagentRunManager({
   persist: persistSubagentRuns,
   callGateway: (request) => subagentRegistryDeps.callGateway(request),
   loadConfig: () => subagentRegistryDeps.loadConfig(),
-  ensureRuntimePluginsLoaded,
+  ensureRuntimePluginsLoaded: (args: {
+    config: ReturnType<typeof loadConfig>;
+    workspaceDir?: string;
+    allowGatewaySubagentBinding?: boolean;
+  }) => ensureSubagentRegistryPluginRuntimeLoaded(args),
   ensureListener,
   startSweeper,
   stopSweeper,
@@ -588,8 +696,124 @@ export function registerSubagentRun(params: {
   attachmentsDir?: string;
   attachmentsRootDir?: string;
   retainAttachmentsOnKeep?: boolean;
+  extraSystemPrompt?: string;
 }) {
-  subagentRunManager.registerSubagentRun(params);
+  const now = Date.now();
+  const cfg = loadConfig();
+  const archiveAfterMs = resolveArchiveAfterMs(cfg);
+  const spawnMode = params.spawnMode === "session" ? "session" : "run";
+  const archiveAtMs =
+    spawnMode === "session" || params.cleanup === "keep"
+      ? undefined
+      : archiveAfterMs
+        ? now + archiveAfterMs
+        : undefined;
+  const runTimeoutSeconds = params.runTimeoutSeconds ?? 0;
+  const waitTimeoutMs = resolveSubagentWaitTimeoutMs(cfg, runTimeoutSeconds);
+  const requesterOrigin = normalizeDeliveryContext(params.requesterOrigin);
+  subagentRuns.set(params.runId, {
+    runId: params.runId,
+    childSessionKey: params.childSessionKey,
+    controllerSessionKey: params.controllerSessionKey ?? params.requesterSessionKey,
+    requesterSessionKey: params.requesterSessionKey,
+    requesterOrigin,
+    requesterDisplayKey: params.requesterDisplayKey,
+    task: params.task,
+    cleanup: params.cleanup,
+    expectsCompletionMessage: params.expectsCompletionMessage,
+    spawnMode,
+    label: params.label,
+    model: params.model,
+    workspaceDir: params.workspaceDir,
+    runTimeoutSeconds,
+    createdAt: now,
+    startedAt: now,
+    sessionStartedAt: now,
+    accumulatedRuntimeMs: 0,
+    archiveAtMs,
+    cleanupHandled: false,
+    wakeOnDescendantSettle: undefined,
+    attachmentsDir: params.attachmentsDir,
+    attachmentsRootDir: params.attachmentsRootDir,
+    retainAttachmentsOnKeep: params.retainAttachmentsOnKeep,
+    extraSystemPrompt: params.extraSystemPrompt,
+  });
+  ensureListener();
+  persistSubagentRuns();
+  if (archiveAtMs) {
+    startSweeper();
+  }
+  // Wait for subagent completion via gateway RPC (cross-process).
+  // The in-process lifecycle listener is a fallback for embedded runs.
+  void waitForSubagentCompletion(params.runId, waitTimeoutMs);
+}
+
+async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
+  try {
+    const timeoutMs = Math.max(1, Math.floor(waitTimeoutMs));
+    const wait = await callGateway<{
+      status?: string;
+      startedAt?: number;
+      endedAt?: number;
+      error?: string;
+    }>({
+      method: "agent.wait",
+      params: {
+        runId,
+        timeoutMs,
+      },
+      timeoutMs: timeoutMs + 10_000,
+    });
+    if (wait?.status !== "ok" && wait?.status !== "error" && wait?.status !== "timeout") {
+      return;
+    }
+    const entry = subagentRuns.get(runId);
+    if (!entry) {
+      return;
+    }
+    let mutated = false;
+    if (typeof wait.startedAt === "number") {
+      entry.startedAt = wait.startedAt;
+      if (typeof entry.sessionStartedAt !== "number") {
+        entry.sessionStartedAt = wait.startedAt;
+      }
+      mutated = true;
+    }
+    if (typeof wait.endedAt === "number") {
+      entry.endedAt = wait.endedAt;
+      mutated = true;
+    }
+    if (!entry.endedAt) {
+      entry.endedAt = Date.now();
+      mutated = true;
+    }
+    const waitError = typeof wait.error === "string" ? wait.error : undefined;
+    const outcome: SubagentRunOutcome =
+      wait.status === "error"
+        ? { status: "error", error: waitError }
+        : wait.status === "timeout"
+          ? { status: "timeout" }
+          : { status: "ok" };
+    if (!runOutcomesEqual(entry.outcome, outcome)) {
+      entry.outcome = outcome;
+      mutated = true;
+    }
+    if (mutated) {
+      persistSubagentRuns();
+    }
+    await completeSubagentRun({
+      runId,
+      endedAt: entry.endedAt,
+      outcome,
+      reason:
+        wait.status === "error" ? SUBAGENT_ENDED_REASON_ERROR : SUBAGENT_ENDED_REASON_COMPLETE,
+      sendFarewell: true,
+      accountId: entry.requesterOrigin?.accountId,
+      triggerCleanup: true,
+    });
+  } catch {
+    // ignore
+  }
 }
 
 export function resetSubagentRegistryForTests(opts?: { persist?: boolean }) {
@@ -597,6 +821,7 @@ export function resetSubagentRegistryForTests(opts?: { persist?: boolean }) {
   resumedRuns.clear();
   endedHookInFlightRunIds.clear();
   clearAllPendingLifecycleErrors();
+  subagentRegistryRuntimePromise = null;
   resetAnnounceQueuesForTests();
   stopSweeper();
   restoreAttempted = false;
@@ -781,5 +1006,5 @@ export function getLatestSubagentRunByChildSessionKey(
 }
 
 export function initSubagentRegistry() {
-  restoreSubagentRunsOnce();
+  void restoreSubagentRunsOnce();
 }

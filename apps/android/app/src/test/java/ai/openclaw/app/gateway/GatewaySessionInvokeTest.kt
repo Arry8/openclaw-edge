@@ -1,11 +1,14 @@
 package ai.openclaw.app.gateway
 
+import ai.openclaw.android.gateway.GatewayClientInfo
+import ai.openclaw.android.gateway.GatewayConnectOptions
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -35,12 +38,18 @@ private const val CONNECT_CHALLENGE_FRAME =
   """{"type":"event","event":"connect.challenge","payload":{"nonce":"android-test-nonce"}}"""
 
 private class InMemoryDeviceAuthStore : DeviceAuthTokenStore {
-  private val tokens = mutableMapOf<String, String>()
+  private val tokens = mutableMapOf<String, DeviceAuthEntry>()
 
-  override fun loadToken(deviceId: String, role: String): String? = tokens["${deviceId.trim()}|${role.trim()}"]?.trim()?.takeIf { it.isNotEmpty() }
+  override fun loadEntry(deviceId: String, role: String): DeviceAuthEntry? = tokens["${deviceId.trim()}|${role.trim()}"]
 
-  override fun saveToken(deviceId: String, role: String, token: String) {
-    tokens["${deviceId.trim()}|${role.trim()}"] = token.trim()
+  override fun saveToken(deviceId: String, role: String, token: String, scopes: List<String>) {
+    tokens["${deviceId.trim()}|${role.trim()}"] =
+      DeviceAuthEntry(
+        token = token.trim(),
+        role = role.trim(),
+        scopes = scopes,
+        updatedAtMs = System.currentTimeMillis(),
+      )
   }
 
   override fun clearToken(deviceId: String, role: String) {
@@ -214,6 +223,144 @@ class GatewaySessionInvokeTest {
   }
 
   @Test
+  fun connect_storesPrimaryDeviceTokenFromSuccessfulSharedTokenConnect() = runBlocking {
+    val json = testJson()
+    val connected = CompletableDeferred<Unit>()
+    val lastDisconnect = AtomicReference("")
+    val server =
+      startGatewayServer(json) { webSocket, id, method, _ ->
+        when (method) {
+          "connect" -> {
+            webSocket.send(
+              connectResponseFrame(
+                id,
+                authJson = """{"deviceToken":"shared-node-token","role":"node","scopes":[]}""",
+              ),
+            )
+            webSocket.close(1000, "done")
+          }
+        }
+      }
+
+    val harness =
+      createNodeHarness(
+        connected = connected,
+        lastDisconnect = lastDisconnect,
+      ) { GatewaySession.InvokeResult.ok("""{"handled":true}""") }
+
+    try {
+      connectNodeSession(
+        session = harness.session,
+        port = server.port,
+        token = "shared-auth-token",
+        bootstrapToken = null,
+      )
+      awaitConnectedOrThrow(connected, lastDisconnect, server)
+
+      val deviceId = DeviceIdentityStore(RuntimeEnvironment.getApplication()).loadOrCreate().deviceId
+      assertEquals("shared-node-token", harness.deviceAuthStore.loadToken(deviceId, "node"))
+      assertNull(harness.deviceAuthStore.loadToken(deviceId, "operator"))
+    } finally {
+      shutdownHarness(harness, server)
+    }
+  }
+
+  @Test
+  fun bootstrapConnect_storesAdditionalBoundedDeviceTokensOnTrustedTransport() = runBlocking {
+    val json = testJson()
+    val connected = CompletableDeferred<Unit>()
+    val lastDisconnect = AtomicReference("")
+    val server =
+      startGatewayServer(json) { webSocket, id, method, _ ->
+        when (method) {
+          "connect" -> {
+            webSocket.send(
+              connectResponseFrame(
+                id,
+                authJson =
+                  """{"deviceToken":"bootstrap-node-token","role":"node","scopes":[],"deviceTokens":[{"deviceToken":"bootstrap-operator-token","role":"operator","scopes":["operator.admin","operator.approvals","operator.read","operator.talk.secrets","operator.write"]}]}""",
+              ),
+            )
+            webSocket.close(1000, "done")
+          }
+        }
+      }
+
+    val harness =
+      createNodeHarness(
+        connected = connected,
+        lastDisconnect = lastDisconnect,
+      ) { GatewaySession.InvokeResult.ok("""{"handled":true}""") }
+
+    try {
+      connectNodeSession(
+        session = harness.session,
+        port = server.port,
+        token = null,
+        bootstrapToken = "bootstrap-token",
+      )
+      awaitConnectedOrThrow(connected, lastDisconnect, server)
+
+      val deviceId = DeviceIdentityStore(RuntimeEnvironment.getApplication()).loadOrCreate().deviceId
+      val nodeEntry = harness.deviceAuthStore.loadEntry(deviceId, "node")
+      val operatorEntry = harness.deviceAuthStore.loadEntry(deviceId, "operator")
+      assertEquals("bootstrap-node-token", nodeEntry?.token)
+      assertEquals(emptyList<String>(), nodeEntry?.scopes)
+      assertEquals("bootstrap-operator-token", operatorEntry?.token)
+      assertEquals(
+        listOf("operator.approvals", "operator.read", "operator.talk.secrets", "operator.write"),
+        operatorEntry?.scopes,
+      )
+    } finally {
+      shutdownHarness(harness, server)
+    }
+  }
+
+  @Test
+  fun nonBootstrapConnect_ignoresAdditionalBootstrapDeviceTokens() = runBlocking {
+    val json = testJson()
+    val connected = CompletableDeferred<Unit>()
+    val lastDisconnect = AtomicReference("")
+    val server =
+      startGatewayServer(json) { webSocket, id, method, _ ->
+        when (method) {
+          "connect" -> {
+            webSocket.send(
+              connectResponseFrame(
+                id,
+                authJson =
+                  """{"deviceToken":"shared-node-token","role":"node","scopes":[],"deviceTokens":[{"deviceToken":"shared-operator-token","role":"operator","scopes":["operator.approvals","operator.read"]}]}""",
+              ),
+            )
+            webSocket.close(1000, "done")
+          }
+        }
+      }
+
+    val harness =
+      createNodeHarness(
+        connected = connected,
+        lastDisconnect = lastDisconnect,
+      ) { GatewaySession.InvokeResult.ok("""{"handled":true}""") }
+
+    try {
+      connectNodeSession(
+        session = harness.session,
+        port = server.port,
+        token = "shared-auth-token",
+        bootstrapToken = null,
+      )
+      awaitConnectedOrThrow(connected, lastDisconnect, server)
+
+      val deviceId = DeviceIdentityStore(RuntimeEnvironment.getApplication()).loadOrCreate().deviceId
+      assertEquals("shared-node-token", harness.deviceAuthStore.loadToken(deviceId, "node"))
+      assertNull(harness.deviceAuthStore.loadToken(deviceId, "operator"))
+    } finally {
+      shutdownHarness(harness, server)
+    }
+  }
+
+  @Test
   fun nodeInvokeRequest_roundTripsInvokeResult() = runBlocking {
     val handshakeOrigin = AtomicReference<String?>(null)
     val result =
@@ -325,6 +472,58 @@ class GatewaySessionInvokeTest {
         "http://127.0.0.1:${server.port}/__openclaw__/cap/new-cap",
         harness.session.currentCanvasHostUrl(),
       )
+    } finally {
+      shutdownHarness(harness, server)
+    }
+  }
+
+  @Test
+  fun disconnect_thenImmediateConnect_reachesOnConnectedAgain() = runBlocking {
+    val json = testJson()
+    val connectCount = AtomicInteger(0)
+    val firstConnected = CompletableDeferred<Unit>()
+    val lastDisconnect = AtomicReference("")
+    val server =
+      startGatewayServer(json) { webSocket, id, method, frame ->
+        when (method) {
+          "connect" -> webSocket.send(connectResponseFrame(id))
+        }
+      }
+
+    val app = RuntimeEnvironment.getApplication()
+    val sessionJob = SupervisorJob()
+    val deviceAuthStore = InMemoryDeviceAuthStore()
+    val session =
+      GatewaySession(
+        scope = CoroutineScope(sessionJob + Dispatchers.Default),
+        identityStore = DeviceIdentityStore(app),
+        deviceAuthStore = deviceAuthStore,
+        onConnected = { _, _, _ ->
+          connectCount.incrementAndGet()
+          if (!firstConnected.isCompleted) {
+            firstConnected.complete(Unit)
+          }
+        },
+        onDisconnected = { message -> lastDisconnect.set(message) },
+        onEvent = { _, _ -> },
+        onInvoke = { GatewaySession.InvokeResult.ok("""{"handled":true}""") },
+      )
+    val harness = NodeHarness(session = session, sessionJob = sessionJob, deviceAuthStore = deviceAuthStore)
+
+    try {
+      connectNodeSession(harness.session, server.port)
+      withTimeout(TEST_TIMEOUT_MS) { firstConnected.await() }
+      assertEquals(1, connectCount.get())
+
+      harness.session.disconnect()
+      connectNodeSession(harness.session, server.port)
+
+      withTimeout(TEST_TIMEOUT_MS) {
+        while (connectCount.get() < 2) {
+          delay(10)
+        }
+      }
+      assertEquals(2, connectCount.get())
     } finally {
       shutdownHarness(harness, server)
     }
@@ -470,9 +669,14 @@ class GatewaySessionInvokeTest {
     }
   }
 
-  private fun connectResponseFrame(id: String, canvasHostUrl: String? = null): String {
+  private fun connectResponseFrame(
+    id: String,
+    canvasHostUrl: String? = null,
+    authJson: String? = null,
+  ): String {
     val canvas = canvasHostUrl?.let { "\"canvasHostUrl\":\"$it\"," } ?: ""
-    return """{"type":"res","id":"$id","ok":true,"payload":{$canvas"snapshot":{"sessionDefaults":{"mainSessionKey":"main"}}}}"""
+    val auth = authJson?.let { "\"auth\":$it," } ?: ""
+    return """{"type":"res","id":"$id","ok":true,"payload":{$canvas$auth"snapshot":{"sessionDefaults":{"mainSessionKey":"main"}}}}"""
   }
 
   private fun startGatewayServer(

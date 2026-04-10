@@ -1,9 +1,8 @@
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH } from "../config/agent-limits.js";
-import { loadConfig } from "../config/config.js";
-import { callGateway } from "../gateway/call.js";
-import { defaultRuntime } from "../runtime.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import { isCronSessionKey } from "../sessions/session-key-utils.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { type DeliveryContext, normalizeDeliveryContext } from "../utils/delivery-context.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import {
@@ -11,16 +10,15 @@ import {
   buildAnnounceIdempotencyKey,
 } from "./announce-idempotency.js";
 import { formatAgentInternalEventsForPrompt, type AgentInternalEvent } from "./internal-events.js";
-import { isEmbeddedPiRunActive, waitForEmbeddedPiRunEnd } from "./pi-embedded.js";
 import {
   deliverSubagentAnnouncement,
   loadRequesterSessionEntry,
   loadSessionEntryByKey,
-  resolveAnnounceOrigin,
   runAnnounceDeliveryWithRetry,
   resolveSubagentAnnounceTimeoutMs,
   resolveSubagentCompletionOrigin,
 } from "./subagent-announce-delivery.js";
+import { resolveAnnounceOrigin } from "./subagent-announce-origin.js";
 import {
   applySubagentWaitOutcome,
   buildChildCompletionFindings,
@@ -32,9 +30,17 @@ import {
   type SubagentRunOutcome,
   waitForSubagentRunOutcome,
 } from "./subagent-announce-output.js";
+import {
+  callGateway,
+  isEmbeddedPiRunActive,
+  loadConfig,
+  waitForEmbeddedPiRunEnd,
+} from "./subagent-announce.runtime.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.js";
-import { isAnnounceSkip } from "./tools/sessions-send-helpers.js";
+import { isAnnounceSkip } from "./tools/sessions-send-tokens.js";
+
+const log = createSubsystemLogger("agents/announce");
 
 type SubagentAnnounceDeps = {
   callGateway: typeof callGateway;
@@ -49,11 +55,11 @@ const defaultSubagentAnnounceDeps: SubagentAnnounceDeps = {
 let subagentAnnounceDeps: SubagentAnnounceDeps = defaultSubagentAnnounceDeps;
 
 let subagentRegistryRuntimePromise: Promise<
-  typeof import("./subagent-registry-runtime.js")
+  typeof import("./subagent-announce.registry.runtime.js")
 > | null = null;
 
 function loadSubagentRegistryRuntime() {
-  subagentRegistryRuntimePromise ??= import("./subagent-registry-runtime.js");
+  subagentRegistryRuntimePromise ??= import("./subagent-announce.registry.runtime.js");
   return subagentRegistryRuntimePromise;
 }
 
@@ -99,7 +105,7 @@ export function buildSubagentSystemPrompt(params: {
     "3. **Don't initiate** - No heartbeats, no proactive actions, no side quests",
     "4. **Be ephemeral** - You may be terminated after task completion. That's fine.",
     "5. **Trust push-based completion** - Descendant results are auto-announced back to you; do not busy-poll for status.",
-    "6. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
+    "6. **Recover from truncated tool output** - If you see a notice like `[... N more characters truncated]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
     "",
     "## Output Format",
     "When complete, your final response should include:",
@@ -278,7 +284,7 @@ async function wakeSubagentRunAfterDescendants(params: {
           timeoutMs: announceTimeoutMs,
         }),
     });
-    wakeRunId = typeof wakeResponse?.runId === "string" ? wakeResponse.runId.trim() : "";
+    wakeRunId = normalizeOptionalString(wakeResponse?.runId) ?? "";
   } catch {
     return false;
   }
@@ -321,7 +327,7 @@ export async function runSubagentAnnounceFlow(params: {
   wakeOnDescendantSettle?: boolean;
   signal?: AbortSignal;
   bestEffortDeliver?: boolean;
-}): Promise<boolean> {
+}): Promise<boolean | -1> {
   let didAnnounce = false;
   const expectsCompletionMessage = params.expectsCompletionMessage === true;
   const announceType = params.announceType ?? "subagent task";
@@ -388,7 +394,10 @@ export async function runSubagentAnnounceFlow(params: {
       );
       if (pendingChildDescendantRuns > 0 && announceType !== "cron job") {
         shouldDeleteChildSession = false;
-        return false;
+        // Signal that the flow was blocked by pending descendants, not a
+        // delivery failure. The caller uses this to defer without consuming
+        // the announce retry budget.
+        return -1;
       }
 
       if (typeof subagentRegistryRuntime.listSubagentRunsForRequester === "function") {
@@ -444,7 +453,7 @@ export async function runSubagentAnnounceFlow(params: {
     }
 
     if (!childCompletionFindings) {
-      const fallbackReply = params.fallbackReply?.trim() ? params.fallbackReply.trim() : undefined;
+      const fallbackReply = normalizeOptionalString(params.fallbackReply);
       const fallbackIsSilent =
         Boolean(fallbackReply) &&
         (isAnnounceSkip(fallbackReply) || isSilentReplyText(fallbackReply, SILENT_REPLY_TOKEN));
@@ -588,6 +597,19 @@ export async function runSubagentAnnounceFlow(params: {
             expectsCompletionMessage,
           })
         : targetRequesterOrigin;
+    const infoTask = params.label?.trim() || undefined;
+    log.info(
+      `announce delivery: type=${announceType}` +
+        (infoTask ? ` task=${infoTask}` : "") +
+        ` status=${outcome.status}` +
+        ` child=${params.childSessionKey} requester=${targetRequesterSessionKey}` +
+        ` announceId=${announceId}`,
+    );
+    log.debug(
+      `announce body: announceId=${announceId} task=${taskLabel}` +
+        ` findingsChars=${findings.length} triggerMessageChars=${triggerMessage.length}`,
+    );
+
     const directIdempotencyKey = buildAnnounceIdempotencyKey(announceId);
     const delivery = await deliverSubagentAnnouncement({
       requesterSessionKey: targetRequesterSessionKey,
@@ -604,7 +626,7 @@ export async function runSubagentAnnounceFlow(params: {
       completionDirectOrigin,
       directOrigin,
       sourceSessionKey: params.childSessionKey,
-      sourceChannel: INTERNAL_MESSAGE_CHANNEL,
+      sourceChannel: params.requesterOrigin?.channel ?? INTERNAL_MESSAGE_CHANNEL,
       sourceTool: "subagent_announce",
       targetRequesterSessionKey,
       requesterIsSubagent,
@@ -615,12 +637,12 @@ export async function runSubagentAnnounceFlow(params: {
     });
     didAnnounce = delivery.delivered;
     if (!delivery.delivered && delivery.path === "direct" && delivery.error) {
-      defaultRuntime.error?.(
-        `Subagent completion direct announce failed for run ${params.childRunId}: ${delivery.error}`,
+      log.error(
+        `completion direct announce failed: run=${params.childRunId} error=${delivery.error}`,
       );
     }
   } catch (err) {
-    defaultRuntime.error?.(`Subagent announce failed: ${String(err)}`);
+    log.error(`announce failed: ${String(err)}`);
     // Best-effort follow-ups; ignore failures to avoid breaking the caller response.
   } finally {
     // Patch label after all writes complete

@@ -72,6 +72,52 @@ describe("tools product copy", () => {
     expect(text).not.toContain("unavailable right now");
   });
 
+  it("produces deterministic ordering regardless of input order", () => {
+    const base = {
+      agentId: "main",
+      profile: "coding",
+      groups: [
+        {
+          id: "core" as const,
+          label: "Built-in tools",
+          source: "core" as const,
+        },
+      ],
+    };
+
+    const toolsA = [
+      {
+        id: "web_search",
+        label: "Web Search",
+        description: "Search the web",
+        rawDescription: "Search the web",
+        source: "core" as const,
+      },
+      {
+        id: "exec",
+        label: "Exec",
+        description: "Run shell commands",
+        rawDescription: "Run shell commands",
+        source: "core" as const,
+      },
+    ];
+
+    const toolsB = [...toolsA].toReversed();
+
+    const textA = buildToolsMessage({
+      ...base,
+      groups: [{ ...base.groups[0], tools: toolsA }],
+    });
+
+    const textB = buildToolsMessage({
+      ...base,
+      groups: [{ ...base.groups[0], tools: toolsB }],
+    });
+
+    expect(textA).toEqual(textB);
+    expect(textA).toContain("exec, web_search");
+  });
+
   it("keeps detailed descriptions in verbose mode", () => {
     const text = buildToolsMessage(
       {
@@ -120,7 +166,7 @@ describe("tools product copy", () => {
                 label: "Cron",
                 description: "Schedule and manage cron jobs.",
                 rawDescription:
-                  "Manage Gateway cron jobs and send wake events.\n\nACTIONS:\n- status: Check cron scheduler status\nJOB SCHEMA:\n{ ... }",
+                  'Manage Gateway cron jobs and send wake events. Use this for reminders, "check back later" requests, delayed follow-ups, and recurring tasks. Do not emulate scheduling with exec sleep or process polling.\n\nACTIONS:\n- status: Check cron scheduler status\nJOB SCHEMA:\n{ ... }',
                 source: "core",
               },
             ],
@@ -130,7 +176,9 @@ describe("tools product copy", () => {
       { verbose: true },
     );
 
-    expect(text).toContain("Cron - Manage Gateway cron jobs and send wake events.");
+    expect(text).toContain(
+      'Cron - Manage Gateway cron jobs and send wake events. Use this for reminders, "check back later" requests, delayed follow-ups, and recurring tasks. Do not emulate scheduling with exec sleep or process polling.',
+    );
     expect(text).not.toContain("ACTIONS:");
     expect(text).not.toContain("JOB SCHEMA:");
   });

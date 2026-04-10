@@ -4,11 +4,11 @@ import type {
   MediaUnderstandingOutput,
 } from "../media-understanding/types.js";
 import type { InputProvenance } from "../sessions/input-provenance.js";
-import type { InternalMessageChannel } from "../utils/message-channel.js";
 import type { CommandArgs } from "./commands-registry.types.js";
+import type { ReplyThreadingPolicy } from "./types.js";
 
 /** Valid message channels for routing. */
-export type OriginatingChannelType = ChannelId | InternalMessageChannel;
+export type OriginatingChannelType = ChannelId;
 
 export type StickerContextMetadata = {
   cachedDescription?: string;
@@ -20,6 +20,14 @@ export type StickerContextMetadata = {
   uniqueFileId?: string;
   isAnimated?: boolean;
   isVideo?: boolean;
+} & Record<string, unknown>;
+
+export type AnimationContextMetadata = {
+  fileName?: string;
+  fileId?: string;
+  fileUniqueId?: string;
+  mimeType?: string;
+  duration?: number;
 } & Record<string, unknown>;
 
 export type MsgContext = {
@@ -65,6 +73,8 @@ export type MsgContext = {
   MessageSids?: string[];
   MessageSidFirst?: string;
   MessageSidLast?: string;
+  /** Per-turn reply-threading overrides. */
+  ReplyThreading?: ReplyThreadingPolicy;
   ReplyToId?: string;
   /**
    * Root message id for thread reconstruction (used by Feishu for root_id).
@@ -76,6 +86,8 @@ export type MsgContext = {
   ReplyToBody?: string;
   ReplyToSender?: string;
   ReplyToIsQuote?: boolean;
+  /** Author identifier of the quoted message (provider-specific, e.g. phone number or UUID). */
+  ReplyToAuthor?: string;
   /** Forward origin from the reply target (when reply_to_message is a forwarded message). */
   ReplyToForwardedFrom?: string;
   ReplyToForwardedFromType?: string;
@@ -106,6 +118,8 @@ export type MsgContext = {
   MediaTypes?: string[];
   /** Telegram sticker metadata (emoji, set name, file IDs, cached description). */
   Sticker?: StickerContextMetadata;
+  /** Telegram animation metadata (filename, file IDs, mime type, duration). */
+  Animation?: AnimationContextMetadata;
   /** True when current-turn sticker media is present in MediaPaths (false for cached-description path). */
   StickerMediaIncluded?: boolean;
   OutputDir?: string;
@@ -137,6 +151,15 @@ export type MsgContext = {
   SenderId?: string;
   SenderUsername?: string;
   SenderTag?: string;
+  /**
+   * Discord client status of the sender (desktop/mobile/web).
+   * Populated from the Discord presence cache when the GuildPresences intent is enabled.
+   */
+  SenderClientStatus?: {
+    desktop?: string;
+    mobile?: string;
+    web?: string;
+  };
   SenderE164?: string;
   Timestamp?: number;
   /** Provider label (e.g. whatsapp, telegram). */
@@ -146,6 +169,12 @@ export type MsgContext = {
   /** Platform bot username when command mentions should be normalized. */
   BotUsername?: string;
   WasMentioned?: boolean;
+  /**
+   * List of non-bot users/bots mentioned in the message (excluding the bot itself).
+   * Each entry has `{ id: string; name: string }`.
+   * Populated by channel plugins (e.g. Feishu) where structured mention data is available.
+   */
+  Mentions?: Array<{ id: string; name: string }>;
   CommandAuthorized?: boolean;
   CommandSource?: "text" | "native";
   CommandTargetSessionKey?: string;
@@ -162,6 +191,8 @@ export type MsgContext = {
   MessageThreadId?: string | number;
   /** Platform-native channel/conversation id (e.g. Slack DM channel "D…" id). */
   NativeChannelId?: string;
+  /** Stable provider-native direct-peer id when a DM room/user mapping must survive later writes. */
+  NativeDirectUserId?: string;
   /** Telegram forum supergroup marker. */
   IsForum?: boolean;
   /** Warning: DM has topics enabled but this message is not in a topic. */

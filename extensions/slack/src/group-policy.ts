@@ -5,7 +5,7 @@ import {
   type GroupToolPolicyBySenderConfig,
   type GroupToolPolicyConfig,
 } from "openclaw/plugin-sdk/channel-policy";
-import { normalizeHyphenSlug } from "openclaw/plugin-sdk/core";
+import { normalizeHyphenSlug } from "openclaw/plugin-sdk/string-normalization-runtime";
 import { mergeSlackAccountConfig, resolveDefaultSlackAccountId } from "./accounts.js";
 
 type SlackChannelPolicyEntry = {
@@ -28,17 +28,22 @@ function resolveSlackChannelPolicyEntry(
     return undefined;
   }
   const channelId = params.groupId?.trim();
+  const matchedChannelIdKey = channelId
+    ? Object.keys(channelMap).find(
+        (key) => key !== "*" && key.toLowerCase() === channelId.toLowerCase(),
+      )
+    : undefined;
   const groupChannel = params.groupChannel;
   const channelName = groupChannel?.replace(/^#/, "");
   const normalizedName = normalizeHyphenSlug(channelName);
   const candidates = [
-    channelId ?? "",
+    matchedChannelIdKey ?? channelId ?? "",
     channelName ? `#${channelName}` : "",
     channelName ?? "",
     normalizedName,
   ].filter(Boolean);
   for (const candidate of candidates) {
-    if (candidate && channelMap[candidate]) {
+    if (channelMap[candidate]) {
       return channelMap[candidate];
     }
   }

@@ -8,15 +8,26 @@ async function expectMinimaxUsageResult(params: {
     plan?: string;
     windows: Array<{ label: string; usedPercent: number; resetAt?: number }>;
   };
+  baseUrl?: string;
 }) {
   const mockFetch = createProviderUsageFetch(async (_url, init) => {
+    const expectedOrigin = (() => {
+      const baseUrlRaw = params.baseUrl ?? "https://api.minimax.io/v1";
+      try {
+        return new URL(baseUrlRaw).origin;
+      } catch {
+        return "https://api.minimax.io";
+      }
+    })();
+    expect(_url).toBe(`${expectedOrigin}/v1/api/openplatform/coding_plan/remains`);
+    expect(init?.method).toBe("GET");
     const headers = (init?.headers as Record<string, string> | undefined) ?? {};
     expect(headers.Authorization).toBe("Bearer key");
     expect(headers["MM-API-Source"]).toBe("OpenClaw");
     return makeResponse(200, params.payload);
   });
 
-  const result = await fetchMinimaxUsage("key", 5000, mockFetch);
+  const result = await fetchMinimaxUsage("key", 5000, mockFetch, { baseUrl: params.baseUrl });
   expect(result.plan).toBe(params.expected.plan);
   expect(result.windows).toEqual(params.expected.windows);
 }
@@ -117,6 +128,33 @@ describe("fetchMinimaxUsage", () => {
       },
     },
     {
+      name: "treats MiniMax current_interval_usage_count as remaining quota (not consumed)",
+      payload: {
+        data: {
+          current_interval_total_count: 100,
+          current_interval_usage_count: 98,
+          plan_name: "Coding Plan",
+        },
+      },
+      expected: {
+        plan: "Coding Plan",
+        windows: [{ label: "5h", usedPercent: 2, resetAt: undefined }],
+      },
+    },
+    {
+      name: "inverts usage_percent when no count fields are present (remaining to used)",
+      payload: {
+        data: {
+          usage_percent: 98,
+          plan_name: "Coding Plan",
+        },
+      },
+      expected: {
+        plan: "Coding Plan",
+        windows: [{ label: "5h", usedPercent: 2, resetAt: undefined }],
+      },
+    },
+    {
       name: "falls back to payload-level reset and plan when nested usage records omit them",
       payload: {
         data: {
@@ -128,6 +166,65 @@ describe("fetchMinimaxUsage", () => {
       expected: {
         plan: "Payload Plan",
         windows: [{ label: "2h", usedPercent: 40, resetAt: 1_700_000_100_000 }],
+      },
+    },
+    {
+      name: "prefers chat model entries from model_remains and derives window labels from timestamps",
+      payload: {
+        data: {
+          model_remains: [
+            {
+              model_name: "speech-hd",
+              current_interval_total_count: 0,
+              current_interval_usage_count: 0,
+              start_time: 1_774_180_800_000,
+              end_time: 1_774_195_200_000,
+            },
+            {
+              model_name: "MiniMax-M*",
+              current_interval_total_count: 600,
+              current_interval_usage_count: 595,
+              start_time: 1_774_180_800_000,
+              end_time: 1_774_195_200_000,
+            },
+            {
+              model_name: "image-01",
+              current_interval_total_count: 0,
+              current_interval_usage_count: 0,
+              start_time: 1_774_180_800_000,
+              end_time: 1_774_195_200_000,
+            },
+          ],
+        },
+      },
+      expected: {
+        plan: "Coding Plan · MiniMax-M*",
+        windows: [{ label: "4h", usedPercent: 0.8333333333333334, resetAt: 1_774_195_200_000 }],
+      },
+    },
+    {
+      name: "falls back to the first non-zero model_remains record when no MiniMax chat entry exists",
+      payload: {
+        data: {
+          model_remains: [
+            {
+              model_name: "speech-hd",
+              current_interval_total_count: 0,
+              current_interval_usage_count: 0,
+            },
+            {
+              model_name: "video-01",
+              current_interval_total_count: 200,
+              current_interval_usage_count: 150,
+              start_time: 1_774_180_800_000,
+              end_time: 1_774_195_200_000,
+            },
+          ],
+        },
+      },
+      expected: {
+        plan: "Coding Plan · video-01",
+        windows: [{ label: "4h", usedPercent: 25, resetAt: 1_774_195_200_000 }],
       },
     },
   ])("$name", async ({ payload, expected }) => {
@@ -166,5 +263,13 @@ describe("fetchMinimaxUsage", () => {
 
     const result = await fetchMinimaxUsage("key", 5000, mockFetch);
     expect(result.windows).toEqual([{ label: "1h", usedPercent: 20, resetAt: undefined }]);
+  });
+
+  it("derives the usage host from the configured baseUrl (CN endpoint)", async () => {
+    await expectMinimaxUsageResult({
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      payload: { data: { used: 50, total: 100 } },
+      expected: { windows: [{ label: "5h", usedPercent: 50, resetAt: undefined }] },
+    });
   });
 });

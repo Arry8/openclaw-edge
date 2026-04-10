@@ -46,6 +46,7 @@ const DEFAULT_MAX_HOLD_MS = 5 * 60 * 1000;
 const DEFAULT_WATCHDOG_INTERVAL_MS = 60_000;
 const DEFAULT_TIMEOUT_GRACE_MS = 2 * 60 * 1000;
 const MAX_LOCK_HOLD_MS = 2_147_000_000;
+const LOCK_SUFFIX = ".lock";
 
 type CleanupState = {
   registered: boolean;
@@ -190,9 +191,33 @@ function releaseAllLocksSync(): void {
   }
 }
 
+/**
+ * Validates that a timestamp is a valid finite number.
+ * Returns true if the value is a safe integer that could represent a timestamp.
+ */
+function isValidTimestamp(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isFinite(value) && Number.isSafeInteger(value) && value > 0
+  );
+}
+
 async function runLockWatchdogCheck(nowMs = Date.now()): Promise<number> {
   let released = 0;
   for (const [sessionFile, held] of HELD_LOCKS.entries()) {
+    // Null timestamp guard: if acquiredAt is invalid, release the lock immediately
+    // to prevent permanent locks caused by undefined/null/NaN timestamps.
+    if (!isValidTimestamp(held.acquiredAt)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[session-write-lock] releasing lock with invalid acquiredAt timestamp: ${held.lockPath}`,
+      );
+      const didRelease = await releaseHeldLock(sessionFile, held, { force: true });
+      if (didRelease) {
+        released += 1;
+      }
+      continue;
+    }
+
     const heldForMs = nowMs - held.acquiredAt;
     if (heldForMs <= held.maxHoldMs) {
       continue;
@@ -396,7 +421,17 @@ function shouldTreatAsOrphanSelfLock(params: {
   }
   const hasValidStarttime = isValidLockNumber(params.payload?.starttime);
   if (hasValidStarttime) {
-    return false;
+    // On Linux, getProcessStartTime always returns a value, so every lock file
+    // written by this codebase will have a valid starttime. Compare it against
+    // the current process's starttime:
+    // - If they match: the lock was written by this exact process run. Check
+    //   HELD_LOCKS to determine if it's an orphan (same as no-starttime path).
+    // - If they differ: the PID was recycled, so this lock belongs to a
+    //   different (dead) process. Let inspectLockPayload handle the staleness.
+    const currentStarttime = getProcessStartTime(process.pid);
+    if (currentStarttime === null || params.payload!.starttime !== currentStarttime) {
+      return false;
+    }
   }
   return !HELD_LOCKS.has(params.normalizedSessionFile);
 }
@@ -411,7 +446,16 @@ export async function cleanStaleLockFiles(params: {
     info?: (message: string) => void;
   };
 }): Promise<{ locks: SessionLockInspection[]; cleaned: SessionLockInspection[] }> {
-  const sessionsDir = path.resolve(params.sessionsDir);
+  // Normalize sessionsDir using realpath to match the keys stored in HELD_LOCKS.
+  // acquireSessionWriteLock uses fs.realpath before storing in HELD_LOCKS, so we
+  // need to do the same here to ensure HELD_LOCKS.has() comparisons work correctly
+  // when sessionsDir contains symlink components.
+  let sessionsDir = path.resolve(params.sessionsDir);
+  try {
+    sessionsDir = await fs.realpath(sessionsDir);
+  } catch {
+    // Fall back to resolved path if realpath fails (e.g., directory doesn't exist yet)
+  }
   const staleMs = resolvePositiveMs(params.staleMs, DEFAULT_STALE_MS);
   const removeStale = params.removeStale !== false;
   const nowMs = params.nowMs ?? Date.now();
@@ -437,9 +481,32 @@ export async function cleanStaleLockFiles(params: {
     const lockPath = path.join(sessionsDir, entry.name);
     const payload = await readLockPayload(lockPath);
     const inspected = inspectLockPayload(payload, staleMs, nowMs);
+
+    // Derive the normalized session file path for checking HELD_LOCKS.
+    // Lock files are named <session>.jsonl.lock, so strip the .lock suffix.
+    const sessionFile = lockPath.slice(0, -LOCK_SUFFIX.length);
+    const orphanSelfLock = shouldTreatAsOrphanSelfLock({
+      payload,
+      normalizedSessionFile: sessionFile,
+    });
+
+    // Treat orphan self-locks as stale during cleanup. This handles the case
+    // where the gateway process lost in-memory HELD_LOCKS state but the lock
+    // file still references the current PID (e.g., after an API failure that
+    // didn't terminate the process but cleared module-level state).
+    const effectiveInspected = orphanSelfLock
+      ? {
+          ...inspected,
+          stale: true,
+          staleReasons: inspected.staleReasons.includes("orphan-self-pid")
+            ? inspected.staleReasons
+            : [...inspected.staleReasons, "orphan-self-pid"],
+        }
+      : inspected;
+
     const lockInfo: SessionLockInspection = {
       lockPath,
-      ...inspected,
+      ...effectiveInspected,
       removed: false,
     };
 
@@ -496,10 +563,13 @@ export async function acquireSessionWriteLock(params: {
 
   const startedAt = Date.now();
   let attempt = 0;
+  let consecutiveEpermNoFile = 0;
   while (Date.now() - startedAt < timeoutMs) {
     attempt += 1;
     let handle: fs.FileHandle | null = null;
     try {
+      // Atomic lock acquisition using exclusive create (wx flag)
+      // This is atomic on POSIX systems - fails if file exists
       handle = await fs.open(lockPath, "wx");
       const createdAt = new Date().toISOString();
       const starttime = getProcessStartTime(process.pid);
@@ -508,6 +578,27 @@ export async function acquireSessionWriteLock(params: {
         lockPayload.starttime = starttime;
       }
       await handle.writeFile(JSON.stringify(lockPayload, null, 2), "utf8");
+
+      // Compare-and-swap verification: read back and verify we own the lock
+      // This guards against edge cases where the file was created but
+      // corrupted or replaced by another process
+      const verifyPayload = await readLockPayload(lockPath);
+      if (verifyPayload?.pid !== process.pid) {
+        // Verification failed - another process may have interfered
+        // Clean up and retry
+        try {
+          await handle.close();
+        } catch {
+          // Ignore cleanup errors
+        }
+        try {
+          await fs.rm(lockPath, { force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+        throw Object.assign(new Error("Lock verification failed"), { code: "EEXIST" });
+      }
+
       const createdHeld: HeldLock = {
         count: 1,
         handle,
@@ -536,8 +627,38 @@ export async function acquireSessionWriteLock(params: {
       }
       const code = (err as { code?: unknown }).code;
       if (code !== "EEXIST") {
-        throw err;
+        if (code === "EPERM" && process.platform === "win32") {
+          // On Windows, a lock file held open by another process may cause
+          // fs.open("wx") to throw EPERM instead of EEXIST due to mandatory
+          // file locking.  Only retry when the lock file actually exists;
+          // otherwise this is a real permission error.
+          try {
+            await fs.access(lockPath);
+          } catch (accessErr) {
+            // ENOENT means the lock file does not exist.  This can happen
+            // in two scenarios:
+            // 1. The lock owner released between our open and this check
+            //    (race) — retry once to acquire the now-free lock.
+            // 2. A real permission error on the directory — the file was
+            //    never there.  If we see this twice in a row, surface the
+            //    original EPERM immediately.
+            if ((accessErr as { code?: string })?.code === "ENOENT") {
+              consecutiveEpermNoFile += 1;
+              if (consecutiveEpermNoFile >= 2) {
+                throw err;
+              }
+              continue;
+            }
+            throw err;
+          }
+        } else {
+          throw err;
+        }
       }
+      // Reset the EPERM+ENOENT race counter whenever we reach a normal
+      // retry path (EEXIST or EPERM-with-file-present), so that two
+      // non-adjacent races don't trip the "real permission error" guard.
+      consecutiveEpermNoFile = 0;
       const payload = await readLockPayload(lockPath);
       const nowMs = Date.now();
       const inspected = inspectLockPayload(payload, staleMs, nowMs);

@@ -2,9 +2,12 @@ import crypto from "node:crypto";
 import { callGateway } from "../../gateway/call.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import { withTimeout } from "../../utils/with-timeout.js";
 import { AGENT_LANE_NESTED } from "../lanes.js";
-import { readLatestAssistantReply, runAgentStep } from "./agent-step.js";
+import { readLatestAssistantReply, waitForAgentRun } from "../run-wait.js";
+import { runAgentStep } from "./agent-step.js";
 import { resolveAnnounceTarget } from "./sessions-announce-target.js";
 import {
   buildAgentToAgentAnnounceContext,
@@ -36,21 +39,17 @@ export async function runSessionsSendA2AFlow(params: {
   roundOneReply?: string;
   waitRunId?: string;
 }) {
-  const runContextId = params.waitRunId ?? "unknown";
+  const runContextId = params.waitRunId ?? crypto.randomUUID();
   try {
     let primaryReply = params.roundOneReply;
     let latestReply = params.roundOneReply;
     if (!primaryReply && params.waitRunId) {
-      const waitMs = Math.min(params.announceTimeoutMs, 60_000);
-      const wait = await sessionsSendA2ADeps.callGateway<{ status: string }>({
-        method: "agent.wait",
-        params: {
-          runId: params.waitRunId,
-          timeoutMs: waitMs,
-        },
-        timeoutMs: waitMs + 2000,
+      const wait = await waitForAgentRun({
+        runId: params.waitRunId,
+        timeoutMs: Math.min(params.announceTimeoutMs, 60_000),
+        callGateway: sessionsSendA2ADeps.callGateway,
       });
-      if (wait?.status === "ok") {
+      if (wait.status === "ok") {
         primaryReply = await readLatestAssistantReply({
           sessionKey: params.targetSessionKey,
         });
@@ -75,8 +74,48 @@ export async function runSessionsSendA2AFlow(params: {
       let currentSessionKey = params.requesterSessionKey;
       let nextSessionKey = params.targetSessionKey;
       let incomingMessage = latestReply;
+      // Hook chain preserves turn delivery order without blocking the loop.
+      const hookRunner = getGlobalHookRunner();
+      const hasA2ATurnHooks = hookRunner?.hasHooks("agent_to_agent_turn") ?? false;
+      const resolvedTargetChannel = targetChannel === "unknown" ? undefined : targetChannel;
+      const perTurnTimeout = Math.min(params.announceTimeoutMs, 30_000);
+      const hookCtx = {
+        requesterSessionKey: params.requesterSessionKey,
+        targetSessionKey: params.targetSessionKey,
+      };
+      const deliveryTarget = announceTarget
+        ? {
+            to: announceTarget.to,
+            accountId: announceTarget.accountId,
+            channel: announceTarget.channel,
+            threadId: announceTarget.threadId,
+          }
+        : undefined;
+      let hookChain: Promise<void> = Promise.resolve();
+
+      // Emit turn=0 for the initial target reply (before ping-pong starts).
+      if (hasA2ATurnHooks && latestReply) {
+        const event = {
+          flowId: runContextId,
+          turn: 0,
+          maxTurns: params.maxPingPongTurns,
+          speakerSessionKey: params.targetSessionKey,
+          listenerSessionKey: params.requesterSessionKey,
+          speakerRole: "target" as const,
+          reply: latestReply,
+          requesterChannel: params.requesterChannel,
+          targetChannel: resolvedTargetChannel,
+          deliveryTarget,
+        };
+        hookChain = hookChain.then(() =>
+          withTimeout(hookRunner!.runAgentToAgentTurn(event, hookCtx), perTurnTimeout).catch(
+            () => {},
+          ),
+        );
+      }
+
       for (let turn = 1; turn <= params.maxPingPongTurns; turn += 1) {
-        const currentRole =
+        const currentRole: "requester" | "target" =
           currentSessionKey === params.requesterSessionKey ? "requester" : "target";
         const replyPrompt = buildAgentToAgentReplyContext({
           requesterSessionKey: params.requesterSessionKey,
@@ -102,10 +141,63 @@ export async function runSessionsSendA2AFlow(params: {
           break;
         }
         latestReply = replyText;
+
+        // Emit hook so channel plugins can forward A2A turns to users.
+        if (hasA2ATurnHooks) {
+          const event = {
+            flowId: runContextId,
+            turn,
+            maxTurns: params.maxPingPongTurns,
+            speakerSessionKey: currentSessionKey,
+            listenerSessionKey: nextSessionKey,
+            speakerRole: currentRole,
+            reply: replyText,
+            requesterChannel: params.requesterChannel,
+            targetChannel: resolvedTargetChannel,
+            deliveryTarget,
+          };
+          hookChain = hookChain.then(() =>
+            withTimeout(hookRunner!.runAgentToAgentTurn(event, hookCtx), perTurnTimeout).catch(
+              () => {},
+            ),
+          );
+        }
+
         incomingMessage = replyText;
         const swap = currentSessionKey;
         currentSessionKey = nextSessionKey;
         nextSessionKey = swap;
+      }
+      // Wait for queued turn hooks before announce so users see intermediate
+      // turns before the final conclusion.
+      // Bound the wait so a slow plugin cannot stall the announce step.
+      await withTimeout(hookChain, perTurnTimeout).catch(() => {});
+    }
+
+    // Post the full target reply *after* ping-pong so the thread gets the final reply.
+    let fullReplyPosted = false;
+    if (announceTarget && latestReply && latestReply.trim()) {
+      try {
+        await callGateway({
+          method: "send",
+          params: {
+            to: announceTarget.to,
+            message: latestReply.trim(),
+            channel: announceTarget.channel,
+            accountId: announceTarget.accountId,
+            threadId: announceTarget.threadId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+          timeoutMs: 10_000,
+        });
+        fullReplyPosted = true;
+      } catch (err) {
+        log.warn("sessions_send full-reply delivery to target failed", {
+          runId: runContextId,
+          channel: announceTarget.channel,
+          to: announceTarget.to,
+          error: formatErrorMessage(err),
+        });
       }
     }
 
@@ -118,17 +210,28 @@ export async function runSessionsSendA2AFlow(params: {
       roundOneReply: primaryReply,
       latestReply,
     });
-    const announceReply = await runAgentStep({
-      sessionKey: params.targetSessionKey,
-      message: "Agent-to-agent announce step.",
-      extraSystemPrompt: announcePrompt,
-      timeoutMs: params.announceTimeoutMs,
-      lane: AGENT_LANE_NESTED,
-      sourceSessionKey: params.requesterSessionKey,
-      sourceChannel: params.requesterChannel,
-      sourceTool: "sessions_send",
-    });
-    if (announceTarget && announceReply && announceReply.trim() && !isAnnounceSkip(announceReply)) {
+    // Run announce in the *requester* session so the target (e.g. Cursor) never receives
+    // "Agent-to-agent announce step." — otherwise Cursor replies with a handoff summary.
+    let announceReply: string | undefined;
+    if (params.requesterSessionKey) {
+      announceReply = await runAgentStep({
+        sessionKey: params.requesterSessionKey,
+        message: "Agent-to-agent announce step.",
+        extraSystemPrompt: announcePrompt,
+        timeoutMs: params.announceTimeoutMs,
+        lane: AGENT_LANE_NESTED,
+        sourceSessionKey: params.targetSessionKey,
+        sourceChannel: params.requesterChannel,
+        sourceTool: "sessions_send",
+      });
+    }
+    if (
+      announceTarget &&
+      announceReply &&
+      announceReply.trim() &&
+      !isAnnounceSkip(announceReply) &&
+      !fullReplyPosted
+    ) {
       try {
         await sessionsSendA2ADeps.callGateway({
           method: "send",
@@ -137,6 +240,7 @@ export async function runSessionsSendA2AFlow(params: {
             message: announceReply.trim(),
             channel: announceTarget.channel,
             accountId: announceTarget.accountId,
+            threadId: announceTarget.threadId,
             idempotencyKey: crypto.randomUUID(),
           },
           timeoutMs: 10_000,

@@ -1,3 +1,5 @@
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
+
 export type SafeBinProfile = {
   minPositional?: number;
   maxPositional?: number;
@@ -14,6 +16,7 @@ export type SafeBinProfileFixture = {
   maxPositional?: number;
   allowedValueFlags?: readonly string[];
   deniedFlags?: readonly string[];
+  knownLongFlags?: readonly string[];
 };
 
 export type SafeBinProfileFixtures = Readonly<Record<string, SafeBinProfileFixture>>;
@@ -73,7 +76,24 @@ export function buildLongFlagPrefixMap(
 function compileSafeBinProfile(fixture: SafeBinProfileFixture): SafeBinProfile {
   const allowedValueFlags = toFlagSet(fixture.allowedValueFlags);
   const deniedFlags = toFlagSet(fixture.deniedFlags);
-  const knownLongFlags = collectKnownLongFlags(allowedValueFlags, deniedFlags);
+  const derivedKnownLongFlags = collectKnownLongFlags(allowedValueFlags, deniedFlags);
+  // Filter user-provided knownLongFlags that are strict prefixes of denied flags.
+  // Without this, a short form like "--rec" would get exact-match priority in
+  // resolveCanonicalLongFlag, bypassing the denial of "--recursive".
+  const userFlags = fixture.knownLongFlags
+    ? fixture.knownLongFlags.filter((flag) => {
+        if (!flag.startsWith("--")) {
+          return true;
+        }
+        for (const denied of deniedFlags) {
+          if (denied.startsWith(flag) && denied !== flag) {
+            return false;
+          }
+        }
+        return true;
+      })
+    : [];
+  const knownLongFlags = Array.from(new Set([...derivedKnownLongFlags, ...userFlags]));
   return {
     minPositional: fixture.minPositional,
     maxPositional: fixture.maxPositional,
@@ -216,13 +236,53 @@ export const SAFE_BIN_PROFILE_FIXTURES: Record<string, SafeBinProfileFixture> = 
     maxPositional: 0,
     deniedFlags: ["--files0-from"],
   },
+  // Common read-only bins.  Profiles are intentionally conservative: they only
+  // allow safe-literal positional arguments (no absolute paths, traversals, or
+  // globs) and omit boolean flags (the profile system only models value-consuming
+  // flags).  Users who need flag support (e.g. `ls -la`, `df -h`) should add
+  // custom `tools.exec.safeBinProfiles` entries or explicit allowlist entries.
+  echo: {
+    // echo prints its arguments verbatim; no filesystem interaction.
+  },
+  date: {
+    // date with an optional format positional (e.g. +%Y-%m-%d).
+    maxPositional: 1,
+    deniedFlags: ["--set", "-s"],
+  },
+  which: {
+    // which <binary ...>; read-only PATH inspection.
+    maxPositional: 10,
+  },
+  uptime: {
+    maxPositional: 0,
+  },
+  ls: {
+    // Bare ls or ls <name ...>.  Absolute and traversal paths are rejected
+    // by the safe-literal token validator.
+    maxPositional: 10,
+  },
+  cat: {
+    // cat <file ...>; restricted to safe-literal filenames (no absolute
+    // paths, no traversals, no globs).
+    maxPositional: 10,
+  },
+  ps: {
+    // ps alone or ps <style> (e.g. "aux").
+    maxPositional: 1,
+  },
+  df: {
+    maxPositional: 0,
+  },
+  du: {
+    maxPositional: 0,
+  },
 };
 
 export const SAFE_BIN_PROFILES: Record<string, SafeBinProfile> =
   compileSafeBinProfiles(SAFE_BIN_PROFILE_FIXTURES);
 
 function normalizeSafeBinProfileName(raw: string): string | null {
-  const name = raw.trim().toLowerCase();
+  const name = normalizeLowercaseStringOrEmpty(raw);
   return name.length > 0 ? name : null;
 }
 
@@ -260,6 +320,7 @@ function normalizeSafeBinProfileFixture(fixture: SafeBinProfileFixture): SafeBin
     maxPositional,
     allowedValueFlags: normalizeFixtureFlags(fixture.allowedValueFlags),
     deniedFlags: normalizeFixtureFlags(fixture.deniedFlags),
+    knownLongFlags: normalizeFixtureFlags(fixture.knownLongFlags),
   };
 }
 

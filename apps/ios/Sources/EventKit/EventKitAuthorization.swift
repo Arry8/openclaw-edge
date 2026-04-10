@@ -8,7 +8,7 @@ enum EventKitAuthorization {
         case .writeOnly:
             return false
         case .notDetermined:
-            // Don’t prompt during node.invoke; prompts block the invoke and lead to timeouts.
+            // Permission requests are coordinated by CalendarService for .notDetermined/.writeOnly so headless invokes can still cancel cleanly.
             return false
         case .restricted, .denied:
             return false
@@ -22,7 +22,7 @@ enum EventKitAuthorization {
         case .authorized, .fullAccess, .writeOnly:
             return true
         case .notDetermined:
-            // Don’t prompt during node.invoke; prompts block the invoke and lead to timeouts.
+            // Permission requests are coordinated by CalendarService for .notDetermined/.writeOnly so headless invokes can still cancel cleanly.
             return false
         case .restricted, .denied:
             return false

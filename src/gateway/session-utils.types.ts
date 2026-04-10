@@ -1,5 +1,6 @@
 import type { ChatType } from "../channels/chat-type.js";
 import type { SessionEntry } from "../config/sessions.js";
+import type { SessionCompactionCheckpoint } from "../config/sessions.js";
 import type {
   GatewayAgentRow as SharedGatewayAgentRow,
   SessionsListResultBase,
@@ -48,6 +49,8 @@ export type GatewaySessionRow = {
   outputTokens?: number;
   totalTokens?: number;
   totalTokensFresh?: boolean;
+  /** Current context window tokens (post-compaction). Use this for UI context %, not totalTokens which is lifetime. */
+  currentWindowTokens?: number;
   estimatedCostUsd?: number;
   status?: SessionRunStatus;
   startedAt?: number;
@@ -64,6 +67,8 @@ export type GatewaySessionRow = {
   lastTo?: string;
   lastAccountId?: string;
   lastThreadId?: SessionEntry["lastThreadId"];
+  compactionCheckpointCount?: number;
+  latestCompactionCheckpoint?: SessionCompactionCheckpoint;
 };
 
 export type GatewayAgentRow = SharedGatewayAgentRow;

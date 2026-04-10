@@ -2,7 +2,99 @@ import type { VerboseLevel } from "../auto-reply/thinking.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { notifyListeners, registerListener } from "../shared/listeners.js";
 
-export type AgentEventStream = "lifecycle" | "tool" | "assistant" | "error" | (string & {});
+export type AgentEventStream =
+  | "lifecycle"
+  | "tool"
+  | "assistant"
+  | "error"
+  | "item"
+  | "plan"
+  | "approval"
+  | "command_output"
+  | "patch"
+  | "compaction"
+  | "thinking"
+  | (string & {});
+
+export type AgentItemEventPhase = "start" | "update" | "end";
+export type AgentItemEventStatus = "running" | "completed" | "failed" | "blocked";
+export type AgentItemEventKind =
+  | "tool"
+  | "command"
+  | "patch"
+  | "search"
+  | "analysis"
+  | (string & {});
+
+export type AgentItemEventData = {
+  itemId: string;
+  phase: AgentItemEventPhase;
+  kind: AgentItemEventKind;
+  title: string;
+  status: AgentItemEventStatus;
+  name?: string;
+  meta?: string;
+  toolCallId?: string;
+  startedAt?: number;
+  endedAt?: number;
+  error?: string;
+  summary?: string;
+  progressText?: string;
+  approvalId?: string;
+  approvalSlug?: string;
+};
+
+export type AgentPlanEventData = {
+  phase: "update";
+  title: string;
+  explanation?: string;
+  steps?: string[];
+  source?: string;
+};
+
+export type AgentApprovalEventPhase = "requested" | "resolved";
+export type AgentApprovalEventStatus = "pending" | "unavailable" | "approved" | "denied" | "failed";
+export type AgentApprovalEventKind = "exec" | "plugin" | "unknown";
+
+export type AgentApprovalEventData = {
+  phase: AgentApprovalEventPhase;
+  kind: AgentApprovalEventKind;
+  status: AgentApprovalEventStatus;
+  title: string;
+  itemId?: string;
+  toolCallId?: string;
+  approvalId?: string;
+  approvalSlug?: string;
+  command?: string;
+  host?: string;
+  reason?: string;
+  message?: string;
+};
+
+export type AgentCommandOutputEventData = {
+  itemId: string;
+  phase: "delta" | "end";
+  title: string;
+  toolCallId: string;
+  name?: string;
+  output?: string;
+  status?: AgentItemEventStatus | "running";
+  exitCode?: number | null;
+  durationMs?: number;
+  cwd?: string;
+};
+
+export type AgentPatchSummaryEventData = {
+  itemId: string;
+  phase: "end";
+  title: string;
+  toolCallId: string;
+  name?: string;
+  added: string[];
+  modified: string[];
+  deleted: string[];
+  summary: string;
+};
 
 export type AgentEventPayload = {
   runId: string;
@@ -66,11 +158,46 @@ export function getAgentRunContext(runId: string) {
 }
 
 export function clearAgentRunContext(runId: string) {
-  getAgentEventState().runContextById.delete(runId);
+  const state = getAgentEventState();
+  state.runContextById.delete(runId);
+  state.seqByRun.delete(runId);
+}
+
+/**
+ * Safety-net pruning for `seqByRun` — keeps only the most recent entries when
+ * the map grows beyond `maxEntries`. Called from the gateway maintenance timer
+ * so stale run-IDs cannot accumulate indefinitely even if lifecycle cleanup is
+ * missed. Because entries lack timestamps, pruning is FIFO (Map insertion
+ * order).
+ */
+export function pruneStaleAgentEventState(maxEntries: number): number {
+  const state = getAgentEventState();
+  if (state.seqByRun.size <= maxEntries) {
+    return 0;
+  }
+  const excess = state.seqByRun.size - maxEntries;
+  let removed = 0;
+  for (const runId of state.seqByRun.keys()) {
+    state.seqByRun.delete(runId);
+    state.runContextById.delete(runId);
+    removed += 1;
+    if (removed >= excess) {
+      break;
+    }
+  }
+  return removed;
+}
+
+/** Returns the current size of internal agent-event state maps (for instrumentation). */
+export function getAgentEventStateSize(): { seqByRun: number; runContextById: number } {
+  const state = getAgentEventState();
+  return { seqByRun: state.seqByRun.size, runContextById: state.runContextById.size };
 }
 
 export function resetAgentRunContextForTest() {
-  getAgentEventState().runContextById.clear();
+  const state = getAgentEventState();
+  state.runContextById.clear();
+  state.seqByRun.clear();
 }
 
 export function emitAgentEvent(event: Omit<AgentEventPayload, "seq" | "ts">) {
@@ -89,6 +216,71 @@ export function emitAgentEvent(event: Omit<AgentEventPayload, "seq" | "ts">) {
     ts: Date.now(),
   };
   notifyListeners(state.listeners, enriched);
+}
+
+export function emitAgentItemEvent(params: {
+  runId: string;
+  data: AgentItemEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "item",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+export function emitAgentPlanEvent(params: {
+  runId: string;
+  data: AgentPlanEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "plan",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+export function emitAgentApprovalEvent(params: {
+  runId: string;
+  data: AgentApprovalEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "approval",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+export function emitAgentCommandOutputEvent(params: {
+  runId: string;
+  data: AgentCommandOutputEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "command_output",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+export function emitAgentPatchSummaryEvent(params: {
+  runId: string;
+  data: AgentPatchSummaryEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "patch",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
 }
 
 export function onAgentEvent(listener: (evt: AgentEventPayload) => void) {

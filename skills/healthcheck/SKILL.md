@@ -19,6 +19,7 @@ Assess and harden the host running OpenClaw, then align it to a user-defined ris
 - If role/identity is unknown, provide recommendations only.
 - Formatting: every set of user choices must be numbered so the user can reply with a single digit.
 - System-level backups are recommended; try to verify status.
+- All timestamps in alerts, reports, and logs must use the user's local timezone (from the `Current time:` line provided by the cron system, or from `agents.defaults.userTimezone` in the config). Never display raw UTC timestamps to the user.
 
 ## Workflow (follow in order)
 
@@ -94,6 +95,14 @@ If browser control is enabled, recommend that 2FA be enabled on all important ac
 As part of the default read-only checks, run `openclaw update status`.
 
 Report the current channel and whether an update is available.
+
+When recommending an update command, detect the installation method first:
+
+1. Run `which openclaw` and check the path:
+   - If the path contains `/homebrew/` or `/Cellar/` → installed via Homebrew → recommend `brew upgrade openclaw`
+   - If the path contains a global `node_modules` directory → installed via npm/pnpm → recommend the matching package manager (check which of `npm`, `pnpm`, `yarn` is available)
+   - Otherwise → show generic guidance with both options
+2. Never blindly recommend `pnpm update` or `npm update` without checking the installation method first.
 
 ### 4) Determine risk tolerance (after system context)
 

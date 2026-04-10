@@ -1,4 +1,6 @@
 import process from "node:process";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
+import { restoreTerminalState } from "../terminal/restore.js";
 import {
   collectErrorGraphCandidates,
   extractErrorCode,
@@ -101,13 +103,16 @@ function hasSqliteSignal(err: unknown): boolean {
     }
   }
 
-  const name = readErrorName(err);
-  if (name.toLowerCase().includes("sqlite")) {
+  const name = normalizeLowercaseStringOrEmpty(readErrorName(err));
+  if (name.includes("sqlite")) {
     return true;
   }
 
-  const message = "message" in err && typeof err.message === "string" ? err.message : "";
-  if (message.toLowerCase().includes("sqlite")) {
+  const message =
+    "message" in err && typeof err.message === "string"
+      ? normalizeLowercaseStringOrEmpty(err.message)
+      : "";
+  if (message.includes("sqlite")) {
     return true;
   }
 
@@ -237,7 +242,7 @@ export function isTransientNetworkError(err: unknown): boolean {
       continue;
     }
     const rawMessage = (candidate as { message?: unknown }).message;
-    const message = typeof rawMessage === "string" ? rawMessage.toLowerCase().trim() : "";
+    const message = normalizeLowercaseStringOrEmpty(rawMessage);
     if (!message) {
       continue;
     }
@@ -296,7 +301,7 @@ export function isTransientSqliteError(err: unknown): boolean {
       (candidate as { errstr?: unknown }).errstr,
     ];
     for (const rawMessage of messageParts) {
-      const message = typeof rawMessage === "string" ? rawMessage.toLowerCase().trim() : "";
+      const message = normalizeLowercaseStringOrEmpty(rawMessage);
       if (!message) {
         continue;
       }
@@ -340,8 +345,21 @@ export function isUnhandledRejectionHandled(reason: unknown): boolean {
 }
 
 export function installUnhandledRejectionHandler(): void {
+  const exitWithTerminalRestore = (reason: string) => {
+    restoreTerminalState(reason, { resumeStdinIfPaused: false });
+    process.exit(1);
+  };
+
   process.on("unhandledRejection", (reason, _promise) => {
     if (isUnhandledRejectionHandled(reason)) {
+      return;
+    }
+
+    // Rejections with no reason (undefined/null) are almost always third-party SDK
+    // bugs (e.g., Slack socket-mode calling reject() without an argument after a
+    // WebSocket 408). There is zero diagnostic value in crashing — log and continue.
+    if (reason === undefined || reason === null) {
+      console.warn("[openclaw] Non-fatal unhandled rejection (no error object):", String(reason));
       return;
     }
 
@@ -354,13 +372,13 @@ export function installUnhandledRejectionHandler(): void {
 
     if (isFatalError(reason)) {
       console.error("[openclaw] FATAL unhandled rejection:", formatUncaughtError(reason));
-      process.exit(1);
+      exitWithTerminalRestore("fatal unhandled rejection");
       return;
     }
 
     if (isConfigError(reason)) {
       console.error("[openclaw] CONFIGURATION ERROR - requires fix:", formatUncaughtError(reason));
-      process.exit(1);
+      exitWithTerminalRestore("configuration error");
       return;
     }
 
@@ -372,7 +390,21 @@ export function installUnhandledRejectionHandler(): void {
       return;
     }
 
+    // Rejections with undefined/null/empty reasons are unclassifiable — they typically
+    // originate from third-party libraries (e.g. @slack/socket-mode) calling reject()
+    // without an error argument. Crashing on these is disproportionate since we can't
+    // determine severity. Log and continue; the originating subsystem's own retry logic
+    // (e.g. Slack socket reconnect) will handle recovery.
+    // See: https://github.com/openclaw/openclaw/issues/21082
+    if (reason === undefined || reason === null) {
+      console.warn(
+        "[openclaw] Non-fatal unhandled rejection (undefined reason, continuing):",
+        formatUncaughtError(reason),
+      );
+      return;
+    }
+
     console.error("[openclaw] Unhandled promise rejection:", formatUncaughtError(reason));
-    process.exit(1);
+    exitWithTerminalRestore("unhandled rejection");
   });
 }

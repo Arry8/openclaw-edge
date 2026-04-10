@@ -38,7 +38,12 @@ export function resolveBundledInstallPlanForCatalogEntry(params: {
   if (bundledById?.pluginId !== pluginId) {
     return null;
   }
-  if (bundledById.npmSpec && bundledById.npmSpec !== npmSpec) {
+  // Only enforce npmSpec mismatch when the catalog npmSpec differs AND the input
+  // is an explicit npm specifier (scoped or versioned).  When the user passes a
+  // bare plugin id that matches the bundled pluginId, the npmSpec format
+  // difference (e.g. "@openclaw/acpx" vs "acpx") should not block resolution.
+  const isExplicitNpmSpec = npmSpec !== pluginId;
+  if (isExplicitNpmSpec && bundledById.npmSpec && bundledById.npmSpec !== npmSpec) {
     return null;
   }
 
@@ -49,19 +54,31 @@ export function resolveBundledInstallPlanBeforeNpm(params: {
   rawSpec: string;
   findBundledSource: BundledLookup;
 }): { bundledSource: BundledPluginSource; warning: string } | null {
-  if (!isBareNpmPackageName(params.rawSpec)) {
-    return null;
+  const trimmed = params.rawSpec.trim();
+  if (isBareNpmPackageName(trimmed)) {
+    const bundledSource = params.findBundledSource({
+      kind: "pluginId",
+      value: trimmed,
+    });
+    if (!bundledSource) {
+      return null;
+    }
+    return {
+      bundledSource,
+      warning: `Using bundled plugin "${bundledSource.pluginId}" from ${shortenHomePath(bundledSource.localPath)} for bare install spec "${trimmed}". To install an npm package with the same name, use a scoped package name (for example @scope/${trimmed}).`,
+    };
   }
+
   const bundledSource = params.findBundledSource({
-    kind: "pluginId",
-    value: params.rawSpec,
+    kind: "npmSpec",
+    value: trimmed,
   });
   if (!bundledSource) {
     return null;
   }
   return {
     bundledSource,
-    warning: `Using bundled plugin "${bundledSource.pluginId}" from ${shortenHomePath(bundledSource.localPath)} for bare install spec "${params.rawSpec}". To install an npm package with the same name, use a scoped package name (for example @scope/${params.rawSpec}).`,
+    warning: `Using bundled plugin "${bundledSource.pluginId}" from ${shortenHomePath(bundledSource.localPath)} for npm install spec "${trimmed}".`,
   };
 }
 

@@ -24,6 +24,7 @@ const messagingActions = new Set([
   "unpinMessage",
   "listPins",
   "searchMessages",
+  "uploadFile",
 ]);
 
 const guildActions = new Set([
@@ -69,7 +70,7 @@ export async function handleDiscordAction(
     return await handleDiscordMessagingAction(action, params, isActionEnabled, options, cfg);
   }
   if (guildActions.has(action)) {
-    return await handleDiscordGuildAction(action, params, isActionEnabled);
+    return await handleDiscordGuildAction(action, params, isActionEnabled, cfg, options);
   }
   if (moderationActions.has(action)) {
     return await handleDiscordModerationAction(action, params, isActionEnabled);

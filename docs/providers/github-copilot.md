@@ -45,8 +45,14 @@ open until it completes.
 ### Optional flags
 
 ```bash
-openclaw models auth login-github-copilot --profile-id github-copilot:work
 openclaw models auth login-github-copilot --yes
+```
+
+To also apply the provider's recommended default model in one step, use the
+generic auth command instead:
+
+```bash
+openclaw models auth login --provider github-copilot --method device --set-default
 ```
 
 ## Set a default model
@@ -63,10 +69,52 @@ openclaw models set github-copilot/gpt-4o
 }
 ```
 
+## Memory search embeddings
+
+GitHub Copilot can also serve as an embedding provider for
+[memory search](/concepts/memory-search). If you have a Copilot subscription and
+have logged in, OpenClaw can use it for embeddings without a separate API key.
+
+### Auto-detection
+
+When `memorySearch.provider` is `"auto"` (the default), GitHub Copilot is tried
+at priority 15 -- after local embeddings but before OpenAI and other paid
+providers. If a GitHub token is available, OpenClaw discovers available
+embedding models from the Copilot API and picks the best one automatically.
+
+### Explicit config
+
+```json5
+{
+  agents: {
+    defaults: {
+      memorySearch: {
+        provider: "github-copilot",
+        // Optional: override the auto-discovered model
+        model: "text-embedding-3-small",
+      },
+    },
+  },
+}
+```
+
+### How it works
+
+1. OpenClaw resolves your GitHub token (from env vars or auth profile).
+2. Exchanges it for a short-lived Copilot API token.
+3. Queries the Copilot `/models` endpoint to discover available embedding models.
+4. Picks the best model (prefers `text-embedding-3-small`).
+5. Sends embedding requests to the Copilot `/embeddings` endpoint.
+
+Model availability depends on your GitHub plan. If no embedding models are
+available, OpenClaw skips Copilot and tries the next provider.
+
 ## Notes
 
 - Requires an interactive TTY; run it directly in a terminal.
 - Copilot model availability depends on your plan; if a model is rejected, try
   another ID (for example `github-copilot/gpt-4.1`).
+- Claude model IDs use the Anthropic Messages transport automatically; GPT, o-series,
+  and Gemini models keep the OpenAI Responses transport.
 - The login stores a GitHub token in the auth profile store and exchanges it for a
   Copilot API token when OpenClaw runs.

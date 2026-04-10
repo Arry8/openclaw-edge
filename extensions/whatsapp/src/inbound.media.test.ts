@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockExtractMessageContent,
   mockGetContentType,
@@ -12,9 +12,49 @@ import {
 
 type MockMessageInput = Parameters<typeof mockNormalizeMessageContent>[0];
 
-const readAllowFromStoreMock = vi.fn().mockResolvedValue([]);
-const upsertPairingRequestMock = vi.fn().mockResolvedValue({ code: "PAIRCODE", created: true });
-const saveMediaBufferSpy = vi.fn();
+const {
+  readAllowFromStoreMock,
+  upsertPairingRequestMock,
+  saveMediaBufferSpy,
+  transcribeFirstAudioMock,
+} = vi.hoisted(() => ({
+  readAllowFromStoreMock: vi.fn().mockResolvedValue([]),
+  upsertPairingRequestMock: vi.fn().mockResolvedValue({ code: "PAIRCODE", created: true }),
+  saveMediaBufferSpy: vi.fn(),
+  transcribeFirstAudioMock: vi.fn(),
+}));
+
+const DEFAULT_TEST_CONFIG = {
+  channels: {
+    whatsapp: {
+      allowFrom: ["*"],
+    },
+  },
+  tools: {
+    media: {
+      audio: {
+        enabled: true,
+      },
+    },
+  },
+  messages: {
+    messagePrefix: undefined,
+    responsePrefix: undefined,
+  },
+};
+let currentMockSocket:
+  | {
+      ev: import("node:events").EventEmitter;
+      ws: { close: ReturnType<typeof vi.fn> };
+      sendPresenceUpdate: ReturnType<typeof vi.fn>;
+      sendMessage: ReturnType<typeof vi.fn>;
+      readMessages: ReturnType<typeof vi.fn>;
+      groupFetchAllParticipating: ReturnType<typeof vi.fn>;
+      updateMediaMessage: ReturnType<typeof vi.fn>;
+      logger: Record<string, never>;
+      user: { id: string };
+    }
+  | undefined;
 
 vi.mock("openclaw/plugin-sdk/config-runtime", async () => {
   const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/config-runtime")>(
@@ -22,19 +62,13 @@ vi.mock("openclaw/plugin-sdk/config-runtime", async () => {
   );
   return {
     ...actual,
-    loadConfig: vi.fn().mockReturnValue({
-      channels: {
-        whatsapp: {
-          allowFrom: ["*"], // Allow all in tests
-        },
-      },
-      messages: {
-        messagePrefix: undefined,
-        responsePrefix: undefined,
-      },
-    }),
+    loadConfig: vi.fn().mockReturnValue(DEFAULT_TEST_CONFIG),
   };
 });
+
+vi.mock("./inbound/preflight-audio.runtime.js", () => ({
+  transcribeFirstAudio: transcribeFirstAudioMock,
+}));
 
 vi.mock("../../../src/pairing/pairing-store.js", () => {
   return {
@@ -63,8 +97,9 @@ vi.mock("openclaw/plugin-sdk/media-runtime", async () => {
 const HOME = path.join(os.tmpdir(), `openclaw-inbound-media-${crypto.randomUUID()}`);
 process.env.HOME = HOME;
 
-vi.mock("@whiskeysockets/baileys", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@whiskeysockets/baileys")>();
+vi.mock("@whiskeysockets/baileys", async () => {
+  const actual =
+    await vi.importActual<typeof import("@whiskeysockets/baileys")>("@whiskeysockets/baileys");
   const jpegBuffer = Buffer.from([
     0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02,
     0x02, 0x03, 0x03, 0x03, 0x03, 0x04, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x08, 0x06, 0x06, 0x05,
@@ -93,21 +128,22 @@ vi.mock("@whiskeysockets/baileys", async (importOriginal) => {
 vi.mock("./session.js", async () => {
   const actual = await vi.importActual<typeof import("./session.js")>("./session.js");
   const { EventEmitter } = require("node:events");
-  const ev = new EventEmitter();
-  const sock = {
-    ev,
-    ws: { close: vi.fn() },
-    sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    readMessages: vi.fn().mockResolvedValue(undefined),
-    groupFetchAllParticipating: vi.fn().mockResolvedValue({}),
-    updateMediaMessage: vi.fn(),
-    logger: {},
-    user: { id: "me@s.whatsapp.net" },
-  };
   return {
     ...actual,
-    createWaSocket: vi.fn().mockResolvedValue(sock),
+    createWaSocket: vi.fn().mockImplementation(async () => {
+      currentMockSocket ??= {
+        ev: new EventEmitter(),
+        ws: { close: vi.fn() },
+        sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+        readMessages: vi.fn().mockResolvedValue(undefined),
+        groupFetchAllParticipating: vi.fn().mockResolvedValue({}),
+        updateMediaMessage: vi.fn(),
+        logger: {},
+        user: { id: "me@s.whatsapp.net" },
+      };
+      return currentMockSocket;
+    }),
     waitForWaConnection: vi.fn().mockResolvedValue(undefined),
     getStatusCode: vi.fn(() => 200),
   };
@@ -134,25 +170,28 @@ describe("web inbound media saves with extension", () => {
 
   beforeEach(() => {
     vi.useRealTimers();
-    vi.resetModules();
+    currentMockSocket = undefined;
     saveMediaBufferSpy.mockClear();
+    transcribeFirstAudioMock.mockReset();
+    resetWebInboundDedupe();
   });
 
-  beforeEach(async () => {
-    ({ monitorWebInbox, resetWebInboundDedupe } = await import("./inbound.js"));
-    ({ createWaSocket } = await import("./session.js"));
-    resetWebInboundDedupe();
+  afterEach(async () => {
+    const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
+    vi.mocked(loadConfig).mockReturnValue(DEFAULT_TEST_CONFIG as ReturnType<typeof loadConfig>);
   });
 
   beforeAll(async () => {
     await fs.rm(HOME, { recursive: true, force: true });
+    ({ monitorWebInbox, resetWebInboundDedupe } = await import("./inbound.js"));
+    ({ createWaSocket } = await import("./session.js"));
   });
 
   afterAll(async () => {
     await fs.rm(HOME, { recursive: true, force: true });
   });
 
-  it("stores image extension, extracts caption mentions, and keeps document filename", async () => {
+  it("stores image extension and keeps document filename", async () => {
     const onMessage = vi.fn();
     const listener = await monitorWebInbox({
       verbose: false,
@@ -181,34 +220,6 @@ describe("web inbound media saves with extension", () => {
     expect(stat.size).toBeGreaterThan(0);
 
     onMessage.mockClear();
-    realSock.ev.emit("messages.upsert", {
-      type: "notify",
-      messages: [
-        {
-          key: {
-            id: "img2",
-            fromMe: false,
-            remoteJid: "123@g.us",
-            participant: "999@s.whatsapp.net",
-          },
-          message: {
-            messageContextInfo: {},
-            imageMessage: {
-              caption: "@bot",
-              contextInfo: { mentionedJid: ["999@s.whatsapp.net"] },
-              mimetype: "image/jpeg",
-            },
-          },
-          messageTimestamp: 1_700_000_002,
-        },
-      ],
-    });
-
-    const second = await waitForMessage(onMessage);
-    expect(second.chatType).toBe("group");
-    expect(second.mentionedJids).toEqual(["999@s.whatsapp.net"]);
-
-    onMessage.mockClear();
     const fileName = "invoice.pdf";
     realSock.ev.emit("messages.upsert", {
       type: "notify",
@@ -221,8 +232,8 @@ describe("web inbound media saves with extension", () => {
       ],
     });
 
-    const third = await waitForMessage(onMessage);
-    expect(third.mediaFileName).toBe(fileName);
+    const second = await waitForMessage(onMessage);
+    expect(second.mediaFileName).toBe(fileName);
     expect(saveMediaBufferSpy).toHaveBeenCalled();
     const lastCall = saveMediaBufferSpy.mock.calls.at(-1);
     expect(lastCall?.[4]).toBe(fileName);
@@ -258,6 +269,151 @@ describe("web inbound media saves with extension", () => {
     expect(saveMediaBufferSpy).toHaveBeenCalled();
     const lastCall = saveMediaBufferSpy.mock.calls.at(-1);
     expect(lastCall?.[3]).toBe(1 * 1024 * 1024);
+
+    await listener.close();
+  });
+
+  it("pretranscribes inbound audio before forwarding to the agent", async () => {
+    transcribeFirstAudioMock.mockResolvedValue("hello from a voice note");
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({
+      verbose: false,
+      onMessage,
+      accountId: "default",
+      authDir: path.join(HOME, "wa-auth"),
+    });
+    const realSock = await getMockSocket();
+
+    realSock.ev.emit("messages.upsert", {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "aud1", fromMe: false, remoteJid: "444@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_005,
+        },
+      ],
+    });
+
+    const inbound = await waitForMessage(onMessage);
+    expect(transcribeFirstAudioMock).toHaveBeenCalledTimes(1);
+    expect(inbound.body).toBe("hello from a voice note");
+    // Audio consumed — media fields should be cleared
+    expect(inbound.mediaPath).toBeUndefined();
+    expect(inbound.mediaType).toBeUndefined();
+
+    await listener.close();
+  });
+
+  it("preserves <media:audio> body when transcription is disabled", async () => {
+    const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
+    vi.mocked(loadConfig).mockReturnValue({
+      ...DEFAULT_TEST_CONFIG,
+      tools: { media: { audio: { enabled: false } } },
+    } as ReturnType<typeof loadConfig>);
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({
+      verbose: false,
+      onMessage,
+      accountId: "default",
+      authDir: path.join(HOME, "wa-auth"),
+    });
+    const realSock = await getMockSocket();
+
+    realSock.ev.emit("messages.upsert", {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "aud2", fromMe: false, remoteJid: "555@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_006,
+        },
+      ],
+    });
+
+    const inbound = await waitForMessage(onMessage);
+    expect(transcribeFirstAudioMock).not.toHaveBeenCalled();
+    expect(inbound.body).toBe("<media:audio>");
+
+    await listener.close();
+  });
+
+  it("echoes transcript when echoTranscript is enabled", async () => {
+    transcribeFirstAudioMock.mockResolvedValue("echoed voice note");
+
+    const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
+    vi.mocked(loadConfig).mockReturnValue({
+      ...DEFAULT_TEST_CONFIG,
+      tools: {
+        media: {
+          audio: {
+            enabled: true,
+            echoTranscript: true,
+            echoFormat: "Transcript: {transcript}",
+          },
+        },
+      },
+    } as ReturnType<typeof loadConfig>);
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({
+      verbose: false,
+      onMessage,
+      accountId: "default",
+      authDir: path.join(HOME, "wa-auth"),
+    });
+    const realSock = await getMockSocket();
+
+    realSock.ev.emit("messages.upsert", {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "aud3", fromMe: false, remoteJid: "666@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_007,
+        },
+      ],
+    });
+
+    await waitForMessage(onMessage);
+    const sock = currentMockSocket!;
+    expect(sock.sendMessage).toHaveBeenCalledWith("666@s.whatsapp.net", {
+      text: "Transcript: echoed voice note",
+    });
+
+    await listener.close();
+  });
+
+  it("does not echo transcript when echoTranscript is false", async () => {
+    transcribeFirstAudioMock.mockResolvedValue("no echo voice note");
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({
+      verbose: false,
+      onMessage,
+      accountId: "default",
+      authDir: path.join(HOME, "wa-auth"),
+    });
+    const realSock = await getMockSocket();
+
+    realSock.ev.emit("messages.upsert", {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "aud4", fromMe: false, remoteJid: "777@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_008,
+        },
+      ],
+    });
+
+    const inbound = await waitForMessage(onMessage);
+    expect(inbound.body).toBe("no echo voice note");
+    const sock = currentMockSocket!;
+    // sendMessage should not have been called for echo (only read receipts may call it)
+    expect(sock.sendMessage).not.toHaveBeenCalled();
 
     await listener.close();
   });

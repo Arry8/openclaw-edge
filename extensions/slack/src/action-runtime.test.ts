@@ -242,6 +242,30 @@ describe("handleSlackAction", () => {
     );
   });
 
+  it("forwards resolved botToken to action functions instead of relying on config re-read", async () => {
+    downloadSlackFile.mockResolvedValueOnce(null);
+    await handleSlackAction({ action: "downloadFile", fileId: "F123" }, slackConfig());
+    const opts = downloadSlackFile.mock.calls[0]?.[1] as { token?: string } | undefined;
+    expect(opts?.token).toBe("tok");
+  });
+
+  it("keeps resolved userToken for downloadFile reads when configured", async () => {
+    downloadSlackFile.mockResolvedValueOnce(null);
+    await handleSlackAction(
+      { action: "downloadFile", fileId: "F123" },
+      slackConfig({
+        accounts: {
+          default: {
+            botToken: "xoxb-bot",
+            userToken: "xoxp-user",
+          },
+        },
+      }),
+    );
+    const opts = downloadSlackFile.mock.calls[0]?.[1] as { token?: string } | undefined;
+    expect(opts?.token).toBe("xoxp-user");
+  });
+
   it.each([
     {
       name: "JSON blocks",
@@ -612,6 +636,20 @@ describe("handleSlackAction", () => {
       }),
     );
     expect(token).toBeUndefined();
+  });
+
+  it("uses bot token for reads when userTokenReadOnly is false", async () => {
+    const cfg = {
+      channels: { slack: { botToken: "xoxb-1", userToken: "xoxp-1", userTokenReadOnly: false } },
+    } as OpenClawConfig;
+    expect(await resolveReadToken(cfg)).toBeUndefined();
+  });
+
+  it("falls back to user token for reads when userTokenReadOnly is false and no bot token", async () => {
+    const cfg = {
+      channels: { slack: { userToken: "xoxp-1", userTokenReadOnly: false } },
+    } as OpenClawConfig;
+    expect(await resolveReadToken(cfg)).toBe("xoxp-1");
   });
 
   it("allows user token writes when bot token is missing", async () => {

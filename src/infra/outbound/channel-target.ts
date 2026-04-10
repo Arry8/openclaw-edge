@@ -1,4 +1,10 @@
+import {
+  hasNonEmptyString as sharedHasNonEmptyString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { MESSAGE_ACTION_TARGET_MODE } from "./message-action-spec.js";
+
+export const hasNonEmptyString = sharedHasNonEmptyString;
 
 export const CHANNEL_TARGET_DESCRIPTION =
   "Recipient/channel: E.164 for WhatsApp/Signal, Telegram chat id/@username, Discord/Slack channel/user, or iMessage handle/chat_id";
@@ -6,15 +12,11 @@ export const CHANNEL_TARGET_DESCRIPTION =
 export const CHANNEL_TARGETS_DESCRIPTION =
   "Recipient/channel targets (same format as --target); accepts ids or names when the directory is available.";
 
-function hasNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
 export function applyTargetToParams(params: {
   action: string;
   args: Record<string, unknown>;
 }): void {
-  const target = typeof params.args.target === "string" ? params.args.target.trim() : "";
+  const target = normalizeOptionalString(params.args.target) ?? "";
   const hasLegacyTo = hasNonEmptyString(params.args.to);
   const hasLegacyChannelId = hasNonEmptyString(params.args.channelId);
   const mode =
@@ -37,6 +39,13 @@ export function applyTargetToParams(params: {
   }
   if (mode === "to") {
     params.args.to = target;
+    return;
+  }
+  // For plugin-custom actions not in the known action map, pass target
+  // through as channelId so external plugin actions can receive it.
+  const isKnownAction = params.action in MESSAGE_ACTION_TARGET_MODE;
+  if (!isKnownAction) {
+    params.args.channelId = target;
     return;
   }
   throw new Error(`Action ${params.action} does not accept a target.`);

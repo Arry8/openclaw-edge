@@ -1,4 +1,4 @@
-const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
+const CONTROL_CHARS_RE = /\p{Cc}/u;
 const MAX_EXTERNAL_KEY_LENGTH = 512;
 
 export function normalizeFeishuExternalKey(value: unknown): string | undefined {
@@ -12,7 +12,9 @@ export function normalizeFeishuExternalKey(value: unknown): string | undefined {
   if (CONTROL_CHARS_RE.test(normalized)) {
     return undefined;
   }
-  if (normalized.includes("/") || normalized.includes("\\") || normalized.includes("..")) {
+  // Reject path separators to prevent path traversal attacks.
+  // Allow legitimate keys containing ".." as substrings (e.g., "img_v2_test..key").
+  if (normalized.includes("/") || normalized.includes("\\")) {
     return undefined;
   }
   return normalized;

@@ -1,39 +1,41 @@
 import type { Bot } from "grammy";
-import { resolveAgentDir } from "openclaw/plugin-sdk/agent-runtime";
-import {
-  findModelInCatalog,
-  loadModelCatalog,
-  modelSupportsVision,
-} from "openclaw/plugin-sdk/agent-runtime";
-import { resolveDefaultModelForAgent } from "openclaw/plugin-sdk/agent-runtime";
 import {
   logAckFailure,
   logTypingFailure,
   removeAckReactionAfterReply,
 } from "openclaw/plugin-sdk/channel-feedback";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
-import { resolveMarkdownTableMode } from "openclaw/plugin-sdk/config-runtime";
-import {
-  loadSessionStore,
-  resolveSessionStoreEntry,
-  resolveStorePath,
-} from "openclaw/plugin-sdk/config-runtime";
+import { resolveChannelStreamingBlockEnabled } from "openclaw/plugin-sdk/channel-streaming";
 import type {
   OpenClawConfig,
   ReplyToMode,
   TelegramAccountConfig,
   TelegramDirectConfig,
 } from "openclaw/plugin-sdk/config-runtime";
-import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-runtime";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { clearHistoryEntriesIfEnabled } from "openclaw/plugin-sdk/reply-history";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
-import { resolveChunkMode } from "openclaw/plugin-sdk/reply-runtime";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
-import { resolveAutoTopicLabelConfig, generateTopicLabel } from "openclaw/plugin-sdk/reply-runtime";
-import { danger, logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { danger, logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { defaultTelegramBotDeps, type TelegramBotDeps } from "./bot-deps.js";
 import type { TelegramMessageContext } from "./bot-message-context.js";
+import {
+  findModelInCatalog,
+  loadModelCatalog,
+  modelSupportsVision,
+  resolveAgentDir,
+  resolveDefaultModelForAgent,
+} from "./bot-message-dispatch.agent.runtime.js";
+import {
+  generateTopicLabel,
+  getAgentScopedMediaLocalRoots,
+  loadSessionStore,
+  resolveAutoTopicLabelConfig,
+  resolveChunkMode,
+  resolveMarkdownTableMode,
+  resolveSessionStoreEntry,
+} from "./bot-message-dispatch.runtime.js";
 import type { TelegramBotOptions } from "./bot.js";
 import { deliverReplies, emitInternalMessageSentHook } from "./bot/delivery.js";
 import type { TelegramStreamMode } from "./bot/types.js";
@@ -198,9 +200,8 @@ export const dispatchTelegramMessage = async ({
     parseMode: "HTML" as const,
   });
   const accountBlockStreamingEnabled =
-    typeof telegramCfg.blockStreaming === "boolean"
-      ? telegramCfg.blockStreaming
-      : cfg.agents?.defaults?.blockStreamingDefault === "on";
+    resolveChannelStreamingBlockEnabled(telegramCfg) ??
+    cfg.agents?.defaults?.blockStreamingDefault === "on";
   const resolvedReasoningLevel = resolveTelegramReasoningLevel({
     cfg,
     sessionKey: ctxPayload.SessionKey,
@@ -212,25 +213,26 @@ export const dispatchTelegramMessage = async ({
   const previewStreamingEnabled = streamMode !== "off";
   const canStreamAnswerDraft =
     previewStreamingEnabled && !accountBlockStreamingEnabled && !forceBlockStreamingForReasoning;
-  const canStreamReasoningDraft = canStreamAnswerDraft || streamReasoningDraft;
+  const canStreamReasoningDraft = streamReasoningDraft;
   const draftReplyToMessageId =
     replyToMode !== "off" && typeof msg.message_id === "number" ? msg.message_id : undefined;
   const draftMinInitialChars = DRAFT_MIN_INITIAL_CHARS;
-  // Keep DM preview lanes on real message transport. Native draft previews still
-  // require a draft->message materialize hop, and that overlap keeps reintroducing
-  // a visible duplicate flash at finalize time.
-  const useMessagePreviewTransportForDm = threadSpec?.scope === "dm" && canStreamAnswerDraft;
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, route.agentId);
   const archivedAnswerPreviews: ArchivedPreview[] = [];
   const archivedReasoningPreviewIds: number[] = [];
   const createDraftLane = (laneName: LaneName, enabled: boolean): DraftLaneState => {
+    // Prefer draft transport for DM answer previews when available; keep reasoning
+    // on message transport in DMs to avoid draft-only reasoning previews reappearing
+    // as transient duplicate/deleted-message artifacts in the main answer flow.
+    const useMessagePreviewTransportForDmReasoning =
+      laneName === "reasoning" && threadSpec?.scope === "dm" && canStreamAnswerDraft;
     const stream = enabled
       ? (telegramDeps.createTelegramDraftStream ?? createTelegramDraftStream)({
           api: bot.api,
           chatId,
           maxChars: draftMaxChars,
           thread: threadSpec,
-          previewTransport: useMessagePreviewTransportForDm ? "message" : "auto",
+          previewTransport: useMessagePreviewTransportForDmReasoning ? "message" : "auto",
           replyToMessageId: draftReplyToMessageId,
           minInitialChars: draftMinInitialChars,
           renderText: renderDraftPreview,
@@ -293,8 +295,11 @@ export const dispatchTelegramMessage = async ({
     segments: SplitLaneSegment[];
     suppressedReasoningOnly: boolean;
   };
-  const splitTextIntoLaneSegments = (text?: string): SplitLaneSegmentsResult => {
-    const split = splitTelegramReasoningText(text);
+  const splitTextIntoLaneSegments = (
+    text?: string,
+    options?: { finalText?: boolean },
+  ): SplitLaneSegmentsResult => {
+    const split = splitTelegramReasoningText(text, options);
     const segments: SplitLaneSegment[] = [];
     const suppressReasoning = resolvedReasoningLevel === "off";
     if (split.reasoningText && !suppressReasoning) {
@@ -388,12 +393,13 @@ export const dispatchTelegramMessage = async ({
     await lane.stream.flush();
   };
 
+  const resolvedBlockStreamingEnabled = resolveChannelStreamingBlockEnabled(telegramCfg);
   const disableBlockStreaming = !previewStreamingEnabled
     ? true
     : forceBlockStreamingForReasoning
       ? false
-      : typeof telegramCfg.blockStreaming === "boolean"
-        ? !telegramCfg.blockStreaming
+      : typeof resolvedBlockStreamingEnabled === "boolean"
+        ? !resolvedBlockStreamingEnabled
         : canStreamAnswerDraft
           ? true
           : undefined;
@@ -567,9 +573,7 @@ export const dispatchTelegramMessage = async ({
         logVerbose("auto-topic-label: SessionKey is absent, skipping first-turn detection");
       }
     } catch (err) {
-      logVerbose(
-        `auto-topic-label: session store error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logVerbose(`auto-topic-label: session store error: ${formatErrorMessage(err)}`);
     }
   }
 
@@ -626,10 +630,12 @@ export const dispatchTelegramMessage = async ({
           const previewButtons = (
             payload.channelData?.telegram as { buttons?: TelegramInlineButtons } | undefined
           )?.buttons;
-          const split = splitTextIntoLaneSegments(payload.text);
+          const split = splitTextIntoLaneSegments(payload.text, {
+            finalText: info.kind === "final",
+          });
           const segments = split.segments;
           const reply = resolveSendableOutboundReplyParts(payload);
-          const hasMedia = reply.hasMedia;
+          const _hasMedia = reply.hasMedia;
 
           const flushBufferedFinalAnswer = async () => {
             const buffered = reasoningStepState.takeBufferedFinalAnswer();
@@ -769,20 +775,24 @@ export const dispatchTelegramMessage = async ({
                   await ingestDraftLaneSegments(payload.text);
                 })
             : undefined,
-        onReasoningStream: reasoningLane.stream
-          ? (payload) =>
-              enqueueDraftLaneEvent(async () => {
-                // Split between reasoning blocks only when the next reasoning
-                // stream starts. Splitting at reasoning-end can orphan the active
-                // preview and cause duplicate reasoning sends on reasoning final.
-                if (splitReasoningOnNextStream) {
-                  reasoningLane.stream?.forceNewMessage();
-                  resetDraftLaneState(reasoningLane);
-                  splitReasoningOnNextStream = false;
-                }
-                await ingestDraftLaneSegments(payload.text);
-              })
-          : undefined,
+        // When reasoning display is off, skip onReasoningStream to prevent
+        // native reasoning content (no tags) from routing to the answer lane,
+        // which would create a duplicate visible message alongside the answer.
+        onReasoningStream:
+          reasoningLane.stream && resolvedReasoningLevel !== "off"
+            ? (payload) =>
+                enqueueDraftLaneEvent(async () => {
+                  // Split between reasoning blocks only when the next reasoning
+                  // stream starts. Splitting at reasoning-end can orphan the active
+                  // preview and cause duplicate reasoning sends on reasoning final.
+                  if (splitReasoningOnNextStream) {
+                    reasoningLane.stream?.forceNewMessage();
+                    resetDraftLaneState(reasoningLane);
+                    splitReasoningOnNextStream = false;
+                  }
+                  await ingestDraftLaneSegments(payload.text);
+                })
+            : undefined,
         onAssistantMessageStart: answerLane.stream
           ? () =>
               enqueueDraftLaneEvent(async () => {
@@ -802,13 +812,14 @@ export const dispatchTelegramMessage = async ({
                 retainPreviewOnCleanupByLane.answer = false;
               })
           : undefined,
-        onReasoningEnd: reasoningLane.stream
-          ? () =>
-              enqueueDraftLaneEvent(async () => {
-                // Split when/if a later reasoning block begins.
-                splitReasoningOnNextStream = reasoningLane.hasStreamedMessage;
-              })
-          : undefined,
+        onReasoningEnd:
+          reasoningLane.stream && resolvedReasoningLevel !== "off"
+            ? () =>
+                enqueueDraftLaneEvent(async () => {
+                  // Split when/if a later reasoning block begins.
+                  splitReasoningOnNextStream = reasoningLane.hasStreamedMessage;
+                })
+            : undefined,
         onToolStart: statusReactionController
           ? async (payload) => {
               await statusReactionController.setTool(payload.name);
@@ -895,11 +906,7 @@ export const dispatchTelegramMessage = async ({
   }
   let sentFallback = false;
   const deliverySummary = deliveryState.snapshot();
-  if (
-    dispatchError ||
-    (!deliverySummary.delivered &&
-      (deliverySummary.skippedNonSilent > 0 || deliverySummary.failedNonSilent > 0))
-  ) {
+  if (dispatchError || (!deliverySummary.delivered && !queuedFinal)) {
     const fallbackText = dispatchError
       ? "Something went wrong while processing your request. Please try again."
       : EMPTY_RESPONSE_FALLBACK;
@@ -956,9 +963,7 @@ export const dispatchTelegramMessage = async ({
             await bot.api.editForumTopic(chatId, topicThreadId, { name: label });
             logVerbose(`auto-topic-label: renamed topic ${chatId}/${topicThreadId}`);
           } catch (err) {
-            logVerbose(
-              `auto-topic-label: failed: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            logVerbose(`auto-topic-label: failed: ${formatErrorMessage(err)}`);
           }
         })();
       }

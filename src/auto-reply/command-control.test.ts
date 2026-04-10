@@ -159,6 +159,39 @@ describe("resolveCommandAuthorization", () => {
     expect(otherAuth.isAuthorizedSender).toBe(false);
   });
 
+  it("uses explicit owner allowlist when allowFrom is empty", () => {
+    const cfg = {
+      commands: { ownerAllowFrom: ["whatsapp:+15551234567"] },
+      channels: { whatsapp: {} },
+    } as OpenClawConfig;
+
+    const ownerAuth = resolveCommandAuthorization({
+      ctx: {
+        Provider: "whatsapp",
+        Surface: "whatsapp",
+        From: "whatsapp:+15551234567",
+        SenderE164: "+15551234567",
+      } as MsgContext,
+      cfg,
+      commandAuthorized: true,
+    });
+    expect(ownerAuth.senderIsOwner).toBe(true);
+    expect(ownerAuth.isAuthorizedSender).toBe(true);
+
+    const otherAuth = resolveCommandAuthorization({
+      ctx: {
+        Provider: "whatsapp",
+        Surface: "whatsapp",
+        From: "whatsapp:+19995551234",
+        SenderE164: "+19995551234",
+      } as MsgContext,
+      cfg,
+      commandAuthorized: true,
+    });
+    expect(otherAuth.senderIsOwner).toBe(false);
+    expect(otherAuth.isAuthorizedSender).toBe(false);
+  });
+
   it("uses owner allowlist override from context when configured", () => {
     setActivePluginRegistry(
       createTestRegistry([
@@ -818,6 +851,27 @@ describe("control command parsing", () => {
       hasCommand: true,
     });
     expect(parseActivationCommand("activation mention")).toEqual({
+      hasCommand: false,
+    });
+  });
+
+  it("accepts /activate as alias for /activation", () => {
+    expect(parseActivationCommand("/activate mention")).toEqual({
+      hasCommand: true,
+      mode: "mention",
+    });
+    expect(parseActivationCommand("/activate always")).toEqual({
+      hasCommand: true,
+      mode: "always",
+    });
+    expect(parseActivationCommand("/activate: mention")).toEqual({
+      hasCommand: true,
+      mode: "mention",
+    });
+    expect(parseActivationCommand("/activate:")).toEqual({
+      hasCommand: true,
+    });
+    expect(parseActivationCommand("activate mention")).toEqual({
       hasCommand: false,
     });
   });

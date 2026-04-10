@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createDiscordOutboundHoisted,
   expectDiscordThreadBotSend,
@@ -238,6 +238,7 @@ describe("discordOutbound", () => {
       channel: "discord",
       messageId: "msg-2",
       channelId: "ch-1",
+      meta: { transcriptText: "hello" },
     });
   });
 

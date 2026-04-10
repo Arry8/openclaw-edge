@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { listBundledChannelPluginIds } from "../channels/plugins/bundled-ids.js";
+import { hasBundledChannelPersistedAuthState } from "../channels/plugins/persisted-auth-state.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
@@ -16,8 +18,10 @@ import {
   resolveStorePath,
 } from "../config/sessions.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
-import { resolveMemoryBackendConfig } from "../plugin-sdk/memory-core-host-engine-storage.js";
+import { resolveMemoryBackendConfig } from "../memory-host-sdk/engine-storage.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
+import { asNullableObjectRecord } from "../shared/record-coerce.js";
+import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { note } from "../terminal/note.js";
 import { shortenHomePath } from "../utils.js";
 
@@ -371,6 +375,86 @@ export function formatLinuxSdBackedStateDirWarning(
   ].join("\n");
 }
 
+export type LinuxVolatileStateDir = {
+  path: string;
+  mountPoint: string;
+  fsType: string;
+};
+
+/** Filesystem types that do not survive a reboot. */
+const VOLATILE_FS_TYPES = new Set(["tmpfs", "ramfs"]);
+
+/**
+ * Detect whether the state directory resides on a volatile (non-persistent)
+ * filesystem such as tmpfs or ramfs.  These filesystems
+ * lose all data on reboot, which means sessions, credentials, and config
+ * are silently destroyed.
+ *
+ * Reuses the same /proc/self/mountinfo parsing and mount-point matching
+ * infrastructure as detectLinuxSdBackedStateDir.
+ */
+export function detectLinuxVolatileStateDir(
+  stateDir: string,
+  deps?: {
+    platform?: NodeJS.Platform;
+    mountInfo?: string;
+    resolveRealPath?: (targetPath: string) => string | null;
+  },
+): LinuxVolatileStateDir | null {
+  const platform = deps?.platform ?? process.platform;
+  if (platform !== "linux") {
+    return null;
+  }
+  const linuxPath = path.posix;
+
+  const resolveRealPath = deps?.resolveRealPath ?? tryResolveRealPath;
+  const resolvedStatePath = resolveRealPath(stateDir) ?? linuxPath.resolve(stateDir);
+  const mountInfo = deps?.mountInfo ?? tryReadLinuxMountInfo();
+  if (!mountInfo) {
+    return null;
+  }
+
+  const mountEntry = findLinuxMountInfoEntryForPath(
+    resolvedStatePath,
+    parseLinuxMountInfo(mountInfo),
+    linuxPath,
+  );
+  if (!mountEntry) {
+    return null;
+  }
+
+  if (!VOLATILE_FS_TYPES.has(mountEntry.fsType)) {
+    return null;
+  }
+
+  return {
+    path: linuxPath.resolve(resolvedStatePath),
+    mountPoint: linuxPath.resolve(mountEntry.mountPoint),
+    fsType: mountEntry.fsType,
+  };
+}
+
+/**
+ * Build a human-readable warning string for a volatile-filesystem state
+ * directory detection, following the same format conventions as
+ * formatLinuxSdBackedStateDirWarning.
+ */
+export function formatLinuxVolatileStateDirWarning(
+  displayStateDir: string,
+  volatileDir: LinuxVolatileStateDir,
+): string {
+  const safeFsType = escapeControlCharsForTerminal(volatileDir.fsType);
+  const safeMountPoint =
+    volatileDir.mountPoint === "/"
+      ? "/"
+      : escapeControlCharsForTerminal(shortenHomePath(volatileDir.mountPoint));
+  return [
+    `- State directory is on a volatile filesystem (${displayStateDir}; fs ${safeFsType}, mount ${safeMountPoint}).`,
+    "- Sessions, credentials, and config will be lost on reboot.",
+    "- Move OPENCLAW_STATE_DIR to a persistent filesystem to avoid data loss.",
+  ].join("\n");
+}
+
 export function detectMacCloudSyncedStateDir(
   stateDir: string,
   deps?: {
@@ -416,28 +500,27 @@ export function detectMacCloudSyncedStateDir(
   return null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function isPairingPolicy(value: unknown): boolean {
-  return typeof value === "string" && value.trim().toLowerCase() === "pairing";
+  return normalizeOptionalLowercaseString(value) === "pairing";
 }
 
 function hasPairingPolicy(value: unknown): boolean {
-  if (!isRecord(value)) {
+  const record = asNullableObjectRecord(value);
+  if (!record) {
     return false;
   }
-  if (isPairingPolicy(value.dmPolicy)) {
+  if (isPairingPolicy(record.dmPolicy)) {
     return true;
   }
-  if (isRecord(value.dm) && isPairingPolicy(value.dm.policy)) {
+  const dm = asNullableObjectRecord(record.dm);
+  if (dm && isPairingPolicy(dm.policy)) {
     return true;
   }
-  if (!isRecord(value.accounts)) {
+  const accounts = asNullableObjectRecord(record.accounts);
+  if (!accounts) {
     return false;
   }
-  for (const accountCfg of Object.values(value.accounts)) {
+  for (const accountCfg of Object.values(accounts)) {
     if (hasPairingPolicy(accountCfg)) {
       return true;
     }
@@ -446,7 +529,7 @@ function hasPairingPolicy(value: unknown): boolean {
 }
 
 function isSlashRoutingSessionKey(sessionKey: string): boolean {
-  const raw = sessionKey.trim().toLowerCase();
+  const raw = normalizeOptionalLowercaseString(sessionKey);
   if (!raw) {
     return false;
   }
@@ -458,13 +541,14 @@ function shouldRequireOAuthDir(cfg: OpenClawConfig, env: NodeJS.ProcessEnv): boo
   if (env.OPENCLAW_OAUTH_DIR?.trim()) {
     return true;
   }
-  const channels = cfg.channels;
-  if (!isRecord(channels)) {
+  const channels = asNullableObjectRecord(cfg.channels);
+  if (!channels) {
     return false;
   }
-  // WhatsApp auth always uses the credentials tree.
-  if (isRecord(channels.whatsapp)) {
-    return true;
+  for (const channelId of listBundledChannelPluginIds()) {
+    if (hasBundledChannelPersistedAuthState({ channelId, cfg, env })) {
+      return true;
+    }
   }
   // Pairing allowlists are persisted under credentials/<channel>-allowFrom.json.
   for (const [channelId, channelCfg] of Object.entries(channels)) {
@@ -508,6 +592,7 @@ export async function noteStateIntegrity(
   const requireOAuthDir = shouldRequireOAuthDir(cfg, env);
   const cloudSyncedStateDir = detectMacCloudSyncedStateDir(stateDir);
   const linuxSdBackedStateDir = detectLinuxSdBackedStateDir(stateDir);
+  const linuxVolatileStateDir = detectLinuxVolatileStateDir(stateDir);
   const suppressOrphanTranscriptWarning = shouldSuppressOrphanTranscriptWarning(cfg, agentId);
 
   if (cloudSyncedStateDir) {
@@ -522,6 +607,9 @@ export async function noteStateIntegrity(
   }
   if (linuxSdBackedStateDir) {
     warnings.push(formatLinuxSdBackedStateDirWarning(displayStateDir, linuxSdBackedStateDir));
+  }
+  if (linuxVolatileStateDir) {
+    warnings.push(formatLinuxVolatileStateDirWarning(displayStateDir, linuxVolatileStateDir));
   }
 
   let stateDirExists = existsDir(stateDir);

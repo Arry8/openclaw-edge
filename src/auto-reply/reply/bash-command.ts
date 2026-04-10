@@ -5,6 +5,11 @@ import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
 import { isCommandFlagEnabled } from "../../config/commands.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { logVerbose } from "../../globals.js";
+import { formatErrorMessage } from "../../infra/errors.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { clampInt } from "../../utils.js";
 import type { MsgContext } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
@@ -61,7 +66,7 @@ function formatOutputBlock(text: string) {
 function parseBashRequest(raw: string): BashRequest | null {
   const trimmed = raw.trimStart();
   let restSource = "";
-  if (trimmed.toLowerCase().startsWith("/bash")) {
+  if (normalizeLowercaseStringOrEmpty(trimmed).startsWith("/bash")) {
     const match = trimmed.match(/^\/bash(?:\s*:\s*|\s+|$)([\s\S]*)$/i);
     if (!match) {
       return null;
@@ -81,9 +86,9 @@ function parseBashRequest(raw: string): BashRequest | null {
     return { action: "help" };
   }
   const tokenMatch = rest.match(/^(\S+)(?:\s+([\s\S]+))?$/);
-  const token = tokenMatch?.[1]?.trim() ?? "";
-  const remainder = tokenMatch?.[2]?.trim() ?? "";
-  const lowered = token.toLowerCase();
+  const token = normalizeOptionalString(tokenMatch?.[1]) ?? "";
+  const remainder = normalizeOptionalString(tokenMatch?.[2]) ?? "";
+  const lowered = normalizeLowercaseStringOrEmpty(token);
   if (lowered === "poll") {
     return { action: "poll", sessionId: remainder || undefined };
   }
@@ -184,6 +189,7 @@ export async function handleBashChatCommand(params: {
   elevated: {
     enabled: boolean;
     allowed: boolean;
+    defaultLevel?: "on" | "off" | "ask" | "full";
     failures: Array<{ gate: string; key: string }>;
   };
 }): Promise<ReplyPayload> {
@@ -235,7 +241,8 @@ export async function handleBashChatCommand(params: {
 
   if (request.action === "poll") {
     const sessionId =
-      request.sessionId?.trim() || (liveJob?.state === "running" ? liveJob.sessionId : "");
+      normalizeOptionalString(request.sessionId) ||
+      (liveJob?.state === "running" ? liveJob.sessionId : "");
     if (!sessionId) {
       return { text: "⚙️ No active bash job." };
     }
@@ -278,7 +285,8 @@ export async function handleBashChatCommand(params: {
 
   if (request.action === "stop") {
     const sessionId =
-      request.sessionId?.trim() || (liveJob?.state === "running" ? liveJob.sessionId : "");
+      normalizeOptionalString(request.sessionId) ||
+      (liveJob?.state === "running" ? liveJob.sessionId : "");
     if (!sessionId) {
       return { text: "⚙️ No active bash job." };
     }
@@ -332,12 +340,19 @@ export async function handleBashChatCommand(params: {
   try {
     const foregroundMs = resolveForegroundMs(params.cfg);
     const shouldBackgroundImmediately = foregroundMs <= 0;
+    const execPolicy = params.cfg.tools?.exec;
     const timeoutSec = params.cfg.tools?.exec?.timeoutSec;
     const notifyOnExit = params.cfg.tools?.exec?.notifyOnExit;
     const notifyOnExitEmptySuccess = params.cfg.tools?.exec?.notifyOnExitEmptySuccess;
     const execTool = createExecTool({
       scopeKey: CHAT_BASH_SCOPE_KEY,
       allowBackground: true,
+      security: execPolicy?.security,
+      ask: execPolicy?.ask,
+      pathPrepend: execPolicy?.pathPrepend,
+      safeBins: execPolicy?.safeBins,
+      safeBinTrustedDirs: execPolicy?.safeBinTrustedDirs,
+      safeBinProfiles: execPolicy?.safeBinProfiles,
       timeoutSec,
       sessionKey: params.sessionKey,
       notifyOnExit,
@@ -345,7 +360,7 @@ export async function handleBashChatCommand(params: {
       elevated: {
         enabled: params.elevated.enabled,
         allowed: params.elevated.allowed,
-        defaultLevel: "on",
+        defaultLevel: params.elevated.defaultLevel ?? "on",
       },
     });
     const result = await execTool.execute("chat-bash", {
@@ -389,7 +404,7 @@ export async function handleBashChatCommand(params: {
     };
   } catch (err) {
     activeJob = null;
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     return {
       text: [`⚠️ bash failed: ${commandText}`, formatOutputBlock(message)].join("\n"),
     };

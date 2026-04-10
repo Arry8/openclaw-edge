@@ -5,17 +5,15 @@ import type {
   PluginHookBeforeMessageWriteResult,
 } from "../plugins/types.js";
 import { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
+import { formatContextLimitTruncationNotice } from "./pi-embedded-runner/tool-result-context-guard.js";
 import {
-  HARD_MAX_TOOL_RESULT_CHARS,
+  DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
   truncateToolResultMessage,
 } from "./pi-embedded-runner/tool-result-truncation.js";
 import { createPendingToolCallState } from "./session-tool-result-state.js";
 import { makeMissingToolResult, sanitizeToolCallInputs } from "./session-transcript-repair.js";
 import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-id.js";
-
-const GUARD_TRUNCATION_SUFFIX =
-  "\n\n⚠️ [Content truncated during persistence — original exceeded size limit. " +
-  "Use offset/limit parameters or request specific sections for large content.]";
 const RAW_APPEND_MESSAGE = Symbol("openclaw.session.rawAppendMessage");
 
 type SessionManagerWithRawAppend = SessionManager & {
@@ -31,18 +29,10 @@ function capToolResultSize(msg: AgentMessage): AgentMessage {
   if ((msg as { role?: string }).role !== "toolResult") {
     return msg;
   }
-  return truncateToolResultMessage(msg, HARD_MAX_TOOL_RESULT_CHARS, {
-    suffix: GUARD_TRUNCATION_SUFFIX,
+  return truncateToolResultMessage(msg, DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS, {
+    suffix: (truncatedChars) => formatContextLimitTruncationNotice(truncatedChars),
     minKeepChars: 2_000,
   });
-}
-
-function trimNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
 }
 
 function normalizePersistedToolResultName(
@@ -54,7 +44,7 @@ function normalizePersistedToolResultName(
   }
   const toolResult = message as Extract<AgentMessage, { role: "toolResult" }>;
   const rawToolName = (toolResult as { toolName?: unknown }).toolName;
-  const normalizedToolName = trimNonEmptyString(rawToolName);
+  const normalizedToolName = normalizeOptionalString(rawToolName);
   if (normalizedToolName) {
     if (rawToolName === normalizedToolName) {
       return toolResult;
@@ -62,7 +52,7 @@ function normalizePersistedToolResultName(
     return { ...toolResult, toolName: normalizedToolName };
   }
 
-  const normalizedFallback = trimNonEmptyString(fallbackName);
+  const normalizedFallback = normalizeOptionalString(fallbackName);
   if (normalizedFallback) {
     return { ...toolResult, toolName: normalizedFallback };
   }
@@ -127,6 +117,9 @@ export function installSessionToolResultGuard(
   const originalAppend = getRawSessionAppendMessage(sessionManager);
   (sessionManager as SessionManagerWithRawAppend)[RAW_APPEND_MESSAGE] = originalAppend;
   const pendingState = createPendingToolCallState();
+  // Track the assistant entry ID that originated current tool calls so all
+  // tool results branch from it instead of chaining sequentially.
+  let assistantEntryId: string | undefined;
   const persistMessage = (message: AgentMessage) => {
     const transformer = opts?.transformMessageForPersistence;
     return transformer ? transformer(message) : message;
@@ -176,15 +169,23 @@ export function installSessionToolResultGuard(
           }),
         );
         if (flushed) {
+          // Branch back to the assistant message so synthetic results don't chain.
+          // Done AFTER the write hook confirms persistence to avoid rewinding the
+          // leaf when the hook blocks the synthetic result.
+          if (assistantEntryId) {
+            sessionManager.branch(assistantEntryId);
+          }
           originalAppend(flushed as never);
         }
       }
     }
     pendingState.clear();
+    assistantEntryId = undefined;
   };
 
   const clearPendingToolResults = () => {
     pendingState.clear();
+    assistantEntryId = undefined;
   };
 
   const guardedAppend = (message: AgentMessage) => {
@@ -206,6 +207,7 @@ export function installSessionToolResultGuard(
 
     if (nextRole === "toolResult") {
       const id = extractToolResultId(nextMessage as Extract<AgentMessage, { role: "toolResult" }>);
+      const isPending = !!(id && pendingState.getToolName(id) !== undefined);
       const toolName = id ? pendingState.getToolName(id) : undefined;
       if (id) {
         pendingState.delete(id);
@@ -222,7 +224,18 @@ export function installSessionToolResultGuard(
         }),
       );
       if (!persisted) {
+        // P2: Clear assistantEntryId when tool result is blocked and no pending calls remain.
+        if (pendingState.size() === 0) {
+          assistantEntryId = undefined;
+        }
         return undefined;
+      }
+      // P1: Only re-parent tool results whose toolCallId is in the pending set,
+      // and only AFTER the write hook confirms the result will be persisted.
+      // Branching before persistence would move the leaf even for blocked results,
+      // dropping earlier persisted results from the active branch.
+      if (isPending && assistantEntryId) {
+        sessionManager.branch(assistantEntryId);
       }
       return originalAppend(persisted as never);
     }
@@ -273,6 +286,10 @@ export function installSessionToolResultGuard(
 
     if (toolCalls.length > 0) {
       pendingState.trackToolCalls(toolCalls);
+      // Remember the assistant entry so tool results can branch back to it.
+      if (typeof result === "string") {
+        assistantEntryId = result;
+      }
     }
 
     return result;

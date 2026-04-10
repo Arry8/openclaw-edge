@@ -411,6 +411,44 @@ imsg send <handle> "test"
   </Accordion>
 </AccordionGroup>
 
+## Managed relay services
+
+If you don't want to maintain a Mac or BlueBubbles server, managed relay services handle the Apple infrastructure and expose iMessage over a standard API. These work on Linux, Windows, VPS, and Docker without any Apple hardware on your end.
+
+| Service | Protocol | Mac required | Starting price | OpenClaw plugin |
+|---------|----------|-------------|---------------|-----------------|
+| [Blooio](https://blooio.com) | REST API | No | $39/mo | Community |
+| [Claw Messenger](https://clawmessenger.com) | WebSocket | No | $5/mo | `@emotion-machine/claw-messenger` |
+
+### Blooio
+
+REST API service for iMessage, RCS, and SMS. Supports OAuth (Bearer token) authentication. No official OpenClaw plugin yet, but can be integrated via the REST API and a custom channel handler.
+
+See [blooio.com/integrations/api](https://blooio.com/integrations/api) for API docs.
+
+### Claw Messenger
+
+WebSocket-based relay designed for OpenClaw agents. Provides a dedicated phone number for iMessage, RCS, and SMS.
+
+```bash
+openclaw plugins install @emotion-machine/claw-messenger
+```
+
+```jsonc
+// ~/.openclaw/openclaw.json
+{
+  "channels": {
+    "claw-messenger": {
+      "enabled": true,
+      "apiKey": "cm_live_xxxxxxxxxxxxxxxx",
+      "serverUrl": "wss://claw-messenger.onrender.com"
+    }
+  }
+}
+```
+
+See [clawmessenger.com](https://clawmessenger.com) for pricing and docs.
+
 ## Configuration reference pointers
 
 - [Configuration reference - iMessage](/gateway/configuration-reference#imessage)

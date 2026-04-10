@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { hasBinary } from "../agents/skills.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { runCommandWithTimeout, type SpawnResult } from "../process/exec.js";
 import { resolveUserPath } from "../utils.js";
 import { normalizeServePath } from "./gmail.js";
@@ -52,7 +53,7 @@ function formatCommandResult(command: string, result: SpawnResult): string {
 }
 
 function formatJsonParseFailure(command: string, result: SpawnResult, err: unknown): string {
-  const reason = err instanceof Error ? err.message : String(err);
+  const reason = formatErrorMessage(err);
   return `${command} returned invalid JSON: ${reason}\n${formatCommandResult(command, result)}`;
 }
 
@@ -312,7 +313,11 @@ export async function ensureTailscaleEndpoint(params: {
 
   const baseUrl = `https://${dnsName}${pathArg}`;
   // Funnel/serve strips pathArg before proxying; keep it only in the public URL.
-  return params.token ? `${baseUrl}?token=${params.token}` : baseUrl;
+  // Do not include the token in the push endpoint URL: it leaks to Tailscale relay
+  // logs and Google Pub/Sub subscription metadata, and server-http.ts rejects
+  // requests with ?token= in the query string (returns 400). The gog serve process
+  // receives the token via --token CLI arg and authenticates via header instead.
+  return baseUrl;
 }
 
 export async function resolveProjectIdFromGogCredentials(): Promise<string | null> {

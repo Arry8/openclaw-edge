@@ -9,11 +9,10 @@ import { logVerbose } from "../../globals.js";
 import { copyFileWithinRoot, SafeOpenError } from "../../infra/fs-safe.js";
 import { normalizeScpRemoteHost, normalizeScpRemotePath } from "../../infra/scp-host.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
-import {
-  isInboundPathAllowed,
-  resolveIMessageRemoteAttachmentRoots,
-} from "../../media/inbound-path-policy.js";
+import { resolveChannelRemoteInboundAttachmentRoots } from "../../media/channel-inbound-roots.js";
+import { isInboundPathAllowed } from "../../media/inbound-path-policy.js";
 import { getMediaDir, MEDIA_MAX_BYTES } from "../../media/store.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { CONFIG_DIR } from "../../utils.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 
@@ -43,16 +42,20 @@ export async function stageSandboxMedia(params: {
   const remoteMediaCacheDir = ctx.MediaRemoteHost
     ? path.join(CONFIG_DIR, "media", "remote-cache", sessionKey)
     : null;
-  const effectiveWorkspaceDir = sandbox?.workspaceDir ?? remoteMediaCacheDir;
+  // When sandbox is off but a workspace dir is provided and workspaceOnly is enabled,
+  // stage media there so that workspaceOnly restrictions don't block native image
+  // injection and tool access. Skip for workspaceOnly: false — absolute paths work fine.
+  const workspaceFallbackDir =
+    !sandbox && !remoteMediaCacheDir && workspaceDir && cfg.tools?.fs?.workspaceOnly
+      ? workspaceDir
+      : null;
+  const effectiveWorkspaceDir = sandbox?.workspaceDir ?? remoteMediaCacheDir ?? workspaceFallbackDir;
   if (!effectiveWorkspaceDir) {
     return;
   }
 
   await fs.mkdir(effectiveWorkspaceDir, { recursive: true });
-  const remoteAttachmentRoots = resolveIMessageRemoteAttachmentRoots({
-    cfg,
-    accountId: ctx.AccountId,
-  });
+  const remoteAttachmentRoots = resolveChannelRemoteInboundAttachmentRoots({ cfg, ctx }) ?? [];
 
   const usedNames = new Set<string>();
   const staged = new Map<string, string>(); // absolute source -> relative sandbox path
@@ -74,7 +77,8 @@ export async function stageSandboxMedia(params: {
     if (!fileName) {
       continue;
     }
-    const relativeDest = sandbox ? path.join("media", "inbound", fileName) : fileName;
+    const useSubdir = Boolean(sandbox) || Boolean(workspaceFallbackDir);
+    const relativeDest = useSubdir ? path.join("media", "inbound", fileName) : fileName;
     const dest = path.join(effectiveWorkspaceDir, relativeDest);
 
     try {
@@ -105,8 +109,11 @@ export async function stageSandboxMedia(params: {
       continue;
     }
 
-    // For sandbox use relative path, for remote cache use absolute path
-    const stagedPath = sandbox ? path.posix.join("media", "inbound", fileName) : dest;
+    // For sandbox or workspace fallback use relative path, for remote cache use absolute path
+    const stagedPath =
+      sandbox || workspaceFallbackDir
+        ? path.posix.join("media", "inbound", fileName)
+        : dest;
     staged.set(source, stagedPath);
   }
 
@@ -161,8 +168,8 @@ function resolveRawPaths(ctx: MsgContext): string[] {
   const pathsFromArray = Array.isArray(ctx.MediaPaths) ? ctx.MediaPaths : undefined;
   return pathsFromArray && pathsFromArray.length > 0
     ? pathsFromArray
-    : ctx.MediaPath?.trim()
-      ? [ctx.MediaPath.trim()]
+    : normalizeOptionalString(ctx.MediaPath)
+      ? [normalizeOptionalString(ctx.MediaPath)!]
       : [];
 }
 
@@ -187,7 +194,7 @@ function resolveAbsolutePath(value: string): string | null {
 async function isAllowedSourcePath(params: {
   source: string;
   mediaRemoteHost?: string;
-  remoteAttachmentRoots: string[];
+  remoteAttachmentRoots: readonly string[];
 }): Promise<boolean> {
   if (params.mediaRemoteHost) {
     if (
@@ -248,7 +255,7 @@ function rewriteStagedMediaPaths(params: {
   hasPathsArray: boolean;
 }): void {
   const rewriteIfStaged = (value: string | undefined): string | undefined => {
-    const raw = value?.trim();
+    const raw = normalizeOptionalString(value);
     if (!raw) {
       return value;
     }

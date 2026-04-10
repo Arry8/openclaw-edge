@@ -1,5 +1,6 @@
+import type { Agent } from "node:https";
 import * as Lark from "@larksuiteoapi/node-sdk";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { resolveAmbientNodeProxyAgent } from "openclaw/plugin-sdk/extension-shared";
 import type { FeishuConfig, FeishuDomain, ResolvedFeishuAccount } from "./types.js";
 
 type FeishuClientSdk = Pick<
@@ -24,7 +25,6 @@ const defaultFeishuClientSdk: FeishuClientSdk = {
 };
 
 let feishuClientSdk: FeishuClientSdk = defaultFeishuClientSdk;
-let httpsProxyAgentCtor: typeof HttpsProxyAgent = HttpsProxyAgent;
 
 /** Default HTTP timeout for Feishu API requests (30 seconds). */
 export const FEISHU_HTTP_TIMEOUT_MS = 30_000;
@@ -36,14 +36,8 @@ type FeishuHttpInstanceLike = Pick<
   "request" | "get" | "post" | "put" | "patch" | "delete" | "head" | "options"
 >;
 
-function getWsProxyAgent(): HttpsProxyAgent<string> | undefined {
-  const proxyUrl =
-    process.env.https_proxy ||
-    process.env.HTTPS_PROXY ||
-    process.env.http_proxy ||
-    process.env.HTTP_PROXY;
-  if (!proxyUrl) return undefined;
-  return new httpsProxyAgentCtor(proxyUrl);
+async function getWsProxyAgent(): Promise<Agent | undefined> {
+  return resolveAmbientNodeProxyAgent<Agent>();
 }
 
 // Multi-account client cache
@@ -77,15 +71,28 @@ function createTimeoutHttpInstance(defaultTimeoutMs: number): Lark.HttpInstance 
     return { timeout: defaultTimeoutMs, ...opts } as Lark.HttpRequestOptions<D>;
   }
 
+  function normalizeResponse<T>(value: T): T {
+    if (value && typeof value === "object" && "data" in (value as Record<string, unknown>)) {
+      const data = (value as { data?: unknown }).data;
+      if (data !== undefined) {
+        return data as T;
+      }
+    }
+    return value;
+  }
+
   return {
-    request: (opts) => base.request(injectTimeout(opts)),
-    get: (url, opts) => base.get(url, injectTimeout(opts)),
-    post: (url, data, opts) => base.post(url, data, injectTimeout(opts)),
-    put: (url, data, opts) => base.put(url, data, injectTimeout(opts)),
-    patch: (url, data, opts) => base.patch(url, data, injectTimeout(opts)),
-    delete: (url, opts) => base.delete(url, injectTimeout(opts)),
-    head: (url, opts) => base.head(url, injectTimeout(opts)),
-    options: (url, opts) => base.options(url, injectTimeout(opts)),
+    request: async (opts) => normalizeResponse(await base.request(injectTimeout(opts))),
+    get: async (url, opts) => normalizeResponse(await base.get(url, injectTimeout(opts))),
+    post: async (url, data, opts) =>
+      normalizeResponse(await base.post(url, data, injectTimeout(opts))),
+    put: async (url, data, opts) =>
+      normalizeResponse(await base.put(url, data, injectTimeout(opts))),
+    patch: async (url, data, opts) =>
+      normalizeResponse(await base.patch(url, data, injectTimeout(opts))),
+    delete: async (url, opts) => normalizeResponse(await base.delete(url, injectTimeout(opts))),
+    head: async (url, opts) => normalizeResponse(await base.head(url, injectTimeout(opts))),
+    options: async (url, opts) => normalizeResponse(await base.options(url, injectTimeout(opts))),
   };
 }
 
@@ -179,14 +186,14 @@ export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client 
  * Create a Feishu WebSocket client for an account.
  * Note: WSClient is not cached since each call creates a new connection.
  */
-export function createFeishuWSClient(account: ResolvedFeishuAccount): Lark.WSClient {
+export async function createFeishuWSClient(account: ResolvedFeishuAccount): Promise<Lark.WSClient> {
   const { accountId, appId, appSecret, domain } = account;
 
   if (!appId || !appSecret) {
     throw new Error(`Feishu credentials not configured for account "${accountId}"`);
   }
 
-  const agent = getWsProxyAgent();
+  const agent = await getWsProxyAgent();
   return new feishuClientSdk.WSClient({
     appId,
     appSecret,
@@ -226,10 +233,8 @@ export function clearClientCache(accountId?: string): void {
 
 export function setFeishuClientRuntimeForTest(overrides?: {
   sdk?: Partial<FeishuClientSdk>;
-  HttpsProxyAgent?: typeof HttpsProxyAgent;
 }): void {
   feishuClientSdk = overrides?.sdk
     ? { ...defaultFeishuClientSdk, ...overrides.sdk }
     : defaultFeishuClientSdk;
-  httpsProxyAgentCtor = overrides?.HttpsProxyAgent ?? HttpsProxyAgent;
 }

@@ -1,5 +1,9 @@
 import type { Command } from "commander";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import {
+  resolveAgentIdByWorkspacePath,
+  resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
+} from "../agents/agent-scope.js";
 import {
   installSkillFromClawHub,
   readTrackedClawHubSkillSlugs,
@@ -8,8 +12,10 @@ import {
 } from "../agents/skills-clawhub.js";
 import { loadConfig } from "../config/config.js";
 import { defaultRuntime } from "../runtime.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
+import { withProgress } from "./progress.js";
 import { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
 
 export type {
@@ -23,9 +29,13 @@ type SkillStatusReport = Awaited<
   ReturnType<(typeof import("../agents/skills-status.js"))["buildWorkspaceSkillStatus"]>
 >;
 
+function resolveActiveAgentId(config: ReturnType<typeof loadConfig>): string {
+  return resolveAgentIdByWorkspacePath(config, process.cwd()) ?? resolveDefaultAgentId(config);
+}
+
 async function loadSkillsStatusReport(): Promise<SkillStatusReport> {
   const config = loadConfig();
-  const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+  const workspaceDir = resolveAgentWorkspaceDir(config, resolveActiveAgentId(config));
   const { buildWorkspaceSkillStatus } = await import("../agents/skills-status.js");
   return buildWorkspaceSkillStatus(workspaceDir, { config });
 }
@@ -33,7 +43,7 @@ async function loadSkillsStatusReport(): Promise<SkillStatusReport> {
 async function runSkillsAction(render: (report: SkillStatusReport) => string): Promise<void> {
   try {
     const report = await loadSkillsStatusReport();
-    defaultRuntime.log(render(report));
+    defaultRuntime.writeStdout(render(report));
   } catch (err) {
     defaultRuntime.error(String(err));
     defaultRuntime.exit(1);
@@ -42,7 +52,7 @@ async function runSkillsAction(render: (report: SkillStatusReport) => string): P
 
 function resolveActiveWorkspaceDir(): string {
   const config = loadConfig();
-  return resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+  return resolveAgentWorkspaceDir(config, resolveActiveAgentId(config));
 }
 
 /**
@@ -67,7 +77,7 @@ export function registerSkillsCli(program: Command) {
     .action(async (queryParts: string[], opts: { limit?: number; json?: boolean }) => {
       try {
         const results = await searchSkillsFromClawHub({
-          query: queryParts.join(" ").trim() || undefined,
+          query: normalizeOptionalString(queryParts.join(" ")),
           limit: opts.limit,
         });
         if (opts.json) {
@@ -193,6 +203,73 @@ export function registerSkillsCli(program: Command) {
     .option("--json", "Output as JSON", false)
     .action(async (opts) => {
       await runSkillsAction((report) => formatSkillsCheck(report, opts));
+    });
+
+  skills
+    .command("install")
+    .description("Install dependencies for a skill")
+    .argument("<name>", "Skill name")
+    .action(async (name: string) => {
+      try {
+        const config = loadConfig();
+        const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+        const { buildWorkspaceSkillStatus } = await import("../agents/skills-status.js");
+        const report = buildWorkspaceSkillStatus(workspaceDir, { config });
+        const skill = report.skills.find((s) => s.name === name);
+        if (!skill) {
+          defaultRuntime.error(`Skill not found: ${name}`);
+          defaultRuntime.exit(1);
+          return;
+        }
+        if (skill.install.length === 0) {
+          if (skill.hasInstallSpecs) {
+            // Install specs exist but were filtered out (e.g. unsupported OS).
+            defaultRuntime.error(
+              `No installers available for skill: ${name} on this platform (${process.platform})`,
+            );
+            defaultRuntime.exit(1);
+          } else {
+            defaultRuntime.log(`No install specs for skill: ${name}`);
+            defaultRuntime.exit(0);
+          }
+          return;
+        }
+        const { installSkill } = await import("../agents/skills-install.js");
+        let anyFailed = false;
+        for (const option of skill.install) {
+          const result = await withProgress(
+            { label: theme.accent(`Installing ${name} (${option.label})…`), indeterminate: true },
+            () => installSkill({ workspaceDir, skillName: name, installId: option.id, config }),
+          );
+          const warnings = result.warnings ?? [];
+          if (result.ok) {
+            defaultRuntime.log(
+              warnings.length > 0
+                ? `Installed ${name} (${option.label}) — with warnings`
+                : `Installed ${name} (${option.label})`,
+            );
+          } else {
+            const code = result.code == null ? "" : ` (exit ${result.code})`;
+            defaultRuntime.error(`Failed: ${name} (${option.label})${code} — ${result.message}`);
+            if (result.stderr) {
+              defaultRuntime.log(result.stderr.trim());
+            } else if (result.stdout) {
+              defaultRuntime.log(result.stdout.trim());
+            }
+            anyFailed = true;
+          }
+          for (const warning of warnings) {
+            defaultRuntime.log(warning);
+          }
+        }
+        if (anyFailed) {
+          defaultRuntime.log(`Tip: run \`openclaw doctor\` to review skills + requirements.`);
+          defaultRuntime.exit(1);
+        }
+      } catch (err) {
+        defaultRuntime.error(String(err));
+        defaultRuntime.exit(1);
+      }
     });
 
   // Default action (no subcommand) - show list

@@ -4,6 +4,7 @@ import {
   buildPluginTelegramMenuCommands,
   hashCommandList,
   syncTelegramMenuCommands,
+  TELEGRAM_TOTAL_COMMAND_TEXT_BUDGET,
 } from "./bot-native-command-menu.js";
 
 type SyncMenuOptions = {
@@ -50,6 +51,47 @@ describe("bot-native-command-menu", () => {
       command: "cmd_99",
       description: "Command 99",
     });
+  });
+
+  it("shortens descriptions before dropping commands to fit Telegram payload budget", () => {
+    const allCommands = Array.from({ length: 92 }, (_, i) => ({
+      command: `cmd_${i}`,
+      description: "x".repeat(100),
+    }));
+
+    const result = buildCappedTelegramMenuCommands({ allCommands });
+
+    expect(result.commandsToRegister).toHaveLength(92);
+    expect(result.descriptionTrimmed).toBe(true);
+    expect(result.textBudgetDropCount).toBe(0);
+    const totalText = result.commandsToRegister.reduce(
+      (total, command) => total + command.command.length + command.description.length,
+      0,
+    );
+    expect(totalText).toBeLessThanOrEqual(TELEGRAM_TOTAL_COMMAND_TEXT_BUDGET);
+    expect(result.commandsToRegister.every((command) => command.description.length <= 56)).toBe(
+      true,
+    );
+  });
+
+  it("drops tail commands only when minimal descriptions still cannot fit the payload budget", () => {
+    const allCommands = [
+      { command: "alpha_cmd", description: "First command" },
+      { command: "bravo_cmd", description: "Second command" },
+      { command: "charlie_cmd", description: "Third command" },
+    ];
+
+    const result = buildCappedTelegramMenuCommands({
+      allCommands,
+      maxTotalChars: 20,
+    });
+
+    expect(result.commandsToRegister).toEqual([
+      { command: "alpha_cmd", description: "F" },
+      { command: "bravo_cmd", description: "S" },
+    ]);
+    expect(result.descriptionTrimmed).toBe(true);
+    expect(result.textBudgetDropCount).toBe(1);
   });
 
   it("validates plugin command specs and reports conflicts", () => {
@@ -275,7 +317,7 @@ describe("bot-native-command-menu", () => {
       "Telegram rejected 100 commands (BOT_COMMANDS_TOO_MUCH); retrying with 80.",
     );
     expect(runtimeLog).toHaveBeenCalledWith(
-      "Telegram accepted 80 commands after BOT_COMMANDS_TOO_MUCH (started with 100; omitted 20). Reduce plugin/skill/custom commands to expose more menu entries.",
+      "Telegram accepted 80 of 100 commands after BOT_COMMANDS_TOO_MUCH (omitted 20). To reduce: set commands.nativeSkills: false or reduce plugin/custom commands.",
     );
     expect(runtimeError).not.toHaveBeenCalled();
   });
@@ -305,6 +347,74 @@ describe("bot-native-command-menu", () => {
     });
     expect(runtimeLog).toHaveBeenCalledWith(
       "Telegram rejected 10 commands (BOT_COMMANDS_TOO_MUCH); retrying with 8.",
+    );
+  });
+
+  it("retries setMyCommands after a 429 rate-limit using the retry_after delay", async () => {
+    vi.useFakeTimers();
+    const deleteMyCommands = vi.fn(async () => undefined);
+    const rateLimitError = Object.assign(new Error("429: Too Many Requests: retry after 5"), {
+      error_code: 429,
+      description: "Too Many Requests: retry after 5",
+    });
+    const setMyCommands = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValue(undefined);
+    const runtimeLog = vi.fn();
+    const runtimeError = vi.fn();
+
+    syncMenuCommandsWithMocks({
+      deleteMyCommands,
+      setMyCommands,
+      runtimeLog,
+      runtimeError,
+      commandsToRegister: [{ command: "help", description: "Help" }],
+      accountId: `test-ratelimit-${Date.now()}`,
+      botIdentity: "bot-ratelimit",
+    });
+
+    // Advance past the 5-second retry_after delay.
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(2));
+    expect(runtimeLog).toHaveBeenCalledWith(
+      expect.stringContaining("rate-limited (retry after 5s)"),
+    );
+    expect(runtimeError).not.toHaveBeenCalled();
+  });
+
+  it("gives up setMyCommands after exhausting 429 rate-limit retries", async () => {
+    vi.useFakeTimers();
+    const deleteMyCommands = vi.fn(async () => undefined);
+    const rateLimitError = Object.assign(new Error("429: Too Many Requests: retry after 2"), {
+      error_code: 429,
+      description: "Too Many Requests: retry after 2",
+    });
+    const setMyCommands = vi.fn().mockRejectedValue(rateLimitError);
+    const runtimeLog = vi.fn();
+    const runtimeError = vi.fn();
+
+    syncMenuCommandsWithMocks({
+      deleteMyCommands,
+      setMyCommands,
+      runtimeLog,
+      runtimeError,
+      commandsToRegister: [{ command: "help", description: "Help" }],
+      accountId: `test-ratelimit-exhaust-${Date.now()}`,
+      botIdentity: "bot-exhaust",
+    });
+
+    // Each retry schedules a new timer; drain multiple rounds to exhaust all retries.
+    for (let i = 0; i < 4; i++) {
+      await vi.runAllTimersAsync();
+    }
+    vi.useRealTimers();
+
+    await vi.waitFor(() => expect(setMyCommands).toHaveBeenCalledTimes(4));
+    expect(runtimeError).toHaveBeenCalledWith(
+      expect.stringContaining("rate-limited after 3 retries"),
     );
   });
 });

@@ -5,22 +5,56 @@ import {
 } from "../../routing/session-key.js";
 import type { SessionScope } from "./types.js";
 
+/**
+ * Hardcoded fallback when no config key, env var, or agents list provides
+ * a default agent ID. Kept for backward compatibility.
+ */
 const FALLBACK_DEFAULT_AGENT_ID = "main";
 
 function buildMainSessionKey(agentId: string, mainKey?: string): string {
   return `agent:${normalizeAgentId(agentId)}:${normalizeMainKey(mainKey)}`;
 }
 
+/**
+ * Resolve the effective fallback agent ID from config, matching the same
+ * priority chain used by `resolveDefaultAgentId()` in agent-scope.ts:
+ *
+ * 1. `agents.list[].default: true`
+ * 2. `agents.list[0]`
+ * 3. `agents.defaultAgentId` config key
+ * 4. `OPENCLAW_DEFAULT_AGENT_ID` env var
+ * 5. Hardcoded `"main"`
+ */
+function resolveMainFallbackAgentId(cfg?: {
+  agents?: { defaultAgentId?: string; list?: Array<{ id?: string; default?: boolean }> };
+}): string {
+  const agents = cfg?.agents?.list ?? [];
+  const fromList = agents.find((agent) => agent?.default)?.id ?? agents[0]?.id;
+  if (fromList?.trim()) {
+    return fromList.trim();
+  }
+
+  const configOverride = cfg?.agents?.defaultAgentId?.trim();
+  if (configOverride) {
+    return configOverride;
+  }
+
+  const envOverride = process.env.OPENCLAW_DEFAULT_AGENT_ID?.trim();
+  if (envOverride) {
+    return envOverride;
+  }
+
+  return FALLBACK_DEFAULT_AGENT_ID;
+}
+
 export function resolveMainSessionKey(cfg?: {
   session?: { scope?: SessionScope; mainKey?: string };
-  agents?: { list?: Array<{ id?: string; default?: boolean }> };
+  agents?: { defaultAgentId?: string; list?: Array<{ id?: string; default?: boolean }> };
 }): string {
   if (cfg?.session?.scope === "global") {
     return "global";
   }
-  const agents = cfg?.agents?.list ?? [];
-  const defaultAgentId =
-    agents.find((agent) => agent?.default)?.id ?? agents[0]?.id ?? FALLBACK_DEFAULT_AGENT_ID;
+  const defaultAgentId = resolveMainFallbackAgentId(cfg);
   return buildMainSessionKey(defaultAgentId, cfg?.session?.mainKey);
 }
 

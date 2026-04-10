@@ -1,9 +1,9 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as taskExecutor from "../../tasks/task-executor.js";
 import { findTaskByRunId, resetTaskRegistryForTests } from "../../tasks/task-registry.js";
 import { setupCronServiceSuite, writeCronStoreSnapshot } from "../service.test-harness.js";
+import { loadCronStore } from "../store.js";
 import type { CronJob } from "../types.js";
 import { run, start, stop } from "./ops.js";
 import { createCronServiceState } from "./state.js";
@@ -65,7 +65,7 @@ function createMissedIsolatedJob(now: number): CronJob {
 }
 
 describe("cron service ops seam coverage", () => {
-  it("start clears stale running markers, skips startup replay, persists, and arms the timer", async () => {
+  it("start clears stale running markers, replays interrupted recurring jobs, persists, and arms the timer (#60495)", async () => {
     const { storePath } = await makeStorePath();
     const now = Date.parse("2026-03-23T12:00:00.000Z");
     const enqueueSystemEvent = vi.fn();
@@ -93,17 +93,18 @@ describe("cron service ops seam coverage", () => {
       expect.objectContaining({ jobId: "startup-interrupted" }),
       "cron: clearing stale running marker on startup",
     );
-    expect(enqueueSystemEvent).not.toHaveBeenCalled();
-    expect(requestHeartbeatNow).not.toHaveBeenCalled();
+    // Interrupted recurring jobs are now replayed on first restart (#60495)
+    expect(enqueueSystemEvent).toHaveBeenCalled();
+    expect(requestHeartbeatNow).toHaveBeenCalled();
     expect(state.timer).not.toBeNull();
 
-    const persisted = JSON.parse(await fs.readFile(storePath, "utf8")) as {
+    const persisted = (await loadCronStore(storePath)) as {
       jobs: CronJob[];
     };
     const job = persisted.jobs[0];
     expect(job).toBeDefined();
     expect(job?.state.runningAtMs).toBeUndefined();
-    expect(job?.state.lastStatus).toBeUndefined();
+    expect(job?.state.lastStatus).toBe("ok");
     expect((job?.state.nextRunAtMs ?? 0) > now).toBe(true);
 
     const delays = timeoutSpy.mock.calls
@@ -183,7 +184,7 @@ describe("cron service ops seam coverage", () => {
 
     await expect(run(state, "isolated-timeout")).resolves.toEqual({ ok: true, ran: true });
 
-    const persisted = JSON.parse(await fs.readFile(storePath, "utf8")) as {
+    const persisted = (await loadCronStore(storePath)) as {
       jobs: CronJob[];
     };
     expect(persisted.jobs[0]?.state.runningAtMs).toBeUndefined();
@@ -227,7 +228,7 @@ describe("cron service ops seam coverage", () => {
 
     await expect(run(state, "isolated-timeout")).resolves.toEqual({ ok: true, ran: true });
 
-    const persisted = JSON.parse(await fs.readFile(storePath, "utf8")) as {
+    const persisted = (await loadCronStore(storePath)) as {
       jobs: CronJob[];
     };
     expect(persisted.jobs[0]?.state.runningAtMs).toBeUndefined();

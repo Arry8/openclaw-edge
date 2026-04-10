@@ -5,7 +5,7 @@ import { logVerbose } from "../../globals.js";
 import { stripHeartbeatToken } from "../heartbeat.js";
 import type { OriginatingChannelType } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
-import type { ReplyPayload } from "../types.js";
+import type { ReplyPayload, ReplyThreadingPolicy } from "../types.js";
 import { formatBunFetchSocketError, isBunFetchSocketError } from "./agent-runner-utils.js";
 import { createBlockReplyContentKey, type BlockReplyPipeline } from "./block-reply-pipeline.js";
 import {
@@ -99,6 +99,7 @@ export async function buildReplyPayloads(params: {
   replyToMode: ReplyToMode;
   replyToChannel?: OriginatingChannelType;
   currentMessageId?: string;
+  replyThreading?: ReplyThreadingPolicy;
   messageProvider?: string;
   messagingToolSentTexts?: string[];
   messagingToolSentMediaUrls?: string[];
@@ -140,6 +141,7 @@ export async function buildReplyPayloads(params: {
         replyToMode: params.replyToMode,
         replyToChannel: params.replyToChannel,
         currentMessageId: params.currentMessageId,
+        replyThreading: params.replyThreading,
       }).map(async (payload) => {
         const parsed = normalizeReplyPayloadDirectives({
           payload,
@@ -157,11 +159,23 @@ export async function buildReplyPayloads(params: {
   const silentFilteredPayloads = params.silentExpected ? [] : replyTaggedPayloads;
 
   // Drop final payloads only when block streaming succeeded end-to-end.
-  // If streaming aborted (e.g., timeout), fall back to final payloads.
+  // If streaming aborted (e.g., timeout), fall through to per-payload
+  // content-coverage dedup (hasSentPayload) instead of blanket drop.
+  const pipelineDidStream = Boolean(params.blockReplyPipeline?.didStream());
+  const pipelineAborted = Boolean(params.blockReplyPipeline?.isAborted());
   const shouldDropFinalPayloads =
-    params.blockStreamingEnabled &&
-    Boolean(params.blockReplyPipeline?.didStream()) &&
-    !params.blockReplyPipeline?.isAborted();
+    params.blockStreamingEnabled && pipelineDidStream && !pipelineAborted;
+  if (params.blockStreamingEnabled && pipelineDidStream) {
+    if (pipelineAborted) {
+      logVerbose(
+        `block streaming aborted; falling back to per-payload content dedup for ${silentFilteredPayloads.length} final payload(s)`,
+      );
+    } else {
+      logVerbose(
+        `block streaming completed successfully; suppressing ${silentFilteredPayloads.length} final payload(s)`,
+      );
+    }
+  }
   const messagingToolSentTexts = params.messagingToolSentTexts ?? [];
   const messagingToolSentTargets = params.messagingToolSentTargets ?? [];
   const shouldCheckMessagingToolDedupe =

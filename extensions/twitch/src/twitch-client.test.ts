@@ -22,12 +22,10 @@ const mockQuit = vi.fn();
 const mockUnbind = vi.fn();
 
 // Event handler storage for testing
-// oxlint-disable-next-line typescript/no-explicit-any
 const messageHandlers: Array<(channel: string, user: string, message: string, msg: any) => void> =
   [];
 
 // Mock functions that track handlers and return unbind objects
-// oxlint-disable-next-line typescript/no-explicit-any
 const mockOnMessage = vi.fn((handler: any) => {
   messageHandlers.push(handler);
   return { unbind: mockUnbind };
@@ -36,6 +34,9 @@ const mockOnMessage = vi.fn((handler: any) => {
 const mockAddUserForToken = vi.fn().mockResolvedValue("123456");
 const mockOnRefresh = vi.fn();
 const mockOnRefreshFailure = vi.fn();
+const { mockPersistRefreshedTwitchTokens } = vi.hoisted(() => ({
+  mockPersistRefreshedTwitchTokens: vi.fn().mockResolvedValue(false),
+}));
 
 vi.mock("@twurple/chat", () => ({
   ChatClient: class {
@@ -79,6 +80,10 @@ vi.mock("./token.js", () => ({
     source: "config" as const,
   })),
   DEFAULT_ACCOUNT_ID: "default",
+}));
+
+vi.mock("./token-writeback.js", () => ({
+  persistRefreshedTwitchTokens: mockPersistRefreshedTwitchTokens,
 }));
 
 describe("TwitchClientManager", () => {
@@ -273,7 +278,6 @@ describe("TwitchClientManager", () => {
 
       // Check the stored handler is handler2
       const key = manager.getAccountKey(testAccount);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).messageHandlers.get(key)).toBe(handler2);
     });
   });
@@ -295,9 +299,7 @@ describe("TwitchClientManager", () => {
       await manager.disconnect(testAccount);
 
       const key = manager.getAccountKey(testAccount);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).clients.has(key)).toBe(false);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).messageHandlers.has(key)).toBe(false);
     });
 
@@ -316,7 +318,6 @@ describe("TwitchClientManager", () => {
       expect(mockQuit).toHaveBeenCalledTimes(1);
 
       const key2 = manager.getAccountKey(testAccount2);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).clients.has(key2)).toBe(true);
     });
   });
@@ -329,9 +330,7 @@ describe("TwitchClientManager", () => {
       await manager.disconnectAll();
 
       expect(mockQuit).toHaveBeenCalledTimes(2);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).clients.size).toBe(0);
-      // oxlint-disable-next-line typescript/no-explicit-any
       expect((manager as any).messageHandlers.size).toBe(0);
     });
 
@@ -399,7 +398,6 @@ describe("TwitchClientManager", () => {
 
     it("should create client if not already connected", async () => {
       // Clear the existing client
-      // oxlint-disable-next-line typescript/no-explicit-any
       (manager as any).clients.clear();
 
       // Reset connect call count for this specific test
@@ -409,6 +407,50 @@ describe("TwitchClientManager", () => {
 
       expect(result.ok).toBe(true);
       expect(mockConnect.mock.calls.length).toBeGreaterThan(connectCallCountBefore);
+    });
+  });
+
+  describe("token refresh persistence", () => {
+    it("persists refreshed tokens for config-backed accounts", async () => {
+      const refreshingAccount: TwitchAccountConfig = {
+        ...testAccount,
+        clientSecret: "client-secret",
+        refreshToken: "refresh-token",
+      };
+
+      await manager.getClient(refreshingAccount, undefined, "alerts");
+
+      const refreshHandler = mockOnRefresh.mock.calls[0]?.[0] as
+        | ((
+            userId: string,
+            token: {
+              accessToken: string;
+              refreshToken?: string;
+              expiresIn?: number | null;
+              obtainmentTimestamp?: number;
+            },
+          ) => Promise<void>)
+        | undefined;
+
+      expect(refreshHandler).toBeDefined();
+
+      await refreshHandler?.("123456", {
+        accessToken: "new-access-token",
+        refreshToken: "new-refresh-token",
+        expiresIn: 3600,
+        obtainmentTimestamp: 123456789,
+      });
+
+      expect(mockPersistRefreshedTwitchTokens).toHaveBeenCalledWith({
+        accountId: "alerts",
+        tokenSource: "config",
+        token: {
+          accessToken: "new-access-token",
+          refreshToken: "new-refresh-token",
+          expiresIn: 3600,
+          obtainmentTimestamp: 123456789,
+        },
+      });
     });
   });
 

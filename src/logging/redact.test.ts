@@ -111,6 +111,51 @@ describe("redactSensitiveText", () => {
     expect(output).toContain("OPENAI_API_KEY=sk-123…cdef");
   });
 
+  it("masks Tencent Cloud SecretId (AKID prefix, uppercase-only)", () => {
+    const input = "SecretId is AKIDZ8EXAMPLEFAKE01KEY99TEST";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: defaults,
+    });
+    expect(output).toBe("SecretId is AKIDZ8…TEST");
+  });
+
+  it("masks Tencent Cloud SecretId with mixed-case characters", () => {
+    const input = "AKIDz8exampleFake01Key99Test";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: defaults,
+    });
+    expect(output).toBe("AKIDz8…Test");
+  });
+
+  it("masks Alibaba Cloud AccessKey ID (LTAI prefix)", () => {
+    const input = "AccessKeyId=LTAI5tExampleFakeKeyXyz9";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: defaults,
+    });
+    expect(output).toBe("AccessKeyId=LTAI5t…Xyz9");
+  });
+
+  it("masks HuggingFace tokens (hf_ prefix)", () => {
+    const input = "export HF_TOKEN=hf_ABCDEFghijklmnopqrstuv";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: defaults,
+    });
+    expect(output).toContain("hf_ABC…stuv");
+  });
+
+  it("masks Replicate tokens (r8_ prefix)", () => {
+    const input = "REPLICATE_API_TOKEN=r8_ABCDEFghijklmnopqrstuv";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: defaults,
+    });
+    expect(output).toContain("r8_ABC…stuv");
+  });
+
   it("skips redaction when mode is off", () => {
     const input = "OPENAI_API_KEY=sk-1234567890abcdef";
     const output = redactSensitiveText(input, {
@@ -118,5 +163,31 @@ describe("redactSensitiveText", () => {
       patterns: defaults,
     });
     expect(output).toBe(input);
+  });
+
+  it("applies custom patterns alongside defaults when both are provided", () => {
+    const emailPattern = String.raw`[\w.-]+@[\w.-]+\.\w+`;
+    const input = "Contact peter@dc.io, key is sk-1234567890abcdef";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: [...defaults, emailPattern],
+    });
+    // Default pattern redacts the API key
+    expect(output).toContain("sk-123…cdef");
+    // Custom pattern redacts the email
+    expect(output).not.toContain("peter@dc.io");
+  });
+
+  it("uses only explicitly provided patterns when explicit options are passed", () => {
+    const emailPattern = String.raw`[\w.-]+@[\w.-]+\.\w+`;
+    const input = "OPENAI_API_KEY=sk-1234567890abcdef contact peter@dc.io";
+    const output = redactSensitiveText(input, {
+      mode: "tools",
+      patterns: [emailPattern],
+    });
+    // Explicit caller-supplied patterns are used as-is (no merge with defaults)
+    expect(output).not.toContain("peter@dc.io");
+    // API key is NOT redacted because only the email pattern was provided
+    expect(output).toContain("sk-1234567890abcdef");
   });
 });

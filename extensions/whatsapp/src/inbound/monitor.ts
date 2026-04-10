@@ -1,15 +1,14 @@
 import type { AnyMessageContent, proto, WAMessage } from "@whiskeysockets/baileys";
-import { DisconnectReason, isJidGroup } from "@whiskeysockets/baileys";
 import { createInboundDebouncer, formatLocationText } from "openclaw/plugin-sdk/channel-inbound";
-import { recordChannelActivity } from "openclaw/plugin-sdk/channel-runtime";
-import { saveMediaBuffer } from "openclaw/plugin-sdk/media-runtime";
+import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
+import { recordChannelActivity } from "openclaw/plugin-sdk/infra-runtime";
 import { logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/runtime-env";
 import { getChildLogger } from "openclaw/plugin-sdk/text-runtime";
-import { resolveJidToE164 } from "openclaw/plugin-sdk/text-runtime";
 import { readWebSelfIdentity } from "../auth-store.js";
 import { getPrimaryIdentityId, resolveComparableIdentity } from "../identity.js";
 import { createWaSocket, getStatusCode, waitForWaConnection } from "../session.js";
+import { resolveJidToE164 } from "../text-runtime.js";
 import { checkInboundAccessControl } from "./access-control.js";
 import {
   isRecentInboundMessage,
@@ -25,6 +24,7 @@ import {
 } from "./extract.js";
 import { attachEmitterListener, closeInboundMonitorSocket } from "./lifecycle.js";
 import { downloadInboundMedia } from "./media.js";
+import { DisconnectReason, isJidGroup, saveMediaBuffer } from "./runtime-api.js";
 import { createWebSendApi } from "./send-api.js";
 import type { WebInboundMessage, WebListenerCloseReason } from "./types.js";
 
@@ -40,6 +40,8 @@ export async function monitorWebInbox(options: {
   authDir: string;
   onMessage: (msg: WebInboundMessage) => Promise<void>;
   mediaMaxMb?: number;
+  /** Keep the global presence unavailable so self-chat sessions do not mute phone pushes. */
+  selfChatMode?: boolean;
   /** Send read receipts for incoming messages (default true). */
   sendReadReceipts?: boolean;
   /** Debounce window (ms) for batching rapid consecutive messages from the same sender (0 to disable). */
@@ -67,20 +69,42 @@ export async function monitorWebInbox(options: {
     onCloseResolve = null;
     resolver(reason);
   };
+  const presence = options.selfChatMode ? "unavailable" : "available";
 
   try {
-    await sock.sendPresenceUpdate("available");
+    await sock.sendPresenceUpdate(presence);
     if (shouldLogVerbose()) {
-      logVerbose("Sent global 'available' presence on connect");
+      logVerbose(`Sent global '${presence}' presence on connect`);
     }
   } catch (err) {
-    logVerbose(`Failed to send 'available' presence on connect: ${String(err)}`);
+    logVerbose(`Failed to send '${presence}' presence on connect: ${String(err)}`);
   }
 
   const self = await readWebSelfIdentity(
     options.authDir,
     sock.user as { id?: string | null; lid?: string | null } | undefined,
   );
+  // Track message IDs that are currently buffered in the debouncer (not yet
+  // flushed to the agent). Used by the messages.update handler to silently
+  // swap in the edited text before the agent ever sees the original.
+  const pendingMessageIds = new Map<string, WebInboundMessage>();
+  // Track message IDs that have been fully processed (flushed + onMessage
+  // completed). Only edits to these messages trigger a notification — this
+  // prevents edits to ignored, historical, or access-denied messages from
+  // producing unexpected outbound replies.
+  const processedMessageIds = new Set<string>();
+  const MAX_PROCESSED_IDS = 512;
+  const rememberProcessedId = (id: string) => {
+    if (processedMessageIds.size >= MAX_PROCESSED_IDS) {
+      // Evict the oldest entry (Sets preserve insertion order).
+      const first = processedMessageIds.values().next().value;
+      if (first !== undefined) {
+        processedMessageIds.delete(first);
+      }
+    }
+    processedMessageIds.add(id);
+  };
+
   const debouncer = createInboundDebouncer<WebInboundMessage>({
     debounceMs: options.debounceMs ?? 0,
     buildKey: (msg) => {
@@ -105,27 +129,51 @@ export async function monitorWebInbox(options: {
       if (!last) {
         return;
       }
+      let messageToDeliver: WebInboundMessage;
       if (entries.length === 1) {
-        await options.onMessage(last);
-        return;
+        messageToDeliver = last;
+      } else {
+        const mentioned = new Set<string>();
+        for (const entry of entries) {
+          for (const jid of entry.mentions ?? entry.mentionedJids ?? []) {
+            mentioned.add(jid);
+          }
+        }
+        const combinedBody = entries
+          .map((entry) => entry.body)
+          .filter(Boolean)
+          .join("\n");
+        messageToDeliver = {
+          ...last,
+          body: combinedBody,
+          mentions: mentioned.size > 0 ? Array.from(mentioned) : undefined,
+          mentionedJids: mentioned.size > 0 ? Array.from(mentioned) : undefined,
+        };
       }
-      const mentioned = new Set<string>();
-      for (const entry of entries) {
-        for (const jid of entry.mentions ?? entry.mentionedJids ?? []) {
-          mentioned.add(jid);
+      // Deliver first, then update tracking. This closes the race where an
+      // edit event arrives after pendingMessageIds is cleared but before
+      // onMessage completes — without this ordering, Case 2 would fire
+      // a "already processed" notification while the agent is still handling
+      // the original body.
+      // Use try/finally so pendingMessageIds is always cleared even if
+      // onMessage rejects — preventing stale entries from accumulating.
+      // rememberProcessedId runs only on success: a failed flush means the
+      // agent never actually processed the message, so later edits should
+      // not trigger a "already processed" notification.
+      let deliverySucceeded = false;
+      try {
+        await options.onMessage(messageToDeliver);
+        deliverySucceeded = true;
+      } finally {
+        for (const entry of entries) {
+          if (entry.id) {
+            pendingMessageIds.delete(entry.id);
+            if (deliverySucceeded) {
+              rememberProcessedId(entry.id);
+            }
+          }
         }
       }
-      const combinedBody = entries
-        .map((entry) => entry.body)
-        .filter(Boolean)
-        .join("\n");
-      const combinedMessage: WebInboundMessage = {
-        ...last,
-        body: combinedBody,
-        mentions: mentioned.size > 0 ? Array.from(mentioned) : undefined,
-        mentionedJids: mentioned.size > 0 ? Array.from(mentioned) : undefined,
-      };
-      await options.onMessage(combinedMessage);
     },
     onError: (err) => {
       inboundLogger.error({ error: String(err) }, "failed handling inbound web message");
@@ -207,6 +255,7 @@ export async function monitorWebInbox(options: {
 
   const normalizeInboundMessage = async (
     msg: WAMessage,
+    opts?: { isAppend?: boolean },
   ): Promise<NormalizedInboundMessage | null> => {
     const id = msg.key?.id ?? undefined;
     const remoteJid = msg.key?.remoteJid;
@@ -244,6 +293,23 @@ export async function monitorWebInbox(options: {
     if (!from) {
       return null;
     }
+    // Guard against self-message loops (#61033): when self-chat mode is not
+    // explicitly enabled, drop all fromMe DMs addressed to the bot's own
+    // number.  Without this, WhatsApp can echo the bot's replies with a
+    // different message ID, bypassing the outbound-ID echo check above and
+    // creating an infinite auto-reply loop.
+    if (
+      !group &&
+      Boolean(msg.key?.fromMe) &&
+      !options.selfChatMode
+    ) {
+      if (!self.e164) {
+        logVerbose(`Cannot apply self-DM loop guard for ${id ?? "?"}: self.e164 not resolved`);
+      } else if (from === self.e164) {
+        logVerbose(`Dropping fromMe self-DM ${id ?? "?"} — selfChatMode not enabled`);
+        return null;
+      }
+    }
     const senderE164 = group
       ? participantJid
         ? await resolveInboundJid(participantJid)
@@ -271,6 +337,7 @@ export async function monitorWebInbox(options: {
       isFromMe: Boolean(msg.key?.fromMe),
       messageTimestampMs,
       connectedAtMs,
+      isAppend: opts?.isAppend,
       sock: { sendMessage: (jid, content) => sendTrackedMessage(jid, content) },
       remoteJid,
     });
@@ -360,6 +427,48 @@ export async function monitorWebInbox(options: {
       logVerbose(`Inbound media download failed: ${String(err)}`);
     }
 
+    // Preflight audio transcription: if the body is just <media:audio> and we have
+    // an audio file, transcribe it before handing off to the agent — same approach
+    // as Telegram and Discord.
+    if (body === "<media:audio>" && mediaPath && mediaType?.startsWith("audio/")) {
+      const cfg = loadConfig();
+      if (cfg.tools?.media?.audio?.enabled !== false) {
+        try {
+          const { transcribeFirstAudio } = await import("./preflight-audio.runtime.js");
+          const transcript = await transcribeFirstAudio({
+            ctx: {
+              MediaPaths: [mediaPath],
+              MediaTypes: [mediaType],
+            },
+            cfg,
+            agentDir: undefined,
+          });
+          if (transcript) {
+            body = transcript;
+            // Echo transcript back to chat if configured
+            const audioCfg = cfg.tools?.media?.audio;
+            if (audioCfg?.echoTranscript) {
+              const chatJid = msg.key?.remoteJid;
+              if (chatJid) {
+                const format = audioCfg.echoFormat ?? '📝 "{transcript}"';
+                const echoText = format.replaceAll("{transcript}", transcript);
+                await sock.sendMessage(chatJid, { text: echoText });
+              }
+            }
+            if (shouldLogVerbose()) {
+              logVerbose(`whatsapp: preflight audio transcribed (${transcript.length} chars)`);
+            }
+            // Clear media fields — audio has been consumed as text
+            mediaPath = undefined;
+            mediaType = undefined;
+            mediaFileName = undefined;
+          }
+        } catch (err) {
+          logVerbose(`whatsapp: preflight audio transcription failed: ${String(err)}`);
+        }
+      }
+    }
+
     return {
       body,
       location: location ?? undefined,
@@ -447,6 +556,11 @@ export async function monitorWebInbox(options: {
       mediaType: enriched.mediaType,
       mediaFileName: enriched.mediaFileName,
     };
+    // Register this message as pending so the edit handler can swap its body
+    // before the debouncer flushes it to the agent.
+    if (inboundMessage.id) {
+      pendingMessageIds.set(inboundMessage.id, inboundMessage);
+    }
     try {
       const task = Promise.resolve(debouncer.enqueue(inboundMessage));
       void task.catch((err) => {
@@ -463,21 +577,19 @@ export async function monitorWebInbox(options: {
     if (upsert.type !== "notify" && upsert.type !== "append") {
       return;
     }
+    const isAppend = upsert.type === "append";
     for (const msg of upsert.messages ?? []) {
       recordChannelActivity({
         channel: "whatsapp",
         accountId: options.accountId,
         direction: "inbound",
       });
-      const inbound = await normalizeInboundMessage(msg);
-      if (!inbound) {
-        continue;
-      }
 
-      await maybeMarkInboundAsRead(inbound);
-
-      // If this is history/offline catch-up, mark read above but skip auto-reply.
-      if (upsert.type === "append") {
+      // Skip old history BEFORE access control to prevent pairing challenges
+      // from firing on replayed messages during reconnect cycles (#56448).
+      // Without this guard, 408 reconnect loops cause unsolicited pairing
+      // codes to be sent to the user's contacts.
+      if (isAppend) {
         const APPEND_RECENT_GRACE_MS = 60_000;
         const msgTsRaw = msg.messageTimestamp;
         const msgTsNum = msgTsRaw != null ? Number(msgTsRaw) : NaN;
@@ -487,6 +599,13 @@ export async function monitorWebInbox(options: {
         }
       }
 
+      const inbound = await normalizeInboundMessage(msg, { isAppend });
+      if (!inbound) {
+        continue;
+      }
+
+      await maybeMarkInboundAsRead(inbound);
+
       const enriched = await enrichInboundMessage(msg);
       if (!enriched) {
         continue;
@@ -495,6 +614,103 @@ export async function monitorWebInbox(options: {
       await enqueueInboundMessage(msg, inbound, enriched);
     }
   };
+  // Handle message edits and revocations from WhatsApp.
+  //
+  // Two cases:
+  //   1. Message is still pending in the debouncer → silently swap the body,
+  //      the agent never sees the original typo.
+  //   2. Message already flushed (agent already replied) → send a notification
+  //      so the user knows their edit was seen after the fact.
+  const handleMessagesUpdate = async (
+    updates: Array<{
+      update: Partial<WAMessage>;
+      key: { id?: string; remoteJid?: string; fromMe?: boolean };
+    }>,
+  ) => {
+    for (const { update, key } of updates) {
+      const msgId = key.id;
+      const remoteJid = key.remoteJid;
+
+      // Skip messages with no id or remoteJid.
+      // Do NOT skip fromMe unconditionally: in self-chat mode the owner's own
+      // messages have fromMe=true but should still be tracked for edits.
+      // Instead, skip only outbound bot messages that were sent by sendTrackedMessage
+      // (those are already filtered by the rememberRecentOutboundMessage dedupe path
+      // in normalizeInboundMessage and will not be in pendingMessageIds).
+      if (!msgId || !remoteJid) {
+        continue;
+      }
+
+      // Detect revocation: protocolMessage with type REVOKE (0).
+      const protocolMsg = update.message?.protocolMessage;
+      const isRevoke =
+        protocolMsg != null &&
+        (protocolMsg.type === 0 || (protocolMsg as { type?: number }).type === 0);
+
+      if (isRevoke) {
+        logVerbose(`Message ${msgId} revoked by user — ignoring`);
+        continue;
+      }
+
+      // Detect edit: editedMessage present in the protocol message (type 14).
+      const isEdit =
+        protocolMsg != null &&
+        ((protocolMsg as { type?: number }).type === 14 || protocolMsg.editedMessage != null);
+
+      if (!isEdit) {
+        continue;
+      }
+
+      // Extract new text from the edited message.
+      // protocolMsg.editedMessage is proto.IMessage, which has .conversation
+      // and .extendedTextMessage directly (no intermediate .message wrapper).
+      const editedMsg = protocolMsg?.editedMessage as
+        | { conversation?: string | null; extendedTextMessage?: { text?: string | null } | null }
+        | null
+        | undefined;
+      const editedBody = editedMsg?.conversation ?? editedMsg?.extendedTextMessage?.text ?? null;
+
+      if (!editedBody) {
+        logVerbose(`Edit event for ${msgId} had no extractable text — skipping`);
+        continue;
+      }
+
+      recordChannelActivity({
+        channel: "whatsapp",
+        accountId: options.accountId,
+        direction: "inbound",
+      });
+
+      const pending = pendingMessageIds.get(msgId);
+      if (pending) {
+        // ✅ Case 1: Still buffered — swap the body in place. The debouncer
+        // will flush the updated version; the agent sees only the corrected text.
+        pending.body = editedBody;
+        if (shouldLogVerbose()) {
+          logVerbose(`Swapped pending message ${msgId} body to edited version: "${editedBody}"`);
+        }
+      } else if (processedMessageIds.has(msgId)) {
+        // ⚠️ Case 2: Already flushed and confirmed processed — notify the user
+        // that we've seen an edit after the fact so they can decide to resend.
+        // We only notify for messages that passed access-control and were
+        // actually delivered to the agent; edits to ignored or historical
+        // messages are silently dropped.
+        if (shouldLogVerbose()) {
+          logVerbose(`Edit received for already-processed message ${msgId} — notifying user`);
+        }
+        try {
+          await sendTrackedMessage(remoteJid, {
+            text: `✏️ (You edited a message I already processed. If you'd like me to handle the updated version, please resend it.)`,
+          });
+        } catch (err) {
+          logVerbose(`Failed to send edit-notification for ${msgId}: ${String(err)}`);
+        }
+      } else {
+        logVerbose(`Edit received for unknown/ignored message ${msgId} — skipping notification`);
+      }
+    }
+  };
+
   const handleConnectionUpdate = (
     update: Partial<import("@whiskeysockets/baileys").ConnectionState>,
   ) => {
@@ -520,6 +736,15 @@ export async function monitorWebInbox(options: {
     },
     "messages.upsert",
     handleMessagesUpsert as unknown as (...args: unknown[]) => void,
+  );
+  const detachMessagesUpdate = attachEmitterListener(
+    sock.ev as unknown as {
+      on: (event: string, listener: (...args: unknown[]) => void) => void;
+      off?: (event: string, listener: (...args: unknown[]) => void) => void;
+      removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+    },
+    "messages.update",
+    handleMessagesUpdate as unknown as (...args: unknown[]) => void,
   );
   const detachConnectionUpdate = attachEmitterListener(
     sock.ev as unknown as {
@@ -557,6 +782,7 @@ export async function monitorWebInbox(options: {
     close: async () => {
       try {
         detachMessagesUpsert();
+        detachMessagesUpdate();
         detachConnectionUpdate();
         closeInboundMonitorSocket(sock);
       } catch (err) {

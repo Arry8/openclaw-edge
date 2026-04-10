@@ -1,7 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { ResolvedAgentRoute } from "openclaw/plugin-sdk/routing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TelegramBotDeps } from "./bot-deps.js";
+import type { TelegramNativeCommandDeps } from "./bot-native-command-deps.runtime.js";
 import {
   createDeferred,
   createNativeCommandTestParams,
@@ -64,20 +64,16 @@ const conversationStoreMocks = vi.hoisted(() => ({
   upsertChannelPairingRequest: vi.fn(async () => ({ code: "PAIRCODE", created: true })),
 }));
 
-vi.mock("openclaw/plugin-sdk/conversation-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/conversation-runtime")>();
+vi.mock("openclaw/plugin-sdk/conversation-runtime", async () => {
+  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/conversation-runtime")>(
+    "openclaw/plugin-sdk/conversation-runtime",
+  );
   return {
     ...actual,
     resolveConfiguredBindingRoute: persistentBindingMocks.resolveConfiguredBindingRoute,
     ensureConfiguredBindingRouteReady: persistentBindingMocks.ensureConfiguredBindingRouteReady,
     recordInboundSessionMetaSafe: vi.fn(
-      async (params: {
-        cfg: OpenClawConfig;
-        agentId: string;
-        sessionKey: string;
-        ctx: unknown;
-        onError?: (error: unknown) => void;
-      }) => {
+      async (params: Parameters<typeof actual.recordInboundSessionMetaSafe>[0]) => {
         const storePath = sessionMocks.resolveStorePath(params.cfg.session?.store, {
           agentId: params.agentId,
         });
@@ -104,28 +100,14 @@ vi.mock("openclaw/plugin-sdk/conversation-runtime", async (importOriginal) => {
     }),
   };
 });
-vi.mock("openclaw/plugin-sdk/command-auth", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/command-auth")>();
-  return {
-    ...actual,
-    listSkillCommandsForAgents: vi.fn(() => []),
-  };
-});
-vi.mock("openclaw/plugin-sdk/reply-dispatch-runtime", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("openclaw/plugin-sdk/reply-dispatch-runtime")>();
+vi.mock("./bot-native-commands.runtime.js", async () => {
+  const actual = await vi.importActual<typeof import("./bot-native-commands.runtime.js")>(
+    "./bot-native-commands.runtime.js",
+  );
   return {
     ...actual,
     finalizeInboundContext: vi.fn((ctx: unknown) => ctx),
     dispatchReplyWithBufferedBlockDispatcher: replyMocks.dispatchReplyWithBufferedBlockDispatcher,
-  };
-});
-vi.mock("../../../src/config/sessions.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/config/sessions.js")>();
-  return {
-    ...actual,
-    recordSessionMetaFromInbound: sessionMocks.recordSessionMetaFromInbound,
-    resolveStorePath: sessionMocks.resolveStorePath,
   };
 });
 vi.mock("../../../src/pairing/pairing-store.js", () => ({
@@ -192,23 +174,14 @@ function registerAndResolveCommandHandlerBase(params: {
   } = params;
   const commandHandlers = new Map<string, TelegramCommandHandler>();
   const sendMessage = vi.fn().mockResolvedValue(undefined);
-  const telegramDeps: TelegramBotDeps = {
+  const telegramDeps: TelegramNativeCommandDeps = {
     loadConfig: vi.fn(() => cfg),
-    resolveStorePath: sessionMocks.resolveStorePath as TelegramBotDeps["resolveStorePath"],
     readChannelAllowFromStore: vi.fn(async () => []),
-    upsertChannelPairingRequest: vi.fn(async () => ({ code: "PAIRCODE", created: true })),
-    enqueueSystemEvent: vi.fn(),
     dispatchReplyWithBufferedBlockDispatcher:
-      replyMocks.dispatchReplyWithBufferedBlockDispatcher as TelegramBotDeps["dispatchReplyWithBufferedBlockDispatcher"],
-    buildModelsProviderData: vi.fn(async () => ({
-      byProvider: new Map<string, Set<string>>(),
-      providers: [],
-      resolvedDefault: { provider: "openai", model: "gpt-4.1" },
-      modelNames: new Map<string, string>(),
-    })),
+      replyMocks.dispatchReplyWithBufferedBlockDispatcher as TelegramNativeCommandDeps["dispatchReplyWithBufferedBlockDispatcher"],
+    getPluginCommandSpecs: vi.fn(() => []),
     listSkillCommandsForAgents: vi.fn(() => []),
     syncTelegramMenuCommands: vi.fn(),
-    wasSentByBot: vi.fn(() => false),
   };
   registerTelegramNativeCommands({
     ...createNativeCommandTestParams({
@@ -387,7 +360,6 @@ function expectUnauthorizedNewCommandBlocked(sendMessage: ReturnType<typeof vi.f
 
 describe("registerTelegramNativeCommands — session metadata", () => {
   beforeAll(async () => {
-    vi.resetModules();
     ({ registerTelegramNativeCommands } = await import("./bot-native-commands.js"));
   });
 
@@ -414,6 +386,11 @@ describe("registerTelegramNativeCommands — session metadata", () => {
     await handler(createTelegramPrivateCommandContext());
 
     expect(sessionMocks.recordSessionMetaFromInbound).toHaveBeenCalledTimes(1);
+    const dispatchCall = (
+      replyMocks.dispatchReplyWithBufferedBlockDispatcher.mock.calls as unknown as Array<
+        [{ ctx?: { CommandTargetSessionKey?: string } }]
+      >
+    )[0]?.[0];
     const call = (
       sessionMocks.recordSessionMetaFromInbound.mock.calls as unknown as Array<
         [{ sessionKey?: string; ctx?: { OriginatingChannel?: string; Provider?: string } }]
@@ -421,7 +398,7 @@ describe("registerTelegramNativeCommands — session metadata", () => {
     )[0]?.[0];
     expect(call?.ctx?.OriginatingChannel).toBe("telegram");
     expect(call?.ctx?.Provider).toBe("telegram");
-    expect(call?.sessionKey).toBe("agent:main:telegram:slash:200");
+    expect(call?.sessionKey).toBe(dispatchCall?.ctx?.CommandTargetSessionKey);
   });
 
   it("awaits session metadata persistence before dispatch", async () => {
@@ -584,7 +561,7 @@ describe("registerTelegramNativeCommands — session metadata", () => {
         [{ sessionKey?: string }]
       >
     )[0]?.[0];
-    expect(sessionMetaCall?.sessionKey).toBe("agent:codex:telegram:slash:200");
+    expect(sessionMetaCall?.sessionKey).toBe(boundSessionKey);
   });
 
   it("routes Telegram native commands through topic-specific agent sessions", async () => {
@@ -607,6 +584,14 @@ describe("registerTelegramNativeCommands — session metadata", () => {
     expect(dispatchCall?.ctx?.CommandTargetSessionKey).toBe(
       "agent:zu:telegram:group:-1001234567890:topic:42",
     );
+    const sessionMetaCall = (
+      sessionMocks.recordSessionMetaFromInbound.mock.calls as unknown as Array<
+        [{ sessionKey?: string; ctx?: { From?: string; ChatType?: string } }]
+      >
+    )[0]?.[0];
+    expect(sessionMetaCall?.sessionKey).toBe("agent:zu:telegram:group:-1001234567890:topic:42");
+    expect(sessionMetaCall?.ctx?.From).toBe("telegram:group:-1001234567890:topic:42");
+    expect(sessionMetaCall?.ctx?.ChatType).toBe("group");
   });
 
   it("routes Telegram native commands through bound topic sessions", async () => {
@@ -633,6 +618,12 @@ describe("registerTelegramNativeCommands — session metadata", () => {
       >
     )[0]?.[0];
     expect(dispatchCall?.ctx?.CommandTargetSessionKey).toBe("agent:codex-acp:session-1");
+    const sessionMetaCall = (
+      sessionMocks.recordSessionMetaFromInbound.mock.calls as unknown as Array<
+        [{ sessionKey?: string }]
+      >
+    )[0]?.[0];
+    expect(sessionMetaCall?.sessionKey).toBe("agent:codex-acp:session-1");
     expect(sessionBindingMocks.touch).toHaveBeenCalledWith(
       "default:-1001234567890:topic:42",
       undefined,

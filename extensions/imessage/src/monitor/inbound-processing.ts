@@ -6,11 +6,13 @@ import {
   logInboundDrop,
   matchesMentionPatterns,
   resolveEnvelopeFormatOptions,
+  resolveInboundMentionDecision,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { hasControlCommand } from "openclaw/plugin-sdk/command-auth";
 import { resolveDualTextControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import {
+  resolveChannelContextVisibilityMode,
   resolveChannelGroupPolicy,
   resolveChannelGroupRequireMention,
 } from "openclaw/plugin-sdk/config-runtime";
@@ -24,6 +26,7 @@ import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import {
   DM_GROUP_ACCESS_REASON,
   resolveDmGroupAccessWithLists,
+  evaluateSupplementalContextVisibility,
 } from "openclaw/plugin-sdk/security-runtime";
 import { sanitizeTerminalText } from "openclaw/plugin-sdk/text-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-runtime";
@@ -36,6 +39,68 @@ import {
 import { detectReflectedContent } from "./reflection-guard.js";
 import type { SelfChatCache } from "./self-chat-cache.js";
 import type { MonitorIMessageOpts, IMessagePayload } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Tapback / reaction detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Known iMessage tapback text patterns.
+ * When a user taps a reaction in Messages.app the system inserts a synthetic
+ * message whose text starts with one of these prefixes followed by the quoted
+ * original text (e.g. 'Loved "Hey there"').
+ */
+const TAPBACK_TEXT_PREFIXES: string[] = [
+  // add reactions
+  "loved",
+  "liked",
+  "disliked",
+  "laughed at",
+  "emphasized",
+  "questioned",
+  // remove reactions
+  "removed a heart from",
+  "removed a like from",
+  "removed a dislike from",
+  "removed a laugh from",
+  "removed an emphasis from",
+  "removed a question from",
+];
+
+/**
+ * Detect whether an inbound iMessage is a tapback reaction.
+ *
+ * Uses three signals (any one is sufficient):
+ * 1. `is_tapback` field from imsg (explicit flag)
+ * 2. `associated_message_type` in the 2000-3999 range (Apple's internal codes)
+ * 3. Text starts with a known tapback prefix like "Loved", "Liked", etc.
+ */
+export function isIMessageTapback(message: IMessagePayload, bodyText: string): boolean {
+  // Signal 1: explicit tapback flag from imsg v0.5.0+
+  if (message.is_tapback === true) {
+    return true;
+  }
+
+  // Signal 2: associated_message_type in tapback range (2000-3999)
+  const amt = message.associated_message_type;
+  if (typeof amt === "number" && Number.isFinite(amt) && amt >= 2000 && amt < 4000) {
+    return true;
+  }
+
+  // Signal 3: text-based heuristic — matches patterns like 'Loved "..."'
+  const lower = bodyText.toLowerCase();
+  for (const prefix of TAPBACK_TEXT_PREFIXES) {
+    if (lower.startsWith(prefix)) {
+      // Require a quoted portion after the prefix to reduce false positives
+      const afterPrefix = bodyText.slice(prefix.length).trim();
+      if (/^["\u201c]/.test(afterPrefix)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 
 type IMessageReplyContext = {
   id?: string;
@@ -204,10 +269,24 @@ export function resolveIMessageInboundDecision(params: {
   // user's own handle). When is_from_me=true in self-chat, the message could be
   // either: (a) a real user message typed by the user, or (b) an agent reply
   // echo reflected back by iMessage. We must distinguish them.
-  const isSelfChat =
+  const senderMatchesChatId =
     !isGroup &&
     chatIdentifier != null &&
     normalizeIMessageHandle(sender) === normalizeIMessageHandle(chatIdentifier);
+  // When destination_caller_id is present and differs from sender, this is an
+  // outbound message in a normal DM — not a self-chat. On outbound messages,
+  // iMessage sets both sender and chat_identifier to the *recipient's* handle,
+  // which falsely matches the self-chat heuristic. Checking destination_caller_id
+  // (the bot's own handle) disambiguates. See #60014.
+  const rawDestCallerId = params.message.destination_caller_id;
+  const destCallerId =
+    typeof rawDestCallerId === "string" && rawDestCallerId.trim().length > 0
+      ? rawDestCallerId
+      : undefined;
+  const destMismatch =
+    destCallerId != null &&
+    normalizeIMessageHandle(sender) !== normalizeIMessageHandle(destCallerId);
+  const isSelfChat = senderMatchesChatId && !destMismatch;
   // Track whether we already processed the is_from_me=true self-chat path.
   // When true, the selfChatCache.has() check below must be skipped — we just
   // called remember() and would immediately match our own entry.
@@ -257,6 +336,17 @@ export function resolveIMessageInboundDecision(params: {
   }
   if (isGroup && !chatId) {
     return { kind: "drop", reason: "group without chat_id" };
+  }
+
+  // Tapback / reaction detection: drop tapback messages early (before access
+  // control) so they never trigger pairing flows or agent responses.  This
+  // mirrors the filtering that the BlueBubbles provider already performs via
+  // resolveTapbackContext.
+  if (isIMessageTapback(params.message, bodyText)) {
+    params.logVerbose?.(
+      `imessage: dropping tapback reaction: "${sanitizeTerminalText(truncateUtf16Safe(bodyText, 60))}"`,
+    );
+    return { kind: "drop", reason: "tapback reaction" };
   }
 
   const groupId = isGroup ? groupIdCandidate : undefined;
@@ -377,6 +467,37 @@ export function resolveIMessageInboundDecision(params: {
   }
 
   const replyContext = describeReplyContext(params.message);
+  const contextVisibilityMode = resolveChannelContextVisibilityMode({
+    cfg: params.cfg,
+    channel: "imessage",
+    accountId: params.accountId,
+  });
+  const replySenderAllowed =
+    !isGroup || effectiveGroupAllowFrom.length === 0
+      ? true
+      : replyContext?.sender
+        ? isAllowedIMessageSender({
+            allowFrom: effectiveGroupAllowFrom,
+            sender: replyContext.sender,
+            chatId,
+            chatGuid,
+            chatIdentifier,
+          })
+        : false;
+  const filteredReplyContext =
+    !replyContext ||
+    evaluateSupplementalContextVisibility({
+      mode: contextVisibilityMode,
+      kind: "quote",
+      senderAllowed: replySenderAllowed,
+    }).include
+      ? replyContext
+      : null;
+  if (replyContext && !filteredReplyContext && isGroup) {
+    params.logVerbose?.(
+      `imessage: drop reply context (mode=${contextVisibilityMode}, sender_allowed=${replySenderAllowed ? "yes" : "no"})`,
+    );
+  }
   const historyKey = isGroup
     ? String(chatId ?? chatGuid ?? chatIdentifier ?? "unknown")
     : undefined;
@@ -435,10 +556,23 @@ export function resolveIMessageInboundDecision(params: {
     return { kind: "drop", reason: "control command (unauthorized)" };
   }
 
-  const shouldBypassMention =
-    isGroup && requireMention && !mentioned && commandAuthorized && hasControlCommandInMessage;
-  const effectiveWasMentioned = mentioned || shouldBypassMention;
-  if (isGroup && requireMention && canDetectMention && !mentioned && !shouldBypassMention) {
+  const mentionDecision = resolveInboundMentionDecision({
+    facts: {
+      canDetectMention,
+      wasMentioned: mentioned,
+      hasAnyMention: false,
+      implicitMentionKinds: [],
+    },
+    policy: {
+      isGroup,
+      requireMention,
+      allowTextCommands: true,
+      hasControlCommand: hasControlCommandInMessage,
+      commandAuthorized,
+    },
+  });
+  const effectiveWasMentioned = mentionDecision.effectiveWasMentioned;
+  if (isGroup && requireMention && canDetectMention && mentionDecision.shouldSkip) {
     params.logVerbose?.(`imessage: skipping group message (no mention)`);
     recordPendingHistoryEntryIfEnabled({
       historyMap: params.groupHistories,
@@ -469,7 +603,7 @@ export function resolveIMessageInboundDecision(params: {
     route,
     bodyText,
     createdAt,
-    replyContext,
+    replyContext: filteredReplyContext,
     effectiveWasMentioned,
     commandAuthorized,
     effectiveDmAllowFrom,
@@ -551,7 +685,9 @@ export function buildIMessageInboundContext(params: {
     });
   }
 
-  const imessageTo = (decision.isGroup ? chatTarget : undefined) || `imessage:${decision.sender}`;
+  // Force SMS for DM replies — "imessage:" hardcodes iMessage delivery,
+  // "sms:" guarantees SMS delivery for recipients without iMessage.
+  const imessageTo = (decision.isGroup ? chatTarget : undefined) || `sms:${decision.sender}`;
   const inboundHistory =
     decision.isGroup && decision.historyKey && params.historyLimit > 0
       ? (params.groupHistories.get(decision.historyKey) ?? []).map((entry) => ({

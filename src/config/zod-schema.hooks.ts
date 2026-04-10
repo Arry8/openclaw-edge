@@ -1,16 +1,19 @@
-import path from "node:path";
 import { z } from "zod";
 import { InstallRecordShape } from "./zod-schema.installs.js";
 import { sensitive } from "./zod-schema.sensitive.js";
 
-function isSafeRelativeModulePath(raw: string): boolean {
+function isSafeRelativeModulePath(raw: unknown): boolean {
+  // Guard against non-string values (Zod refine can receive any type)
+  if (typeof raw !== "string") {
+    return false;
+  }
   const value = raw.trim();
   if (!value) {
     return false;
   }
   // Hook modules are loaded via file-path resolution + dynamic import().
   // Keep this strictly relative to a configured base dir to avoid path traversal and surprises.
-  if (path.isAbsolute(value)) {
+  if (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) {
     return false;
   }
   if (value.startsWith("~")) {
@@ -120,6 +123,10 @@ export const HooksGmailSchema = z
     includeBody: z.boolean().optional(),
     maxBytes: z.number().int().positive().optional(),
     renewEveryMinutes: z.number().int().positive().optional(),
+    excludeLabels: z
+      .array(z.string())
+      .describe("Gmail labels to exclude from webhook notifications")
+      .optional(),
     allowUnsafeExternalContent: z.boolean().optional(),
     serve: z
       .object({

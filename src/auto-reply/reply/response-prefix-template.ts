@@ -1,3 +1,5 @@
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
+
 /**
  * Template interpolation for response prefix.
  *
@@ -6,9 +8,9 @@
  */
 
 export type ResponsePrefixContext = {
-  /** Short model name (e.g., "gpt-5.2", "claude-opus-4-6") */
+  /** Short model name (e.g., "gpt-5.4", "claude-opus-4-6") */
   model?: string;
-  /** Full model ID including provider (e.g., "openai-codex/gpt-5.2") */
+  /** Full model ID including provider (e.g., "openai-codex/gpt-5.4") */
   modelFull?: string;
   /** Provider name (e.g., "openai-codex", "anthropic") */
   provider?: string;
@@ -16,6 +18,10 @@ export type ResponsePrefixContext = {
   thinkingLevel?: string;
   /** Agent identity name */
   identityName?: string;
+  /** Resolved emoji from modelEmojiMap (pre-resolved by the caller) */
+  modelEmoji?: string;
+  /** Resolved thinking emoji (pre-resolved by the caller) */
+  thinkEmoji?: string;
 };
 
 // Regex pattern for template variables: {variableName} or {variable.name}
@@ -30,10 +36,10 @@ const TEMPLATE_VAR_PATTERN = /\{([a-zA-Z][a-zA-Z0-9.]*)\}/g;
  *
  * @example
  * resolveResponsePrefixTemplate("[{model} | think:{thinkingLevel}]", {
- *   model: "gpt-5.2",
+ *   model: "gpt-5.4",
  *   thinkingLevel: "high"
  * })
- * // Returns: "[gpt-5.2 | think:high]"
+ * // Returns: "[gpt-5.4 | think:high]"
  */
 export function resolveResponsePrefixTemplate(
   template: string | undefined,
@@ -44,7 +50,7 @@ export function resolveResponsePrefixTemplate(
   }
 
   return template.replace(TEMPLATE_VAR_PATTERN, (match, varName: string) => {
-    const normalizedVar = varName.toLowerCase();
+    const normalizedVar = normalizeLowercaseStringOrEmpty(varName);
 
     switch (normalizedVar) {
       case "model":
@@ -59,6 +65,10 @@ export function resolveResponsePrefixTemplate(
       case "identity.name":
       case "identityname":
         return context.identityName ?? match;
+      case "modelemoji":
+        return context.modelEmoji ?? "";
+      case "thinkemoji":
+        return context.thinkEmoji ?? "";
       default:
         // Leave unrecognized variables as-is
         return match;
@@ -70,14 +80,14 @@ export function resolveResponsePrefixTemplate(
  * Extract short model name from a full model string.
  *
  * Strips:
- * - Provider prefix (e.g., "openai/" from "openai/gpt-5.2")
+ * - Provider prefix (e.g., "openai/" from "openai/gpt-5.4")
  * - Date suffixes (e.g., "-20260205" from "claude-opus-4-6-20260205")
  * - Common version suffixes (e.g., "-latest")
  *
  * @example
- * extractShortModelName("openai-codex/gpt-5.2") // "gpt-5.2"
+ * extractShortModelName("openai-codex/gpt-5.4") // "gpt-5.4"
  * extractShortModelName("claude-opus-4-6-20260205") // "claude-opus-4-6"
- * extractShortModelName("gpt-5.2-latest") // "gpt-5.2"
+ * extractShortModelName("gpt-5.4-latest") // "gpt-5.4"
  */
 export function extractShortModelName(fullModel: string): string {
   // Strip provider prefix
@@ -86,6 +96,91 @@ export function extractShortModelName(fullModel: string): string {
 
   // Strip date suffixes (YYYYMMDD format)
   return modelPart.replace(/-\d{8}$/, "").replace(/-latest$/, "");
+}
+
+/**
+ * Resolve model emoji from a map by matching against model name, provider, alias, or partial match.
+ *
+ * Match order (first wins, case-insensitive):
+ * 1. Exact short model name (e.g., "claude-opus-4-6")
+ * 2. Full model ID (e.g., "anthropic/claude-opus-4-6")
+ * 3. Provider name (e.g., "anthropic")
+ * 4. Substring match on short model name (e.g., "opus" matches "claude-opus-4-6")
+ *
+ * @returns The matched emoji, or empty string if no match
+ */
+export function resolveModelEmoji(
+  map: Record<string, string> | undefined,
+  model?: string,
+  modelFull?: string,
+  provider?: string,
+): string {
+  if (!map || Object.keys(map).length === 0) {
+    return "";
+  }
+
+  // Build a lowercase lookup
+  const entries = Object.entries(map).map(([k, v]) => [k.toLowerCase(), v] as const);
+
+  const modelLower = model?.toLowerCase();
+  const modelFullLower = modelFull?.toLowerCase();
+  const providerLower = provider?.toLowerCase();
+
+  // 1. Exact short model name
+  if (modelLower) {
+    for (const [key, emoji] of entries) {
+      if (key === modelLower) {
+        return emoji;
+      }
+    }
+  }
+
+  // 2. Exact full model ID
+  if (modelFullLower) {
+    for (const [key, emoji] of entries) {
+      if (key === modelFullLower) {
+        return emoji;
+      }
+    }
+  }
+
+  // 3. Exact provider name
+  if (providerLower) {
+    for (const [key, emoji] of entries) {
+      if (key === providerLower) {
+        return emoji;
+      }
+    }
+  }
+
+  // 4. Substring match on model name (e.g., "opus" matches "claude-opus-4-6")
+  if (modelLower) {
+    for (const [key, emoji] of entries) {
+      if (modelLower.includes(key) || key.includes(modelLower)) {
+        return emoji;
+      }
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Resolve thinking emoji from a pair based on current thinking level.
+ *
+ * @param pair - [activeEmoji, inactiveEmoji]
+ * @param thinkingLevel - Current thinking level ("high", "low", "off", etc.)
+ * @returns The appropriate emoji
+ */
+export function resolveThinkEmoji(
+  pair: [string, string] | undefined,
+  thinkingLevel?: string,
+): string {
+  if (!pair || pair.length < 2) {
+    return "";
+  }
+  const isActive = thinkingLevel === "high" || thinkingLevel === "low";
+  return isActive ? pair[0] : pair[1];
 }
 
 /**

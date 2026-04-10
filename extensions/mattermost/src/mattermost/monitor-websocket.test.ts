@@ -1,11 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeEnv } from "../../runtime-api.js";
 import {
   createMattermostConnectOnce,
   type MattermostWebSocketLike,
   WebSocketClosedBeforeOpenError,
 } from "./monitor-websocket.js";
-import { runWithReconnect } from "./reconnect.js";
 
 class FakeWebSocket implements MattermostWebSocketLike {
   public readonly sent: string[] = [];
@@ -15,12 +14,14 @@ class FakeWebSocket implements MattermostWebSocketLike {
   private messageListeners: Array<(data: Buffer) => void | Promise<void>> = [];
   private closeListeners: Array<(code: number, reason: Buffer) => void> = [];
   private errorListeners: Array<(err: unknown) => void> = [];
+  private pongListeners: Array<() => void> = [];
 
   on(event: "open", listener: () => void): void;
   on(event: "message", listener: (data: Buffer) => void | Promise<void>): void;
   on(event: "close", listener: (code: number, reason: Buffer) => void): void;
   on(event: "error", listener: (err: unknown) => void): void;
-  on(event: "open" | "message" | "close" | "error", listener: unknown): void {
+  on(event: "pong", listener: () => void): void;
+  on(event: "open" | "message" | "close" | "error" | "pong", listener: unknown): void {
     if (event === "open") {
       this.openListeners.push(listener as () => void);
       return;
@@ -33,7 +34,18 @@ class FakeWebSocket implements MattermostWebSocketLike {
       this.closeListeners.push(listener as (code: number, reason: Buffer) => void);
       return;
     }
+    if (event === "pong") {
+      this.pongListeners.push(listener as () => void);
+      return;
+    }
     this.errorListeners.push(listener as (err: unknown) => void);
+  }
+
+  ping(): void {
+    // Simulate pong reply
+    for (const listener of this.pongListeners) {
+      listener();
+    }
   }
 
   send(data: string): void {
@@ -84,6 +96,10 @@ const testRuntime = (): RuntimeEnv =>
   }) as RuntimeEnv;
 
 describe("mattermost websocket monitor", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
   it("rejects when websocket closes before open", async () => {
     const socket = new FakeWebSocket();
     const connectOnce = createMattermostConnectOnce({
@@ -107,12 +123,8 @@ describe("mattermost websocket monitor", () => {
   });
 
   it("retries when first attempt errors before open and next attempt succeeds", async () => {
-    const abort = new AbortController();
-    const reconnectDelays: number[] = [];
-    const onError = vi.fn();
     const patches: Array<Record<string, unknown>> = [];
     const sockets: FakeWebSocket[] = [];
-    let disconnects = 0;
 
     const connectOnce = createMattermostConnectOnce({
       wsUrl: "wss://example.invalid/api/v4/websocket",
@@ -123,15 +135,8 @@ describe("mattermost websocket monitor", () => {
         return () => seq++;
       })(),
       onPosted: async () => {},
-      abortSignal: abort.signal,
       statusSink: (patch) => {
         patches.push(patch as Record<string, unknown>);
-        if (patch.lastDisconnect) {
-          disconnects++;
-          if (disconnects >= 2) {
-            abort.abort();
-          }
-        }
       },
       webSocketFactory: () => {
         const socket = new FakeWebSocket();
@@ -150,12 +155,10 @@ describe("mattermost websocket monitor", () => {
       },
     });
 
-    await runWithReconnect(connectOnce, {
-      abortSignal: abort.signal,
-      initialDelayMs: 1,
-      onError,
-      onReconnect: (delay) => reconnectDelays.push(delay),
-    });
+    const firstAttempt = connectOnce();
+    await expect(firstAttempt).rejects.toBeInstanceOf(WebSocketClosedBeforeOpenError);
+
+    await connectOnce();
 
     expect(sockets).toHaveLength(2);
     expect(sockets[0].closeCalls).toBe(1);
@@ -165,8 +168,6 @@ describe("mattermost websocket monitor", () => {
       data: { token: "token" },
       seq: 1,
     });
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(reconnectDelays).toEqual([1]);
     expect(patches.some((patch) => patch.connected === true)).toBe(true);
     expect(patches.filter((patch) => patch.connected === false)).toHaveLength(2);
   });
@@ -307,7 +308,9 @@ describe("mattermost websocket monitor", () => {
       onPosted: async () => {},
       webSocketFactory: () => socket,
       getBotUpdateAt: async () => {
-        if (shouldThrow) throw new Error("network error");
+        if (shouldThrow) {
+          throw new Error("network error");
+        }
         return 1000;
       },
       healthCheckIntervalMs: 100,

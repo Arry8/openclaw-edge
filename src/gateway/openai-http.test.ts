@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
+import http from "node:http";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { HISTORY_CONTEXT_MARKER } from "../auto-reply/reply/history.js";
 import { CURRENT_MESSAGE_MARKER } from "../auto-reply/reply/mentions.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
@@ -151,6 +152,7 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
       (agentCommand.mock.calls[0] as unknown[] | undefined)?.[0] as
         | {
             sessionKey?: string;
+            messageChannel?: string;
             message?: string;
             extraSystemPrompt?: string;
             images?: Array<{ type: string; data: string; mimeType: string }>;
@@ -193,6 +195,7 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
       }
 
       {
+        mockAgentOnce([{ text: "hello" }]);
         const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
           method: "POST",
           headers: {
@@ -200,7 +203,9 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
           },
           body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
         });
-        expect(res.status).toBe(403);
+        expect(res.status).toBe(200);
+        expect(agentCommand).toHaveBeenCalledTimes(1);
+        expect(getFirstAgentCall()?.messageChannel).toBe("webchat");
         await res.text();
       }
 
@@ -262,8 +267,23 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
 
         const opts = (agentCommand.mock.calls[0] as unknown[] | undefined)?.[0];
         expect((opts as { sessionKey?: string } | undefined)?.sessionKey ?? "").toContain(
-          "openai-user:alice",
+          "anthropic-user:alice",
         );
+        await res.text();
+      }
+
+      {
+        mockAgentOnce([{ text: "hello" }]);
+        const res = await postChatCompletions(
+          port,
+          {
+            model: "openclaw",
+            messages: [{ role: "user", content: "hi" }],
+          },
+          { "x-openclaw-message-channel": "custom-client-channel" },
+        );
+        expect(res.status).toBe(200);
+        expect(getFirstAgentCall()?.messageChannel).toBe("custom-client-channel");
         await res.text();
       }
 
@@ -670,6 +690,58 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
         expect(msg.content).toBe("hello");
       }
 
+      // Non-streaming usage extraction
+      {
+        agentCommand.mockClear();
+        agentCommand.mockResolvedValueOnce({
+          payloads: [{ text: "usage reply" }],
+          meta: {
+            agentMeta: {
+              usage: { input: 42, output: 17, cacheRead: 5, cacheWrite: 0, total: 64 },
+            },
+          },
+        } as never);
+        const json = await postSyncUserMessage("count my tokens");
+        const usage = json.usage as Record<string, unknown> | undefined;
+        expect(usage).toBeDefined();
+        expect(usage?.prompt_tokens).toBe(42);
+        expect(usage?.completion_tokens).toBe(17);
+        expect(usage?.total_tokens).toBe(64);
+      }
+
+      // Non-streaming usage: arithmetic fallback when total is absent
+      {
+        agentCommand.mockClear();
+        agentCommand.mockResolvedValueOnce({
+          payloads: [{ text: "usage reply no total" }],
+          meta: {
+            agentMeta: {
+              usage: { input: 10, output: 5, cacheRead: 3, cacheWrite: 1 },
+            },
+          },
+        } as never);
+        const jsonFallback = await postSyncUserMessage("fallback total");
+        const usageFallback = jsonFallback.usage as Record<string, unknown> | undefined;
+        expect(usageFallback).toBeDefined();
+        expect(usageFallback?.prompt_tokens).toBe(10);
+        expect(usageFallback?.completion_tokens).toBe(5);
+        expect(usageFallback?.total_tokens).toBe(19); // 10 + 5 + 3 + 1
+      }
+
+      // Non-streaming usage falls back to zeros when meta is absent
+      {
+        agentCommand.mockClear();
+        agentCommand.mockResolvedValueOnce({
+          payloads: [{ text: "no usage" }],
+        } as never);
+        const json = await postSyncUserMessage("no meta");
+        const usage = json.usage as Record<string, unknown> | undefined;
+        expect(usage).toBeDefined();
+        expect(usage?.prompt_tokens).toBe(0);
+        expect(usage?.completion_tokens).toBe(0);
+        expect(usage?.total_tokens).toBe(0);
+      }
+
       {
         agentCommand.mockClear();
         agentCommand.mockResolvedValueOnce({ payloads: [{ text: "" }] } as never);
@@ -695,12 +767,80 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     }
   });
 
+  it("session key prefix reflects actual provider from config (#53158)", async () => {
+    const port = enabledPort;
+    const mockAgentOnce = (payloads: Array<{ text: string }>) => {
+      agentCommand.mockClear();
+      agentCommand.mockResolvedValueOnce({ payloads } as never);
+    };
+    const getSessionKey = () => {
+      const opts = (agentCommand.mock.calls[0] as unknown[] | undefined)?.[0];
+      return (opts as { sessionKey?: string } | undefined)?.sessionKey ?? "";
+    };
+
+    {
+      mockAgentOnce([{ text: "hello" }]);
+      const res = await postChatCompletions(port, {
+        user: "alice",
+        model: "openclaw",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(res.status).toBe(200);
+      expect(getSessionKey()).toContain("anthropic-user:alice");
+      expect(getSessionKey()).not.toContain("openai-user:");
+      await res.text();
+    }
+
+    {
+      await writeGatewayConfig({
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.4" },
+            models: { "openai/gpt-5.4": {} },
+          },
+        },
+      });
+      mockAgentOnce([{ text: "hello" }]);
+      const res = await postChatCompletions(port, {
+        user: "bob",
+        model: "openclaw",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(res.status).toBe(200);
+      expect(getSessionKey()).toContain("openai-user:bob");
+      expect(getSessionKey()).not.toContain("anthropic-user:");
+      await res.text();
+    }
+
+    {
+      await writeGatewayConfig({
+        agents: {
+          defaults: {
+            model: { primary: "google/gemini-2.5-pro" },
+            models: { "google/gemini-2.5-pro": {} },
+          },
+        },
+      });
+      mockAgentOnce([{ text: "hello" }]);
+      const res = await postChatCompletions(port, {
+        user: "carol",
+        model: "openclaw",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      expect(res.status).toBe(200);
+      expect(getSessionKey()).toContain("google-user:carol");
+      expect(getSessionKey()).not.toContain("openai-user:");
+      await res.text();
+    }
+
+    await writeGatewayConfig({});
+  });
+
   it("returns 429 for repeated failed auth when gateway.auth.rateLimit is configured", async () => {
     testState.gatewayAuth = {
       mode: "token",
       token: "secret",
       rateLimit: { maxAttempts: 1, windowMs: 60_000, lockoutMs: 60_000, exemptLoopback: false },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
     await withGatewayServer(
       async ({ port }) => {
@@ -880,4 +1020,109 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
       await server.close({ reason: "openai token auth owner test done" });
     }
   });
+
+  it("aborts agent command when streaming client disconnects", { timeout: 15_000 }, async () => {
+    const port = enabledPort;
+    let serverAbortSignal: AbortSignal | undefined;
+
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      (opts: unknown) =>
+        new Promise<undefined>((resolve) => {
+          const signal = (opts as { abortSignal?: AbortSignal } | undefined)?.abortSignal;
+          serverAbortSignal = signal;
+          if (signal?.aborted) {
+            resolve(undefined);
+            return;
+          }
+          signal?.addEventListener("abort", () => resolve(undefined), { once: true });
+        }),
+    );
+
+    const clientReq = http.request({
+      hostname: "127.0.0.1",
+      port,
+      path: "/v1/chat/completions",
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secret",
+      },
+    });
+    clientReq.on("error", () => {});
+    clientReq.end(
+      JSON.stringify({
+        stream: true,
+        model: "openclaw",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(agentCommand).toHaveBeenCalledTimes(1);
+    });
+
+    clientReq.destroy();
+
+    await vi.waitFor(
+      () => {
+        expect(serverAbortSignal?.aborted).toBe(true);
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+  });
+
+  it(
+    "aborts agent command when non-streaming client disconnects",
+    { timeout: 15_000 },
+    async () => {
+      const port = enabledPort;
+      let serverAbortSignal: AbortSignal | undefined;
+
+      agentCommand.mockClear();
+      agentCommand.mockImplementationOnce(
+        (opts: unknown) =>
+          new Promise<undefined>((resolve) => {
+            const signal = (opts as { abortSignal?: AbortSignal } | undefined)?.abortSignal;
+            serverAbortSignal = signal;
+            if (signal?.aborted) {
+              resolve(undefined);
+              return;
+            }
+            signal?.addEventListener("abort", () => resolve(undefined), { once: true });
+          }),
+      );
+
+      const clientReq = http.request({
+        hostname: "127.0.0.1",
+        port,
+        path: "/v1/chat/completions",
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer secret",
+        },
+      });
+      clientReq.on("error", () => {});
+      clientReq.end(
+        JSON.stringify({
+          model: "openclaw",
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(agentCommand).toHaveBeenCalledTimes(1);
+      });
+
+      clientReq.destroy();
+
+      await vi.waitFor(
+        () => {
+          expect(serverAbortSignal?.aborted).toBe(true);
+        },
+        { timeout: 5_000, interval: 50 },
+      );
+    },
+  );
 });

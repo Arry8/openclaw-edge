@@ -1,5 +1,5 @@
-import type { Message } from "grammy/types";
 import { describe, expect, it, vi } from "vitest";
+import { hasInboundMedia, resolveInboundMediaFileId } from "../bot-handlers.media.js";
 import {
   buildTelegramRoutingTarget,
   buildTelegramThreadParams,
@@ -12,6 +12,7 @@ import {
   resolveTelegramDirectPeerId,
   resolveTelegramForumFlag,
   resolveTelegramForumThreadId,
+  resolveTelegramMediaPlaceholder,
 } from "./helpers.js";
 
 describe("resolveTelegramForumThreadId", () => {
@@ -164,7 +165,6 @@ describe("normalizeForwardedContext", () => {
         sender_user: { first_name: "Ada", last_name: "Lovelace", username: "ada", id: 42 },
         date: 123,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Ada Lovelace (@ada)");
@@ -178,7 +178,6 @@ describe("normalizeForwardedContext", () => {
   it("handles hidden forward_origin names", () => {
     const ctx = normalizeForwardedContext({
       forward_origin: { type: "hidden_user", sender_user_name: "Hidden Name", date: 456 },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Hidden Name");
@@ -201,7 +200,6 @@ describe("normalizeForwardedContext", () => {
         author_signature: "Editor",
         message_id: 42,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Tech News (Editor)");
@@ -227,7 +225,6 @@ describe("normalizeForwardedContext", () => {
         date: 600,
         author_signature: "Admin",
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("Discussion Group (Admin)");
@@ -248,7 +245,6 @@ describe("normalizeForwardedContext", () => {
         author_signature: "New Sig",
         message_id: 1,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.fromSignature).toBe("New Sig");
@@ -264,7 +260,6 @@ describe("normalizeForwardedContext", () => {
         author_signature: "   ",
         message_id: 1,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.fromSignature).toBeUndefined();
@@ -279,7 +274,6 @@ describe("normalizeForwardedContext", () => {
         date: 900,
         message_id: 1,
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(ctx).not.toBeNull();
     expect(ctx?.from).toBe("News");
@@ -290,10 +284,11 @@ describe("normalizeForwardedContext", () => {
 
 describe("describeReplyTarget", () => {
   it("returns null when no reply_to_message", () => {
-    const result = describeReplyTarget(
-      // oxlint-disable-next-line typescript/no-explicit-any
-      { message_id: 1, date: 1000, chat: { id: 1, type: "private" } } as any,
-    );
+    const result = describeReplyTarget({
+      message_id: 1,
+      date: 1000,
+      chat: { id: 1, type: "private" },
+    } as any);
     expect(result).toBeNull();
   });
 
@@ -309,7 +304,6 @@ describe("describeReplyTarget", () => {
         text: "Original message",
         from: { id: 42, first_name: "Alice", is_bot: false },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(result).not.toBeNull();
     expect(result?.body).toBe("Original message");
@@ -331,7 +325,6 @@ describe("describeReplyTarget", () => {
         text: { some: "object" },
         from: { id: 42, first_name: "Alice", is_bot: false },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     // Should not throw when reply text is malformed; return null instead.
     expect(result).toBeNull();
@@ -350,7 +343,6 @@ describe("describeReplyTarget", () => {
         caption: "Caption body",
         from: { id: 42, first_name: "Alice", is_bot: false },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(result?.body).toBe("Caption body");
     expect(result?.kind).toBe("reply");
@@ -382,7 +374,6 @@ describe("describeReplyTarget", () => {
           date: 500,
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(result).not.toBeNull();
     expect(result?.body).toBe("This is the forwarded content");
@@ -414,7 +405,6 @@ describe("describeReplyTarget", () => {
           author_signature: "Editor",
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(result).not.toBeNull();
     expect(result?.forwardedFrom).toBeDefined();
@@ -446,7 +436,6 @@ describe("describeReplyTarget", () => {
           date: 700,
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any);
     expect(result).not.toBeNull();
     expect(result?.id).toBe("4");
@@ -466,7 +455,6 @@ describe("hasBotMention", () => {
         chat: { id: 1, type: "private" },
         date: 1,
         message_id: 1,
-        // oxlint-disable-next-line typescript/no-explicit-any
       } as any),
     ).toEqual({
       text: "@gaian hello",
@@ -480,7 +468,6 @@ describe("hasBotMention", () => {
         {
           text: "@gaian what is the group id?",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -493,7 +480,6 @@ describe("hasBotMention", () => {
         {
           text: "@GaianChat_Bot what is the group id?",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -507,7 +493,6 @@ describe("hasBotMention", () => {
           text: "@GaianChat_Bot hi @gaian",
           entities: [{ type: "mention", offset: 18, length: 6 }],
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -520,7 +505,6 @@ describe("hasBotMention", () => {
         {
           text: "@gaian, what's up?",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -533,7 +517,6 @@ describe("hasBotMention", () => {
         {
           text: "@gaian how are you",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -546,7 +529,6 @@ describe("hasBotMention", () => {
         {
           text: "@gaianchat_bot hello",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -559,7 +541,6 @@ describe("hasBotMention", () => {
         {
           text: "@gaianbot do something",
           chat: { id: 1, type: "supergroup" },
-          // oxlint-disable-next-line typescript/no-explicit-any
         } as any,
         "gaian",
       ),
@@ -613,5 +594,80 @@ describe("expandTextLinks", () => {
     const text = " Hello world";
     const entities = [{ type: "text_link", offset: 1, length: 5, url: "https://example.com" }];
     expect(expandTextLinks(text, entities)).toBe(" [Hello](https://example.com) world");
+  });
+});
+
+describe("resolveTelegramMediaPlaceholder", () => {
+  it("returns <media:document> for document attachments", () => {
+    const msg = {
+      document: { file_id: "doc1", file_name: "report.pdf", mime_type: "application/pdf" },
+    } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBe("<media:document>");
+  });
+
+  it("returns <media:image> for photo attachments", () => {
+    const msg = { photo: [{ file_id: "p1" }] } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBe("<media:image>");
+  });
+
+  it("returns <media:video> for video attachments", () => {
+    const msg = { video: { file_id: "v1" } } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBe("<media:video>");
+  });
+
+  it("returns <media:audio> for audio attachments", () => {
+    const msg = { audio: { file_id: "a1" } } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBe("<media:audio>");
+  });
+
+  it("returns <media:audio> for voice attachments", () => {
+    const msg = { voice: { file_id: "v1" } } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBe("<media:audio>");
+  });
+
+  it("returns undefined for text-only messages", () => {
+    const msg = { text: "hello" } as unknown as Message;
+    expect(resolveTelegramMediaPlaceholder(msg)).toBeUndefined();
+  });
+});
+
+describe("hasInboundMedia (document attachments)", () => {
+  it("recognizes document field as inbound media", () => {
+    const msg = {
+      document: { file_id: "doc1", file_name: "report.pdf" },
+    } as unknown as Message;
+    expect(hasInboundMedia(msg)).toBe(true);
+  });
+
+  it("recognizes photo, video, audio, voice, sticker as inbound media", () => {
+    expect(hasInboundMedia({ photo: [{ file_id: "p1" }] } as unknown as Message)).toBe(true);
+    expect(hasInboundMedia({ video: { file_id: "v1" } } as unknown as Message)).toBe(true);
+    expect(hasInboundMedia({ audio: { file_id: "a1" } } as unknown as Message)).toBe(true);
+    expect(hasInboundMedia({ voice: { file_id: "v1" } } as unknown as Message)).toBe(true);
+    expect(hasInboundMedia({ sticker: { file_id: "s1" } } as unknown as Message)).toBe(true);
+  });
+
+  it("returns false for text-only messages", () => {
+    expect(hasInboundMedia({ text: "hello" } as unknown as Message)).toBe(false);
+  });
+});
+
+describe("resolveInboundMediaFileId", () => {
+  it("resolves file_id from document attachments", () => {
+    const msg = {
+      document: { file_id: "doc-file-id", file_name: "report.pdf" },
+    } as unknown as Message;
+    expect(resolveInboundMediaFileId(msg)).toBe("doc-file-id");
+  });
+
+  it("resolves file_id from photo (largest size)", () => {
+    const msg = {
+      photo: [{ file_id: "small" }, { file_id: "large" }],
+    } as unknown as Message;
+    expect(resolveInboundMediaFileId(msg)).toBe("large");
+  });
+
+  it("returns undefined for text-only messages", () => {
+    expect(resolveInboundMediaFileId({ text: "hello" } as unknown as Message)).toBeUndefined();
   });
 });

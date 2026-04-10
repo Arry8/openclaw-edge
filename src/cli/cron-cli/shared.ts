@@ -9,6 +9,7 @@ import {
   parseOffsetlessIsoDateTimeInTimeZone,
 } from "../../infra/format-time/parse-offsetless-zoned-datetime.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { colorize, isRich, theme } from "../../terminal/theme.js";
 import type { GatewayRpcOpts } from "../gateway-rpc.js";
 import { callGatewayFromCli } from "../gateway-rpc.js";
@@ -67,7 +68,7 @@ export function parseDurationMs(input: string): number | null {
   if (!Number.isFinite(n) || n <= 0) {
     return null;
   }
-  const unit = (match[2] ?? "").toLowerCase();
+  const unit = normalizeLowercaseStringOrEmpty(match[2] ?? "");
   const factor =
     unit === "ms"
       ? 1
@@ -98,17 +99,73 @@ export function parseCronStaggerMs(params: {
   return parsed;
 }
 
+/** Matches bare time strings like `09:00` or `09:00:30`. */
+const TIME_ONLY_RE = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * Returns the current date string (YYYY-MM-DD) in UTC.
+ */
+function getUtcDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Returns the current date string (YYYY-MM-DD) in the given IANA timezone.
+ */
+function getTodayDateInTimeZone(timeZone: string): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  } catch {
+    // Invalid IANA timezone — propagate null so parseAt can return null
+    // and the CLI can report a normal "Invalid --at" validation error.
+    return null;
+  }
+}
+
 /**
  * Parse a one-shot `--at` value into an ISO string (UTC).
  *
- * When `tz` is provided and the input is an offset-less datetime
- * (e.g. `2026-03-23T23:00:00`), the datetime is interpreted in
- * that IANA timezone instead of UTC.
+ * Supported formats (in order of precedence):
+ * - `HH:MM` or `HH:MM:SS` — interpreted as today's wall-clock time.
+ *   When `--tz` is provided the time is resolved in that IANA timezone;
+ *   otherwise it is treated as UTC.
+ * - Offset-less ISO datetime (`YYYY-MM-DDTHH:MM[:SS]`) — when `--tz` is
+ *   provided the datetime is resolved in that timezone; otherwise UTC.
+ * - Any absolute ISO string or Unix timestamp recognised by
+ *   `parseAbsoluteTimeMs`.
+ * - Relative duration (`20m`, `1h`, …).
  */
 export function parseAt(input: string, tz?: string): string | null {
   const raw = input.trim();
   if (!raw) {
     return null;
+  }
+
+  // Handle bare time-only strings: HH:MM or HH:MM:SS
+  const timeOnlyMatch = TIME_ONLY_RE.exec(raw);
+  if (timeOnlyMatch) {
+    const hh = timeOnlyMatch[1] ?? "00";
+    const mm = timeOnlyMatch[2] ?? "00";
+    const ss = timeOnlyMatch[3] ?? "00";
+    // Build an offset-less ISO datetime for today at the requested time,
+    // then resolve it in the given timezone (or UTC when no tz supplied).
+    const todayStr = tz ? getTodayDateInTimeZone(tz) : getUtcDateString();
+    if (todayStr === null) {
+      return null; // invalid timezone — caller will surface "Invalid --at"
+    }
+    const offsetlessDt = `${todayStr}T${hh}:${mm}:${ss}`;
+    if (tz) {
+      return parseOffsetlessIsoDateTimeInTimeZone(offsetlessDt, tz);
+    }
+    const ms = Date.parse(`${offsetlessDt}Z`);
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
   }
 
   // If a timezone is provided and the input looks like an offset-less ISO datetime,
@@ -138,7 +195,8 @@ const CRON_TARGET_PAD = 9;
 const CRON_AGENT_PAD = 10;
 const CRON_MODEL_PAD = 20;
 
-const pad = (value: string, width: number) => value.padEnd(width);
+/** Pad a value for table display; missing values render as "-" (not available). */
+const pad = (value: string | undefined | null, width: number) => (value ?? "-").padEnd(width);
 
 const truncate = (value: string, width: number) => {
   if (value.length <= width) {
@@ -231,7 +289,7 @@ export function printCronList(jobs: CronJob[], runtime: RuntimeEnv = defaultRunt
 
   for (const job of jobs) {
     const idLabel = pad(job.id, CRON_ID_PAD);
-    const nameLabel = pad(truncate(job.name, CRON_NAME_PAD), CRON_NAME_PAD);
+    const nameLabel = pad(truncate(job.name ?? "-", CRON_NAME_PAD), CRON_NAME_PAD);
     const scheduleLabel = pad(
       truncate(formatSchedule(job.schedule), CRON_SCHEDULE_PAD),
       CRON_SCHEDULE_PAD,
@@ -247,7 +305,7 @@ export function printCronList(jobs: CronJob[], runtime: RuntimeEnv = defaultRunt
     const agentLabel = pad(truncate(job.agentId ?? "-", CRON_AGENT_PAD), CRON_AGENT_PAD);
     const modelLabel = pad(
       truncate(
-        (job.payload.kind === "agentTurn" ? job.payload.model : undefined) ?? "-",
+        (job.payload?.kind === "agentTurn" ? job.payload.model : undefined) ?? "-",
         CRON_MODEL_PAD,
       ),
       CRON_MODEL_PAD,
@@ -286,7 +344,7 @@ export function printCronList(jobs: CronJob[], runtime: RuntimeEnv = defaultRunt
       coloredStatus,
       coloredTarget,
       coloredAgent,
-      job.payload.kind === "agentTurn" && job.payload.model
+      job.payload?.kind === "agentTurn" && job.payload.model
         ? colorize(rich, theme.info, modelLabel)
         : colorize(rich, theme.muted, modelLabel),
     ].join(" ");

@@ -3,12 +3,28 @@ import type { CronJob } from "../../cron/types.js";
 import { danger } from "../../globals.js";
 import { sanitizeAgentId } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
+import {
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { addGatewayClientOptions, callGatewayFromCli } from "../gateway-rpc.js";
 import {
   applyExistingCronSchedulePatch,
   resolveCronEditScheduleRequest,
 } from "./schedule-options.js";
 import { getCronChannelOptions, parseDurationMs, warnIfCronSchedulerDisabled } from "./shared.js";
+
+const SHELL_COMMAND_PATTERN =
+  /(?:^|\s)(?:python3?|bash|sh|node|bun|deno|uv run|npx|tsx|ts-node|ruby|perl|php|make|cargo|go run|java|dotnet|\.\/)(?:\s|$)/m;
+
+/**
+ * Returns true when the system-event text looks like it contains a shell
+ * command invocation.  Used to warn users that systemEvent payloads on the
+ * main session do not execute shell commands.
+ */
+function looksLikeShellCommand(text: string): boolean {
+  return SHELL_COMMAND_PATTERN.test(text);
+}
 
 const assignIf = (
   target: Record<string, unknown>,
@@ -42,7 +58,10 @@ export function registerCronEditCommand(cron: Command) {
       .option("--at <when>", "Set one-shot time (ISO) or duration like 20m")
       .option("--every <duration>", "Set interval duration like 10m")
       .option("--cron <expr>", "Set cron expression")
-      .option("--tz <iana>", "Timezone for cron expressions (IANA)")
+      .option(
+        "--tz <iana>",
+        "Timezone for cron expressions (IANA, defaults to system local timezone)",
+      )
       .option("--stagger <duration>", "Cron stagger window (e.g. 30s, 5m)")
       .option("--exact", "Disable cron staggering (set stagger to 0)")
       .option("--system-event <text>", "Set systemEvent payload")
@@ -82,6 +101,11 @@ export function registerCronEditCommand(cron: Command) {
         "--failure-alert-account-id <id>",
         "Account ID for failure alert channel (multi-account setups)",
       )
+      .option(
+        "--skip-when-idle <duration>",
+        "Skip job when session idle longer than duration (e.g. 30m, 1h). Main-session jobs only.",
+      )
+      .option("--no-skip-when-idle", "Disable skip-when-idle for this job")
       .action(async (id, opts) => {
         try {
           if (opts.session === "main" && opts.message) {
@@ -169,12 +193,8 @@ export function registerCronEditCommand(cron: Command) {
           }
 
           const hasSystemEventPatch = typeof opts.systemEvent === "string";
-          const model =
-            typeof opts.model === "string" && opts.model.trim() ? opts.model.trim() : undefined;
-          const thinking =
-            typeof opts.thinking === "string" && opts.thinking.trim()
-              ? opts.thinking.trim()
-              : undefined;
+          const model = normalizeOptionalString(opts.model);
+          const thinking = normalizeOptionalString(opts.thinking);
           const timeoutSeconds = opts.timeoutSeconds
             ? Number.parseInt(String(opts.timeoutSeconds), 10)
             : undefined;
@@ -252,6 +272,16 @@ export function registerCronEditCommand(cron: Command) {
             patch.delivery = delivery;
           }
 
+          if (opts.skipWhenIdle === false) {
+            patch.skipWhenIdle = false;
+          } else if (typeof opts.skipWhenIdle === "string") {
+            const ms = parseDurationMs(opts.skipWhenIdle);
+            if (!ms) {
+              throw new Error("Invalid --skip-when-idle duration; use e.g. 30m, 1h, 2h");
+            }
+            patch.skipWhenIdle = { idleMs: ms };
+          }
+
           const hasFailureAlertAfter = typeof opts.failureAlertAfter === "string";
           const hasFailureAlertChannel = typeof opts.failureAlertChannel === "string";
           const hasFailureAlertTo = typeof opts.failureAlertTo === "string";
@@ -282,11 +312,10 @@ export function registerCronEditCommand(cron: Command) {
               failureAlert.after = after;
             }
             if (hasFailureAlertChannel) {
-              const channel = String(opts.failureAlertChannel).trim().toLowerCase();
-              failureAlert.channel = channel ? channel : undefined;
+              failureAlert.channel = normalizeOptionalLowercaseString(opts.failureAlertChannel);
             }
             if (hasFailureAlertTo) {
-              const to = String(opts.failureAlertTo).trim();
+              const to = normalizeOptionalString(opts.failureAlertTo) ?? "";
               failureAlert.to = to ? to : undefined;
             }
             if (hasFailureAlertCooldown) {
@@ -297,17 +326,35 @@ export function registerCronEditCommand(cron: Command) {
               failureAlert.cooldownMs = cooldownMs;
             }
             if (hasFailureAlertMode) {
-              const mode = String(opts.failureAlertMode).trim().toLowerCase();
+              const mode = normalizeOptionalLowercaseString(opts.failureAlertMode);
               if (mode !== "announce" && mode !== "webhook") {
                 throw new Error("Invalid --failure-alert-mode (must be 'announce' or 'webhook').");
               }
               failureAlert.mode = mode;
             }
             if (hasFailureAlertAccountId) {
-              const accountId = String(opts.failureAlertAccountId).trim();
+              const accountId = normalizeOptionalString(opts.failureAlertAccountId) ?? "";
               failureAlert.accountId = accountId ? accountId : undefined;
             }
             patch.failureAlert = failureAlert;
+          }
+
+          // Warn when --system-event is being set on a job that is (or will be) a
+          // main-session job and the text looks like a shell command.  Such commands
+          // are never executed — the text is only dispatched as a context notification.
+          if (
+            hasSystemEventPatch &&
+            opts.session === "main" &&
+            looksLikeShellCommand(String(opts.systemEvent))
+          ) {
+            process.stderr.write(
+              [
+                "Warning: --system-event on --session main does not execute shell commands.",
+                "  The text is dispatched as a notification to the main agent session only.",
+                '  To run a script, use: --message "..." --session isolated --wake now',
+                "",
+              ].join("\n"),
+            );
           }
 
           const res = await callGatewayFromCli("cron.update", opts, {

@@ -9,6 +9,7 @@ import type {
   SecretRef,
   SecretRefSource,
 } from "../config/types.secrets.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { inspectPathPermissions, safeStat } from "../security/audit-fs.js";
 import { isPathInside } from "../security/scan-paths.js";
 import { resolveUserPath } from "../utils.js";
@@ -21,12 +22,7 @@ import {
   resolveDefaultSecretProviderAlias,
   secretRefKey,
 } from "./ref-contract.js";
-import {
-  describeUnknownError,
-  isNonEmptyString,
-  isRecord,
-  normalizePositiveInt,
-} from "./shared.js";
+import { isNonEmptyString, isRecord, normalizePositiveInt } from "./shared.js";
 
 const DEFAULT_PROVIDER_CONCURRENCY = 4;
 const DEFAULT_MAX_REFS_PER_PROVIDER = 512;
@@ -140,7 +136,7 @@ function throwUnknownProviderResolutionError(params: {
   throw providerResolutionError({
     source: params.source,
     provider: params.provider,
-    message: describeUnknownError(params.err),
+    message: formatErrorMessage(params.err),
     cause: params.err,
   });
 }
@@ -419,7 +415,7 @@ async function resolveFileRefs(params: {
         source: "file",
         provider: params.providerName,
         refId: ref.id,
-        message: describeUnknownError(err),
+        message: formatErrorMessage(err),
         cause: err,
       });
     }
@@ -573,11 +569,19 @@ function parseExecValues(params: {
   }
 
   let parsed: unknown;
-  if (!params.jsonOnly && params.ids.length === 1) {
+
+  if (!params.jsonOnly) {
     try {
       parsed = JSON.parse(trimmed) as unknown;
     } catch {
-      return { [params.ids[0]]: trimmed };
+      if (params.ids.length === 1) {
+        return { [params.ids[0]]: trimmed };
+      }
+      throw providerResolutionError({
+        source: "exec",
+        provider: params.providerName,
+        message: `Exec provider "${params.providerName}" returned invalid JSON.`,
+      });
     }
   } else {
     try {
@@ -590,7 +594,6 @@ function parseExecValues(params: {
       });
     }
   }
-
   if (!isRecord(parsed)) {
     if (!params.jsonOnly && params.ids.length === 1 && typeof parsed === "string") {
       return { [params.ids[0]]: parsed };

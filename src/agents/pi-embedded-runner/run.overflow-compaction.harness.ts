@@ -1,11 +1,13 @@
 import { type Mock, vi } from "vitest";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import type {
   PluginHookAgentContext,
   PluginHookBeforeAgentStartResult,
   PluginHookBeforeModelResolveResult,
   PluginHookBeforePromptBuildResult,
 } from "../../plugins/types.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { FailoverReason } from "../pi-embedded-helpers/types.js";
 import type { EmbeddedRunAttemptResult } from "./run/types.js";
 
@@ -66,10 +68,16 @@ export const mockedCompactDirect = mockedContextEngine.compact;
 export const mockedRunPostCompactionSideEffects = vi.fn(async () => {});
 export const mockedEnsureRuntimePluginsLoaded = vi.fn<(params?: unknown) => void>();
 export const mockedPrepareProviderRuntimeAuth = vi.fn(async () => undefined);
+export const mockedResolveProviderCapabilitiesWithPlugin = vi.fn(async () => undefined);
 export const mockedRunEmbeddedAttempt =
   vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
 export const mockedRunContextEngineMaintenance = vi.fn(async () => undefined);
 export const mockedSessionLikelyHasOversizedToolResults = vi.fn(() => false);
+type MockTruncateOversizedToolResultsResult = {
+  truncated: boolean;
+  truncatedCount: number;
+  reason?: string;
+};
 export const mockedTruncateOversizedToolResultsInSession = vi.fn<
   () => Promise<MockTruncateOversizedToolResultsResult>
 >(async () => ({
@@ -91,12 +99,6 @@ type MockCoerceToFailoverError = (
 ) => unknown;
 type MockDescribeFailoverError = (err: unknown) => MockFailoverErrorDescription;
 type MockResolveFailoverStatus = (reason: string) => number | undefined;
-type MockTruncateOversizedToolResultsResult = {
-  truncated: boolean;
-  truncatedCount: number;
-  reason?: string;
-};
-
 export class MockedFailoverError extends Error {
   constructor(message: string) {
     super(message);
@@ -107,7 +109,7 @@ export class MockedFailoverError extends Error {
 export const mockedCoerceToFailoverError = vi.fn<MockCoerceToFailoverError>();
 export const mockedDescribeFailoverError = vi.fn<MockDescribeFailoverError>(
   (err: unknown): MockFailoverErrorDescription => ({
-    message: err instanceof Error ? err.message : String(err),
+    message: formatErrorMessage(err),
     reason: undefined,
     status: undefined,
     code: undefined,
@@ -144,7 +146,7 @@ export const mockedIsCompactionFailureError = vi.fn(() => false);
 export const mockedIsFailoverAssistantError = vi.fn(() => false);
 export const mockedIsFailoverErrorMessage = vi.fn(() => false);
 export const mockedIsLikelyContextOverflowError = vi.fn((msg?: string) => {
-  const lower = (msg ?? "").toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(msg ?? "");
   return (
     lower.includes("request_too_large") ||
     lower.includes("context window exceeded") ||
@@ -177,6 +179,7 @@ export const mockedGetApiKeyForModel = vi.fn(
   }),
 );
 export const mockedResolveAuthProfileOrder = vi.fn(() => [] as string[]);
+export const mockedShouldPreferExplicitConfigApiKeyAuth = vi.fn(() => false);
 
 export const overflowBaseRunParams = {
   sessionId: "test-session",
@@ -213,6 +216,8 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   mockedEnsureRuntimePluginsLoaded.mockReset();
   mockedPrepareProviderRuntimeAuth.mockReset();
   mockedPrepareProviderRuntimeAuth.mockResolvedValue(undefined);
+  mockedResolveProviderCapabilitiesWithPlugin.mockReset();
+  mockedResolveProviderCapabilitiesWithPlugin.mockResolvedValue(undefined);
   mockedRunEmbeddedAttempt.mockReset();
   mockedRunContextEngineMaintenance.mockReset();
   mockedRunContextEngineMaintenance.mockResolvedValue(undefined);
@@ -230,7 +235,7 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   mockedDescribeFailoverError.mockReset();
   mockedDescribeFailoverError.mockImplementation(
     (err: unknown): MockFailoverErrorDescription => ({
-      message: err instanceof Error ? err.message : String(err),
+      message: formatErrorMessage(err),
       reason: undefined,
       status: undefined,
       code: undefined,
@@ -269,7 +274,7 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   mockedIsFailoverErrorMessage.mockReturnValue(false);
   mockedIsLikelyContextOverflowError.mockReset();
   mockedIsLikelyContextOverflowError.mockImplementation((msg?: string) => {
-    const lower = (msg ?? "").toLowerCase();
+    const lower = normalizeLowercaseStringOrEmpty(msg ?? "");
     return (
       lower.includes("request_too_large") ||
       lower.includes("context window exceeded") ||
@@ -309,6 +314,8 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   );
   mockedResolveAuthProfileOrder.mockReset();
   mockedResolveAuthProfileOrder.mockReturnValue([]);
+  mockedShouldPreferExplicitConfigApiKeyAuth.mockReset();
+  mockedShouldPreferExplicitConfigApiKeyAuth.mockReturnValue(false);
   mockedRunPostCompactionSideEffects.mockReset();
   mockedRunPostCompactionSideEffects.mockResolvedValue(undefined);
 }
@@ -332,9 +339,16 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     ensureRuntimePluginsLoaded: mockedEnsureRuntimePluginsLoaded,
   }));
 
-  vi.doMock("../../plugins/provider-runtime.js", () => ({
-    prepareProviderRuntimeAuth: mockedPrepareProviderRuntimeAuth,
-  }));
+  vi.doMock("../../plugins/provider-runtime.js", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../../plugins/provider-runtime.js")>();
+    return {
+      ...actual,
+      prepareProviderRuntimeAuth: mockedPrepareProviderRuntimeAuth,
+      resolveProviderCapabilitiesWithPlugin: mockedResolveProviderCapabilitiesWithPlugin,
+      prepareProviderExtraParams: vi.fn(async () => ({})),
+      wrapProviderStreamFn: vi.fn((_cfg: unknown, _model: unknown, fn: unknown) => fn),
+    };
+  });
 
   vi.doMock("../auth-profiles.js", () => ({
     isProfileInCooldown: vi.fn(() => false),
@@ -391,6 +405,11 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     runEmbeddedAttempt: mockedRunEmbeddedAttempt,
   }));
 
+  vi.doMock("./tool-result-truncation.js", () => ({
+    sessionLikelyHasOversizedToolResults: mockedSessionLikelyHasOversizedToolResults,
+    truncateOversizedToolResultsInSession: mockedTruncateOversizedToolResultsInSession,
+  }));
+
   vi.doMock("./context-engine-maintenance.js", () => ({
     runContextEngineMaintenance: mockedRunContextEngineMaintenance,
   }));
@@ -412,10 +431,12 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
   }));
 
   vi.doMock("../model-auth.js", () => ({
+    applyAuthHeaderOverride: vi.fn((model: unknown) => model),
     applyLocalNoAuthHeaderOverride: vi.fn((model: unknown) => model),
     ensureAuthProfileStore: vi.fn(() => ({})),
     getApiKeyForModel: mockedGetApiKeyForModel,
     resolveAuthProfileOrder: mockedResolveAuthProfileOrder,
+    shouldPreferExplicitConfigApiKeyAuth: mockedShouldPreferExplicitConfigApiKeyAuth,
   }));
 
   vi.doMock("../models-config.js", () => ({
@@ -465,11 +486,6 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
 
   vi.doMock("./run/payloads.js", () => ({
     buildEmbeddedRunPayloads: vi.fn(() => []),
-  }));
-
-  vi.doMock("./tool-result-truncation.js", () => ({
-    truncateOversizedToolResultsInSession: mockedTruncateOversizedToolResultsInSession,
-    sessionLikelyHasOversizedToolResults: mockedSessionLikelyHasOversizedToolResults,
   }));
 
   vi.doMock("./compact.js", () => ({

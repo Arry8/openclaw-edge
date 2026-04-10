@@ -97,6 +97,22 @@ describe("normalizeReplyPayloadsForDelivery", () => {
       },
     ]);
   });
+  it("strips inbound metadata from LLM echo before delivery (issue #39847)", () => {
+    const echoPayload: ReplyPayload = {
+      text: [
+        "Conversation info (untrusted metadata):",
+        "```json",
+        '{"session":"abc"}',
+        "```",
+        "",
+        "Here is my actual response.",
+      ].join("\n"),
+    };
+    const result = normalizeReplyPayloadsForDelivery([echoPayload]);
+    expect(result).toHaveLength(1);
+    expect(result[0].text).not.toContain("untrusted metadata");
+    expect(result[0].text).toContain("Here is my actual response");
+  });
 });
 
 describe("normalizeOutboundPayloadsForJson", () => {

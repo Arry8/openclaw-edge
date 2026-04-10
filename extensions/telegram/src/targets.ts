@@ -7,8 +7,24 @@ export type TelegramTarget = {
 const TELEGRAM_NUMERIC_CHAT_ID_REGEX = /^-?\d+$/;
 const TELEGRAM_USERNAME_REGEX = /^[A-Za-z0-9_]{5,}$/i;
 
+function normalizeTelegramDeliveryGroupChatId(raw: string): string {
+  const trimmed = raw.trim();
+  const match = /^group:\s*(-?\d+)$/i.exec(trimmed);
+  return match?.[1] ?? trimmed;
+}
+
 export function stripTelegramInternalPrefixes(to: string): string {
   let trimmed = to.trim();
+
+  // Guard against file system paths being treated as Telegram targets.
+  // This helps catch cases where an agent incorrectly uses a messaging tool
+  // to attempt local file operations during bootstrap or workspace setup.
+  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) {
+    throw new Error(
+      `Invalid Telegram target: "${trimmed}". It looks like a local file system path. Messaging tools cannot be used for file operations.`,
+    );
+  }
+
   let strippedTelegramPrefix = false;
   while (true) {
     const next = (() => {
@@ -30,7 +46,7 @@ export function stripTelegramInternalPrefixes(to: string): string {
 }
 
 export function normalizeTelegramChatId(raw: string): string | undefined {
-  const stripped = stripTelegramInternalPrefixes(raw);
+  const stripped = normalizeTelegramDeliveryGroupChatId(stripTelegramInternalPrefixes(raw));
   if (!stripped) {
     return undefined;
   }
@@ -45,7 +61,7 @@ export function isNumericTelegramChatId(raw: string): boolean {
 }
 
 export function normalizeTelegramLookupTarget(raw: string): string | undefined {
-  const stripped = stripTelegramInternalPrefixes(raw);
+  const stripped = normalizeTelegramDeliveryGroupChatId(stripTelegramInternalPrefixes(raw));
   if (!stripped) {
     return undefined;
   }

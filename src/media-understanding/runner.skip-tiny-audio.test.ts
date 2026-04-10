@@ -1,17 +1,33 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MsgContext } from "../auto-reply/templating.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { MIN_AUDIO_FILE_BYTES } from "./defaults.js";
-import {
-  buildProviderRegistry,
-  createMediaAttachmentCache,
-  normalizeMediaAttachments,
-  runCapability,
-} from "./runner.js";
+import { createMediaAttachmentCache, normalizeMediaAttachments } from "./runner.attachments.js";
+import { buildProviderRegistry, runCapability } from "./runner.js";
 import type { AudioTranscriptionRequest } from "./types.js";
+
+const modelAuthMocks = vi.hoisted(() => ({
+  hasAvailableAuthForProvider: vi.fn(() => true),
+  resolveApiKeyForProvider: vi.fn(async () => ({
+    apiKey: "test-key",
+    source: "test",
+    mode: "api-key",
+  })),
+  requireApiKey: vi.fn((auth: { apiKey?: string }) => auth.apiKey ?? "test-key"),
+}));
+
+vi.mock("../agents/model-auth.js", () => ({
+  hasAvailableAuthForProvider: modelAuthMocks.hasAvailableAuthForProvider,
+  resolveApiKeyForProvider: modelAuthMocks.resolveApiKeyForProvider,
+  requireApiKey: modelAuthMocks.requireApiKey,
+}));
+
+vi.mock("../plugins/capability-provider-runtime.js", () => ({
+  resolvePluginCapabilityProviders: () => [],
+}));
 
 async function withAudioFixture(params: {
   filePrefix: string;
@@ -37,6 +53,7 @@ async function withAudioFixture(params: {
   const media = normalizeMediaAttachments(ctx);
   const cache = createMediaAttachmentCache(media, {
     localPathRoots: [path.dirname(tmpPath)],
+    includeDefaultLocalPathRoots: false,
   });
 
   try {
@@ -84,7 +101,7 @@ async function runAudioCapabilityWithTranscriber(params: {
 }
 
 describe("runCapability skips tiny audio files", () => {
-  it("skips audio transcription when file is smaller than MIN_AUDIO_FILE_BYTES", async () => {
+  it("returns placeholder transcript when file is smaller than MIN_AUDIO_FILE_BYTES", async () => {
     await withAudioFixture({
       filePrefix: "openclaw-tiny-audio",
       extension: "wav",
@@ -105,18 +122,21 @@ describe("runCapability skips tiny audio files", () => {
         // The provider should never be called
         expect(transcribeCalled).toBe(false);
 
-        // The result should indicate the attachment was skipped
-        expect(result.outputs).toHaveLength(0);
-        expect(result.decision.outcome).toBe("skipped");
+        // A placeholder transcript should be injected so the agent knows the note was empty
+        expect(result.outputs).toHaveLength(1);
+        expect(result.outputs[0].kind).toBe("audio.transcription");
+        expect(result.outputs[0].text).toContain("too short to transcribe");
+        expect(result.outputs[0].provider).toBe("synthetic");
+        expect(result.decision.outcome).toBe("success");
         expect(result.decision.attachments).toHaveLength(1);
         expect(result.decision.attachments[0].attempts).toHaveLength(1);
-        expect(result.decision.attachments[0].attempts[0].outcome).toBe("skipped");
-        expect(result.decision.attachments[0].attempts[0].reason).toContain("tooSmall");
+        expect(result.decision.attachments[0].attempts[0].outcome).toBe("success");
+        expect(result.decision.attachments[0].chosen).toBeDefined();
       },
     });
   });
 
-  it("skips audio transcription for empty (0-byte) files", async () => {
+  it("returns placeholder transcript for empty (0-byte) files", async () => {
     await withAudioFixture({
       filePrefix: "openclaw-empty-audio",
       extension: "ogg",
@@ -135,7 +155,9 @@ describe("runCapability skips tiny audio files", () => {
         });
 
         expect(transcribeCalled).toBe(false);
-        expect(result.outputs).toHaveLength(0);
+        expect(result.outputs).toHaveLength(1);
+        expect(result.outputs[0].kind).toBe("audio.transcription");
+        expect(result.outputs[0].text).toContain("too short to transcribe");
       },
     });
   });

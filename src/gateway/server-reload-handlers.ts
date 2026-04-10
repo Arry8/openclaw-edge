@@ -1,4 +1,5 @@
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js";
+import { ensureOpenClawModelsJson } from "../agents/models-config.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
 import type { CliDeps } from "../cli/deps.js";
 import { resolveAgentMaxConcurrent, resolveSubagentMaxConcurrent } from "../config/agent-limits.js";
@@ -38,8 +39,8 @@ export function createGatewayReloadHandlers(params: {
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
   getState: () => GatewayHotReloadState;
   setState: (state: GatewayHotReloadState) => void;
-  startChannel: (name: ChannelKind) => Promise<void>;
-  stopChannel: (name: ChannelKind) => Promise<void>;
+  startChannel: (name: ChannelKind, accountId?: string) => Promise<void>;
+  stopChannel: (name: ChannelKind, accountId?: string) => Promise<void>;
   logHooks: {
     info: (msg: string) => void;
     warn: (msg: string) => void;
@@ -115,7 +116,7 @@ export function createGatewayReloadHandlers(params: {
       });
     }
 
-    if (plan.restartChannels.size > 0) {
+    if (plan.restartChannelAccounts.size > 0 || plan.restartChannels.size > 0) {
       if (
         isTruthyEnvValue(process.env.OPENCLAW_SKIP_CHANNELS) ||
         isTruthyEnvValue(process.env.OPENCLAW_SKIP_PROVIDERS)
@@ -124,20 +125,44 @@ export function createGatewayReloadHandlers(params: {
           "skipping channel reload (OPENCLAW_SKIP_CHANNELS=1 or OPENCLAW_SKIP_PROVIDERS=1)",
         );
       } else {
+        const restartChannelAccount = async (name: ChannelKind, accountId: string) => {
+          params.logChannels.info(`restarting ${name} channel account ${accountId}`);
+          await params.stopChannel(name, accountId);
+          await params.startChannel(name, accountId);
+        };
         const restartChannel = async (name: ChannelKind) => {
           params.logChannels.info(`restarting ${name} channel`);
           await params.stopChannel(name);
           await params.startChannel(name);
         };
+        for (const [channel, accounts] of plan.restartChannelAccounts) {
+          for (const accountId of accounts) {
+            await restartChannelAccount(channel, accountId);
+          }
+        }
         for (const channel of plan.restartChannels) {
           await restartChannel(channel);
         }
       }
     }
 
+    if (plan.regenerateModelsJson) {
+      try {
+        const result = await ensureOpenClawModelsJson(nextConfig);
+        if (result.wrote) {
+          params.logReload.info("models.json regenerated from updated config");
+        } else {
+          params.logReload.info("models.json already up-to-date, no write needed");
+        }
+      } catch (err) {
+        params.logReload.warn(`models.json regeneration failed: ${String(err)}`);
+      }
+    }
+
     setCommandLaneConcurrency(CommandLane.Cron, nextConfig.cron?.maxConcurrentRuns ?? 1);
     setCommandLaneConcurrency(CommandLane.Main, resolveAgentMaxConcurrent(nextConfig));
     setCommandLaneConcurrency(CommandLane.Subagent, resolveSubagentMaxConcurrent(nextConfig));
+    setCommandLaneConcurrency(CommandLane.Nested, resolveAgentMaxConcurrent(nextConfig));
 
     if (plan.hotReasons.length > 0) {
       params.logReload.info(`config hot reload applied (${plan.hotReasons.join(", ")})`);
@@ -153,7 +178,7 @@ export function createGatewayReloadHandlers(params: {
   const requestGatewayRestart = (
     plan: GatewayReloadPlan,
     nextConfig: ReturnType<typeof loadConfig>,
-  ) => {
+  ): boolean => {
     setGatewaySigusr1RestartPolicy({ allowExternal: isRestartEnabled(nextConfig) });
     const reasons = plan.restartReasons.length
       ? plan.restartReasons.join(", ")
@@ -161,7 +186,7 @@ export function createGatewayReloadHandlers(params: {
 
     if (process.listenerCount("SIGUSR1") === 0) {
       params.logReload.warn("no SIGUSR1 listener found; restart skipped");
-      return;
+      return false;
     }
 
     const getActiveCounts = () => {
@@ -201,7 +226,7 @@ export function createGatewayReloadHandlers(params: {
         params.logReload.info(
           `config change requires gateway restart (${reasons}) — already waiting for operations to complete`,
         );
-        return;
+        return true;
       }
       restartPending = true;
       const initialDetails = formatActiveDetails(active);
@@ -211,6 +236,7 @@ export function createGatewayReloadHandlers(params: {
 
       deferGatewayRestartUntilIdle({
         getPendingCount: () => getActiveCounts().totalActive,
+        reason: `config-reload: ${reasons}`,
         maxWaitMs: nextConfig.gateway?.reload?.deferralTimeoutMs,
         hooks: {
           onReady: () => {
@@ -232,13 +258,15 @@ export function createGatewayReloadHandlers(params: {
           },
         },
       });
+      return true;
     } else {
       // No active operations or pending replies, restart immediately
       params.logReload.warn(`config change requires gateway restart (${reasons})`);
-      const emitted = emitGatewayRestart();
+      const emitted = emitGatewayRestart(`config-reload: ${reasons}`);
       if (!emitted) {
         params.logReload.info("gateway restart already scheduled; skipping duplicate signal");
       }
+      return true;
     }
   };
 

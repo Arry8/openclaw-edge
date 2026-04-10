@@ -333,7 +333,7 @@ describe("loadPluginManifestRegistry", () => {
     expect(countDuplicateWarnings(loadRegistry(candidates))).toBe(1);
   });
 
-  it("reports explicit installed globals as the effective duplicate winner", () => {
+  it("suppresses duplicate warning for npm-installed plugin overriding bundled", () => {
     const bundledDir = makeTempDir();
     const globalDir = makeTempDir();
     const manifest = { id: "zalouser", configSchema: { type: "object" } };
@@ -366,11 +366,47 @@ describe("loadPluginManifestRegistry", () => {
       ],
     });
 
-    expect(
-      registry.diagnostics.some((diag) =>
-        diag.message.includes("bundled plugin will be overridden by global plugin"),
-      ),
-    ).toBe(true);
+    expect(countDuplicateWarnings(registry)).toBe(0);
+    // Both records remain so loader dedup state is preserved; precedence
+    // logic downstream picks the winner.
+    expect(registry.plugins.filter((p) => p.id === "zalouser").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("suppresses duplicate warning for npm-installed plugin overriding bundled (global first)", () => {
+    const bundledDir = makeTempDir();
+    const globalDir = makeTempDir();
+    const manifest = { id: "zalouser", configSchema: { type: "object" } };
+    writeManifest(bundledDir, manifest);
+    writeManifest(globalDir, manifest);
+
+    const registry = loadPluginManifestRegistry({
+      cache: false,
+      config: {
+        plugins: {
+          installs: {
+            zalouser: {
+              source: "npm",
+              installPath: globalDir,
+            },
+          },
+        },
+      },
+      candidates: [
+        createPluginCandidate({
+          idHint: "zalouser",
+          rootDir: globalDir,
+          origin: "global",
+        }),
+        createPluginCandidate({
+          idHint: "zalouser",
+          rootDir: bundledDir,
+          origin: "bundled",
+        }),
+      ],
+    });
+
+    expect(countDuplicateWarnings(registry)).toBe(0);
+    expect(registry.plugins.filter((p) => p.id === "zalouser").length).toBeGreaterThanOrEqual(1);
   });
 
   it("preserves provider auth env metadata from plugin manifests", () => {
@@ -379,7 +415,6 @@ describe("loadPluginManifestRegistry", () => {
       id: "openai",
       enabledByDefault: true,
       providers: ["openai", "openai-codex"],
-      cliBackends: ["codex-cli"],
       providerAuthEnvVars: {
         openai: ["OPENAI_API_KEY"],
       },
@@ -389,6 +424,8 @@ describe("loadPluginManifestRegistry", () => {
           method: "api-key",
           choiceId: "openai-api-key",
           choiceLabel: "OpenAI API key",
+          assistantPriority: 10,
+          assistantVisibility: "visible",
         },
       ],
       configSchema: { type: "object" },
@@ -403,7 +440,6 @@ describe("loadPluginManifestRegistry", () => {
     expect(registry.plugins[0]?.providerAuthEnvVars).toEqual({
       openai: ["OPENAI_API_KEY"],
     });
-    expect(registry.plugins[0]?.cliBackends).toEqual(["codex-cli"]);
     expect(registry.plugins[0]?.enabledByDefault).toBe(true);
     expect(registry.plugins[0]?.providerAuthChoices).toEqual([
       {
@@ -411,8 +447,32 @@ describe("loadPluginManifestRegistry", () => {
         method: "api-key",
         choiceId: "openai-api-key",
         choiceLabel: "OpenAI API key",
+        assistantPriority: 10,
+        assistantVisibility: "visible",
       },
     ]);
+  });
+
+  it("preserves channel env metadata from plugin manifests", () => {
+    const dir = makeTempDir();
+    writeManifest(dir, {
+      id: "slack",
+      channels: ["slack"],
+      channelEnvVars: {
+        slack: ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_USER_TOKEN"],
+      },
+      configSchema: { type: "object" },
+    });
+
+    const registry = loadSingleCandidateRegistry({
+      idHint: "slack",
+      rootDir: dir,
+      origin: "bundled",
+    });
+
+    expect(registry.plugins[0]?.channelEnvVars).toEqual({
+      slack: ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_USER_TOKEN"],
+    });
   });
 
   it("preserves channel config metadata from plugin manifests", () => {
@@ -497,6 +557,87 @@ describe("loadPluginManifestRegistry", () => {
         }),
       }),
     );
+  });
+
+  it("preserves manifest-owned config contracts from plugin manifests", () => {
+    const dir = makeTempDir();
+    writeManifest(dir, {
+      id: "acpx",
+      configSchema: { type: "object" },
+      configContracts: {
+        compatibilityMigrationPaths: ["models.bedrockDiscovery"],
+        compatibilityRuntimePaths: ["tools.web.search.apiKey"],
+        dangerousFlags: [{ path: "permissionMode", equals: "approve-all" }],
+        secretInputs: {
+          bundledDefaultEnabled: false,
+          paths: [{ path: "mcpServers.*.env.*", expected: "string" }],
+        },
+      },
+    });
+
+    const registry = loadSingleCandidateRegistry({
+      idHint: "acpx",
+      rootDir: dir,
+      origin: "bundled",
+    });
+
+    expect(registry.plugins[0]?.configContracts).toEqual({
+      compatibilityMigrationPaths: ["models.bedrockDiscovery"],
+      compatibilityRuntimePaths: ["tools.web.search.apiKey"],
+      dangerousFlags: [{ path: "permissionMode", equals: "approve-all" }],
+      secretInputs: {
+        bundledDefaultEnabled: false,
+        paths: [{ path: "mcpServers.*.env.*", expected: "string" }],
+      },
+    });
+  });
+
+  it("resolves contract plugin ids by compatibility runtime path", () => {
+    const dir = makeTempDir();
+    writeManifest(dir, {
+      id: "brave",
+      configSchema: { type: "object" },
+      contracts: {
+        webSearchProviders: ["brave"],
+      },
+      configContracts: {
+        compatibilityRuntimePaths: ["tools.web.search.apiKey"],
+      },
+    });
+
+    const otherDir = makeTempDir();
+    writeManifest(otherDir, {
+      id: "google",
+      configSchema: { type: "object" },
+      contracts: {
+        webSearchProviders: ["gemini"],
+      },
+    });
+
+    const registry = loadRegistry([
+      createPluginCandidate({
+        idHint: "brave",
+        rootDir: dir,
+        origin: "bundled",
+      }),
+      createPluginCandidate({
+        idHint: "google",
+        rootDir: otherDir,
+        origin: "bundled",
+      }),
+    ]);
+
+    expect(
+      registry.plugins
+        .filter(
+          (plugin) =>
+            (plugin.contracts?.webSearchProviders?.length ?? 0) > 0 &&
+            (plugin.configContracts?.compatibilityRuntimePaths ?? []).includes(
+              "tools.web.search.apiKey",
+            ),
+        )
+        .map((plugin) => plugin.id),
+    ).toEqual(["brave"]);
   });
   it("does not promote legacy top-level capability fields into contracts", () => {
     const dir = makeTempDir();
@@ -634,32 +775,7 @@ describe("loadPluginManifestRegistry", () => {
     expect(countDuplicateWarnings(loadRegistry(candidates))).toBe(0);
   });
 
-  it.each([
-    { name: "provider-style", manifestId: "openai", idHint: "openai-provider" },
-    { name: "plugin-style", manifestId: "brave", idHint: "brave-plugin" },
-    { name: "sandbox-style", manifestId: "openshell", idHint: "openshell-sandbox" },
-    { name: "multi-entry-style", manifestId: "matrix", idHint: "matrix/index" },
-    {
-      name: "media-understanding-style",
-      manifestId: "groq",
-      idHint: "groq-media-understanding",
-    },
-  ] as const)("accepts $name id hints without warning", ({ manifestId, idHint }) => {
-    const dir = makeTempDir();
-    writeManifest(dir, { id: manifestId, configSchema: { type: "object" } });
-
-    expect(
-      hasPluginIdMismatchWarning(
-        loadSingleCandidateRegistry({
-          idHint,
-          rootDir: dir,
-          origin: "bundled",
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it("still warns for unrelated id hint mismatches", () => {
+  it("does not warn for id hint mismatches when manifest id is authoritative", () => {
     const dir = makeTempDir();
     writeManifest(dir, { id: "openai", configSchema: { type: "object" } });
 
@@ -671,13 +787,34 @@ describe("loadPluginManifestRegistry", () => {
       }),
     ]);
 
-    expect(
-      registry.diagnostics.some((diag) =>
-        diag.message.includes(
-          'plugin id mismatch (manifest uses "openai", entry hints "totally-different")',
-        ),
-      ),
-    ).toBe(true);
+    expect(hasPluginIdMismatchWarning(registry)).toBe(false);
+  });
+
+  it("downgrades missing manifest diagnostic to warn for workspace-origin candidates", () => {
+    const dir = makeTempDir();
+    // No manifest written, so loadPluginManifest will fail with "plugin manifest not found".
+    const registry = loadSingleCandidateRegistry({
+      idHint: "not-a-plugin",
+      rootDir: dir,
+      origin: "workspace",
+    });
+
+    expect(registry.plugins).toHaveLength(0);
+    expectRegistryDiagnosticContains(registry, "plugin manifest not found");
+    expect(registry.diagnostics.every((diag) => diag.level !== "error")).toBe(true);
+  });
+
+  it("keeps missing manifest diagnostic as error for non-workspace origins", () => {
+    const dir = makeTempDir();
+    const registry = loadSingleCandidateRegistry({
+      idHint: "missing-global",
+      rootDir: dir,
+      origin: "global",
+    });
+
+    expect(registry.plugins).toHaveLength(0);
+    expectRegistryDiagnosticContains(registry, "plugin manifest not found");
+    expect(registry.diagnostics.some((diag) => diag.level === "error")).toBe(true);
   });
 
   it.each([
@@ -826,6 +963,74 @@ describe("loadPluginManifestRegistry", () => {
     expect(countDuplicateWarnings(registry)).toBe(0);
     expect(registry.plugins.length).toBe(1);
     expect(registry.plugins[0]?.origin).toBe("config");
+  });
+
+  it("suppresses duplicate warning when candidates have same packageName and packageVersion", () => {
+    const dirA = makeTempDir();
+    const dirB = makeTempDir();
+    const manifest = { id: "feishu", configSchema: { type: "object" } };
+    writeManifest(dirA, manifest);
+    writeManifest(dirB, manifest);
+
+    // Simulate the same npm package installed in two different locations
+    // (e.g. global npm prefix and user config dir).
+    const candidates: PluginCandidate[] = [
+      {
+        ...createPluginCandidate({
+          idHint: "feishu",
+          rootDir: dirA,
+          origin: "bundled",
+        }),
+        packageName: "@openclaw/feishu",
+        packageVersion: "2026.3.1",
+      },
+      {
+        ...createPluginCandidate({
+          idHint: "feishu",
+          rootDir: dirB,
+          origin: "config",
+        }),
+        packageName: "@openclaw/feishu",
+        packageVersion: "2026.3.1",
+      },
+    ];
+
+    const registry = loadRegistry(candidates);
+    expect(countDuplicateWarnings(registry)).toBe(0);
+    expect(registry.plugins.length).toBe(1);
+    // config has higher precedence than bundled
+    expect(registry.plugins[0]?.origin).toBe("config");
+  });
+
+  it("still warns when packageName matches but packageVersion differs", () => {
+    const dirA = makeTempDir();
+    const dirB = makeTempDir();
+    const manifest = { id: "feishu", configSchema: { type: "object" } };
+    writeManifest(dirA, manifest);
+    writeManifest(dirB, manifest);
+
+    const candidates: PluginCandidate[] = [
+      {
+        ...createPluginCandidate({
+          idHint: "feishu",
+          rootDir: dirA,
+          origin: "bundled",
+        }),
+        packageName: "@openclaw/feishu",
+        packageVersion: "2026.3.1",
+      },
+      {
+        ...createPluginCandidate({
+          idHint: "feishu",
+          rootDir: dirB,
+          origin: "config",
+        }),
+        packageName: "@openclaw/feishu",
+        packageVersion: "2026.2.0",
+      },
+    ];
+
+    expect(countDuplicateWarnings(loadRegistry(candidates))).toBe(1);
   });
 
   it("rejects manifest paths that escape plugin root via symlink", () => {

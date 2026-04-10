@@ -149,6 +149,114 @@ describe("sessions.usage", () => {
     expect(sessions[1].agentId).toBe("main");
   });
 
+  it("keeps aggregates across all sessions even when limit trims the returned list", async () => {
+    vi.mocked(discoverAllSessions).mockImplementation(async (params?: { agentId?: string }) => {
+      if (params?.agentId === "main") {
+        return [
+          {
+            sessionId: "s-feishu",
+            sessionFile: "/tmp/agents/main/sessions/s-feishu.jsonl",
+            mtime: 300,
+            firstUserMessage: "feishu",
+          },
+          {
+            sessionId: "s-webchat",
+            sessionFile: "/tmp/agents/main/sessions/s-webchat.jsonl",
+            mtime: 200,
+            firstUserMessage: "webchat",
+          },
+        ];
+      }
+      return [];
+    });
+    vi.mocked(loadCombinedSessionStoreForGateway).mockReturnValue({
+      storePath: "(multiple)",
+      store: {
+        "agent:main:feishu:direct:ou_demo": {
+          sessionId: "s-feishu",
+          sessionFile: "s-feishu.jsonl",
+          updatedAt: 300,
+          channel: "feishu",
+          origin: { provider: "feishu" },
+        },
+        "agent:main:webchat:thread:t_demo": {
+          sessionId: "s-webchat",
+          sessionFile: "s-webchat.jsonl",
+          updatedAt: 200,
+          channel: "webchat",
+          origin: { provider: "webchat" },
+        },
+      },
+    });
+    vi.mocked(loadSessionCostSummary).mockImplementation(async ({ sessionId }) => {
+      if (sessionId === "s-feishu") {
+        return {
+          input: 10,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 72_800,
+          totalCost: 0,
+          inputCost: 0,
+          outputCost: 0,
+          cacheReadCost: 0,
+          cacheWriteCost: 0,
+          missingCostEntries: 0,
+        };
+      }
+      if (sessionId === "s-webchat") {
+        return {
+          input: 5,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 12,
+          totalCost: 0,
+          inputCost: 0,
+          outputCost: 0,
+          cacheReadCost: 0,
+          cacheWriteCost: 0,
+          missingCostEntries: 0,
+        };
+      }
+      return {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        inputCost: 0,
+        outputCost: 0,
+        cacheReadCost: 0,
+        cacheWriteCost: 0,
+        missingCostEntries: 0,
+      };
+    });
+
+    const respond = await runSessionsUsage({
+      ...BASE_USAGE_RANGE,
+      limit: 1,
+    });
+    expect(respond).toHaveBeenCalledTimes(1);
+    expect(respond.mock.calls[0]?.[0]).toBe(true);
+    const result = respond.mock.calls[0]?.[1] as {
+      sessions: Array<{ channel?: string }>;
+      aggregates: { byChannel: Array<{ channel: string; totals: { totalTokens: number } }> };
+    };
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]?.channel).toBe("feishu");
+    expect(result.aggregates.byChannel).toEqual([
+      expect.objectContaining({
+        channel: "feishu",
+        totals: expect.objectContaining({ totalTokens: 72_800 }),
+      }),
+      expect.objectContaining({
+        channel: "webchat",
+        totals: expect.objectContaining({ totalTokens: 12 }),
+      }),
+    ]);
+  });
   it("resolves store entries by sessionId when queried via discovered agent-prefixed key", async () => {
     const storeKey = "agent:opus:slack:dm:u123";
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-usage-test-"));
@@ -257,6 +365,86 @@ describe("sessions.usage", () => {
 
     expect(vi.mocked(loadSessionLogs)).toHaveBeenCalled();
     expect(vi.mocked(loadSessionLogs).mock.calls[0]?.[0]?.agentId).toBe("opus");
+  });
+
+  it("attributes per-channel usage by origin.provider, not delivery channel (#52436)", async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-usage-channel-"));
+
+    try {
+      await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+        // Two sessions: webchat origin delivered into a telegram group, and
+        // a telegram origin delivered into a webchat group. storeEntry.channel
+        // is the delivery target; origin.provider is the originating channel.
+        //
+        // discoverAllSessions returns s-main and s-opus (from the top-level mock).
+        // We match those sessionIds in the store so the merge path picks up storeEntry.
+        vi.mocked(loadCombinedSessionStoreForGateway).mockReturnValue({
+          storePath: "(multiple)",
+          store: {
+            "webchat-origin-session": {
+              sessionId: "s-main",
+              sessionFile: "s-main.jsonl",
+              updatedAt: 300,
+              channel: "telegram", // delivery channel (wrong for attribution)
+              chatType: "group",
+              origin: { provider: "webchat", chatType: "direct" }, // originating channel
+            },
+            "telegram-origin-session": {
+              sessionId: "s-opus",
+              sessionFile: "s-opus.jsonl",
+              updatedAt: 200,
+              channel: "webchat", // delivery channel (wrong for attribution)
+              chatType: "group",
+              origin: { provider: "telegram", chatType: "direct" }, // originating channel
+            },
+          },
+        });
+
+        vi.mocked(loadSessionCostSummary).mockImplementation(async (params) => {
+          const tokens = params?.sessionId === "s-main" ? 1000 : 500;
+          return {
+            input: tokens,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: tokens,
+            totalCost: tokens * 0.001,
+            inputCost: tokens * 0.001,
+            outputCost: 0,
+            cacheReadCost: 0,
+            cacheWriteCost: 0,
+            missingCostEntries: 0,
+          } as Awaited<ReturnType<typeof loadSessionCostSummary>>;
+        });
+
+        const respond = await runSessionsUsage(BASE_USAGE_RANGE);
+        expect(respond).toHaveBeenCalledTimes(1);
+        expect(respond.mock.calls[0]?.[0]).toBe(true);
+
+        const result = respond.mock.calls[0]?.[1] as {
+          sessions: Array<{ key: string; channel: string; chatType: string }>;
+          aggregates: {
+            byChannel: Array<{ channel: string; totals: { totalTokens: number } }>;
+          };
+        };
+
+        // Per-session channel should reflect origin, not delivery target.
+        const webchatSession = result.sessions.find((s) => s.key === "webchat-origin-session");
+        const telegramSession = result.sessions.find((s) => s.key === "telegram-origin-session");
+        expect(webchatSession?.channel).toBe("webchat");
+        expect(webchatSession?.chatType).toBe("direct");
+        expect(telegramSession?.channel).toBe("telegram");
+        expect(telegramSession?.chatType).toBe("direct");
+
+        // Per-channel aggregate should bucket by origin provider.
+        const webchatBucket = result.aggregates.byChannel.find((c) => c.channel === "webchat");
+        const telegramBucket = result.aggregates.byChannel.find((c) => c.channel === "telegram");
+        expect(webchatBucket?.totals.totalTokens).toBe(1000);
+        expect(telegramBucket?.totals.totalTokens).toBe(500);
+      });
+    } finally {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects traversal-style keys in timeseries/log lookups", async () => {

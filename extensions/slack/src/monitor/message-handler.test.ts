@@ -1,14 +1,16 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const enqueueMock = vi.fn(async (_entry: unknown) => {});
 const flushKeyMock = vi.fn(async (_key: string) => {});
 const resolveThreadTsMock = vi.fn(async ({ message }: { message: Record<string, unknown> }) => ({
   ...message,
 }));
-let createSlackMessageHandler: typeof import("./message-handler.js").createSlackMessageHandler;
+const { createSlackMessageHandler } = await import("./message-handler.js");
 
-vi.mock("openclaw/plugin-sdk/channel-inbound", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/channel-inbound")>();
+vi.mock("openclaw/plugin-sdk/channel-inbound", async () => {
+  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/channel-inbound")>(
+    "openclaw/plugin-sdk/channel-inbound",
+  );
   return {
     ...actual,
     createChannelInboundDebouncer: () => ({
@@ -70,11 +72,6 @@ async function handleDirectMessage(
 }
 
 describe("createSlackMessageHandler", () => {
-  beforeAll(async () => {
-    vi.resetModules();
-    ({ createSlackMessageHandler } = await import("./message-handler.js"));
-  });
-
   beforeEach(() => {
     enqueueMock.mockClear();
     flushKeyMock.mockClear();
@@ -157,5 +154,44 @@ describe("createSlackMessageHandler", () => {
     );
 
     expect(flushKeyMock).toHaveBeenCalledWith("slack:default:C111:1709000000.000100:U111");
+  });
+
+  it("accepts thread_broadcast messages as processable content", async () => {
+    const { handler, trackEvent } = createHandlerWithTracker();
+
+    await handler(
+      {
+        type: "message",
+        subtype: "thread_broadcast",
+        channel: "C1",
+        user: "U1",
+        ts: "123.456",
+        thread_ts: "123.400",
+        text: "broadcast reply",
+      } as never,
+      { source: "message" },
+    );
+
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+    expect(resolveThreadTsMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops unknown subtypes from the message stream", async () => {
+    const { handler, trackEvent } = createHandlerWithTracker();
+
+    await handler(
+      {
+        type: "message",
+        subtype: "channel_join",
+        channel: "C1",
+        user: "U1",
+        ts: "123.456",
+      } as never,
+      { source: "message" },
+    );
+
+    expect(trackEvent).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
   });
 });

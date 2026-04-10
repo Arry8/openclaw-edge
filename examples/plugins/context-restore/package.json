@@ -1,0 +1,18 @@
+{
+  "name": "@openclaw/example-context-restore",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example OpenClaw plugin: two-layer context protection against LCM compaction drift",
+  "type": "module",
+  "devDependencies": {
+    "openclaw": "*"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

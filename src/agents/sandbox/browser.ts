@@ -1,15 +1,22 @@
 import crypto from "node:crypto";
 import { deriveDefaultBrowserCdpPortRange } from "../../config/port-defaults.js";
+import type { SsrFPolicy } from "../../infra/net/ssrf.js";
+import {
+  startBrowserBridgeServer,
+  stopBrowserBridgeServer,
+} from "../../plugin-sdk/browser-bridge.js";
 import {
   DEFAULT_BROWSER_EVALUATE_ENABLED,
   DEFAULT_OPENCLAW_BROWSER_COLOR,
   DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME,
   resolveProfile,
-  startBrowserBridgeServer,
-  stopBrowserBridgeServer,
   type ResolvedBrowserConfig,
-} from "../../plugin-sdk/browser-runtime.js";
+} from "../../plugin-sdk/browser-profiles.js";
 import { defaultRuntime } from "../../runtime.js";
+import {
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { BROWSER_BRIDGES } from "./browser-bridges.js";
 import { computeSandboxBrowserConfigHash } from "./config-hash.js";
 import { resolveSandboxBrowserDockerCreateConfig } from "./config.js";
@@ -20,6 +27,7 @@ import {
   execDocker,
   readDockerContainerEnvVar,
   readDockerContainerLabel,
+  readDockerNetworkGateway,
   readDockerPort,
 } from "./docker.js";
 import {
@@ -68,6 +76,7 @@ function buildSandboxBrowserResolvedConfig(params: {
   cdpPort: number;
   headless: boolean;
   evaluateEnabled: boolean;
+  ssrfPolicy?: SsrFPolicy;
 }): ResolvedBrowserConfig {
   const cdpHost = "127.0.0.1";
   const cdpPortRange = deriveDefaultBrowserCdpPortRange(params.controlPort);
@@ -82,6 +91,7 @@ function buildSandboxBrowserResolvedConfig(params: {
     cdpPortRangeEnd: cdpPortRange.end,
     remoteCdpTimeoutMs: 1500,
     remoteCdpHandshakeTimeoutMs: 3000,
+    actionTimeoutMs: 20_000,
     color: DEFAULT_OPENCLAW_BROWSER_COLOR,
     executablePath: undefined,
     headless: params.headless,
@@ -95,6 +105,7 @@ function buildSandboxBrowserResolvedConfig(params: {
         color: DEFAULT_OPENCLAW_BROWSER_COLOR,
       },
     },
+    ssrfPolicy: params.ssrfPolicy,
   };
 }
 
@@ -117,7 +128,7 @@ async function ensureDockerNetwork(
   validateNetworkMode(network, {
     allowContainerNamespaceJoin: opts?.allowContainerNamespaceJoin === true,
   });
-  const normalized = network.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(network) ?? "";
   if (!normalized || normalized === "bridge" || normalized === "none") {
     return;
   }
@@ -135,6 +146,7 @@ export async function ensureSandboxBrowser(params: {
   cfg: SandboxConfig;
   evaluateEnabled?: boolean;
   bridgeAuth?: { token?: string; password?: string };
+  ssrfPolicy?: SsrFPolicy;
 }): Promise<SandboxBrowserContext | null> {
   if (!params.cfg.browser.enabled) {
     return null;
@@ -148,7 +160,7 @@ export async function ensureSandboxBrowser(params: {
   const containerName = name.slice(0, 63);
   const state = await dockerContainerState(containerName);
   const browserImage = params.cfg.browser.image ?? DEFAULT_SANDBOX_BROWSER_IMAGE;
-  const cdpSourceRange = params.cfg.browser.cdpSourceRange?.trim() || undefined;
+  const cdpSourceRange = normalizeOptionalString(params.cfg.browser.cdpSourceRange);
   const browserDockerCfg = resolveSandboxBrowserDockerCreateConfig({
     docker: params.cfg.docker,
     browser: { ...params.cfg.browser, image: browserImage },
@@ -225,6 +237,27 @@ export async function ensureSandboxBrowser(params: {
       allowContainerNamespaceJoin: browserDockerCfg.dangerouslyAllowContainerNamespaceJoin === true,
     });
     await ensureSandboxBrowserImage(browserImage);
+    // Derive effective CDP source range: explicit config > Docker network gateway > fail-closed.
+    // Only IPv4 gateways are usable for auto-derivation because the CDP relay
+    // binds on 0.0.0.0 (IPv4); an IPv6 CIDR would cause an address-family mismatch.
+    let effectiveCdpSourceRange = cdpSourceRange;
+    if (!effectiveCdpSourceRange) {
+      const gateway = await readDockerNetworkGateway(browserDockerCfg.network);
+      if (gateway && !gateway.includes(":")) {
+        effectiveCdpSourceRange = `${gateway}/32`;
+      }
+    }
+    // network="none" has no IPAM gateway by design and no peer container risk;
+    // use loopback range so the socat CDP relay still starts.
+    if (!effectiveCdpSourceRange && browserDockerCfg.network.trim().toLowerCase() === "none") {
+      effectiveCdpSourceRange = "127.0.0.1/32";
+    }
+    if (!effectiveCdpSourceRange) {
+      throw new Error(
+        `Cannot derive CDP source range for sandbox browser on network "${browserDockerCfg.network}". ` +
+          `Set agents.defaults.sandbox.browser.cdpSourceRange explicitly.`,
+      );
+    }
     const args = buildSandboxCreateArgs({
       name: containerName,
       cfg: browserDockerCfg,
@@ -256,8 +289,8 @@ export async function ensureSandboxBrowser(params: {
     args.push("-e", `OPENCLAW_BROWSER_HEADLESS=${params.cfg.browser.headless ? "1" : "0"}`);
     args.push("-e", `OPENCLAW_BROWSER_ENABLE_NOVNC=${params.cfg.browser.enableNoVnc ? "1" : "0"}`);
     args.push("-e", `OPENCLAW_BROWSER_CDP_PORT=${params.cfg.browser.cdpPort}`);
-    if (cdpSourceRange) {
-      args.push("-e", `${CDP_SOURCE_RANGE_ENV_KEY}=${cdpSourceRange}`);
+    if (effectiveCdpSourceRange) {
+      args.push("-e", `${CDP_SOURCE_RANGE_ENV_KEY}=${effectiveCdpSourceRange}`);
     }
     args.push("-e", `OPENCLAW_BROWSER_VNC_PORT=${params.cfg.browser.vncPort}`);
     args.push("-e", `OPENCLAW_BROWSER_NOVNC_PORT=${params.cfg.browser.noVncPort}`);
@@ -293,8 +326,8 @@ export async function ensureSandboxBrowser(params: {
     ? resolveProfile(existing.bridge.state.resolved, DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME)
     : null;
 
-  let desiredAuthToken = params.bridgeAuth?.token?.trim() || undefined;
-  let desiredAuthPassword = params.bridgeAuth?.password?.trim() || undefined;
+  let desiredAuthToken = normalizeOptionalString(params.bridgeAuth?.token);
+  let desiredAuthPassword = normalizeOptionalString(params.bridgeAuth?.password);
   if (!desiredAuthToken && !desiredAuthPassword) {
     // Always require auth for the sandbox bridge server, even if gateway auth
     // mode doesn't produce a shared secret (e.g. trusted-proxy).
@@ -356,6 +389,7 @@ export async function ensureSandboxBrowser(params: {
         cdpPort: mappedCdp,
         headless: params.cfg.browser.headless,
         evaluateEnabled: params.evaluateEnabled ?? DEFAULT_BROWSER_EVALUATE_ENABLED,
+        ssrfPolicy: params.ssrfPolicy,
       }),
       authToken: desiredAuthToken,
       authPassword: desiredAuthPassword,

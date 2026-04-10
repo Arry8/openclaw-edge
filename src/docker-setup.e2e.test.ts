@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createSuiteTempRootTracker } from "./test-helpers/temp-dir.js";
 
 const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -49,7 +49,7 @@ exit 0
 }
 
 async function createDockerSetupSandbox(): Promise<DockerSetupSandbox> {
-  const rootDir = await mkdtemp(join(tmpdir(), "openclaw-docker-setup-"));
+  const rootDir = await sandboxRootTracker.make("suite");
   const scriptPath = join(rootDir, "scripts", "docker", "setup.sh");
   const dockerfilePath = join(rootDir, "Dockerfile");
   const composePath = join(rootDir, "docker-compose.yml");
@@ -68,6 +68,8 @@ async function createDockerSetupSandbox(): Promise<DockerSetupSandbox> {
 
   return { rootDir, scriptPath, logPath, binDir };
 }
+
+const sandboxRootTracker = createSuiteTempRootTracker({ prefix: "openclaw-docker-setup-" });
 
 function createEnv(
   sandbox: DockerSetupSandbox,
@@ -193,14 +195,17 @@ describe("scripts/docker/setup.sh", () => {
   let sandbox: DockerSetupSandbox | null = null;
 
   beforeAll(async () => {
+    await sandboxRootTracker.setup();
     sandbox = await createDockerSetupSandbox();
   });
 
   afterAll(async () => {
     if (!sandbox) {
+      await sandboxRootTracker.cleanup();
       return;
     }
     await rm(sandbox.rootDir, { recursive: true, force: true });
+    await sandboxRootTracker.cleanup();
     sandbox = null;
   });
 
@@ -230,13 +235,7 @@ describe("scripts/docker/setup.sh", () => {
       "run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon",
     );
     expect(log).toContain(
-      "run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.mode local",
-    );
-    expect(log).toContain(
-      "run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.bind lan",
-    );
-    expect(log).toContain(
-      'run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins ["http://localhost:18789","http://127.0.0.1:18789"] --strict-json',
+      'run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json [{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"},{"path":"gateway.controlUi.allowedOrigins","value":["http://localhost:18789","http://127.0.0.1:18789"]}]',
     );
     expect(log).not.toContain("run --rm openclaw-cli onboard --mode local --no-install-daemon");
   });
@@ -497,6 +496,39 @@ describe("scripts/docker/setup.sh", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("OPENCLAW_TZ must match a timezone in /usr/share/zoneinfo");
+  });
+
+  it("skips onboarding when OPENCLAW_SKIP_ONBOARDING is set", async () => {
+    const activeSandbox = requireSandbox(sandbox);
+    await resetDockerLog(activeSandbox);
+
+    const result = runDockerSetup(activeSandbox, {
+      OPENCLAW_SKIP_ONBOARDING: "1",
+    });
+
+    expect(result.status).toBe(0);
+    const log = await readDockerLog(activeSandbox);
+    expect(log).not.toContain("onboard");
+    // Gateway defaults (config set) and control UI allowlist should still run.
+    expect(log).toContain("config set gateway.mode local");
+    expect(log).toContain("config set gateway.bind lan");
+    const envFile = await readFile(join(activeSandbox.rootDir, ".env"), "utf8");
+    expect(envFile).toContain("OPENCLAW_SKIP_ONBOARDING=1");
+  });
+
+  it("treats OPENCLAW_SKIP_ONBOARDING=0 as disabled and runs onboarding", async () => {
+    const activeSandbox = requireSandbox(sandbox);
+    await resetDockerLog(activeSandbox);
+
+    const result = runDockerSetup(activeSandbox, {
+      OPENCLAW_SKIP_ONBOARDING: "0",
+    });
+
+    expect(result.status).toBe(0);
+    const log = await readDockerLog(activeSandbox);
+    expect(log).toContain("onboard --mode local --no-install-daemon");
+    const envFile = await readFile(join(activeSandbox.rootDir, ".env"), "utf8");
+    expect(envFile).toMatch(/OPENCLAW_SKIP_ONBOARDING=\n/);
   });
 
   it("avoids associative arrays so the script remains Bash 3.2-compatible", async () => {

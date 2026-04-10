@@ -50,6 +50,14 @@ const SMS_DANGEROUS_COMMANDS = ["sms.send", "sms.search"];
 // iOS nodes don't implement system.run/which, but they do support notifications.
 const IOS_SYSTEM_COMMANDS = [NODE_SYSTEM_NOTIFY_COMMAND];
 
+// visionOS spatial sensing commands (ARKit-backed, available in ImmersiveSpace).
+const VISIONOS_SPATIAL_COMMANDS = [
+  "spatial.hands",
+  "spatial.planes",
+  "spatial.mesh",
+  "device.position",
+];
+
 const SYSTEM_COMMANDS = [
   ...NODE_SYSTEM_RUN_COMMANDS,
   NODE_SYSTEM_NOTIFY_COMMAND,
@@ -112,13 +120,24 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...MOTION_COMMANDS,
     ...SYSTEM_COMMANDS,
   ],
+  // visionOS (Apple Vision Pro): spatial sensing, camera, canvas, location, device info.
+  // No system.run — Vision Pro is a locked-down headset OS.
+  // camera.snap/clip are gated as dangerous commands (require allowCommands config).
+  visionos: [
+    ...CANVAS_COMMANDS,
+    ...CAMERA_COMMANDS,
+    ...LOCATION_COMMANDS,
+    ...DEVICE_COMMANDS,
+    ...VISIONOS_SPATIAL_COMMANDS,
+    NODE_SYSTEM_NOTIFY_COMMAND,
+  ],
   linux: [...SYSTEM_COMMANDS],
   windows: [...SYSTEM_COMMANDS],
   // Fail-safe: unknown metadata should not receive host exec defaults.
   unknown: [...UNKNOWN_PLATFORM_COMMANDS],
 };
 
-type PlatformId = "ios" | "android" | "macos" | "windows" | "linux" | "unknown";
+type PlatformId = "ios" | "android" | "macos" | "visionos" | "windows" | "linux" | "unknown";
 
 const PLATFORM_PREFIX_RULES: ReadonlyArray<{
   id: Exclude<PlatformId, "unknown">;
@@ -127,6 +146,7 @@ const PLATFORM_PREFIX_RULES: ReadonlyArray<{
   { id: "ios", prefixes: ["ios"] },
   { id: "android", prefixes: ["android"] },
   { id: "macos", prefixes: ["mac", "darwin"] },
+  { id: "visionos", prefixes: ["visionos"] },
   { id: "windows", prefixes: ["win"] },
   { id: "linux", prefixes: ["linux"] },
 ] as const;
@@ -138,6 +158,7 @@ const DEVICE_FAMILY_TOKEN_RULES: ReadonlyArray<{
   { id: "ios", tokens: ["iphone", "ipad", "ios"] },
   { id: "android", tokens: ["android"] },
   { id: "macos", tokens: ["mac"] },
+  { id: "visionos", tokens: ["visionos", "vision pro"] },
   { id: "windows", tokens: ["windows"] },
   { id: "linux", tokens: ["linux"] },
 ] as const;

@@ -3,7 +3,31 @@ import os from "node:os";
 import path from "node:path";
 import { expandHomePrefix, resolveRequiredHomeDir } from "../../infra/home-dir.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { resolveStateDir } from "../paths.js";
+
+/**
+ * Detect Windows-style absolute paths (e.g. "C:\..." or "C:/...") when running
+ * on POSIX, where `path.isAbsolute` would incorrectly return false for them.
+ * Returns true only on POSIX when the candidate looks like a Windows absolute path.
+ */
+function isWindowsAbsoluteOnPosix(candidate: string): boolean {
+  if (path.sep === "\\") {
+    // Already on Windows — path.isAbsolute handles it natively.
+    return false;
+  }
+  return /^[A-Za-z]:[/\\]/.test(candidate);
+}
+
+/**
+ * Extract the leaf filename from a potentially Windows-style path when running
+ * on POSIX. Handles both forward and backward slashes.
+ */
+function extractBasename(candidate: string): string {
+  // Split on both separators to handle Windows paths on POSIX.
+  const parts = candidate.split(/[/\\]/);
+  return parts[parts.length - 1] ?? candidate;
+}
 
 function resolveAgentSessionsDir(
   agentId?: string,
@@ -142,7 +166,7 @@ function resolveStructuralSessionFallbackPath(
     return undefined;
   }
   const normalizedAgentId = normalizeAgentId(agentIdPart);
-  if (normalizedAgentId !== agentIdPart.toLowerCase()) {
+  if (normalizedAgentId !== normalizeLowercaseStringOrEmpty(agentIdPart)) {
     return undefined;
   }
   if (normalizedAgentId !== normalizeAgentId(expectedAgentId)) {
@@ -158,6 +182,34 @@ function resolveStructuralSessionFallbackPath(
     return undefined;
   }
   return path.normalize(path.resolve(candidateAbsPath));
+}
+
+function remapSameAgentCrossRootSessionPath(
+  candidateAbsPath: string,
+  expectedAgentId: string,
+): string | undefined {
+  const parsed = resolveAgentSessionsPathParts(candidateAbsPath);
+  if (!parsed) {
+    return undefined;
+  }
+  const { parts, sessionsIndex } = parsed;
+  const agentIdPart = parts[sessionsIndex - 1];
+  if (!agentIdPart) {
+    return undefined;
+  }
+  const normalizedAgentId = normalizeAgentId(agentIdPart);
+  if (normalizedAgentId !== normalizeAgentId(expectedAgentId)) {
+    return undefined;
+  }
+  const relativeSegments = parts.slice(sessionsIndex + 1);
+  if (relativeSegments.length !== 1) {
+    return undefined;
+  }
+  const fileName = relativeSegments[0];
+  if (!fileName || fileName === "." || fileName === "..") {
+    return undefined;
+  }
+  return path.join(resolveAgentSessionsDir(normalizedAgentId), fileName);
 }
 
 function safeRealpathSync(filePath: string): string | undefined {
@@ -177,6 +229,18 @@ function resolvePathWithinSessionsDir(
   if (!trimmed) {
     throw new Error("Session file path must not be empty");
   }
+
+  // Guard: if running on POSIX but the candidate is a Windows-style absolute
+  // path (e.g. stored in sessions.json by a Windows host and read inside a
+  // Docker container), extract the leaf filename to avoid creating paths like
+  // "/home/node/.openclaw/.../C:\Users\...".
+  if (isWindowsAbsoluteOnPosix(trimmed)) {
+    const basename = extractBasename(trimmed);
+    if (basename && basename !== "." && basename !== "..") {
+      return path.resolve(path.resolve(sessionsDir), basename);
+    }
+  }
+
   const resolvedBase = path.resolve(sessionsDir);
   const realBase = safeRealpathSync(resolvedBase) ?? resolvedBase;
   // Normalize absolute paths that are within the sessions directory.
@@ -207,6 +271,10 @@ function resolvePathWithinSessionsDir(
       const resolvedFromAgent = tryAgentFallback(explicitAgentId);
       if (resolvedFromAgent) {
         return resolvedFromAgent;
+      }
+      const remappedSameAgent = remapSameAgentCrossRootSessionPath(realTrimmed, explicitAgentId);
+      if (remappedSameAgent) {
+        return remappedSameAgent;
       }
     }
     const extractedAgentId = extractAgentIdFromAbsoluteSessionPath(realTrimmed);

@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   buildBootstrapContextFiles,
+  DEFAULT_BOOTSTRAP_CONTINUATION_MAX_CHARS,
+  DEFAULT_BOOTSTRAP_CONTINUATION_TOTAL_MAX_CHARS,
   DEFAULT_BOOTSTRAP_MAX_CHARS,
   DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE,
   DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
+  resolveBootstrapContinuationMaxChars,
+  resolveBootstrapContinuationTotalMaxChars,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
   resolveBootstrapTotalMaxChars,
@@ -33,6 +37,48 @@ describe("buildBootstrapContextFiles", () => {
         path: "/tmp/AGENTS.md",
         content: "[MISSING] Expected at: /tmp/AGENTS.md",
       },
+    ]);
+  });
+  it("skips [MISSING] marker for BOOTSTRAP.md (intentionally deleted after onboarding)", () => {
+    const files = [
+      makeFile({
+        name: "BOOTSTRAP.md",
+        path: "/tmp/BOOTSTRAP.md",
+        missing: true,
+        content: undefined,
+      }),
+    ];
+    expect(buildBootstrapContextFiles(files)).toEqual([]);
+  });
+  it("still injects [MISSING] for other files when BOOTSTRAP.md is also missing", () => {
+    const files = [
+      makeFile({
+        name: "BOOTSTRAP.md",
+        path: "/tmp/BOOTSTRAP.md",
+        missing: true,
+        content: undefined,
+      }),
+      makeFile({ name: "AGENTS.md", path: "/tmp/AGENTS.md", missing: true, content: undefined }),
+    ];
+    expect(buildBootstrapContextFiles(files)).toEqual([
+      {
+        path: "/tmp/AGENTS.md",
+        content: "[MISSING] Expected at: /tmp/AGENTS.md",
+      },
+    ]);
+  });
+  it("includes BOOTSTRAP.md content when present (not missing)", () => {
+    const files = [
+      makeFile({
+        name: "BOOTSTRAP.md",
+        path: "/tmp/BOOTSTRAP.md",
+        missing: false,
+        content: "# Welcome\nFollow these steps...",
+      }),
+    ];
+    const result = buildBootstrapContextFiles(files);
+    expect(result).toEqual([
+      { path: "/tmp/BOOTSTRAP.md", content: "# Welcome\nFollow these steps..." },
     ]);
   });
   it("skips empty or whitespace-only content", () => {
@@ -76,6 +122,28 @@ describe("buildBootstrapContextFiles", () => {
     expect(result[2]?.content).toBe("c".repeat(10_000));
   });
 
+  it("prioritizes SOUL and HARD_EXECUTION_RULES before AGENTS under tight total budget", () => {
+    const files: WorkspaceBootstrapFile[] = [
+      makeFile({ name: "AGENTS.md", path: "/tmp/AGENTS.md", content: "A".repeat(180) }),
+      makeFile({ name: "SOUL.md", path: "/tmp/SOUL.md", content: "S".repeat(180) }),
+      makeFile({
+        name: "HARD_EXECUTION_RULES.md",
+        path: "/tmp/HARD_EXECUTION_RULES.md",
+        content: "H".repeat(180),
+      }),
+    ];
+
+    const result = buildBootstrapContextFiles(files, {
+      maxChars: 180,
+      totalMaxChars: 550,
+    });
+
+    const injectedPaths = result.map((entry) => entry.path);
+    expect(injectedPaths[0]).toBe("/tmp/SOUL.md");
+    expect(injectedPaths[1]).toBe("/tmp/HARD_EXECUTION_RULES.md");
+    expect(injectedPaths[2]).toBe("/tmp/AGENTS.md");
+  });
+
   it("caps total injected bootstrap characters when totalMaxChars is configured", () => {
     const files = createLargeBootstrapFiles();
     const result = buildBootstrapContextFiles(files, { totalMaxChars: 24_000 });
@@ -100,11 +168,14 @@ describe("buildBootstrapContextFiles", () => {
 
   it("skips bootstrap injection when remaining total budget is too small", () => {
     const files = [makeFile({ name: "AGENTS.md", content: "a".repeat(1_000) })];
+    const warnings: string[] = [];
     const result = buildBootstrapContextFiles(files, {
       maxChars: 200,
       totalMaxChars: 40,
+      warn: (message) => warnings.push(message),
     });
     expect(result).toEqual([]);
+    expect(warnings.some((line) => line.includes("skipping: AGENTS.md"))).toBe(true);
   });
 
   it("keeps missing markers under small total budgets", () => {
@@ -153,7 +224,11 @@ describe("buildBootstrapContextFiles", () => {
 });
 
 type BootstrapLimitResolverCase = {
-  name: "bootstrapMaxChars" | "bootstrapTotalMaxChars";
+  name:
+    | "bootstrapMaxChars"
+    | "bootstrapTotalMaxChars"
+    | "bootstrapContinuationMaxChars"
+    | "bootstrapContinuationTotalMaxChars";
   resolve: (cfg?: OpenClawConfig) => number;
   defaultValue: number;
 };
@@ -168,6 +243,16 @@ const BOOTSTRAP_LIMIT_RESOLVERS: BootstrapLimitResolverCase[] = [
     name: "bootstrapTotalMaxChars",
     resolve: resolveBootstrapTotalMaxChars,
     defaultValue: DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
+  },
+  {
+    name: "bootstrapContinuationMaxChars",
+    resolve: resolveBootstrapContinuationMaxChars,
+    defaultValue: DEFAULT_BOOTSTRAP_CONTINUATION_MAX_CHARS,
+  },
+  {
+    name: "bootstrapContinuationTotalMaxChars",
+    resolve: resolveBootstrapContinuationTotalMaxChars,
+    defaultValue: DEFAULT_BOOTSTRAP_CONTINUATION_TOTAL_MAX_CHARS,
   },
 ];
 

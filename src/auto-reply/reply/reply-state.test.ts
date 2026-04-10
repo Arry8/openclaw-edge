@@ -292,6 +292,39 @@ describe("shouldRunMemoryFlush", () => {
     ).toBe(true);
   });
 
+  it("clamps reserveTokensFloor when it equals contextWindowTokens", () => {
+    expect(
+      shouldRunMemoryFlush({
+        entry: { totalTokens: 180_000, totalTokensFresh: true, compactionCount: 0 },
+        contextWindowTokens: 200_000,
+        reserveTokensFloor: 200_000,
+        softThresholdTokens: 5_000,
+      }),
+    ).toBe(true);
+  });
+
+  it("clamps reserveTokensFloor when it exceeds contextWindowTokens", () => {
+    expect(
+      shouldRunMemoryFlush({
+        entry: { totalTokens: 180_000, totalTokensFresh: true, compactionCount: 0 },
+        contextWindowTokens: 200_000,
+        reserveTokensFloor: 300_000,
+        softThresholdTokens: 5_000,
+      }),
+    ).toBe(true);
+  });
+
+  it("produces a positive threshold for small context windows", () => {
+    expect(
+      shouldRunMemoryFlush({
+        entry: { totalTokens: 15_000, totalTokensFresh: true, compactionCount: 0 },
+        contextWindowTokens: 16_000,
+        reserveTokensFloor: 20_000,
+        softThresholdTokens: 4_000,
+      }),
+    ).toBe(true);
+  });
+
   it("ignores stale cached totals", () => {
     expect(
       shouldRunMemoryFlush({
@@ -356,12 +389,23 @@ describe("hasAlreadyFlushedForCurrentCompaction", () => {
     ).toBe(false);
   });
 
-  it("treats missing compactionCount as 0", () => {
+  it("returns false when compactionCount is 0 (never compacted)", () => {
+    // When compactionCount is 0, the session has never been compacted,
+    // so we should allow the first memory flush.
+    expect(
+      hasAlreadyFlushedForCurrentCompaction({
+        compactionCount: 0,
+        memoryFlushCompactionCount: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats missing compactionCount as 0 and allows flush", () => {
     expect(
       hasAlreadyFlushedForCurrentCompaction({
         memoryFlushCompactionCount: 0,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -437,14 +481,14 @@ describe("incrementCompactionCount", () => {
     );
   });
 
-  it("falls back to the derived transcript path when rewritten absolute sessionFile is unsafe", async () => {
+  it("keeps rewritten absolute sessionFile paths that stay inside the sessions directory", async () => {
     const { stored, sessionKey, expectedDir } = await rotateCompactionSessionFile({
       tempPrefix: "openclaw-compact-unsafe-",
       sessionFile: (tmp) => path.join(tmp, "outside", "s1.jsonl"),
       newSessionId: "s2",
     });
     expect(stored[sessionKey].sessionId).toBe("s2");
-    expect(stored[sessionKey].sessionFile).toBe(path.join(expectedDir, "s2.jsonl"));
+    expect(stored[sessionKey].sessionFile).toBe(path.join(expectedDir, "outside", "s2.jsonl"));
   });
 
   it("increments compaction count by an explicit amount", async () => {

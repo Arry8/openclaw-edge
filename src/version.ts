@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { normalizeOptionalString } from "./shared/string-coerce.js";
 
 declare const __OPENCLAW_VERSION__: string | undefined;
 const CORE_PACKAGE_NAME = "openclaw";
@@ -7,12 +8,15 @@ const PACKAGE_JSON_CANDIDATES = [
   "../package.json",
   "../../package.json",
   "../../../package.json",
+  "../../../../package.json",
   "./package.json",
 ] as const;
 
 const BUILD_INFO_CANDIDATES = [
   "../build-info.json",
   "../../build-info.json",
+  "../../../build-info.json",
+  "../../../../build-info.json",
   "./build-info.json",
 ] as const;
 
@@ -26,7 +30,7 @@ function readVersionFromJsonCandidates(
     for (const candidate of candidates) {
       try {
         const parsed = require(candidate) as { name?: string; version?: string };
-        const version = parsed.version?.trim();
+        const version = normalizeOptionalString(parsed.version);
         if (!version) {
           continue;
         }
@@ -46,7 +50,7 @@ function readVersionFromJsonCandidates(
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
   for (const value of values) {
-    const trimmed = value?.trim();
+    const trimmed = normalizeOptionalString(value);
     if (trimmed) {
       return trimmed;
     }
@@ -94,7 +98,7 @@ export const RUNTIME_SERVICE_VERSION_FALLBACK = "unknown";
 type RuntimeVersionPreference = "env-first" | "runtime-first";
 
 export function resolveUsableRuntimeVersion(version: string | undefined): string | undefined {
-  const trimmed = version?.trim();
+  const trimmed = normalizeOptionalString(version);
   // "0.0.0" is the resolver's hard fallback when module metadata cannot be read.
   // Prefer explicit service/package markers in that edge case.
   if (!trimmed || trimmed === "0.0.0") {
@@ -138,6 +142,10 @@ export function resolveCompatibilityHostVersion(
   env: RuntimeVersionEnv = process.env as RuntimeVersionEnv,
   fallback = RUNTIME_SERVICE_VERSION_FALLBACK,
 ): string {
+  const explicitCompatibilityVersion = firstNonEmpty(env.OPENCLAW_COMPATIBILITY_HOST_VERSION);
+  if (explicitCompatibilityVersion) {
+    return explicitCompatibilityVersion;
+  }
   return resolveVersionFromRuntimeSources({
     env,
     runtimeVersion: resolveUsableRuntimeVersion(VERSION),
@@ -149,8 +157,13 @@ export function resolveCompatibilityHostVersion(
 // Single source of truth for the current OpenClaw version.
 // - Embedded/bundled builds: injected define or env var.
 // - Dev/npm builds: package.json.
+const injected =
+  typeof __OPENCLAW_VERSION__ === "string" && __OPENCLAW_VERSION__ !== "0.0.0"
+    ? __OPENCLAW_VERSION__
+    : undefined;
+
 export const VERSION = resolveBinaryVersion({
   moduleUrl: import.meta.url,
-  injectedVersion: typeof __OPENCLAW_VERSION__ === "string" ? __OPENCLAW_VERSION__ : undefined,
+  injectedVersion: injected,
   bundledVersion: process.env.OPENCLAW_BUNDLED_VERSION,
 });

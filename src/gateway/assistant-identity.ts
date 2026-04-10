@@ -83,25 +83,38 @@ export function resolveAssistantIdentity(params: {
   agentId?: string | null;
   workspaceDir?: string | null;
 }): AssistantIdentity {
-  const agentId = normalizeAgentId(params.agentId ?? resolveDefaultAgentId(params.cfg));
+  const defaultAgentId = normalizeAgentId(resolveDefaultAgentId(params.cfg));
+  const agentId = normalizeAgentId(params.agentId ?? defaultAgentId);
   const workspaceDir = params.workspaceDir ?? resolveAgentWorkspaceDir(params.cfg, agentId);
   const configAssistant = params.cfg.ui?.assistant;
   const agentIdentity = resolveAgentIdentity(params.cfg, agentId);
   const fileIdentity = workspaceDir ? loadAgentIdentity(workspaceDir) : null;
 
-  const name =
-    coerceIdentityValue(configAssistant?.name, MAX_ASSISTANT_NAME) ??
-    coerceIdentityValue(agentIdentity?.name, MAX_ASSISTANT_NAME) ??
-    coerceIdentityValue(fileIdentity?.name, MAX_ASSISTANT_NAME) ??
-    DEFAULT_ASSISTANT_IDENTITY.name;
+  // For non-default agents (subagents), per-agent identity takes priority over
+  // the global ui.assistant config. Global ui.assistant is the user's
+  // customization of the default/main agent and should not override subagent
+  // identities that were explicitly configured in agents.list[].identity.
+  const isDefaultAgent = agentId === defaultAgentId;
+  const globalName = coerceIdentityValue(configAssistant?.name, MAX_ASSISTANT_NAME);
+  const agentName = coerceIdentityValue(agentIdentity?.name, MAX_ASSISTANT_NAME);
+  const fileName = coerceIdentityValue(fileIdentity?.name, MAX_ASSISTANT_NAME);
 
-  const avatarCandidates = [
-    coerceIdentityValue(configAssistant?.avatar, MAX_ASSISTANT_AVATAR),
+  const name = isDefaultAgent
+    ? (globalName ?? agentName ?? fileName ?? DEFAULT_ASSISTANT_IDENTITY.name)
+    : (agentName ?? fileName ?? globalName ?? DEFAULT_ASSISTANT_IDENTITY.name);
+
+  const globalAvatar = coerceIdentityValue(configAssistant?.avatar, MAX_ASSISTANT_AVATAR);
+  const agentAvatarCandidates = [
     coerceIdentityValue(agentIdentity?.avatar, MAX_ASSISTANT_AVATAR),
     coerceIdentityValue(agentIdentity?.emoji, MAX_ASSISTANT_AVATAR),
+  ];
+  const fileAvatarCandidates = [
     coerceIdentityValue(fileIdentity?.avatar, MAX_ASSISTANT_AVATAR),
     coerceIdentityValue(fileIdentity?.emoji, MAX_ASSISTANT_AVATAR),
   ];
+  const avatarCandidates = isDefaultAgent
+    ? [globalAvatar, ...agentAvatarCandidates, ...fileAvatarCandidates]
+    : [...agentAvatarCandidates, ...fileAvatarCandidates, globalAvatar];
   const avatar =
     avatarCandidates.map((candidate) => normalizeAvatarValue(candidate)).find(Boolean) ??
     DEFAULT_ASSISTANT_IDENTITY.avatar;

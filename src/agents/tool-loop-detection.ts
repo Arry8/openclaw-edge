@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+﻿import { createHash } from "node:crypto";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import type { SessionState } from "../logging/diagnostic-session-state.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -10,7 +10,8 @@ export type LoopDetectorKind =
   | "generic_repeat"
   | "known_poll_no_progress"
   | "global_circuit_breaker"
-  | "ping_pong";
+  | "ping_pong"
+  | "unknown_tool_repeat";
 
 export type LoopDetectionResult =
   | { stuck: false }
@@ -28,12 +29,18 @@ export const TOOL_CALL_HISTORY_SIZE = 30;
 export const WARNING_THRESHOLD = 10;
 export const CRITICAL_THRESHOLD = 20;
 export const GLOBAL_CIRCUIT_BREAKER_THRESHOLD = 30;
+// 60s is a safe independent default: well below the default heartbeat interval
+// (30 min) yet long enough to tolerate minor scheduling jitter within a single
+// heartbeat cycle.  Users can override via tools.loopDetection.staleThresholdMs.
+const STALE_THRESHOLD_MS_DEFAULT = 60_000;
+
 const DEFAULT_LOOP_DETECTION_CONFIG = {
   enabled: false,
   historySize: TOOL_CALL_HISTORY_SIZE,
   warningThreshold: WARNING_THRESHOLD,
   criticalThreshold: CRITICAL_THRESHOLD,
   globalCircuitBreakerThreshold: GLOBAL_CIRCUIT_BREAKER_THRESHOLD,
+  staleThresholdMs: STALE_THRESHOLD_MS_DEFAULT,
   detectors: {
     genericRepeat: true,
     knownPollNoProgress: true,
@@ -47,6 +54,7 @@ type ResolvedLoopDetectionConfig = {
   warningThreshold: number;
   criticalThreshold: number;
   globalCircuitBreakerThreshold: number;
+  staleThresholdMs: number;
   detectors: {
     genericRepeat: boolean;
     knownPollNoProgress: boolean;
@@ -88,6 +96,10 @@ function resolveLoopDetectionConfig(config?: ToolLoopDetectionConfig): ResolvedL
     warningThreshold,
     criticalThreshold,
     globalCircuitBreakerThreshold,
+    staleThresholdMs: asPositiveInt(
+      config?.staleThresholdMs,
+      DEFAULT_LOOP_DETECTION_CONFIG.staleThresholdMs,
+    ),
     detectors: {
       genericRepeat:
         config?.detectors?.genericRepeat ?? DEFAULT_LOOP_DETECTION_CONFIG.detectors.genericRepeat,
@@ -182,6 +194,35 @@ function formatErrorForHash(error: unknown): string {
   return stableStringify(error);
 }
 
+function normalizeUnknownToolName(value: string | undefined): string | undefined {
+  const trimmed = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[.,!?;]+$/u, "");
+  return trimmed ? trimmed : undefined;
+}
+
+const UNKNOWN_TOOL_NAME_FRAGMENT = String.raw`[a-z0-9_:./-]+`;
+
+function extractUnknownToolName(error: unknown): string | undefined {
+  if (error === undefined || error === null) {
+    return undefined;
+  }
+  const raw = formatErrorForHash(error);
+  const match =
+    raw.match(new RegExp(`unknown tool[:\\s]+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?`, "i")) ??
+    raw.match(
+      new RegExp(
+        `tool\\s+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?\\s+(?:not found|is not available)`,
+        "i",
+      ),
+    ) ??
+    raw.match(
+      new RegExp(`missing tool definition[:\\s]+["']?(${UNKNOWN_TOOL_NAME_FRAGMENT})["']?`, "i"),
+    );
+  return normalizeUnknownToolName(match?.[1]);
+}
+
 function hashToolOutcome(
   toolName: string,
   params: unknown,
@@ -223,6 +264,31 @@ function hashToolOutcome(
     }
   }
 
+  // Exec tool results contain volatile fields (durationMs, pid, startedAt,
+  // sessionId) that change on every invocation.  Hash only the stable
+  // fields so that repeated identical commands are correctly detected as
+  // a loop.  See https://github.com/nicepkg/openclaw/issues/34574.
+  //
+  // For "running" results the content text itself embeds volatile metadata
+  // (session id, pid) so we omit it and hash only the status + tail output.
+  // For "completed" results we use details.aggregated rather than content text
+  // because content.text may drop stderr/error (node-host uses short-circuit
+  // OR) or prepend warnings (gateway path), while aggregated always contains
+  // the full combined stdout+stderr+error output.
+  if (toolName === "exec") {
+    if (details.status === "running") {
+      return digestStable({
+        status: "running",
+        tail: details.tail ?? null,
+      });
+    }
+    return digestStable({
+      status: details.status,
+      exitCode: details.exitCode ?? null,
+      aggregated: details.aggregated ?? text,
+    });
+  }
+
   return digestStable({
     details,
     text,
@@ -257,6 +323,68 @@ function getNoProgressStreak(
   }
 
   return { count: streak, latestResultHash };
+}
+
+function getUnknownToolRepeatStreak(
+  history: Array<{
+    toolName: string;
+    argsHash: string;
+    outcomeKind?: string;
+    outcomeDetail?: string;
+  }>,
+  toolName: string,
+  argsHash: string,
+): { count: number; missingToolName?: string } {
+  const normalizedToolName = normalizeUnknownToolName(toolName);
+  let count = 0;
+  let missingToolName: string | undefined;
+
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const record = history[i];
+    if (!record || record.toolName !== toolName || record.argsHash !== argsHash) {
+      break;
+    }
+    if (record.outcomeKind !== "unknown_tool") {
+      break;
+    }
+    const currentMissingTool = normalizeUnknownToolName(record.outcomeDetail);
+    if (!currentMissingTool || currentMissingTool !== normalizedToolName) {
+      break;
+    }
+    missingToolName = currentMissingTool;
+    count += 1;
+  }
+
+  return { count, missingToolName };
+}
+
+export const UNKNOWN_TOOL_REPEAT_THRESHOLD = 2;
+
+export function detectRepeatedUnknownToolCall(
+  state: SessionState,
+  toolName: string,
+  params: unknown,
+): LoopDetectionResult {
+  const history = state.toolCallHistory ?? [];
+  const currentHash = hashToolCall(toolName, params);
+  const repeatedUnknownTool = getUnknownToolRepeatStreak(history, toolName, currentHash);
+
+  if (repeatedUnknownTool.count < UNKNOWN_TOOL_REPEAT_THRESHOLD) {
+    return { stuck: false };
+  }
+
+  const missingToolName = repeatedUnknownTool.missingToolName ?? normalizeUnknownToolName(toolName);
+  const printableToolName = missingToolName ?? toolName;
+  return {
+    stuck: true,
+    level: "critical",
+    detector: "unknown_tool_repeat",
+    count: repeatedUnknownTool.count,
+    message:
+      `CRITICAL: ${printableToolName} is not an available tool and has already failed ` +
+      `${repeatedUnknownTool.count} consecutive times. Stop retrying this tool call and ask the user ` +
+      `to correct the tool name or install the missing tool.`,
+  };
 }
 
 function getPingPongStreak(
@@ -366,6 +494,24 @@ function canonicalPairKey(signatureA: string, signatureB: string): string {
 }
 
 /**
+ * Clear stale tool call history to prevent false positives across heartbeat
+ * cycles.  If the most recent entry is older than {@link staleThresholdMs},
+ * the previous burst of tool calls belongs to a different heartbeat cycle.
+ *
+ * Ownership: called only from {@link detectToolCallLoop}, which runs before
+ * {@link recordToolCall} in production (see pi-tools.before-tool-call.ts).
+ */
+function clearStaleHistory(state: SessionState, staleThresholdMs: number): void {
+  if (!state.toolCallHistory || state.toolCallHistory.length === 0) {
+    return;
+  }
+  const lastCall = state.toolCallHistory.at(-1);
+  if (lastCall && Date.now() - lastCall.timestamp > staleThresholdMs) {
+    state.toolCallHistory = [];
+  }
+}
+
+/**
  * Detect if an agent is stuck in a repetitive tool call loop.
  * Checks if the same tool+params combination has been called excessively.
  */
@@ -375,10 +521,19 @@ export function detectToolCallLoop(
   params: unknown,
   config?: ToolLoopDetectionConfig,
 ): LoopDetectionResult {
+  const repeatedUnknownToolResult = detectRepeatedUnknownToolCall(state, toolName, params);
+  if (repeatedUnknownToolResult.stuck) {
+    return repeatedUnknownToolResult;
+  }
+
   const resolvedConfig = resolveLoopDetectionConfig(config);
   if (!resolvedConfig.enabled) {
     return { stuck: false };
   }
+  // Clear stale history before checking — detectToolCallLoop is called before
+  // recordToolCall in production, so this is the single point of ownership
+  // for discarding entries from a previous heartbeat cycle.
+  clearStaleHistory(state, resolvedConfig.staleThresholdMs);
   const history = state.toolCallHistory ?? [];
   const currentHash = hashToolCall(toolName, params);
   const noProgress = getNoProgressStreak(history, toolName, currentHash);
@@ -470,10 +625,29 @@ export function detectToolCallLoop(
     };
   }
 
-  // Generic detector: warn-only for repeated identical calls.
+  // Generic detector: warn on repeated identical calls for all tools.
+  // Exec is higher risk, so it escalates to critical at the configured critical threshold.
   const recentCount = history.filter(
     (h) => h.toolName === toolName && h.argsHash === currentHash,
   ).length;
+  const isExecTool = toolName === "exec";
+
+  if (
+    !knownPollTool &&
+    isExecTool &&
+    resolvedConfig.detectors.genericRepeat &&
+    recentCount >= resolvedConfig.criticalThreshold
+  ) {
+    log.error(`Critical exec loop detected: ${toolName} called ${recentCount} times identically`);
+    return {
+      stuck: true,
+      level: "critical",
+      detector: "generic_repeat",
+      count: recentCount,
+      message: `CRITICAL: You have called ${toolName} ${recentCount} times with identical arguments. Session execution blocked to prevent runaway command loops.`,
+      warningKey: `generic:${toolName}:${currentHash}`,
+    };
+  }
 
   if (
     !knownPollTool &&
@@ -510,6 +684,9 @@ export function recordToolCall(
     state.toolCallHistory = [];
   }
 
+  // Stale history is cleared in detectToolCallLoop, which always runs before
+  // recordToolCall in production (see pi-tools.before-tool-call.ts).
+
   state.toolCallHistory.push({
     toolName,
     argsHash: hashToolCall(toolName, params),
@@ -543,6 +720,7 @@ export function recordToolCallOutcome(
     params.result,
     params.error,
   );
+  const unknownToolName = extractUnknownToolName(params.error);
   if (!resultHash) {
     return;
   }
@@ -568,6 +746,8 @@ export function recordToolCallOutcome(
       continue;
     }
     call.resultHash = resultHash;
+    call.outcomeKind = unknownToolName ? "unknown_tool" : undefined;
+    call.outcomeDetail = unknownToolName;
     matched = true;
     break;
   }
@@ -578,6 +758,8 @@ export function recordToolCallOutcome(
       argsHash,
       toolCallId: params.toolCallId,
       resultHash,
+      outcomeKind: unknownToolName ? "unknown_tool" : undefined,
+      outcomeDetail: unknownToolName,
       timestamp: Date.now(),
     });
   }

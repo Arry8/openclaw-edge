@@ -7,6 +7,7 @@ import type { CronJob } from "../../cron/types.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { type HookAgentDispatchPayload, type HooksConfigResolved } from "../hooks.js";
 import { createHooksRequestHandler, type HookClientIpConfig } from "../server-http.js";
 
@@ -31,7 +32,7 @@ export function createGatewayHooksRequestHandler(params: {
 
   const dispatchWakeHook = (value: { text: string; mode: "now" | "next-heartbeat" }) => {
     const sessionKey = resolveMainSessionKeyFromConfig();
-    enqueueSystemEvent(value.text, { sessionKey });
+    enqueueSystemEvent(value.text, { sessionKey, trusted: false });
     if (value.mode === "now") {
       requestHeartbeatNow({ reason: "hook:wake" });
     }
@@ -85,10 +86,17 @@ export function createGatewayHooksRequestHandler(params: {
           lane: "cron",
           deliveryContract: "shared",
         });
-        const summary = result.summary?.trim() || result.error?.trim() || result.status;
+        const summary =
+          normalizeOptionalString(result.summary) ||
+          normalizeOptionalString(result.error) ||
+          result.status;
         const prefix =
           result.status === "ok" ? `Hook ${value.name}` : `Hook ${value.name} (${result.status})`;
-        if (!result.delivered) {
+        // When deliver is explicitly false the caller opted out of all
+        // delivery *and* main-session notification.  Only inject a system
+        // event when delivery was requested but did not succeed (e.g. the
+        // target channel could not be resolved).
+        if (!result.delivered && value.deliver !== false) {
           enqueueSystemEvent(`${prefix}: ${summary}`.trim(), {
             sessionKey: mainSessionKey,
           });
@@ -98,6 +106,8 @@ export function createGatewayHooksRequestHandler(params: {
         }
       } catch (err) {
         logHooks.warn(`hook agent failed: ${String(err)}`);
+        // Errors are always surfaced to the main session regardless of the
+        // `deliver` flag — silent failures are harder to debug than noisy ones.
         enqueueSystemEvent(`Hook ${value.name} (error): ${String(err)}`, {
           sessionKey: mainSessionKey,
         });

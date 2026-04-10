@@ -8,6 +8,11 @@
       - any-glob-to-any-file:
           - "extensions/discord/**"
           - "docs/channels/discord.md"
+"channel: eclaw":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/eclaw/**"
+          - "docs/channels/eclaw.md"
 "channel: irc":
   - changed-files:
       - any-glob-to-any-file:
@@ -250,6 +255,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/anthropic/**"
+"extensions: baidu":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/baidu/**"
 "extensions: cloudflare-ai-gateway":
   - changed-files:
       - any-glob-to-any-file:
@@ -294,6 +303,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/phone-control/**"
+"extensions: prodia":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/prodia/**"
 "extensions: qianfan":
   - changed-files:
       - any-glob-to-any-file:
@@ -306,6 +319,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/tavily/**"
+"extensions: mrscraper":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/mrscraper/**"
 "extensions: talk-voice":
   - changed-files:
       - any-glob-to-any-file:
@@ -334,3 +351,7 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/fal/**"
+"extensions: apfree-wifidog":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/apfree-wifidog/**"

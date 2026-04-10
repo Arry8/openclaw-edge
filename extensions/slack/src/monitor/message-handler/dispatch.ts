@@ -8,15 +8,17 @@ import {
   type StatusReactionAdapter,
 } from "openclaw/plugin-sdk/channel-feedback";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
-import { resolveStorePath, updateLastRoute } from "openclaw/plugin-sdk/config-runtime";
+import {
+  resolveChannelStreamingBlockEnabled,
+  resolveChannelStreamingNativeTransport,
+} from "openclaw/plugin-sdk/channel-streaming";
 import { resolveAgentOutboundIdentity } from "openclaw/plugin-sdk/outbound-runtime";
 import { clearHistoryEntriesIfEnabled } from "openclaw/plugin-sdk/reply-history";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
-import { dispatchInboundMessage } from "openclaw/plugin-sdk/reply-runtime";
-import { createReplyDispatcherWithTyping } from "openclaw/plugin-sdk/reply-runtime";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
 import { danger, logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { resolvePinnedMainDmOwnerFromAllowlist } from "openclaw/plugin-sdk/security-runtime";
+import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/text-runtime";
 import { reactSlackMessage, removeSlackReaction } from "../../actions.js";
 import { createSlackDraftStream } from "../../draft-stream.js";
 import { normalizeSlackOutboundText } from "../../format.js";
@@ -31,12 +33,14 @@ import type { SlackStreamSession } from "../../streaming.js";
 import { appendSlackStream, startSlackStream, stopSlackStream } from "../../streaming.js";
 import { resolveSlackThreadTargets } from "../../threading.js";
 import { normalizeSlackAllowOwnerEntry } from "../allow-list.js";
+import { resolveStorePath, updateLastRoute } from "../config.runtime.js";
 import {
   createSlackReplyDeliveryPlan,
   deliverReplies,
   readSlackReplyBlocks,
   resolveSlackThreadTs,
 } from "../replies.js";
+import { createReplyDispatcherWithTyping, dispatchInboundMessage } from "../reply.runtime.js";
 import { finalizeSlackPreviewEdit } from "./preview-finalize.js";
 import type { PreparedSlackMessage } from "./types.js";
 
@@ -73,10 +77,6 @@ function toSlackEmojiName(emoji: string): string {
   return UNICODE_TO_SLACK[trimmed] ?? trimmed;
 }
 
-function hasMedia(payload: ReplyPayload): boolean {
-  return resolveSendableOutboundReplyParts(payload).hasMedia;
-}
-
 export function isSlackStreamingEnabled(params: {
   mode: "off" | "partial" | "block" | "progress";
   nativeStreaming: boolean;
@@ -95,10 +95,12 @@ export function shouldEnableSlackPreviewStreaming(params: {
   if (params.mode === "off") {
     return false;
   }
-  if (!params.isDirectMessage) {
-    return true;
-  }
-  return Boolean(params.threadTs);
+  // Enable preview streaming for all modes in both channels and DMs.
+  // Previously, DMs without an existing threadTs were excluded to avoid
+  // orphaned drafts, but createSlackDraftStream() posts directly to the
+  // DM target and does not require a pre-existing thread. This blocked
+  // post-and-edit streaming in flat (replyToMode: off) DM conversations.
+  return true;
 }
 
 export function shouldInitializeSlackDraftStream(params: {
@@ -109,7 +111,7 @@ export function shouldInitializeSlackDraftStream(params: {
 }
 
 export function resolveSlackStreamingThreadHint(params: {
-  replyToMode: "off" | "first" | "all";
+  replyToMode: "off" | "first" | "all" | "batched";
   incomingThreadTs: string | undefined;
   messageTs: string | undefined;
   isThreadReply?: boolean;
@@ -162,11 +164,11 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       allowFrom: ctx.allowFrom,
       normalizeEntry: normalizeSlackAllowOwnerEntry,
     });
-    const senderRecipient = message.user?.trim().toLowerCase();
+    const senderRecipient = normalizeOptionalLowercaseString(message.user);
     const skipMainUpdate =
       pinnedMainDmOwner &&
       senderRecipient &&
-      pinnedMainDmOwner.trim().toLowerCase() !== senderRecipient;
+      normalizeOptionalLowercaseString(pinnedMainDmOwner) !== senderRecipient;
     if (skipMainUpdate) {
       logVerbose(
         `slack: skip main-session last route for ${senderRecipient} (pinned owner ${pinnedMainDmOwner})`,
@@ -204,11 +206,6 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       await reactSlackMessage(message.channel, reactionMessageTs ?? "", toSlackEmojiName(emoji), {
         token: ctx.botToken,
         client: ctx.app.client,
-      }).catch((err) => {
-        if (String(err).includes("already_reacted")) {
-          return;
-        }
-        throw err;
       });
     },
     removeReaction: async (emoji) => {
@@ -320,8 +317,7 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
 
   const slackStreaming = resolveSlackStreamingConfig({
     streaming: account.config.streaming,
-    streamMode: account.config.streamMode,
-    nativeStreaming: account.config.nativeStreaming,
+    nativeStreaming: resolveChannelStreamingNativeTransport(account.config),
   });
   const streamThreadHint = resolveSlackStreamingThreadHint({
     replyToMode: prepared.replyToMode,
@@ -432,9 +428,18 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
 
       const reply = resolveSendableOutboundReplyParts(payload);
       const slackBlocks = readSlackReplyBlocks(payload);
+      // Flush any pending draft update so messageId() is reliable even if the
+      // throttle window hasn't fired yet. Fast LLM responses can race ahead of
+      // the 1000ms draft-stream throttle, leaving messageId() undefined and
+      // causing canFinalizeViaPreviewEdit to fall through to deliverNormally —
+      // which sends a second message while the throttled draft posts shortly after.
+      // Only flush when streaming was active but the draft hasn't posted yet,
+      // to avoid sending a throwaway draft message on non-edit paths (hasMedia, isError).
+      if (hasStreamedMessage && draftStream && !draftStream.messageId()) {
+        await draftStream.flush();
+      }
       const draftMessageId = draftStream?.messageId();
       const draftChannelId = draftStream?.channelId();
-      const finalText = reply.text;
       const trimmedFinalText = reply.trimmedText;
       const canFinalizeViaPreviewEdit =
         previewStreamingEnabled &&
@@ -577,8 +582,8 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         hasRepliedRef,
         disableBlockStreaming: useStreaming
           ? true
-          : typeof account.config.blockStreaming === "boolean"
-            ? !account.config.blockStreaming
+          : typeof resolveChannelStreamingBlockEnabled(account.config) === "boolean"
+            ? !resolveChannelStreamingBlockEnabled(account.config)
             : undefined,
         onModelSelected,
         onPartialReply: useStreaming

@@ -43,6 +43,49 @@ Match the level of specificity to the task's fragility and variability:
 
 Think of Codex as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
 
+### Document Gotchas
+
+The highest signal-density content in a skill is a **Gotchas** or **Common Pitfalls** section — lessons learned from repeated agent mistakes. These are more valuable than general instructions because they capture non-obvious failure modes that the agent will hit again without explicit guidance.
+
+When authoring or reviewing a skill, actively collect pitfalls from real usage and add a dedicated section. Examples:
+
+- "Always use `--no-cache` when building Docker images in CI — stale layers cause silent test failures"
+- "The API returns `200` with an error body on rate limit; check `response.error` before proceeding"
+- "PDF page indices are 0-based in pdfplumber but 1-based in the user-facing API"
+
+### On-demand Hooks
+
+Skills can register session-level hooks that activate only when explicitly invoked by the user. This is useful for highly opinionated rules that shouldn't be globally active.
+
+Examples:
+- `/careful` — intercept dangerous commands (rm -rf, DROP TABLE) and require confirmation
+- `/freeze` — lock the editing scope to a specific set of files, rejecting edits outside that set
+
+Use hooks when a behavior is valuable in specific contexts but would be disruptive if always on. Document available hooks clearly in SKILL.md so users know they exist.
+
+### Stateful Skills with config.json
+
+Skills that require user-specific configuration (e.g., a Slack channel name, a database connection, a preferred output format) should store settings in a `config.json` file within the skill directory.
+
+**Pattern**: On first run, the agent detects that `config.json` is missing, prompts the user for required values, writes `config.json`, and reads it automatically on subsequent runs.
+
+```
+my-skill/
+├── SKILL.md
+├── config.json      ← created on first run
+└── scripts/
+```
+
+Example `config.json`:
+```json
+{
+  "slack_channel": "#deployments",
+  "notify_on_failure": true
+}
+```
+
+In SKILL.md, document both the config fields and the first-run setup flow so the agent knows to prompt for missing values.
+
 ### Anatomy of a Skill
 
 Every skill consists of a required SKILL.md file and optional bundled resources:
@@ -268,28 +311,43 @@ Skip this step only if the skill being developed already exists, and iteration o
 
 When creating a new skill from scratch, always run the `init_skill.py` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
 
+**Important: Always create skills in your workspace directory, NOT in the global OpenClaw installation.** Skills created in the global `node_modules/openclaw/skills/` directory will be lost when you upgrade OpenClaw.
+
 Usage:
 
 ```bash
-scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets] [--examples]
+scripts/init_skill.py <skill-name> [--path <output-directory>] [--resources scripts,references,assets] [--examples]
 ```
 
 Examples:
 
 ```bash
-scripts/init_skill.py my-skill --path skills/public
-scripts/init_skill.py my-skill --path skills/public --resources scripts,references
-scripts/init_skill.py my-skill --path skills/public --resources scripts --examples
+# Create in default workspace skills directory (~/.openclaw/workspace/skills/)
+scripts/init_skill.py my-skill
+
+# Create in default workspace with resources
+scripts/init_skill.py my-skill --resources scripts,references
+
+# Create in default workspace with resources and examples
+scripts/init_skill.py my-skill --resources scripts --examples
+
+# Create in a custom directory (use absolute paths to avoid confusion)
+scripts/init_skill.py my-skill --path /absolute/path/to/skills
+scripts/init_skill.py my-skill --path ~/.openclaw/workspace/skills
 ```
 
 The script:
 
-- Creates the skill directory at the specified path
+- Creates the skill directory at the specified path (defaults to workspace skills directory if `--path` is omitted)
 - Generates a SKILL.md template with proper frontmatter and TODO placeholders
 - Optionally creates resource directories based on `--resources`
 - Optionally adds example files when `--examples` is set
 
 After initialization, customize the SKILL.md and add resources as needed. If you used `--examples`, replace or delete placeholder files.
+
+**Default behavior:** When `--path` is not specified, the skill is created in:
+- `~/.openclaw/workspace/skills/<skill-name>/` (default)
+- Or `$OPENCLAW_WORKSPACE_DIR/skills/<skill-name>/` if the environment variable is set
 
 ### Step 4: Edit the Skill
 
@@ -324,6 +382,7 @@ Write the YAML frontmatter with `name` and `description`:
 - `description`: This is the primary triggering mechanism for your skill, and helps Codex understand when to use the skill.
   - Include both what the Skill does and specific triggers/contexts for when to use it.
   - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to Codex.
+  - Quote the `description` value if it contains `:`, `#`, brackets, or other YAML-sensitive punctuation. Keep `name` and `description` as simple YAML scalars.
   - Example description for a `docx` skill: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when Codex needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
 
 Do not include any other fields in YAML frontmatter.
@@ -370,3 +429,37 @@ After testing the skill, users may request improvements. Often this happens righ
 2. Notice struggles or inefficiencies
 3. Identify how SKILL.md or bundled resources should be updated
 4. Implement changes and test again
+
+### Step 7: Measure and Refine
+
+Track how skills perform in practice to identify issues:
+
+- **Under-triggering**: The skill exists but Codex doesn't activate it when it should. Fix: improve the `description` in frontmatter with more trigger phrases and contexts.
+- **Over-triggering**: The skill activates for unrelated tasks, wasting context. Fix: narrow the description, add negative examples ("Do NOT use for...").
+- **Partial usage**: The skill triggers but Codex ignores key instructions. Fix: restructure for clarity, move critical steps earlier, add to the Gotchas section.
+
+Use `PreToolUse` hooks or session logs to measure trigger frequency and success rate. A skill that never triggers is dead weight; a skill that always triggers is probably too broad.
+
+## Distribution Guidelines
+
+### Small Teams
+
+Check skills directly into the repo (e.g., `.claude/skills/` or `.openclaw/skills/`). Version control provides history, code review provides quality control.
+
+### Scaling Up
+
+For organizations with many skills:
+
+1. **Sandbox first** — new skills start as personal or team experiments
+2. **Prove traction** — track usage and success before promoting
+3. **Curate actively** — avoid redundant or low-quality skills that pollute the namespace
+4. **Retire aggressively** — skills that aren't used or maintained should be archived, not left to rot
+
+### Marketplace Considerations
+
+When publishing skills to a shared marketplace (e.g., [ClawHub](https://clawhub.com)):
+
+- Include clear examples in the description so users know what to expect
+- Test against multiple models — skill instructions that work for one model may confuse another
+- Keep dependencies minimal — skills that require complex setup have lower adoption
+- Version your skills — breaking changes to SKILL.md can break workflows downstream

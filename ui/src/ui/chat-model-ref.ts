@@ -1,3 +1,4 @@
+import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 import type { ModelCatalogEntry } from "./types.ts";
 
 export type ChatModelOverride =
@@ -24,6 +25,11 @@ export function buildQualifiedChatModelValue(model: string, provider?: string | 
   const trimmedModel = model.trim();
   if (!trimmedModel) {
     return "";
+  }
+  // Preserve already-qualified model refs (provider/model) as-is.
+  // This avoids prepending an unrelated/default provider.
+  if (trimmedModel.includes("/")) {
+    return trimmedModel;
   }
   const trimmedProvider = provider?.trim();
   return trimmedProvider ? `${trimmedProvider}/${trimmedModel}` : trimmedModel;
@@ -63,8 +69,9 @@ export function resolveChatModelOverride(
   }
 
   let matchedValue = "";
+  const normalizedTrimmed = normalizeLowercaseStringOrEmpty(trimmed);
   for (const entry of catalog) {
-    if (entry.id.trim().toLowerCase() !== trimmed.toLowerCase()) {
+    if (normalizeLowercaseStringOrEmpty(entry.id) !== normalizedTrimmed) {
       continue;
     }
     const candidate = buildQualifiedChatModelValue(entry.id, entry.provider);
@@ -72,7 +79,9 @@ export function resolveChatModelOverride(
       matchedValue = candidate;
       continue;
     }
-    if (matchedValue.toLowerCase() !== candidate.toLowerCase()) {
+    if (
+      normalizeLowercaseStringOrEmpty(matchedValue) !== normalizeLowercaseStringOrEmpty(candidate)
+    ) {
       return { value: trimmed, source: "raw", reason: "ambiguous" };
     }
   }
@@ -92,6 +101,55 @@ export function resolveServerChatModelValue(
   return buildQualifiedChatModelValue(model, provider);
 }
 
+function resolveCatalogValueById(
+  model: string,
+  provider: string | null | undefined,
+  catalog: ModelCatalogEntry[],
+): ChatModelResolution | null {
+  const trimmedModel = model.trim();
+  const trimmedProvider = provider?.trim();
+  if (!trimmedModel) {
+    return null;
+  }
+
+  let providerMatch = "";
+  let uniqueMatch = "";
+  let matchCount = 0;
+  for (const entry of catalog) {
+    const entryId = entry.id.trim();
+    if (entryId.toLowerCase() !== trimmedModel.toLowerCase()) {
+      continue;
+    }
+    matchCount += 1;
+    const candidate = buildQualifiedChatModelValue(entryId, entry.provider);
+    if (trimmedProvider && entry.provider?.trim().toLowerCase() === trimmedProvider.toLowerCase()) {
+      providerMatch = candidate;
+    }
+    if (!uniqueMatch) {
+      uniqueMatch = candidate;
+      continue;
+    }
+    if (uniqueMatch.toLowerCase() !== candidate.toLowerCase()) {
+      uniqueMatch = "";
+    }
+  }
+
+  if (providerMatch) {
+    if (matchCount > 1) {
+      return {
+        value: buildQualifiedChatModelValue(trimmedModel, trimmedProvider),
+        source: "server",
+        reason: "ambiguous",
+      };
+    }
+    return { value: providerMatch, source: "catalog" };
+  }
+  if (uniqueMatch) {
+    return { value: uniqueMatch, source: "catalog" };
+  }
+  return null;
+}
+
 export function resolvePreferredServerChatModel(
   model: string | null | undefined,
   provider: string | null | undefined,
@@ -105,12 +163,36 @@ export function resolvePreferredServerChatModel(
     return { value: "", source: "empty", reason: "empty" };
   }
 
+  const trimmedProvider = provider?.trim();
+  if (
+    trimmedProvider &&
+    trimmedModel.toLowerCase().startsWith(`${trimmedProvider.toLowerCase()}/`)
+  ) {
+    return { value: trimmedModel, source: "qualified" };
+  }
+
+  const catalogResolution = resolveCatalogValueById(trimmedModel, trimmedProvider, catalog);
+  if (catalogResolution) {
+    return catalogResolution;
+  }
+
   const overrideResolution = resolveChatModelOverride(
     createChatModelOverride(trimmedModel),
     catalog,
   );
-  if (overrideResolution.source === "qualified" || overrideResolution.source === "catalog") {
+  if (overrideResolution.source === "catalog") {
     return overrideResolution;
+  }
+  // Model IDs that contain a slash (e.g. OpenRouter "nvidia/nemotron-...")
+  // are classified as "qualified" by createChatModelOverride, but the slash
+  // belongs to the model ID itself, not a provider prefix.  Always re-qualify
+  // with the server-provided provider so downstream parseModelRef splits on
+  // the correct boundary.
+  if (overrideResolution.source === "qualified" && provider?.trim()) {
+    return {
+      value: resolveServerChatModelValue(trimmedModel, provider),
+      source: "server",
+    };
   }
 
   return {
@@ -133,17 +215,20 @@ export function formatChatModelDisplay(value: string): string {
   if (!trimmed) {
     return "";
   }
-  const separator = trimmed.indexOf("/");
-  if (separator <= 0) {
+  const parts = trimmed.split("/").filter(Boolean);
+  if (parts.length < 2) {
     return trimmed;
   }
-  return `${trimmed.slice(separator + 1)} · ${trimmed.slice(0, separator)}`;
+  return `${parts.slice(1).join("/")} · ${parts[0]}`;
 }
 
 export function buildChatModelOption(entry: ModelCatalogEntry): { value: string; label: string } {
   const provider = entry.provider?.trim();
+  const modelId = entry.id.trim();
+  const hasProviderPrefix =
+    !!provider && normalizeLowercaseStringOrEmpty(modelId).startsWith(`${normalizeLowercaseStringOrEmpty(provider)}/`);
   return {
-    value: buildQualifiedChatModelValue(entry.id, provider),
-    label: provider ? `${entry.id} · ${provider}` : entry.id,
+    value: provider && modelId && !hasProviderPrefix ? `${provider}/${modelId}` : modelId,
+    label: provider ? `${modelId} · ${provider}` : modelId,
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveSlackThreadContext, resolveSlackThreadTargets } from "./threading.js";
 
 describe("resolveSlackThreadTargets", () => {
-  function expectAutoCreatedTopLevelThreadTsBehavior(replyToMode: "off" | "first") {
+  function expectAutoCreatedTopLevelThreadTsBehavior(replyToMode: "off" | "first" | "batched") {
     const { replyThreadTs, statusThreadTs, isThreadReply } = resolveSlackThreadTargets({
       replyToMode,
       message: {
@@ -69,6 +69,10 @@ describe("resolveSlackThreadTargets", () => {
     expectAutoCreatedTopLevelThreadTsBehavior("first");
   });
 
+  it("keeps batched-mode behavior for auto-created top-level thread_ts", () => {
+    expectAutoCreatedTopLevelThreadTsBehavior("batched");
+  });
+
   it("sets messageThreadId for top-level messages when replyToMode is all", () => {
     const context = resolveSlackThreadContext({
       replyToMode: "all",
@@ -82,6 +86,26 @@ describe("resolveSlackThreadTargets", () => {
     expect(context.isThreadReply).toBe(false);
     expect(context.messageThreadId).toBe("123");
     expect(context.replyToId).toBe("123");
+  });
+
+  it("sets messageThreadId for thread-root messages regardless of replyToMode", () => {
+    for (const replyToMode of ["off", "first", "batched"] as const) {
+      const context = resolveSlackThreadContext({
+        replyToMode,
+        message: {
+          type: "message",
+          channel: "C1",
+          ts: "123",
+          thread_ts: "123",
+        },
+      });
+
+      expect(context.isThreadReply).toBe(false);
+      // thread_ts == ts: Agents & Assistants DM root — preserve thread context
+      // so tool calls (subagent results) thread correctly regardless of mode.
+      expect(context.messageThreadId).toBe("123");
+      expect(context.replyToId).toBe("123");
+    }
   });
 
   it("prefers thread_ts as messageThreadId for replies", () => {

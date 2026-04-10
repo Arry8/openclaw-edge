@@ -5,10 +5,12 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
-import type { AuthProfileStore } from "./auth-profiles.js";
-import { saveAuthProfileStore } from "./auth-profiles.js";
+import { createWarnLogCapture } from "../logging/test-helpers/warn-log-capture.js";
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
+import { saveAuthProfileStore } from "./auth-profiles/store.js";
+import type { AuthProfileStore } from "./auth-profiles/types.js";
 import { isAnthropicBillingError } from "./live-auth-keys.js";
+import { FailoverError } from "./failover-error.js";
 import { LiveSessionModelSwitchError } from "./live-model-switch.js";
 import { runWithImageModelFallback, runWithModelFallback } from "./model-fallback.js";
 import { makeModelFallbackCfg } from "./test-helpers/model-fallback-config-fixture.js";
@@ -181,6 +183,8 @@ const OPENAI_RATE_LIMIT_MESSAGE =
 // Anthropic overloaded_error example shape: https://docs.anthropic.com/en/api/errors
 const ANTHROPIC_OVERLOADED_PAYLOAD =
   '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"req_test"}';
+const OPENROUTER_MODEL_NOT_FOUND_PAYLOAD =
+  '{"error":{"message":"Healer Alpha was a stealth model revealed on March 18th as an early testing version of MiMo-V2-Omni. Find it here: https://openrouter.ai/xiaomi/mimo-v2-omni","code":404},"user_id":"user_33GTyP8uDSYYbaeBO48AGHXyuMC"}';
 // Issue-backed Anthropic/OpenAI-compatible insufficient_quota payload under HTTP 400:
 // https://github.com/openclaw/openclaw/issues/23440
 const INSUFFICIENT_QUOTA_PAYLOAD =
@@ -306,6 +310,69 @@ describe("runWithModelFallback", () => {
     });
     expect(result.result).toBe("ok");
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues fallback chain when run throws FailoverError for finish_reason:error (#59524)", async () => {
+    const cfg = makeCfg();
+    // Simulates what agent-command.ts throws when result.meta.stopReason === "error"
+    // and classifyFailoverReason returns null (unknown provider error → defaults to "overloaded")
+    const finishReasonError = new FailoverError("Provider finish_reason: error", {
+      reason: "overloaded",
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+    });
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(finishReasonError)
+      .mockResolvedValueOnce("ok from fallback");
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      run,
+    });
+
+    expect(result.result).toBe("ok from fallback");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts[0]).toMatchObject({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      reason: "overloaded",
+      error: "Provider finish_reason: error",
+    });
+  });
+
+  it("derives failover reason from error payload when stopReason is error (#59524)", async () => {
+    const cfg = makeCfg();
+    // Simulates a rate-limit error detected via classifyFailoverReason on the error text
+    const rateLimitError = new FailoverError("429 Rate limit exceeded", {
+      reason: "rate_limit",
+      provider: "openai",
+      model: "gpt-5.2",
+    });
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce("ok from fallback");
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "openai",
+      model: "gpt-5.2",
+      run,
+    });
+
+    expect(result.result).toBe("ok from fallback");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts[0]).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.2",
+      reason: "rate_limit",
+      error: "429 Rate limit exceeded",
+    });
   });
 
   it("falls back on auth errors", async () => {
@@ -535,6 +602,26 @@ describe("runWithModelFallback", () => {
     expect(run.mock.calls[1]?.[1]).toBe("claude-haiku-3-5");
   });
 
+  it("falls back on JSON-wrapped OpenRouter 404 model errors", async () => {
+    const cfg = makeCfg();
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error(OPENROUTER_MODEL_NOT_FOUND_PAYLOAD))
+      .mockResolvedValueOnce("ok");
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "openrouter",
+      model: "openrouter/healer-alpha",
+      run,
+    });
+
+    expect(result.result).toBe("ok");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toBe("openai");
+    expect(run.mock.calls[1]?.[1]).toBe("gpt-4.1-mini");
+  });
+
   it("warns when falling back due to model_not_found", async () => {
     setLoggerOverride({ level: "silent", consoleLevel: "warn" });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -564,8 +651,7 @@ describe("runWithModelFallback", () => {
   });
 
   it("sanitizes model identifiers in model_not_found warnings", async () => {
-    setLoggerOverride({ level: "silent", consoleLevel: "warn" });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warnLogs = createWarnLogCapture("openclaw-model-fallback-test");
     try {
       const cfg = makeCfg();
       const run = vi
@@ -581,16 +667,12 @@ describe("runWithModelFallback", () => {
       });
 
       expect(result.result).toBe("ok");
-      const warning = warnSpy.mock.calls
-        .map((call) => call[0] as string)
-        .find((value) => value.includes('Model "openai/gpt-6spoof" not found'));
+      const warning = warnLogs.findText('Model "openai/gpt-6spoof" not found');
       expect(warning).toContain('Model "openai/gpt-6spoof" not found');
       expect(warning).not.toContain("\u001B");
       expect(warning).not.toContain("\n");
     } finally {
-      warnSpy.mockRestore();
-      setLoggerOverride(null);
-      resetLogger();
+      warnLogs.cleanup();
     }
   });
 
@@ -1515,6 +1597,131 @@ describe("runWithModelFallback", () => {
         allowTransientCooldownProbe: true,
       });
       expect(run).toHaveBeenNthCalledWith(2, "groq", "llama-3.3-70b-versatile");
+    });
+
+    it("primary probe does not consume transient probe slot for same-provider fallbacks", async () => {
+      // Scenario: sub2api/opus (primary) is in cooldown near expiry, probed but
+      // fails. sub2api/sonnet (fallback) should still get its own probe attempt
+      // rather than being skipped due to the primary's probe.
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-"));
+      const now = Date.now();
+      const store: AuthProfileStore = {
+        version: AUTH_STORE_VERSION,
+        profiles: {
+          "sub2api:default": { type: "api_key", provider: "sub2api", key: "test-key" },
+          "zenmux:default": { type: "api_key", provider: "zenmux", key: "test-key" },
+          "openrouter:default": { type: "api_key", provider: "openrouter", key: "test-key" },
+        },
+        usageStats: {
+          "sub2api:default": {
+            // Near expiry so primary WILL be probed
+            cooldownUntil: now + 60000, // 1 min from now, within PROBE_MARGIN_MS
+            failureCounts: { rate_limit: 1 },
+          },
+          "zenmux:default": {
+            cooldownUntil: now + 300000,
+            failureCounts: { rate_limit: 2 },
+          },
+          // openrouter not in cooldown
+        },
+      };
+      saveAuthProfileStore(store, tmpDir);
+
+      const cfg = makeCfg({
+        agents: {
+          defaults: {
+            model: {
+              primary: "sub2api/claude-opus-4-6",
+              fallbacks: [
+                "zenmux/claude-opus-4.6",
+                "zenmux/claude-sonnet-4.6",
+                "sub2api/claude-sonnet-4-6",
+                "openrouter/claude-opus-4.6",
+              ],
+            },
+          },
+        },
+      });
+
+      const run = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("sub2api opus timeout")) // primary probe fails
+        .mockRejectedValueOnce(new Error("zenmux 402 quota")) // zenmux opus probe fails
+        // zenmux/sonnet skipped (same provider, probe already used)
+        .mockRejectedValueOnce(new Error("sub2api sonnet also down")) // sub2api/sonnet gets its own probe!
+        .mockResolvedValueOnce("openrouter success"); // cross-provider works
+
+      const result = await runWithModelFallback({
+        cfg,
+        provider: "sub2api",
+        model: "claude-opus-4-6",
+        run,
+        agentDir: tmpDir,
+      });
+
+      expect(result.result).toBe("openrouter success");
+      // sub2api/opus (primary probe) + zenmux/opus (probe) + sub2api/sonnet (own probe) + openrouter
+      expect(run).toHaveBeenCalledTimes(4);
+      expect(run).toHaveBeenNthCalledWith(4, "openrouter", "openrouter/claude-opus-4.6");
+    });
+
+    it("non-primary fallbacks still deduplicate among themselves on the same provider", async () => {
+      // After primary probe, two same-provider non-primary fallbacks:
+      // the first should probe, the second should be skipped.
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-"));
+      const now = Date.now();
+      const store: AuthProfileStore = {
+        version: AUTH_STORE_VERSION,
+        profiles: {
+          "sub2api:default": { type: "api_key", provider: "sub2api", key: "test-key" },
+          "groq:default": { type: "api_key", provider: "groq", key: "test-key" },
+        },
+        usageStats: {
+          "sub2api:default": {
+            cooldownUntil: now + 60000,
+            failureCounts: { rate_limit: 1 },
+          },
+        },
+      };
+      saveAuthProfileStore(store, tmpDir);
+
+      const cfg = makeCfg({
+        agents: {
+          defaults: {
+            model: {
+              primary: "sub2api/claude-opus-4-6",
+              fallbacks: [
+                "sub2api/claude-sonnet-4-6",
+                "sub2api/claude-haiku-3-5",
+                "groq/llama-3.3-70b-versatile",
+              ],
+            },
+          },
+        },
+      });
+
+      const run = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("sub2api opus timeout")) // primary probe
+        .mockRejectedValueOnce(new Error("sub2api sonnet also down")) // first non-primary probe
+        // sub2api/haiku skipped (non-primary slot already consumed for sub2api)
+        .mockResolvedValueOnce("groq success");
+
+      const result = await runWithModelFallback({
+        cfg,
+        provider: "sub2api",
+        model: "claude-opus-4-6",
+        run,
+        agentDir: tmpDir,
+      });
+
+      expect(result.result).toBe("groq success");
+      // primary + sonnet (first non-primary probe) + groq; haiku skipped
+      expect(run).toHaveBeenCalledTimes(3);
+      expect(run).toHaveBeenNthCalledWith(2, "sub2api", "claude-sonnet-4-6", {
+        allowTransientCooldownProbe: true,
+      });
+      expect(run).toHaveBeenNthCalledWith(3, "groq", "llama-3.3-70b-versatile");
     });
 
     it("does not consume transient probe slot when first same-provider probe fails with model_not_found", async () => {

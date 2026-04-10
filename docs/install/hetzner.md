@@ -33,6 +33,9 @@ See [Security](/gateway/security) and [VPS hosting](/vps).
 - Persist `~/.openclaw` + `~/.openclaw/workspace` on the host (survives restarts/rebuilds)
 - Access the Control UI from your laptop via an SSH tunnel
 
+That mounted `~/.openclaw` state includes `openclaw.json`, per-agent
+`agents/<agentId>/agent/auth-profiles.json`, and `.env`.
+
 The Gateway can be accessed via:
 
 - SSH port forwarding from your laptop
@@ -150,6 +153,10 @@ For the generic Docker flow, see [Docker](/install/docker).
 
     **Do not commit this file.**
 
+    This `.env` file is for container/runtime env such as `OPENCLAW_GATEWAY_TOKEN`.
+    Stored provider OAuth/API-key auth lives in the mounted
+    `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`.
+
   </Step>
 
   <Step title="Docker Compose configuration">
@@ -193,6 +200,11 @@ For the generic Docker flow, see [Docker](/install/docker).
           ]
     ```
 
+    > **Warning:** If you are adapting the repository's default `docker-compose.yml`, replace
+    > the `ports:` block rather than merging an override on top of the existing
+    > public port mappings. A naive override can leave `0.0.0.0:18789` or
+    > `0.0.0.0:18790` exposed even when you intended a loopback-only VPS setup.
+
     `--allow-unconfigured` is only for bootstrap convenience, it is not a replacement for a proper gateway configuration. Still set auth (`gateway.auth.token` or password) and use safe bind settings for your deployment.
 
   </Step>
@@ -208,7 +220,21 @@ For the generic Docker flow, see [Docker](/install/docker).
   </Step>
 
   <Step title="Hetzner-specific access">
-    After the shared build and launch steps, tunnel from your laptop:
+    After the shared build and launch steps, complete the following setup to open the tunnel:
+
+    **Prerequisite:** Ensure your VPS sshd config allows TCP forwarding. If you
+    have hardened your SSH config, check `/etc/ssh/sshd_config` and set:
+
+    ```
+    AllowTcpForwarding local
+    ```
+
+    `local` allows inbound port forwarding from your machine while blocking
+    outbound. Setting it to `no` will silently fail the tunnel with:
+    `channel 3: open failed: administratively prohibited: open failed`
+
+    After confirming TCP forwarding is enabled, restart sshd (`systemctl restart sshd`)
+    and run the tunnel from your laptop:
 
     ```bash
     ssh -N -L 18789:127.0.0.1:18789 root@YOUR_VPS_IP
@@ -218,7 +244,8 @@ For the generic Docker flow, see [Docker](/install/docker).
 
     `http://127.0.0.1:18789/`
 
-    Paste your gateway token.
+    Paste the configured shared secret. This guide uses the gateway token by
+    default; if you switched to password auth, use that password instead.
 
   </Step>
 </Steps>

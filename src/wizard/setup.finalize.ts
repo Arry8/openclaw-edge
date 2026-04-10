@@ -26,6 +26,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import { describeGatewayServiceRestart, resolveGatewayService } from "../daemon/service.js";
 import { isSystemdUserServiceAvailable } from "../daemon/systemd.js";
 import { ensureControlUiAssetsBuilt } from "../infra/control-ui-assets.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { restoreTerminalState } from "../terminal/restore.js";
 import { runTui } from "../tui/tui.js";
@@ -198,7 +199,6 @@ export async function finalizeSetupWizard(
               port: settings.port,
               runtime: daemonRuntime,
               warn: (message, title) => prompter.note(message, title),
-              config: nextConfig,
             },
           );
 
@@ -212,7 +212,7 @@ export async function finalizeSetupWizard(
           });
         }
       } catch (err) {
-        installError = err instanceof Error ? err.message : String(err);
+        installError = formatErrorMessage(err);
       } finally {
         progress.stop(
           installError ? "Gateway service install failed." : "Gateway service installed.",
@@ -327,7 +327,7 @@ export async function finalizeSetupWizard(
       await prompter.note(
         [
           "Could not resolve gateway.auth.password SecretRef for setup auth.",
-          error instanceof Error ? error.message : String(error),
+          formatErrorMessage(error),
         ].join("\n"),
         "Gateway auth",
       );
@@ -630,7 +630,14 @@ export async function finalizeSetupWizard(
   }
 
   await prompter.note(
-    'What now: https://openclaw.ai/showcase ("What People Are Building").',
+    [
+      'What now: https://openclaw.ai/showcase ("What People Are Building").',
+      "",
+      "For observability (community tool, requires Python):",
+      "  curl -fsSL https://clawmetry.com/install.sh | bash",
+      "See live agent activity, token costs, and memory.",
+      "Source: https://github.com/vivekchand/clawmetry",
+    ].join("\n"),
     "What now",
   );
 

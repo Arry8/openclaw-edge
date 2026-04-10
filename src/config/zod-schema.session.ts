@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parseByteSize } from "../cli/parse-bytes.js";
 import { parseDurationMs } from "../cli/parse-duration.js";
+import { normalizeStringifiedOptionalString } from "../shared/string-coerce.js";
 import { ElevatedAllowFromSchema } from "./zod-schema.agent-runtime.js";
 import { createAllowDenyChannelRulesSchema } from "./zod-schema.allowdeny.js";
 import {
@@ -51,6 +52,7 @@ export const SessionSchema = z
     resetByChannel: z.record(z.string(), SessionResetConfigSchema).optional(),
     store: z.string().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),
+    typingTtlSeconds: z.number().int().positive().optional(),
     typingMode: TypingModeSchema.optional(),
     parentForkMaxTokens: z.number().int().nonnegative().optional(),
     mainKey: z.string().optional(),
@@ -61,6 +63,7 @@ export const SessionSchema = z
       })
       .strict()
       .optional(),
+    injectOutboundToTargetSession: z.boolean().optional(),
     threadBindings: z
       .object({
         enabled: z.boolean().optional(),
@@ -85,7 +88,9 @@ export const SessionSchema = z
       .superRefine((val, ctx) => {
         if (val.pruneAfter !== undefined) {
           try {
-            parseDurationMs(String(val.pruneAfter).trim(), { defaultUnit: "d" });
+            parseDurationMs(normalizeStringifiedOptionalString(val.pruneAfter) ?? "", {
+              defaultUnit: "d",
+            });
           } catch {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -96,7 +101,9 @@ export const SessionSchema = z
         }
         if (val.rotateBytes !== undefined) {
           try {
-            parseByteSize(String(val.rotateBytes).trim(), { defaultUnit: "b" });
+            parseByteSize(normalizeStringifiedOptionalString(val.rotateBytes) ?? "", {
+              defaultUnit: "b",
+            });
           } catch {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -107,7 +114,9 @@ export const SessionSchema = z
         }
         if (val.resetArchiveRetention !== undefined && val.resetArchiveRetention !== false) {
           try {
-            parseDurationMs(String(val.resetArchiveRetention).trim(), { defaultUnit: "d" });
+            parseDurationMs(normalizeStringifiedOptionalString(val.resetArchiveRetention) ?? "", {
+              defaultUnit: "d",
+            });
           } catch {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -118,7 +127,9 @@ export const SessionSchema = z
         }
         if (val.maxDiskBytes !== undefined) {
           try {
-            parseByteSize(String(val.maxDiskBytes).trim(), { defaultUnit: "b" });
+            parseByteSize(normalizeStringifiedOptionalString(val.maxDiskBytes) ?? "", {
+              defaultUnit: "b",
+            });
           } catch {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -129,7 +140,9 @@ export const SessionSchema = z
         }
         if (val.highWaterBytes !== undefined) {
           try {
-            parseByteSize(String(val.highWaterBytes).trim(), { defaultUnit: "b" });
+            parseByteSize(normalizeStringifiedOptionalString(val.highWaterBytes) ?? "", {
+              defaultUnit: "b",
+            });
           } catch {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -139,6 +152,13 @@ export const SessionSchema = z
           }
         }
       })
+      .optional(),
+    archival: z
+      .object({
+        enabled: z.boolean().optional(),
+        keepLastTurns: z.number().int().min(5).max(100).optional(),
+      })
+      .strict()
       .optional(),
   })
   .strict()
@@ -187,7 +207,10 @@ export const MessagesSchema = z
       .strict()
       .optional(),
     suppressToolErrors: z.boolean().optional(),
+    suppressApiErrors: z.boolean().optional(),
     tts: TtsConfigSchema,
+    modelEmojiMap: z.record(z.string(), z.string()).optional(),
+    thinkEmoji: z.tuple([z.string(), z.string()]).optional(),
   })
   .strict()
   .optional();

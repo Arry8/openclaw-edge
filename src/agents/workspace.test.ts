@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTempWorkspace, writeWorkspaceFile } from "../test-helpers/workspace.js";
 import {
   DEFAULT_AGENTS_FILENAME,
@@ -13,6 +13,7 @@ import {
   DEFAULT_USER_FILENAME,
   ensureAgentWorkspace,
   filterBootstrapFilesForSession,
+  loadExtraBootstrapFilesWithDiagnostics,
   loadWorkspaceBootstrapFiles,
   resolveDefaultAgentWorkspaceDir,
   type WorkspaceBootstrapFile,
@@ -88,6 +89,14 @@ describe("ensureAgentWorkspace", () => {
     await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
 
     await expectBootstrapSeeded(tempDir);
+  });
+
+  it("ensures memory/ directory exists when ensureBootstrapFiles is true", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+
+    await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
+
+    await expect(fs.access(path.join(tempDir, "memory"))).resolves.toBeUndefined();
   });
 
   it("does not recreate BOOTSTRAP.md after completion, even when a core file is recreated", async () => {
@@ -172,6 +181,22 @@ describe("ensureAgentWorkspace", () => {
     );
     expect(persisted).toContain('"setupCompletedAt": "2026-03-15T02:30:00.000Z"');
   });
+
+  it("handles concurrent workspace setup state writes without temp file collisions", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(1_763_123_456_789);
+    try {
+      await Promise.all(
+        Array.from({ length: 8 }, () =>
+          ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true }),
+        ),
+      );
+    } finally {
+      dateNow.mockRestore();
+    }
+
+    await expectBootstrapSeeded(tempDir);
+  });
 });
 
 describe("loadWorkspaceBootstrapFiles", () => {
@@ -213,6 +238,29 @@ describe("loadWorkspaceBootstrapFiles", () => {
     expect(getMemoryEntries(files)).toHaveLength(0);
   });
 
+  it("loads symlinked bootstrap files that point outside the workspace", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-symlink-"));
+    try {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const outsideDir = path.join(rootDir, "outside");
+      await fs.mkdir(workspaceDir, { recursive: true });
+      await fs.mkdir(outsideDir, { recursive: true });
+      const outsideFile = path.join(outsideDir, DEFAULT_AGENTS_FILENAME);
+      await fs.writeFile(outsideFile, "symlinked content", "utf-8");
+      await fs.symlink(outsideFile, path.join(workspaceDir, DEFAULT_AGENTS_FILENAME));
+
+      const files = await loadWorkspaceBootstrapFiles(workspaceDir);
+      const agents = files.find((file) => file.name === DEFAULT_AGENTS_FILENAME);
+      expect(agents?.missing).toBe(false);
+      expect(agents?.content).toBe("symlinked content");
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats hardlinked bootstrap aliases as missing", async () => {
     if (process.platform === "win32") {
       return;
@@ -239,6 +287,69 @@ describe("loadWorkspaceBootstrapFiles", () => {
       const agents = files.find((file) => file.name === DEFAULT_AGENTS_FILENAME);
       expect(agents?.missing).toBe(true);
       expect(agents?.content).toBeUndefined();
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects symlinks whose target is hardlinked", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-sym-hard-"));
+    try {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const outsideDir = path.join(rootDir, "outside");
+      await fs.mkdir(workspaceDir, { recursive: true });
+      await fs.mkdir(outsideDir, { recursive: true });
+      const outsideFile = path.join(outsideDir, "original.md");
+      const hardlinkFile = path.join(outsideDir, DEFAULT_AGENTS_FILENAME);
+      await fs.writeFile(outsideFile, "hardlinked-symlink content", "utf-8");
+      try {
+        await fs.link(outsideFile, hardlinkFile);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+          return;
+        }
+        throw err;
+      }
+      // Symlink in workspace → hardlinked file outside workspace
+      await fs.symlink(hardlinkFile, path.join(workspaceDir, DEFAULT_AGENTS_FILENAME));
+
+      const files = await loadWorkspaceBootstrapFiles(workspaceDir);
+      const agents = files.find((file) => file.name === DEFAULT_AGENTS_FILENAME);
+      expect(agents?.missing).toBe(true);
+      expect(agents?.content).toBeUndefined();
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadExtraBootstrapFilesWithDiagnostics", () => {
+  it("rejects symlinked extra bootstrap files", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-extra-symlink-"));
+    try {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const outsideDir = path.join(rootDir, "outside");
+      const subDir = path.join(workspaceDir, "sub");
+      await fs.mkdir(subDir, { recursive: true });
+      await fs.mkdir(outsideDir, { recursive: true });
+      const outsideFile = path.join(outsideDir, DEFAULT_AGENTS_FILENAME);
+      await fs.writeFile(outsideFile, "extra symlinked content", "utf-8");
+      await fs.symlink(outsideFile, path.join(subDir, DEFAULT_AGENTS_FILENAME));
+
+      const { files, diagnostics } = await loadExtraBootstrapFilesWithDiagnostics(workspaceDir, [
+        `sub/${DEFAULT_AGENTS_FILENAME}`,
+      ]);
+      // The symlink fallback is NOT enabled for extra bootstrap files,
+      // so the file should be rejected with a security diagnostic.
+      expect(files).toHaveLength(0);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]?.reason).toBe("security");
     } finally {
       await fs.rm(rootDir, { recursive: true, force: true });
     }

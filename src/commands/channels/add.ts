@@ -8,6 +8,7 @@ import type { ChannelId, ChannelPlugin, ChannelSetupInput } from "../../channels
 import { replaceConfigFile, type OpenClawConfig } from "../../config/config.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
+import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
 import { createClackPrompter } from "../../wizard/clack-prompter.js";
 import { applyAgentBindings, describeBinding } from "../agents.bindings.js";
 import { isCatalogChannelInstalled } from "../channel-setup/discovery.js";
@@ -22,22 +23,26 @@ import { channelLabel, requireValidConfigFileSnapshot, shouldUseWizard } from ".
 export type ChannelsAddOptions = {
   channel?: string;
   account?: string;
+  communityId?: string;
+  communityAccessToken?: string;
   initialSyncLimit?: number | string;
   groupChannels?: string;
   dmAllowlist?: string;
 } & Omit<ChannelSetupInput, "groupChannels" | "dmAllowlist" | "initialSyncLimit">;
 
 function resolveCatalogChannelEntry(raw: string, cfg: OpenClawConfig | null) {
-  const trimmed = raw.trim().toLowerCase();
+  const trimmed = normalizeOptionalLowercaseString(raw);
   if (!trimmed) {
     return undefined;
   }
   const workspaceDir = cfg ? resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg)) : undefined;
   return listChannelPluginCatalogEntries({ workspaceDir }).find((entry) => {
-    if (entry.id.toLowerCase() === trimmed) {
+    if (normalizeOptionalLowercaseString(entry.id) === trimmed) {
       return true;
     }
-    return (entry.meta.aliases ?? []).some((alias) => alias.trim().toLowerCase() === trimmed);
+    return (entry.meta.aliases ?? []).some(
+      (alias) => normalizeOptionalLowercaseString(alias) === trimmed,
+    );
   });
 }
 
@@ -263,7 +268,13 @@ export async function channelsAddCommand(
 
   const plugin = await loadScopedPlugin(channel, catalogEntry?.pluginId);
   if (!plugin?.setup?.applyAccountConfig) {
-    runtime.error(`Channel ${channel} does not support add.`);
+    if (plugin?.auth?.login) {
+      runtime.error(
+        `Channel ${channel} does not support add. Use openclaw channels login --channel ${channel} to link it.`,
+      );
+    } else {
+      runtime.error(`Channel ${channel} does not support add.`);
+    }
     runtime.exit(1);
     return;
   }
@@ -280,6 +291,8 @@ export async function channelsAddCommand(
   const input: ChannelSetupInput = {
     name: opts.name,
     token: opts.token,
+    communityId: opts.communityId,
+    communityAccessToken: opts.communityAccessToken,
     privateKey: opts.privateKey,
     tokenFile: opts.tokenFile,
     botToken: opts.botToken,
@@ -312,12 +325,19 @@ export async function channelsAddCommand(
     dmAllowlist,
     autoDiscoverChannels: opts.autoDiscoverChannels,
   };
-  const accountId =
-    plugin.setup.resolveAccountId?.({
-      cfg: nextConfig,
-      accountId: opts.account,
-      input,
-    }) ?? normalizeAccountId(opts.account);
+  let accountId: string;
+  try {
+    accountId =
+      plugin.setup.resolveAccountId?.({
+        cfg: nextConfig,
+        accountId: opts.account,
+        input,
+      }) ?? normalizeAccountId(opts.account);
+  } catch (error) {
+    runtime.error(error instanceof Error ? error.message : String(error));
+    runtime.exit(1);
+    return;
+  }
 
   const validationError = plugin.setup.validateInput?.({
     cfg: nextConfig,
@@ -331,21 +351,44 @@ export async function channelsAddCommand(
   }
 
   const prevConfig = nextConfig;
-
-  if (accountId !== DEFAULT_ACCOUNT_ID) {
-    nextConfig = moveSingleAccountChannelSectionToDefaultAccount({
-      cfg: nextConfig,
-      channelKey: channel,
-    });
-  }
-
-  nextConfig = applyChannelAccountConfig({
-    cfg: nextConfig,
+  const candidateBaseConfig =
+    accountId !== DEFAULT_ACCOUNT_ID
+      ? moveSingleAccountChannelSectionToDefaultAccount({
+          cfg: nextConfig,
+          channelKey: channel,
+        })
+      : nextConfig;
+  const candidateConfig = applyChannelAccountConfig({
+    cfg: candidateBaseConfig,
     channel,
     accountId,
     input,
     plugin,
   });
+  const completeValidationError = plugin.setup.validateCompleteInput?.({
+    cfg: prevConfig,
+    candidateCfg: candidateConfig,
+    accountId,
+    input,
+  });
+  if (completeValidationError) {
+    runtime.error(completeValidationError);
+    runtime.exit(1);
+    return;
+  }
+  const asyncValidationError = await plugin.setup.validateInputAsync?.({
+    cfg: prevConfig,
+    candidateCfg: candidateConfig,
+    accountId,
+    input,
+  });
+  if (asyncValidationError) {
+    runtime.error(asyncValidationError);
+    runtime.exit(1);
+    return;
+  }
+
+  nextConfig = candidateConfig;
   await plugin.lifecycle?.onAccountConfigChanged?.({
     prevCfg: prevConfig,
     nextCfg: nextConfig,

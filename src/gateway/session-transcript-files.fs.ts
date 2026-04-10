@@ -5,15 +5,21 @@ import {
   formatSessionArchiveTimestamp,
   parseSessionArchiveTimestamp,
   type SessionArchiveReason,
+} from "../config/sessions/artifacts.js";
+import {
   resolveSessionFilePath,
   resolveSessionTranscriptPath,
   resolveSessionTranscriptPathInDir,
-} from "../config/sessions.js";
+} from "../config/sessions/paths.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 
 export type ArchiveFileReason = SessionArchiveReason;
+export type ArchivedSessionTranscript = {
+  sourcePath: string;
+  archivedPath: string;
+};
 
-function classifySessionTranscriptCandidate(
+export function classifySessionTranscriptCandidate(
   sessionId: string,
   sessionFile?: string,
 ): "current" | "stale" | "custom" {
@@ -136,7 +142,22 @@ export function archiveSessionTranscripts(opts: {
    */
   restrictToStoreDir?: boolean;
 }): string[] {
-  const archived: string[] = [];
+  return archiveSessionTranscriptsDetailed(opts).map((entry) => entry.archivedPath);
+}
+
+export function archiveSessionTranscriptsDetailed(opts: {
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile?: string;
+  agentId?: string;
+  reason: "reset" | "deleted";
+  /**
+   * When true, only archive files resolved under the session store directory.
+   * This prevents maintenance operations from mutating paths outside the agent sessions dir.
+   */
+  restrictToStoreDir?: boolean;
+}): ArchivedSessionTranscript[] {
+  const archived: ArchivedSessionTranscript[] = [];
   const storeDir =
     opts.restrictToStoreDir && opts.storePath
       ? canonicalizePathForComparison(path.dirname(opts.storePath))
@@ -158,12 +179,54 @@ export function archiveSessionTranscripts(opts: {
       continue;
     }
     try {
-      archived.push(archiveFileOnDisk(candidatePath, opts.reason));
+      archived.push({
+        sourcePath: candidatePath,
+        archivedPath: archiveFileOnDisk(candidatePath, opts.reason),
+      });
     } catch {
       // Best-effort.
     }
   }
   return archived;
+}
+
+export function resolveStableSessionEndTranscript(params: {
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile?: string;
+  agentId?: string;
+  archivedTranscripts?: ArchivedSessionTranscript[];
+}): { sessionFile?: string; transcriptArchived?: boolean } {
+  const archivedTranscripts = params.archivedTranscripts ?? [];
+  if (archivedTranscripts.length > 0) {
+    const preferredPath = params.sessionFile?.trim()
+      ? canonicalizePathForComparison(params.sessionFile)
+      : undefined;
+    const archivedMatch =
+      preferredPath == null
+        ? undefined
+        : archivedTranscripts.find(
+            (entry) => canonicalizePathForComparison(entry.sourcePath) === preferredPath,
+          );
+    const archivedPath = archivedMatch?.archivedPath ?? archivedTranscripts[0]?.archivedPath;
+    if (archivedPath) {
+      return { sessionFile: archivedPath, transcriptArchived: true };
+    }
+  }
+
+  for (const candidate of resolveSessionTranscriptCandidates(
+    params.sessionId,
+    params.storePath,
+    params.sessionFile,
+    params.agentId,
+  )) {
+    const candidatePath = canonicalizePathForComparison(candidate);
+    if (fs.existsSync(candidatePath)) {
+      return { sessionFile: candidatePath, transcriptArchived: false };
+    }
+  }
+
+  return {};
 }
 
 export async function cleanupArchivedSessionTranscripts(opts: {
@@ -203,4 +266,57 @@ export async function cleanupArchivedSessionTranscripts(opts: {
   }
 
   return { removed, scanned };
+}
+
+/**
+ * Returns the path of the most recent `.reset.<timestamp>` archive for the given
+ * session, or undefined if none exist. Used as a fallback in readSessionMessages
+ * so that chat.history returns archived content instead of an empty response
+ * after a daily or manual session reset.
+ *
+ * Searches all provided directories in order. The caller should derive searchDirs
+ * from the same candidate paths used to locate primary transcripts (including the
+ * legacy `~/.openclaw/sessions` dir) so archive lookup stays consistent.
+ *
+ * @param candidateBasenames - basenames of the resolved candidate transcript paths
+ *   (e.g. `["<sessionId>.jsonl", "<sessionId>-<agentId>.jsonl"]`). Archives are
+ *   named `<transcriptBasename>.reset.<timestamp>`, so matching against all
+ *   candidate basenames avoids missing archives for non-canonical transcript names.
+ *   Falls back to `<sessionId>.jsonl.reset.*` when not provided.
+ */
+export function findLatestResetArchive(
+  sessionId: string,
+  searchDirs: readonly string[],
+  candidateBasenames?: readonly string[],
+): string | undefined {
+  // Build one prefix per candidate basename; fall back to the canonical name.
+  const prefixes =
+    candidateBasenames && candidateBasenames.length > 0
+      ? candidateBasenames.map((b) => `${b}.reset.`)
+      : [`${sessionId}.jsonl.reset.`];
+
+  // Scan all dirs before deciding; pick the globally newest archive so that
+  // a more-recent file in the legacy dir is not missed when the primary dir
+  // also contains archives (e.g. after a store-path migration).
+  let latestTimestamp = -Infinity;
+  let latestPath: string | undefined;
+
+  for (const dir of searchDirs) {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const d of entries) {
+        if (!d.isFile() || !prefixes.some((p) => d.name.startsWith(p))) {
+          continue;
+        }
+        const ts = parseSessionArchiveTimestamp(d.name, "reset");
+        if (ts != null && ts > latestTimestamp) {
+          latestTimestamp = ts;
+          latestPath = path.join(dir, d.name);
+        }
+      }
+    } catch {
+      // Skip unreadable dirs (missing legacy dir is the common case).
+    }
+  }
+  return latestPath;
 }

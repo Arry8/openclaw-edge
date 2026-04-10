@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { withEnv } from "../../test-support.js";
+import type { BrowserConfig } from "../config/config.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveBrowserConfig, resolveProfile, shouldStartLocalBrowserServer } from "./config.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
+
+function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
+  const snapshot = new Map<string, string | undefined>();
+  for (const [key] of Object.entries(env)) {
+    snapshot.set(key, process.env[key]);
+  }
+
+  try {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    return fn();
+  } finally {
+    for (const [key, value] of snapshot) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 describe("browser config", () => {
   it("defaults to enabled with loopback defaults and lobster-orange color", () => {
@@ -32,6 +58,7 @@ describe("browser config", () => {
     expect(resolveProfile(resolved, "chrome-relay")).toBe(null);
     expect(resolved.remoteCdpTimeoutMs).toBe(1500);
     expect(resolved.remoteCdpHandshakeTimeoutMs).toBe(3000);
+    expect(resolved.actionTimeoutMs).toBe(20000);
   });
 
   it("derives default ports from OPENCLAW_GATEWAY_PORT when unset", () => {
@@ -88,6 +115,13 @@ describe("browser config", () => {
     });
     expect(resolved.remoteCdpTimeoutMs).toBe(2200);
     expect(resolved.remoteCdpHandshakeTimeoutMs).toBe(5000);
+  });
+
+  it("supports custom browser action timeouts", () => {
+    const resolved = resolveBrowserConfig({
+      actionTimeoutMs: 45000,
+    });
+    expect(resolved.actionTimeoutMs).toBe(45000);
   });
 
   it("falls back to default color for invalid hex", () => {
@@ -273,7 +307,7 @@ describe("browser config", () => {
         allowedHostnames: [" localhost ", ""],
         hostnameAllowlist: [" *.trusted.example ", " "],
       },
-    });
+    } as unknown as BrowserConfig);
     expect(resolved.ssrfPolicy).toEqual({
       dangerouslyAllowPrivateNetwork: true,
       allowedHostnames: ["localhost"],

@@ -34,6 +34,8 @@ These commands work on channels that support persistent thread bindings. See **T
 - `/session max-age <duration|off>`
 
 `/subagents info` shows run metadata (status, timestamps, session id, transcript path, cleanup).
+Use `sessions_history` for a bounded, safety-filtered recall view; inspect the
+transcript path on disk when you need the raw full transcript.
 
 ### Spawn behavior
 
@@ -41,12 +43,19 @@ These commands work on channels that support persistent thread bindings. See **T
 
 - The spawn command is non-blocking; it returns a run id immediately.
 - On completion, the sub-agent announces a summary/result message back to the requester chat channel.
+- Completion is push-based. Once spawned, do not poll `/subagents list`,
+  `sessions_list`, or `sessions_history` in a loop just to wait for it to
+  finish; inspect status only on-demand for debugging or intervention.
+- On completion, OpenClaw best-effort closes tracked browser tabs/processes opened by that sub-agent session before the announce cleanup flow continues.
 - For manual spawns, delivery is resilient:
   - OpenClaw tries direct `agent` delivery first with a stable idempotency key.
   - If direct delivery fails, it falls back to queue routing.
   - If queue routing is still not available, the announce is retried with a short exponential backoff before final give-up.
+- Completion delivery keeps the resolved requester route:
+  - thread-bound or conversation-bound completion routes win when available
+  - if the completion origin only provides a channel, OpenClaw fills the missing target/account from the requester session's resolved route (`lastChannel` / `lastTo` / `lastAccountId`) so direct delivery still works
 - The completion handoff to the requester session is runtime-generated internal context (not user-authored text) and includes:
-  - `Result` (`assistant` reply text, or latest `toolResult` if the assistant reply is empty)
+  - `Result` (latest visible `assistant` reply text, otherwise sanitized latest tool/toolResult text)
   - `Status` (`completed successfully` / `failed` / `timed out` / `unknown`)
   - compact runtime/token stats
   - a delivery instruction telling the requester agent to rewrite in normal assistant voice (not forward raw internal metadata)
@@ -91,6 +100,7 @@ Tool params:
   - `mode: "session"` requires `thread: true`
 - `cleanup?` (`delete|keep`, default `keep`)
 - `sandbox?` (`inherit|require`, default `inherit`; `require` rejects spawn unless target child runtime is sandboxed)
+- `streamTo?` (`"parent"`; when set, streams output to the parent session in real-time instead of waiting for the announce step)
 - `sessions_spawn` does **not** accept channel-delivery params (`target`, `channel`, `to`, `threadId`, `replyTo`, `transport`). For delivery, use `message`/`sessions_send` from the spawned run.
 
 ## Thread-bound sessions
@@ -118,14 +128,15 @@ Manual controls:
 
 Config switches:
 
-- Global default: `session.threadBindings.enabled`, `session.threadBindings.idleHours`, `session.threadBindings.maxAgeHours`
-- Channel override and spawn auto-bind keys are adapter-specific. See **Thread supporting channels** above.
+- **Global defaults** (apply to any channel supporting thread bindings): `session.threadBindings.enabled`, `session.threadBindings.idleHours`, `session.threadBindings.maxAgeHours`
+- **Discord adapter overrides**: `channels.discord.threadBindings.enabled`, `channels.discord.threadBindings.idleHours`, `channels.discord.threadBindings.maxAgeHours`, `channels.discord.threadBindings.spawnSubagentSessions`
 
 See [Configuration Reference](/gateway/configuration-reference) and [Slash commands](/tools/slash-commands) for current adapter details.
 
 Allowlist:
 
 - `agents.list[].subagents.allowAgents`: list of agent ids that can be targeted via `agentId` (`["*"]` to allow any). Default: only the requester agent.
+- `agents.defaults.subagents.allowAgents`: default target-agent allowlist used when the requester agent does not set its own `subagents.allowAgents`.
 - Sandbox inheritance guard: if the requester session is sandboxed, `sessions_spawn` rejects targets that would run unsandboxed.
 - `agents.defaults.subagents.requireAgentId` / `agents.list[].subagents.requireAgentId`: when true, block `sessions_spawn` calls that omit `agentId` (forces explicit profile selection). Default: false.
 
@@ -141,6 +152,7 @@ Auto-archive:
 - Auto-archive is best-effort; pending timers are lost if the gateway restarts.
 - `runTimeoutSeconds` does **not** auto-archive; it only stops the run. The session remains until auto-archive.
 - Auto-archive applies equally to depth-1 and depth-2 sessions.
+- Browser cleanup is separate from archive cleanup: tracked browser tabs/processes are best-effort closed when the run finishes, even if the transcript/session record is kept.
 
 ## Nested Sub-Agents
 
@@ -157,6 +169,7 @@ By default, sub-agents cannot spawn their own sub-agents (`maxSpawnDepth: 1`). Y
         maxChildrenPerAgent: 5, // max active children per agent session (default: 5)
         maxConcurrent: 8, // global concurrency lane cap (default: 8)
         runTimeoutSeconds: 900, // default timeout for sessions_spawn when omitted (0 = no timeout)
+        announceTimeoutMs: 90000, // how long the announce step waits before giving up (default: 90000)
       },
     },
   },
@@ -165,11 +178,14 @@ By default, sub-agents cannot spawn their own sub-agents (`maxSpawnDepth: 1`). Y
 
 ### Depth levels
 
-| Depth | Session key shape                            | Role                                          | Can spawn?                   |
-| ----- | -------------------------------------------- | --------------------------------------------- | ---------------------------- |
-| 0     | `agent:<id>:main`                            | Main agent                                    | Always                       |
-| 1     | `agent:<id>:subagent:<uuid>`                 | Sub-agent (orchestrator when depth 2 allowed) | Only if `maxSpawnDepth >= 2` |
-| 2     | `agent:<id>:subagent:<uuid>:subagent:<uuid>` | Sub-sub-agent (leaf worker)                   | Never                        |
+| Depth | Session key shape                            | Role                                          | Can spawn?                              |
+| ----- | -------------------------------------------- | --------------------------------------------- | --------------------------------------- |
+| 0     | `agent:<id>:main`                            | Main agent                                    | Always                                  |
+| 1     | `agent:<id>:subagent:<uuid>`                 | Sub-agent (orchestrator when depth 2 allowed) | Only if `maxSpawnDepth >= 2`            |
+| 2     | `agent:<id>:subagent:<uuid>:subagent:<uuid>` | Sub-sub-agent (leaf worker)                   | Only if `maxSpawnDepth >= 3`            |
+| 3–5   | Deeper nesting following the same pattern    | Deeper workers                                | Only if `maxSpawnDepth > current depth` |
+
+The general rule: spawning is allowed when `maxSpawnDepth > current depth`. The maximum supported value for `maxSpawnDepth` is 5 (range: 1–5). Depth 2 is recommended for most use cases.
 
 ### Announce chain
 
@@ -180,6 +196,14 @@ Results flow back up the chain:
 3. Main agent receives the announce and delivers to the user
 
 Each level only sees announces from its direct children.
+
+Operational guidance:
+
+- Start child work once and wait for completion events instead of building poll
+  loops around `sessions_list`, `sessions_history`, `/subagents list`, or
+  `exec` sleep commands.
+- If a child completion event arrives after you already sent the final answer,
+  the correct follow-up is the exact silent token `NO_REPLY` / `no_reply`.
 
 ### Tool policy by depth
 
@@ -216,10 +240,13 @@ Sub-agents report back via an announce step:
 
 - The announce step runs inside the sub-agent session (not the requester session).
 - If the sub-agent replies exactly `ANNOUNCE_SKIP`, nothing is posted.
+- If the latest assistant text is the exact silent token `NO_REPLY` / `no_reply`,
+  announce output is suppressed even if earlier visible progress existed.
 - Otherwise delivery depends on requester depth:
   - top-level requester sessions use a follow-up `agent` call with external delivery (`deliver=true`)
   - nested requester subagent sessions receive an internal follow-up injection (`deliver=false`) so the orchestrator can synthesize child results in-session
   - if a nested requester subagent session is gone, OpenClaw falls back to that session's requester when available
+- For top-level requester sessions, completion-mode direct delivery first resolves any bound conversation/thread route and hook override, then fills missing channel-target fields from the requester session's stored route. That keeps completions on the right chat/topic even when the completion origin only identifies the channel.
 - Child completion aggregation is scoped to the current requester run when building nested completion findings, preventing stale prior-run child outputs from leaking into the current announce.
 - Announce replies preserve thread/topic routing when available on channel adapters.
 - Announce context is normalized to a stable internal event block:
@@ -227,9 +254,10 @@ Sub-agents report back via an announce step:
   - child session key/id
   - announce type + task label
   - status line derived from runtime outcome (`success`, `error`, `timeout`, or `unknown`)
-  - result content from the announce step (or `(no output)` if missing)
+  - result content selected from the latest visible assistant text, otherwise sanitized latest tool/toolResult text
   - a follow-up instruction describing when to reply vs. stay silent
 - `Status` is not inferred from model output; it comes from runtime outcome signals.
+- On timeout, if the child only got through tool calls, announce can collapse that history into a short partial-progress summary instead of replaying raw tool output.
 
 Announce payloads include a stats line at the end (even when wrapped):
 
@@ -239,14 +267,37 @@ Announce payloads include a stats line at the end (even when wrapped):
 - `sessionKey`, `sessionId`, and transcript path (so the main agent can fetch history via `sessions_history` or inspect the file on disk)
 - Internal metadata is meant for orchestration only; user-facing replies should be rewritten in normal assistant voice.
 
+`sessions_history` is the safer orchestration path:
+
+- assistant recall is normalized first:
+  - thinking tags are stripped
+  - `<relevant-memories>` / `<relevant_memories>` scaffolding blocks are stripped
+  - plain-text tool-call XML payload blocks such as `<tool_call>...</tool_call>`,
+    `<function_call>...</function_call>`, `<tool_calls>...</tool_calls>`, and
+    `<function_calls>...</function_calls>` are stripped, including truncated
+    payloads that never close cleanly
+  - downgraded tool-call/result scaffolding and historical-context markers are stripped
+  - leaked model control tokens such as `<|assistant|>`, other ASCII
+    `<|...|>` tokens, and full-width `<｜...｜>` variants are stripped
+  - malformed MiniMax tool-call XML is stripped
+- credential/token-like text is redacted
+- long blocks can be truncated
+- very large histories can drop older rows or replace an oversized row with
+  `[sessions_history omitted: message too large]`
+- raw on-disk transcript inspection is the fallback when you need the full byte-for-byte transcript
+
 ## Tool Policy (sub-agent tools)
 
-By default, sub-agents get **all tools except session tools** and system tools:
+By default, sub-agents get **all tools except** these four session/system tools:
 
-- `sessions_list`
-- `sessions_history`
-- `sessions_send`
-- `sessions_spawn`
+- `sessions_list` — list other sessions
+- `sessions_history` — fetch history for another session
+- `sessions_send` — send a message to another session
+- `sessions_spawn` — spawn further sub-agents
+
+When `maxSpawnDepth >= 2`, depth-1 orchestrator sub-agents additionally receive `sessions_spawn`, `subagents`, `sessions_list`, and `sessions_history` so they can manage their children. `sessions_send` remains denied at all depths.
+`sessions_history` remains a bounded, sanitized recall view here too; it is not
+a raw transcript dump.
 
 When `maxSpawnDepth >= 2`, depth-1 orchestrator sub-agents additionally receive `sessions_spawn`, `subagents`, `sessions_list`, and `sessions_history` so they can manage their children.
 
@@ -291,6 +342,13 @@ Sub-agents use a dedicated in-process queue lane:
 - Sub-agent announce is **best-effort**. If the gateway restarts, pending "announce back" work is lost.
 - Sub-agents still share the same gateway process resources; treat `maxConcurrent` as a safety valve.
 - `sessions_spawn` is always non-blocking: it returns `{ status: "accepted", runId, childSessionKey }` immediately.
-- Sub-agent context only injects `AGENTS.md` + `TOOLS.md` (no `SOUL.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, or `BOOTSTRAP.md`).
+- Sub-agent context injects **5 bootstrap files** to keep context focused:
+  - `AGENTS.md` — agent configuration and workflow guidance
+  - `TOOLS.md` — tool usage instructions
+  - `SOUL.md` — persona and tone guidance
+  - `IDENTITY.md` — agent identity (name, emoji, avatar)
+  - `USER.md` — user preferences and context
+- **Not injected**: `HEARTBEAT.md`, `BOOTSTRAP.md`, `MEMORY.md` (to minimize context size).
+- **Extra patterns**: If `bootstrap-extra-files` hook is enabled, extra files matching allowlisted names (e.g., `packages/*/SOUL.md`) will still be injected after filtering.
 - Maximum nesting depth is 5 (`maxSpawnDepth` range: 1–5). Depth 2 is recommended for most use cases.
 - `maxChildrenPerAgent` caps active children per session (default: 5, range: 1–20).

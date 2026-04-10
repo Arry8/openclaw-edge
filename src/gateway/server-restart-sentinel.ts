@@ -1,8 +1,9 @@
 import { resolveAnnounceTargetFromKey } from "../agents/tools/sessions-send-helpers.js";
-import { normalizeChannelId } from "../channels/plugins/index.js";
+import { getChannelPlugin, normalizeChannelId } from "../channels/plugins/index.js";
 import type { CliDeps } from "../cli/deps.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
-import { parseSessionThreadInfo } from "../config/sessions/delivery-info.js";
+import { parseSessionThreadInfo } from "../config/sessions/thread-info.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { deliverOutboundPayloads } from "../infra/outbound/deliver.js";
 import { ackDelivery, enqueueDelivery, failDelivery } from "../infra/outbound/delivery-queue.js";
@@ -12,6 +13,7 @@ import {
   consumeRestartSentinel,
   formatRestartSentinelMessage,
   summarizeRestartSentinel,
+  type RestartOutboxTask,
 } from "../infra/restart-sentinel.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -105,16 +107,95 @@ async function deliverRestartSentinelNotice(params: {
       });
       if (!retrying) {
         if (queueId) {
-          await failDelivery(queueId, err instanceof Error ? err.message : String(err)).catch(
-            () => {
-              // Best-effort queue bookkeeping.
-            },
-          );
+          await failDelivery(queueId, formatErrorMessage(err)).catch(() => {
+            // Best-effort queue bookkeeping.
+          });
         }
         return;
       }
       await waitForOutboundRetry(OUTBOUND_RETRY_DELAY_MS);
     }
+  }
+}
+
+function executePersistedRestartOutbox(params: {
+  tasks: RestartOutboxTask[] | undefined;
+  fallbackSessionKey?: string;
+}) {
+  const { tasks, fallbackSessionKey } = params;
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return;
+  }
+  for (const rawTask of tasks) {
+    if (!rawTask || typeof rawTask !== "object") {
+      continue;
+    }
+    const task = rawTask as Record<string, unknown>;
+    const message = typeof task.message === "string" ? task.message.trim() : "";
+    const sessionKeyRaw =
+      typeof task.sessionKey === "string" && task.sessionKey.trim().length > 0
+        ? task.sessionKey.trim()
+        : fallbackSessionKey?.trim();
+    if (!message || !sessionKeyRaw) {
+      continue;
+    }
+    const deliveryContextRaw = task.deliveryContext;
+    const deliveryContext =
+      deliveryContextRaw && typeof deliveryContextRaw === "object"
+        ? (deliveryContextRaw as {
+            channel?: unknown;
+            to?: unknown;
+            accountId?: unknown;
+            threadId?: unknown;
+          })
+        : undefined;
+    const dcChannel =
+      deliveryContext && typeof deliveryContext.channel === "string"
+        ? deliveryContext.channel
+        : undefined;
+    const dcTo =
+      deliveryContext && typeof deliveryContext.to === "string" ? deliveryContext.to : undefined;
+    const dcAccountId =
+      deliveryContext && typeof deliveryContext.accountId === "string"
+        ? deliveryContext.accountId
+        : undefined;
+    const dcThreadId =
+      deliveryContext && typeof deliveryContext.threadId === "string"
+        ? deliveryContext.threadId
+        : undefined;
+    const taskChannel = typeof task.channel === "string" ? task.channel : undefined;
+    const taskTo = typeof task.to === "string" ? task.to : undefined;
+    const taskAccountId = typeof task.accountId === "string" ? task.accountId : undefined;
+    const taskThreadId = typeof task.threadId === "string" ? task.threadId : undefined;
+
+    const hasDeliveryContext =
+      dcChannel ||
+      dcTo ||
+      dcAccountId ||
+      dcThreadId ||
+      taskChannel ||
+      taskTo ||
+      taskAccountId ||
+      taskThreadId;
+
+    enqueueSystemEvent(message, {
+      sessionKey: sessionKeyRaw,
+      ...(hasDeliveryContext
+        ? {
+            deliveryContext: {
+              ...(dcChannel ? { channel: dcChannel } : {}),
+              ...(dcTo ? { to: dcTo } : {}),
+              ...(dcAccountId ? { accountId: dcAccountId } : {}),
+              ...(dcThreadId ? { threadId: dcThreadId } : {}),
+              ...(taskChannel ? { channel: taskChannel } : {}),
+              ...(taskTo ? { to: taskTo } : {}),
+              ...(taskAccountId ? { accountId: taskAccountId } : {}),
+              ...(taskThreadId ? { threadId: taskThreadId } : {}),
+            },
+          }
+        : {}),
+    });
+    requestHeartbeatNow({ reason: "hook:gateway.restart.outbox", sessionKey: sessionKeyRaw });
   }
 }
 
@@ -124,6 +205,13 @@ export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
     return;
   }
   const payload = sentinel.payload;
+  executePersistedRestartOutbox({
+    tasks: payload.outbox,
+    fallbackSessionKey: payload.sessionKey,
+  });
+  if (payload.suppressPrimaryNotice) {
+    return;
+  }
   const sessionKey = payload.sessionKey?.trim();
   const message = formatRestartSentinelMessage(payload);
   const summary = summarizeRestartSentinel(payload);
@@ -185,13 +273,19 @@ export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
     sessionThreadId ??
     (origin?.threadId != null ? String(origin.threadId) : undefined);
 
-  // Slack uses replyToId (thread_ts) for threading, not threadId.
-  // The reply path does this mapping but deliverOutboundPayloads does not,
-  // so we must convert here to ensure post-restart notifications land in
-  // the originating Slack thread. See #17716.
-  const isSlack = channel === "slack";
-  const replyToId = isSlack && threadId != null && threadId !== "" ? String(threadId) : undefined;
-  const resolvedThreadId = isSlack ? undefined : threadId;
+  const replyTransport =
+    getChannelPlugin(channel)?.threading?.resolveReplyTransport?.({
+      cfg,
+      accountId: origin?.accountId,
+      threadId,
+    }) ?? null;
+  const replyToId = replyTransport?.replyToId ?? undefined;
+  const resolvedThreadId =
+    replyTransport && Object.hasOwn(replyTransport, "threadId")
+      ? replyTransport.threadId != null
+        ? String(replyTransport.threadId)
+        : undefined
+      : threadId;
   const outboundSession = buildOutboundSessionContext({
     cfg,
     sessionKey,

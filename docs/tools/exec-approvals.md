@@ -15,8 +15,28 @@ commands are allowed only when policy + allowlist + (optional) user approval all
 Exec approvals are **in addition** to tool policy and elevated gating (unless elevated is set to `full`, which skips approvals).
 Effective policy is the **stricter** of `tools.exec.*` and approvals defaults; if an approvals field is omitted, the `tools.exec` value is used.
 
+> **Important:** If `defaults` is `{}` (empty) or missing entirely, omitted fields
+> inherit from `tools.exec.*` config values. The code-level fallbacks are
+> `security: "full"` and `ask: "off"`, but the **effective** policy is the stricter
+> of `tools.exec.*` and the approvals file — so the host approvals state, companion
+> app settings, or per-agent overrides can still restrict execution. For unattended
+> environments (cron jobs, headless nodes) where predictable behavior matters, set
+> `defaults` explicitly rather than relying on the fallback chain.
+
+Host exec also uses the local approvals state on that machine. A host-local
+`ask: "always"` in `~/.openclaw/exec-approvals.json` keeps prompting even if
+session or config defaults request `ask: "on-miss"`.
+Use `openclaw approvals get`, `openclaw approvals get --gateway`, or
+`openclaw approvals get --node <id|name|ip>` to inspect the requested policy,
+host policy sources, and the effective result.
+
 If the companion app UI is **not available**, any request that requires a prompt is
 resolved by the **ask fallback** (default: deny).
+
+Native chat approval clients can also expose channel-specific affordances on the
+pending approval message. For example, Matrix can seed reaction shortcuts on the
+approval prompt (`✅` allow once, `❌` deny, and `♾️` allow always when available)
+while still leaving the `/approve ...` commands in the message as a fallback.
 
 ## Where it applies
 
@@ -85,6 +105,75 @@ Example schema:
 }
 ```
 
+## No-approval "YOLO" mode
+
+If you want host exec to run without approval prompts, you must open **both** policy layers:
+
+- requested exec policy in OpenClaw config (`tools.exec.*`)
+- host-local approvals policy in `~/.openclaw/exec-approvals.json`
+
+This is now the default host behavior unless you tighten it explicitly:
+
+- `tools.exec.security`: `full` on `gateway`/`node`
+- `tools.exec.ask`: `off`
+- host `askFallback`: `full`
+
+Important distinction:
+
+- `tools.exec.host=auto` chooses where exec runs: sandbox when available, otherwise gateway.
+- YOLO chooses how host exec is approved: `security=full` plus `ask=off`.
+- In YOLO mode, OpenClaw does not add a separate heuristic command-obfuscation approval gate on top of the configured host exec policy.
+- `auto` does not make gateway routing a free override from a sandboxed session. A per-call `host=node` request is allowed from `auto`, and `host=gateway` is only allowed from `auto` when no sandbox runtime is active. If you want a stable non-auto default, set `tools.exec.host` or use `/exec host=...` explicitly.
+
+If you want a more conservative setup, tighten either layer back to `allowlist` / `on-miss`
+or `deny`.
+
+Persistent gateway-host "never prompt" setup:
+
+```bash
+openclaw config set tools.exec.host gateway
+openclaw config set tools.exec.security full
+openclaw config set tools.exec.ask off
+openclaw gateway restart
+```
+
+Then set the host approvals file to match:
+
+```bash
+openclaw approvals set --stdin <<'EOF'
+{
+  version: 1,
+  defaults: {
+    security: "full",
+    ask: "off",
+    askFallback: "full"
+  }
+}
+EOF
+```
+
+For a node host, apply the same approvals file on that node instead:
+
+```bash
+openclaw approvals set --node <id|name|ip> --stdin <<'EOF'
+{
+  version: 1,
+  defaults: {
+    security: "full",
+    ask: "off",
+    askFallback: "full"
+  }
+}
+EOF
+```
+
+Session-only shortcut:
+
+- `/exec security=full ask=off` changes only the current session.
+- `/elevated full` is a break-glass shortcut that also skips exec approvals for that session.
+
+If the host approvals file stays stricter than config, the stricter host policy still wins.
+
 ## Policy knobs
 
 ### Security (`exec.security`)
@@ -98,6 +187,7 @@ Example schema:
 - **off**: never prompt.
 - **on-miss**: prompt only when allowlist does not match.
 - **always**: prompt on every command.
+- `allow-always` durable trust does not suppress prompts when effective ask mode is `always`
 
 ### Ask fallback (`askFallback`)
 
@@ -121,23 +211,38 @@ Examples:
 - `lua -e`
 - `osascript -e`
 
+Positional interpreters — commands that accept code as a positional argument rather than behind a flag — are also treated as interpreter-like:
+
+- `awk`, `gawk`, `mawk`, `nawk`
+
+These are blocked from `allow-always` persistence regardless of `strictInlineEval`, because their
+first positional argument is executable code (e.g. `awk '{print $1}'`), making stable file binding
+infeasible.
+
 This is defense-in-depth for interpreter loaders that do not map cleanly to one stable file operand. In strict mode:
 
-- these commands still need explicit approval;
-- `allow-always` does not persist new allowlist entries for them automatically.
+- flag-based inline eval commands still need explicit approval (approval-only even when the interpreter binary is allowlisted);
+- `allow-always` does not persist new allowlist entries for any interpreter-like command (flag-based or positional) automatically;
+- positional interpreters (awk family) are not additionally restricted by strict mode beyond `allow-always` blocking — their code-as-argument nature already prevents stable file binding regardless of the setting.
 
 ## Allowlist (per agent)
 
 Allowlists are **per agent**. If multiple agents exist, switch which agent you’re
 editing in the macOS app. Patterns are **case-insensitive glob matches**.
-Patterns should resolve to **binary paths** (basename-only entries are ignored).
+Patterns match the **resolved executable path only** — not the full command string
+including arguments. For example, `/opt/homebrew/bin/rg` matches any invocation of
+that binary regardless of its arguments, but `/opt/homebrew/bin/rg -n TODO` does
+**not** work as a pattern (it will never match).
+Basename-only entries are ignored.
 Legacy `agents.default` entries are migrated to `agents.main` on load.
+Shell chains such as `echo ok && pwd` still need every top-level segment to satisfy allowlist rules.
 
 Examples:
 
 - `~/Projects/**/bin/peekaboo`
 - `~/.local/bin/*`
 - `/opt/homebrew/bin/rg`
+- `/opt/homebrew/opt/python@3.12/bin/python3.12` — matches all Python invocations with any arguments
 
 Each allowlist entry tracks:
 
@@ -295,6 +400,16 @@ For `host=node`, approval requests include a canonical `systemRunPlan` payload. 
 that plan as the authoritative command/cwd/session context when forwarding approved `system.run`
 requests.
 
+That matters for async approval latency:
+
+- the node exec path prepares one canonical plan up front
+- the approval record stores that plan and its binding metadata
+- once approved, the final forwarded `system.run` call reuses the stored plan
+  instead of trusting later caller edits
+- if the caller changes `command`, `rawCommand`, `cwd`, `agentId`, or
+  `sessionKey` after the approval request was created, the gateway rejects the
+  forwarded run as an approval mismatch
+
 ## Interpreter/runtime commands
 
 Approval-backed interpreter/runtime runs are intentionally conservative:
@@ -370,7 +485,7 @@ Reply in chat:
 /approve <id> deny
 ```
 
-The `/approve` command handles both exec approvals and plugin approvals. If the ID does not match a pending exec approval, it automatically checks plugin approvals.
+The `/approve` command handles both exec approvals and plugin approvals. If the ID does not match a pending exec approval, it automatically checks plugin approvals instead.
 
 ### Plugin approval forwarding
 
@@ -413,26 +528,66 @@ separate native delivery adapter just to stay pending.
 Discord and Telegram also support same-chat `/approve`, but those channels still use their
 resolved approver list for authorization even when native approval delivery is disabled.
 
+For Telegram and other native approval clients that call the Gateway directly,
+this fallback is intentionally bounded to "approval not found" failures. A real
+exec approval denial/error does not silently retry as a plugin approval.
+
 ### Native approval delivery
 
-Discord, Slack, and Telegram can also act as native approval-delivery adapters with channel-specific config.
+Some channels can also act as native approval clients. Native clients add approver DMs, origin-chat
+fanout, and channel-specific interactive approval UX on top of the shared same-chat `/approve`
+flow.
+
+When native approval cards/buttons are available, that native UI is the primary
+agent-facing path. The agent should not also echo a duplicate plain chat
+`/approve` command unless the tool result says chat approvals are unavailable or
+manual approval is the only remaining path.
+
+Generic model:
+
+- host exec policy still decides whether exec approval is required
+- `approvals.exec` controls forwarding approval prompts to other chat destinations
+- `channels.<channel>.execApprovals` controls whether that channel acts as a native approval client
+
+Native approval clients auto-enable DM-first delivery when all of these are true:
+
+- the channel supports native approval delivery
+- approvers can be resolved from explicit `execApprovals.approvers` or that
+  channel's documented fallback sources
+- `channels.<channel>.execApprovals.enabled` is unset or `"auto"`
+
+Set `enabled: false` to disable a native approval client explicitly. Set `enabled: true` to force
+it on when approvers resolve. Public origin-chat delivery stays explicit through
+`channels.<channel>.execApprovals.target`.
+
+FAQ: [Why are there two exec approval configs for chat approvals?](/help/faq#why-are-there-two-exec-approval-configs-for-chat-approvals)
 
 - Discord: `channels.discord.execApprovals.*`
-- Slack: uses shared `approvals.exec.targets` with `channel: "slack"` and renders Block Kit approval buttons when interactivity is enabled
+- Slack: `channels.slack.execApprovals.*`
 - Telegram: `channels.telegram.execApprovals.*`
 
-These native delivery adapters are opt-in. They add DM routing and channel fanout on top of the
-shared same-chat `/approve` flow and the shared approval buttons.
+These native approval clients add DM routing and optional channel fanout on top of the shared
+same-chat `/approve` flow and shared approval buttons.
 
 Shared behavior:
 
 - Slack, Matrix, Microsoft Teams, and similar deliverable chats use the normal channel auth model
   for same-chat `/approve`
+- when a native approval client auto-enables, the default native delivery target is approver DMs
 - for Discord and Telegram, only resolved approvers can approve or deny
-- Discord and Telegram approvers can be explicit (`execApprovals.approvers`) or inferred from existing owner config (`allowFrom`, plus direct-message `defaultTo` where supported)
+- Discord approvers can be explicit (`execApprovals.approvers`) or inferred from `commands.ownerAllowFrom`
+- Telegram approvers can be explicit (`execApprovals.approvers`) or inferred from existing owner config (`allowFrom`, plus direct-message `defaultTo` where supported)
+- Slack approvers can be explicit (`execApprovals.approvers`) or inferred from `commands.ownerAllowFrom`
+- Slack native buttons preserve approval id kind, so `plugin:` ids can resolve plugin approvals
+  without a second Slack-local fallback layer
+- Matrix native DM/channel routing and reaction shortcuts handle both exec and plugin approvals;
+  plugin authorization still comes from `channels.matrix.dm.allowFrom`
 - the requester does not need to be an approver
 - the originating chat can approve directly with `/approve` when that chat already supports commands and replies
-- when channel delivery is enabled, approval prompts include the command text
+- native Discord approval buttons route by approval id kind: `plugin:` ids go
+  straight to plugin approvals, everything else goes to exec approvals
+- native Telegram approval buttons follow the same bounded exec-to-plugin fallback as `/approve`
+- when native `target` enables origin-chat delivery, approval prompts include the command text
 - pending exec approvals expire after 30 minutes by default
 - if no operator UI or configured approval client can accept the request, the prompt falls back to `askFallback`
 
@@ -442,8 +597,8 @@ topics, OpenClaw preserves the topic for the approval prompt and the post-approv
 
 See:
 
-- [Discord](/channels/discord)
-- [Telegram](/channels/telegram)
+- [Discord](/channels/discord#tools-and-action-gates)
+- [Telegram](/channels/telegram#feature-reference)
 
 ### macOS IPC flow
 
@@ -488,6 +643,62 @@ stale results from a prior successful run.
 - Approvals only apply to host exec requests from **authorized senders**. Unauthorized senders cannot issue `/exec`.
 - `/exec security=full` is a session-level convenience for authorized operators and skips approvals by design.
   To hard-block host exec, set approvals security to `deny` or deny the `exec` tool via tool policy.
+
+## Troubleshooting
+
+### Commands denied with allowlist miss despite allowlist entries
+
+Allowlist patterns match the **resolved executable path**, not the full command string. If your
+pattern includes arguments (for example `/usr/bin/python3 scripts/*.py`), it will never match.
+Use the binary path alone:
+
+```
+# Wrong — will never match
+/opt/homebrew/opt/python@3.12/bin/python3.12 scripts/*.py
+/opt/homebrew/opt/python@3.12/bin/python3.12 *
+
+# Correct — matches any invocation of this binary
+/opt/homebrew/opt/python@3.12/bin/python3.12
+```
+
+### Cron jobs or headless sessions always require approval
+
+If `defaults` in `exec-approvals.json` is `{}` or missing, omitted fields inherit from
+`tools.exec.*` config or the code-level defaults (`security: "full"`, `ask: "off"`).
+However, the effective policy is the stricter of all sources — host-local approvals state,
+companion app settings, or per-agent overrides can still restrict execution. In unattended
+environments where the effective policy requires a prompt but no UI can resolve it,
+commands stall until the approval times out and are denied.
+
+Fix: set `defaults` explicitly:
+
+```bash
+openclaw approvals set --stdin <<'EOF'
+{
+  "version": 1,
+  "defaults": {
+    "security": "allowlist",
+    "ask": "off",
+    "askFallback": "deny"
+  }
+}
+EOF
+```
+
+Then re-add your allowlist entries (the `set` command replaces the entire file):
+
+```bash
+openclaw approvals allowlist add --agent <agent-id> "/path/to/binary"
+```
+
+### Changes to exec-approvals.json not taking effect
+
+After editing `exec-approvals.json` (manually or via CLI), restart the gateway for
+changes to be picked up by running sessions:
+
+```bash
+openclaw gateway restart
+```
 
 Related:
 

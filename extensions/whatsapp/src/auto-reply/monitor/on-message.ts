@@ -1,11 +1,11 @@
-import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { getReplyFromConfig } from "openclaw/plugin-sdk/reply-runtime";
 import type { MsgContext } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import { buildGroupHistoryKey } from "openclaw/plugin-sdk/routing";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
-import { normalizeE164 } from "openclaw/plugin-sdk/text-runtime";
 import { getPrimaryIdentityId, getSenderIdentity } from "../../identity.js";
+import { normalizeE164 } from "../../text-runtime.js";
+import { loadConfig } from "../config.runtime.js";
 import type { MentionConfig } from "../mentions.js";
 import type { WebInboundMsg } from "../types.js";
 import { maybeBroadcastMessage } from "./broadcast.js";
@@ -29,7 +29,7 @@ export function createWebOnMessageHandler(params: {
   replyResolver: typeof getReplyFromConfig;
   replyLogger: ReturnType<(typeof import("openclaw/plugin-sdk/runtime-env"))["getChildLogger"]>;
   baseMentionConfig: MentionConfig;
-  account: { authDir?: string; accountId?: string };
+  account: { authDir?: string; accountId?: string; selfChatMode?: boolean };
 }) {
   const processForRoute = async (
     msg: WebInboundMsg,
@@ -38,10 +38,11 @@ export function createWebOnMessageHandler(params: {
     opts?: {
       groupHistory?: GroupHistoryEntry[];
       suppressGroupHistoryClear?: boolean;
+      preflightAudioTranscript?: string | null;
     },
   ) =>
     processMessage({
-      cfg: params.cfg,
+      cfg,
       msg,
       route,
       groupHistoryKey,
@@ -59,14 +60,17 @@ export function createWebOnMessageHandler(params: {
       buildCombinedEchoKey: params.echoTracker.buildCombinedKey,
       groupHistory: opts?.groupHistory,
       suppressGroupHistoryClear: opts?.suppressGroupHistoryClear,
+      preflightAudioTranscript: opts?.preflightAudioTranscript,
     });
 
   return async (msg: WebInboundMsg) => {
     const conversationId = msg.conversationId ?? msg.from;
     const peerId = resolvePeerId(msg);
-    // Fresh config for bindings lookup; other routing inputs are payload-derived.
+    // Load fresh config per-message so runtime changes (requireMention, group
+    // policy, allowlists) take effect without a channel restart (#33974).
+    const cfg = loadConfig();
     const route = resolveAgentRoute({
-      cfg: loadConfig(),
+      cfg,
       channel: "whatsapp",
       accountId: msg.accountId,
       peer: {
@@ -115,7 +119,7 @@ export function createWebOnMessageHandler(params: {
         OriginatingTo: conversationId,
       } satisfies MsgContext;
       updateLastRouteInBackground({
-        cfg: params.cfg,
+        cfg,
         backgroundTasks: params.backgroundTasks,
         storeAgentId: route.agentId,
         sessionKey: route.sessionKey,
@@ -127,7 +131,7 @@ export function createWebOnMessageHandler(params: {
       });
 
       const gating = applyGroupGating({
-        cfg: params.cfg,
+        cfg,
         msg,
         conversationId,
         groupHistoryKey,
@@ -135,6 +139,7 @@ export function createWebOnMessageHandler(params: {
         sessionKey: route.sessionKey,
         baseMentionConfig: params.baseMentionConfig,
         authDir: params.account.authDir,
+        selfChatMode: params.account.selfChatMode,
         groupHistories: params.groupHistories,
         groupHistoryLimit: params.groupHistoryLimit,
         groupMemberNames: params.groupMemberNames,
@@ -149,9 +154,35 @@ export function createWebOnMessageHandler(params: {
       if (!msg.sender?.e164 && !msg.senderE164 && peerId && peerId.startsWith("+")) {
         const normalized = normalizeE164(peerId);
         if (normalized) {
-          msg.sender = { ...(msg.sender ?? {}), e164: normalized };
+          msg.sender = { ...msg.sender, e164: normalized };
           msg.senderE164 = normalized;
         }
+      }
+    }
+
+    // Preflight audio transcription: run once here, before broadcast fan-out, so
+    // all agents share the same transcript instead of each making a separate STT call.
+    // null = preflight was attempted but produced no transcript (failed / disabled / no audio);
+    // undefined = preflight was not attempted (non-audio message).
+    let preflightAudioTranscript: string | null | undefined;
+    const hasAudioBody =
+      msg.mediaType?.startsWith("audio/") === true && msg.body === "<media:audio>";
+    if (hasAudioBody && msg.mediaPath) {
+      try {
+        const { transcribeFirstAudio } = await import("./audio-preflight.runtime.js");
+        // transcribeFirstAudio returns undefined on failure/disabled; store null so
+        // processMessage knows the attempt was already made and does not retry.
+        preflightAudioTranscript =
+          (await transcribeFirstAudio({
+            ctx: {
+              MediaPaths: [msg.mediaPath],
+              MediaTypes: msg.mediaType ? [msg.mediaType] : undefined,
+            },
+            cfg: params.cfg,
+          })) ?? null;
+      } catch {
+        // Non-fatal: store null so per-agent retries are suppressed.
+        preflightAudioTranscript = null;
       }
     }
 
@@ -159,18 +190,19 @@ export function createWebOnMessageHandler(params: {
     // Does not bypass group mention/activation gating above.
     if (
       await maybeBroadcastMessage({
-        cfg: params.cfg,
+        cfg,
         msg,
         peerId,
         route,
         groupHistoryKey,
         groupHistories: params.groupHistories,
-        processMessage: processForRoute,
+        preflightAudioTranscript,
+        processMessage: (m, r, k, opts) => processForRoute(m, r, k, opts),
       })
     ) {
       return;
     }
 
-    await processForRoute(msg, route, groupHistoryKey);
+    await processForRoute(msg, route, groupHistoryKey, { preflightAudioTranscript });
   };
 }

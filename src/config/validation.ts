@@ -1,14 +1,20 @@
 import path from "node:path";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import { CHANNEL_IDS, normalizeChatChannelId } from "../channels/registry.js";
+import { CHANNEL_IDS, normalizeChatChannelId } from "../channels/ids.js";
 import { withBundledPluginAllowlistCompat } from "../plugins/bundled-compat.js";
-import { listBundledWebSearchPluginIds } from "../plugins/bundled-web-search-ids.js";
 import {
   normalizePluginsConfig,
-  resolveEffectiveEnableState,
+  resolveEffectivePluginActivationState,
   resolveMemorySlotDecision,
 } from "../plugins/config-state.js";
-import { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
+import {
+  collectRelevantDoctorPluginIds,
+  listPluginDoctorLegacyConfigRules,
+} from "../plugins/doctor-contract-registry.js";
+import {
+  loadPluginManifestRegistry,
+  resolveManifestContractPluginIds,
+} from "../plugins/manifest-registry.js";
 import { validateJsonSchemaValue } from "../plugins/schema-validator.js";
 import { hasKind } from "../plugins/slots.js";
 import { collectUnsupportedSecretRefConfigCandidates } from "../secrets/unsupported-surface-policy.js";
@@ -20,6 +26,7 @@ import {
   isWindowsAbsolutePath,
 } from "../shared/avatar-policy.js";
 import { isCanonicalDottedDecimalIPv4, isLoopbackIpAddress } from "../shared/net/ip.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { isRecord } from "../utils.js";
 import { findDuplicateAgentDirs, formatDuplicateAgentDirError } from "./agent-dirs.js";
 import { appendAllowedValuesHint, summarizeAllowedValues } from "./allowed-values.js";
@@ -343,18 +350,36 @@ export function collectUnsupportedSecretRefPolicyIssues(raw: unknown): ConfigVal
   return collectUnsupportedMutableSecretRefIssues(raw);
 }
 
+const PLUGIN_ENTRY_PATH_RE = /^plugins\.entries\.[^.]+$/;
+
+function enhancePluginEntryUnrecognizedKeyMessage(issuePath: string, message: string): string {
+  if (!PLUGIN_ENTRY_PATH_RE.test(issuePath) || !/Unrecognized key/i.test(message)) {
+    return message;
+  }
+  const keys = [...message.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (keys.length === 0) {
+    return message;
+  }
+  const configPath = `${issuePath}.config`;
+  if (keys.length === 1) {
+    return `${message} (did you mean ${configPath}.${keys[0]}? plugin-specific settings belong under the \`config\` key)`;
+  }
+  return `${message} (plugin-specific settings belong under ${configPath})`;
+}
+
 function mapZodIssueToConfigIssue(issue: unknown): ConfigValidationIssue {
   const record = toIssueRecord(issue);
-  const path = formatConfigPath(toConfigPathSegments(record?.path));
-  const message = typeof record?.message === "string" ? record.message : "Invalid input";
+  const issuePath = formatConfigPath(toConfigPathSegments(record?.path));
+  const rawMessage = typeof record?.message === "string" ? record.message : "Invalid input";
+  const message = enhancePluginEntryUnrecognizedKeyMessage(issuePath, rawMessage);
   const allowedValuesSummary = summarizeAllowedValues(collectAllowedValuesFromUnknownIssue(issue));
 
   if (!allowedValuesSummary) {
-    return { path, message };
+    return { path: issuePath, message };
   }
 
   return {
-    path,
+    path: issuePath,
     message: appendAllowedValuesHint(message, allowedValuesSummary),
     allowedValues: allowedValuesSummary.values,
     allowedValuesHiddenCount: allowedValuesSummary.hiddenCount,
@@ -445,6 +470,57 @@ function validateGatewayTailscaleBind(config: OpenClawConfig): ConfigValidationI
 }
 
 /**
+ * Validates memorySearch provider configuration.
+ * Checks that required fields are present for each provider type.
+ */
+function validateMemorySearchConfig(config: OpenClawConfig): ConfigValidationIssue[] {
+  const issues: ConfigValidationIssue[] = [];
+  const memorySearch = config.agents?.defaults?.memorySearch;
+
+  if (!memorySearch || typeof memorySearch !== "object") {
+    return [];
+  }
+
+  // Skip validation if memory backend is qmd - it handles embeddings internally
+  if (config.memory?.backend === "qmd") {
+    return [];
+  }
+
+  const provider = memorySearch.provider;
+  const remote = memorySearch.remote;
+
+  // Note: API key validation is done at runtime by resolveMemorySearchConfig
+  // which handles various auth methods (config, environment, auth store).
+  // Config-level validation only checks for obviously invalid configurations.
+
+  // Validate ollama provider - baseUrl is optional (uses default localhost)
+  if (provider === "ollama") {
+    // Check for explicitly empty baseUrl (which would cause runtime errors)
+    if (remote?.baseUrl !== undefined) {
+      const baseUrl = remote.baseUrl;
+      if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+        issues.push({
+          path: "agents.defaults.memorySearch",
+          message:
+            "memorySearch.provider=ollama requires a non-empty baseUrl when specified. " +
+            "Remove baseUrl to use the default http://localhost:11434",
+        });
+      }
+    }
+    // Model is optional - will use provider default
+  }
+
+  // For other providers (openai, gemini, voyage, mistral), we don't validate apiKey here
+  // because runtime credential resolution handles:
+  // - config-level apiKey
+  // - environment variables (OPENAI_API_KEY, etc.)
+  // - provider-level credentials from auth store
+  // Config-level validation would cause false negatives for valid configurations
+
+  return issues;
+}
+
+/**
  * Validates config without applying runtime defaults.
  * Use this when you need the raw validated config (e.g., for writing back to file).
  */
@@ -452,7 +528,11 @@ export function validateConfigObjectRaw(
   raw: unknown,
 ): { ok: true; config: OpenClawConfig } | { ok: false; issues: ConfigValidationIssue[] } {
   const policyIssues = collectUnsupportedSecretRefPolicyIssues(raw);
-  const legacyIssues = findLegacyConfigIssues(raw);
+  const legacyIssues = findLegacyConfigIssues(
+    raw,
+    raw,
+    listPluginDoctorLegacyConfigRules({ pluginIds: collectRelevantDoctorPluginIds(raw) }),
+  );
   if (legacyIssues.length > 0) {
     return {
       ok: false,
@@ -493,6 +573,10 @@ export function validateConfigObjectRaw(
   const gatewayTailscaleBindIssues = validateGatewayTailscaleBind(validatedConfig);
   if (gatewayTailscaleBindIssues.length > 0) {
     return { ok: false, issues: gatewayTailscaleBindIssues };
+  }
+  const memorySearchIssues = validateMemorySearchConfig(validated.data as OpenClawConfig);
+  if (memorySearchIssues.length > 0) {
+    return { ok: false, issues: memorySearchIssues };
   }
   return {
     ok: true,
@@ -565,6 +649,7 @@ function validateConfigObjectWithPluginsBase(
   type RegistryInfo = {
     registry: ReturnType<typeof loadPluginManifestRegistry>;
     knownIds?: Set<string>;
+    overriddenPluginIds?: Set<string>;
     normalizedPlugins?: ReturnType<typeof normalizePluginsConfig>;
     channelSchemas?: Map<
       string,
@@ -576,6 +661,41 @@ function validateConfigObjectWithPluginsBase(
 
   let registryInfo: RegistryInfo | null = null;
   let compatConfig: OpenClawConfig | null | undefined;
+  let compatPluginIds: ReadonlySet<string> | null = null;
+  let compatPluginIdsResolved = false;
+
+  const ensureCompatPluginIds = (): ReadonlySet<string> => {
+    if (compatPluginIdsResolved) {
+      return compatPluginIds ?? new Set<string>();
+    }
+    compatPluginIdsResolved = true;
+    const allow = config.plugins?.allow;
+    if (!Array.isArray(allow) || allow.length === 0) {
+      compatPluginIds = new Set<string>();
+      return compatPluginIds;
+    }
+    const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+    const overriddenBundledPluginIds = new Set(
+      loadPluginManifestRegistry({
+        config,
+        workspaceDir: workspaceDir ?? undefined,
+        env: opts.env,
+      })
+        .diagnostics.filter((diag) => diag.message.includes("duplicate plugin id detected"))
+        .map((diag) => diag.pluginId)
+        .filter((pluginId): pluginId is string => typeof pluginId === "string" && pluginId !== ""),
+    );
+    compatPluginIds = new Set(
+      resolveManifestContractPluginIds({
+        contract: "webSearchProviders",
+        origin: "bundled",
+        config,
+        workspaceDir: workspaceDir ?? undefined,
+        env: opts.env,
+      }).filter((pluginId) => !overriddenBundledPluginIds.has(pluginId)),
+    );
+    return compatPluginIds;
+  };
 
   const ensureCompatConfig = (): OpenClawConfig => {
     if (compatConfig !== undefined) {
@@ -588,27 +708,9 @@ function validateConfigObjectWithPluginsBase(
       return config;
     }
 
-    const bundledWebSearchPluginIds = new Set(listBundledWebSearchPluginIds());
-    const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
-    const seenCompatPluginIds = new Set<string>();
-    const compatPluginIds = loadPluginManifestRegistry({
-      config,
-      workspaceDir: workspaceDir ?? undefined,
-      env: opts.env,
-    })
-      .plugins.filter((plugin) => {
-        if (seenCompatPluginIds.has(plugin.id)) {
-          return false;
-        }
-        seenCompatPluginIds.add(plugin.id);
-        return plugin.origin === "bundled" && bundledWebSearchPluginIds.has(plugin.id);
-      })
-      .map((plugin) => plugin.id)
-      .toSorted((left, right) => left.localeCompare(right));
-
     compatConfig = withBundledPluginAllowlistCompat({
       config,
-      pluginIds: compatPluginIds,
+      pluginIds: [...ensureCompatPluginIds()],
     });
     return compatConfig ?? config;
   };
@@ -655,6 +757,21 @@ function validateConfigObjectWithPluginsBase(
     return info.knownIds;
   };
 
+  const ensureOverriddenPluginIds = (): Set<string> => {
+    const info = ensureRegistry();
+    if (!info.overriddenPluginIds) {
+      info.overriddenPluginIds = new Set(
+        info.registry.diagnostics
+          .filter((diag) => diag.message.includes("duplicate plugin id detected"))
+          .map((diag) => diag.pluginId)
+          .filter(
+            (pluginId): pluginId is string => typeof pluginId === "string" && pluginId !== "",
+          ),
+      );
+    }
+    return info.overriddenPluginIds;
+  };
+
   const ensureNormalizedPlugins = (): ReturnType<typeof normalizePluginsConfig> => {
     const info = ensureRegistry();
     if (!info.normalizedPlugins) {
@@ -672,10 +789,20 @@ function validateConfigObjectWithPluginsBase(
     const info = ensureRegistry();
     if (!info.channelSchemas) {
       info.channelSchemas = new Map(
-        collectChannelSchemaMetadata(info.registry).map(
-          (entry) => [entry.id, { schema: entry.configSchema }] as const,
+        GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA.map(
+          (entry) => [entry.channelId, { schema: entry.schema }] as const,
         ),
       );
+      for (const entry of collectChannelSchemaMetadata(info.registry)) {
+        const current = info.channelSchemas.get(entry.id);
+        if (entry.configSchema) {
+          info.channelSchemas.set(entry.id, { schema: entry.configSchema });
+          continue;
+        }
+        if (!current) {
+          info.channelSchemas.set(entry.id, {});
+        }
+      }
     }
     return info.channelSchemas;
   };
@@ -741,9 +868,16 @@ function validateConfigObjectWithPluginsBase(
         }
       }
       if (!allowedChannels.has(trimmed)) {
-        issues.push({
+        // Channel IDs that reach here are not in CHANNEL_IDS (built-in) and
+        // not registered by any loaded plugin. This typically means a plugin-
+        // provided channel whose plugin is not currently installed — e.g.,
+        // "matrix" after it was moved from bundled to external. Downgrade to
+        // a warning so the gateway can still start with remaining channels,
+        // consistent with how plugins.entries handles missing plugins
+        // (pushMissingPluginIssue with warnOnly: true).
+        warnings.push({
           path: `channels.${trimmed}`,
-          message: `unknown channel id: ${trimmed}`,
+          message: `unknown channel id: ${trimmed} (channel skipped; install the plugin or remove the channel config)`,
         });
         continue;
       }
@@ -756,7 +890,8 @@ function validateConfigObjectWithPluginsBase(
         schema: channelSchema,
         cacheKey: `channel:${trimmed}`,
         value: config.channels[trimmed],
-        applyDefaults: true,
+        applyDefaults: true, // Always apply defaults for AJV schema validation;
+        // writeConfigFile persists persistCandidate, not validated.config (#61841)
       });
       if (!result.ok) {
         for (const error of result.errors) {
@@ -776,7 +911,7 @@ function validateConfigObjectWithPluginsBase(
 
   const heartbeatChannelIds = new Set<string>();
   for (const channelId of CHANNEL_IDS) {
-    heartbeatChannelIds.add(channelId.toLowerCase());
+    heartbeatChannelIds.add(normalizeLowercaseStringOrEmpty(channelId));
   }
 
   const validateHeartbeatTarget = (target: string | undefined, path: string) => {
@@ -788,7 +923,7 @@ function validateConfigObjectWithPluginsBase(
       issues.push({ path, message: "heartbeat target must not be empty" });
       return;
     }
-    const normalized = trimmed.toLowerCase();
+    const normalized = normalizeLowercaseStringOrEmpty(trimmed);
     if (normalized === "last" || normalized === "none") {
       return;
     }
@@ -801,7 +936,7 @@ function validateConfigObjectWithPluginsBase(
         for (const channelId of record.channels) {
           const pluginChannel = channelId.trim();
           if (pluginChannel) {
-            heartbeatChannelIds.add(pluginChannel.toLowerCase());
+            heartbeatChannelIds.add(normalizeLowercaseStringOrEmpty(pluginChannel));
           }
         }
       }
@@ -822,6 +957,19 @@ function validateConfigObjectWithPluginsBase(
     }
   }
 
+  // Cross-field: hooks.enabled requires hooks.token
+  if (config.hooks?.enabled === true) {
+    const token = config.hooks?.token?.trim();
+    if (!token) {
+      issues.push({
+        path: "hooks.token",
+        message:
+          "hooks.enabled is true but hooks.token is not set. " +
+          "Provide a token, e.g.: openclaw config.patch '{ hooks: { token: \"<your-secret>\" } }'",
+      });
+    }
+  }
+
   if (!hasExplicitPluginsConfig) {
     if (issues.length > 0) {
       return { ok: false, issues, warnings };
@@ -832,6 +980,7 @@ function validateConfigObjectWithPluginsBase(
   const { registry } = ensureRegistry();
   const knownIds = ensureKnownIds();
   const normalizedPlugins = ensureNormalizedPlugins();
+  const effectiveConfig = ensureCompatConfig();
   const pushMissingPluginIssue = (
     path: string,
     pluginId: string,
@@ -912,16 +1061,20 @@ function validateConfigObjectWithPluginsBase(
     }
     seenPlugins.add(pluginId);
     const entry = normalizedPlugins.entries[pluginId];
+    const entryExists = entry !== undefined;
     const entryHasConfig = Boolean(entry?.config);
+    const shouldReplacePluginConfig = opts.applyDefaults
+      ? entryExists || entryHasConfig
+      : entryHasConfig;
 
-    const enableState = resolveEffectiveEnableState({
+    const activationState = resolveEffectivePluginActivationState({
       id: pluginId,
       origin: record.origin,
       config: normalizedPlugins,
-      rootConfig: config,
+      rootConfig: effectiveConfig,
     });
-    let enabled = enableState.enabled;
-    let reason = enableState.reason;
+    let enabled = activationState.activated;
+    let reason = activationState.reason;
 
     if (enabled) {
       const memoryDecision = resolveMemorySlotDecision({
@@ -939,26 +1092,33 @@ function validateConfigObjectWithPluginsBase(
       }
     }
 
-    const shouldValidate = enabled || entryHasConfig;
+    const shouldValidate = enabled || entryExists || entryHasConfig;
     if (shouldValidate) {
       if (record.configSchema) {
-        const res = validateJsonSchemaValue({
-          schema: record.configSchema,
-          cacheKey: record.schemaCacheKey ?? record.manifestPath ?? pluginId,
-          value: entry?.config ?? {},
-          applyDefaults: true,
-        });
-        if (!res.ok) {
-          for (const error of res.errors) {
-            issues.push({
-              path: resolvePluginConfigIssuePath(pluginId, error.path),
-              message: `invalid config: ${error.message}`,
-              allowedValues: error.allowedValues,
-              allowedValuesHiddenCount: error.allowedValuesHiddenCount,
-            });
+        // Only validate when config is actually provided; an absent entry should not
+        // be coerced to {} — that produces false "required property" errors for plugins
+        // with mandatory config fields.
+        const configValue = entry?.config;
+        if (configValue !== undefined) {
+          const res = validateJsonSchemaValue({
+            schema: record.configSchema,
+            cacheKey: record.schemaCacheKey ?? record.manifestPath ?? pluginId,
+            value: configValue ?? {},
+            applyDefaults: true, // Always apply defaults for AJV schema validation;
+            // writeConfigFile persists persistCandidate, not validated.config (#61841)
+          });
+          if (!res.ok) {
+            for (const error of res.errors) {
+              issues.push({
+                path: resolvePluginConfigIssuePath(pluginId, error.path),
+                message: `invalid config: ${error.message}`,
+                allowedValues: error.allowedValues,
+                allowedValuesHiddenCount: error.allowedValuesHiddenCount,
+              });
+            }
+          } else if (shouldReplacePluginConfig) {
+            replacePluginEntryConfig(pluginId, res.value as Record<string, unknown>);
           }
-        } else if (entry || entryHasConfig) {
-          replacePluginEntryConfig(pluginId, res.value as Record<string, unknown>);
         }
       } else if (record.format === "bundle") {
         // Compatible bundles currently expose no native OpenClaw config schema.
@@ -971,7 +1131,9 @@ function validateConfigObjectWithPluginsBase(
       }
     }
 
-    if (!enabled && entryHasConfig) {
+    const suppressDisabledConfigWarning =
+      ensureCompatPluginIds().has(pluginId) && !ensureOverriddenPluginIds().has(pluginId);
+    if (!enabled && entryHasConfig && !suppressDisabledConfigWarning) {
       warnings.push({
         path: `plugins.entries.${pluginId}`,
         message: `plugin disabled (${reason ?? "disabled"}) but config is present`,

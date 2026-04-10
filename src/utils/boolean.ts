@@ -1,3 +1,5 @@
+import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
+
 export type BooleanParseOptions = {
   truthy?: string[];
   falsy?: string[];
@@ -18,14 +20,28 @@ export function parseBooleanValue(
   if (typeof value !== "string") {
     return undefined;
   }
-  const normalized = value.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(value);
   if (!normalized) {
     return undefined;
   }
   const truthy = options.truthy ?? DEFAULT_TRUTHY;
   const falsy = options.falsy ?? DEFAULT_FALSY;
-  const truthySet = truthy === DEFAULT_TRUTHY ? DEFAULT_TRUTHY_SET : new Set(truthy);
-  const falsySet = falsy === DEFAULT_FALSY ? DEFAULT_FALSY_SET : new Set(falsy);
+  const truthySet =
+    truthy === DEFAULT_TRUTHY
+      ? DEFAULT_TRUTHY_SET
+      : new Set(
+          Array.isArray(truthy)
+            ? truthy.map((s) => (typeof s === "string" ? s.toLowerCase() : s))
+            : [],
+        );
+  const falsySet =
+    falsy === DEFAULT_FALSY
+      ? DEFAULT_FALSY_SET
+      : new Set(
+          Array.isArray(falsy)
+            ? falsy.map((s) => (typeof s === "string" ? s.toLowerCase() : s))
+            : [],
+        );
   if (truthySet.has(normalized)) {
     return true;
   }

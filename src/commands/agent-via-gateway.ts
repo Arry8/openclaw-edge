@@ -1,4 +1,5 @@
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
+import { routeLogsToStderr } from "../logging.js";
 import { listAgentIds } from "../agents/agent-scope.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { CliDeps } from "../cli/deps.js";
@@ -7,6 +8,7 @@ import { loadConfig } from "../config/config.js";
 import { callGateway, randomIdempotencyKey } from "../gateway/call.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
@@ -14,6 +16,8 @@ import {
 } from "../utils/message-channel.js";
 import { agentCommand } from "./agent.js";
 import { resolveSessionKeyForRequest } from "./agent/session.js";
+
+const SILENT_AGENT_SUMMARIES = new Set(["NO_REPLY", "ANNOUNCE_SKIP"]);
 
 type AgentGatewayResult = {
   payloads?: Array<{
@@ -33,11 +37,17 @@ type GatewayAgentResponse = {
 
 const NO_GATEWAY_TIMEOUT_MS = 2_147_000_000;
 
+function isSilentAgentSummary(text: string | undefined): boolean {
+  const normalized = text?.trim();
+  return normalized ? SILENT_AGENT_SUMMARIES.has(normalized) : false;
+}
+
 export type AgentCliOpts = {
   message: string;
   agent?: string;
   to?: string;
   sessionId?: string;
+  sessionKey?: string;
   thinking?: string;
   verbose?: string;
   json?: boolean;
@@ -90,8 +100,10 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
   if (!body) {
     throw new Error("Message (--message) is required");
   }
-  if (!opts.to && !opts.sessionId && !opts.agent) {
-    throw new Error("Pass --to <E.164>, --session-id, or --agent to choose a session");
+  if (!opts.to && !opts.sessionId && !opts.sessionKey && !opts.agent) {
+    throw new Error(
+      "Pass --to <E.164>, --session-id, --session-key, or --agent to choose a session",
+    );
   }
 
   const cfg = loadConfig();
@@ -116,10 +128,11 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
     agentId,
     to: opts.to,
     sessionId: opts.sessionId,
+    sessionKey: opts.sessionKey,
   }).sessionKey;
 
   const channel = normalizeMessageChannel(opts.channel);
-  const idempotencyKey = opts.runId?.trim() || randomIdempotencyKey();
+  const idempotencyKey = normalizeOptionalString(opts.runId) || randomIdempotencyKey();
 
   const response = await withProgress(
     {
@@ -164,7 +177,10 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
   const payloads = result?.payloads ?? [];
 
   if (payloads.length === 0) {
-    runtime.log(response?.summary ? String(response.summary) : "No reply from agent.");
+    const summary = response?.summary ? String(response.summary) : undefined;
+    if (!isSilentAgentSummary(summary)) {
+      runtime.log(summary ?? "No reply from agent.");
+    }
     return response;
   }
 
@@ -179,6 +195,11 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
 }
 
 export async function agentCliCommand(opts: AgentCliOpts, runtime: RuntimeEnv, deps?: CliDeps) {
+  // When --json is set, route all logs to stderr so only the JSON result appears on stdout.
+  if (opts.json) {
+    routeLogsToStderr();
+  }
+
   const localOpts = {
     ...opts,
     agentId: opts.agent,

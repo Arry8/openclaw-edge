@@ -3,7 +3,9 @@ import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
   DEFAULT_EXEC_APPROVAL_TIMEOUT_MS,
+  resolveExecApprovalAllowedDecisions,
   type ExecHost,
+  type ExecApprovalDecision,
   type ExecTarget,
 } from "../infra/exec-approvals.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
@@ -21,7 +23,7 @@ export {
   normalizeExecSecurity,
   normalizeExecTarget,
 } from "../infra/exec-approvals.js";
-import { logWarn } from "../logger.js";
+import { logDebug, logWarn } from "../logger.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
@@ -121,7 +123,12 @@ const DEFAULT_APPROVAL_RUNNING_NOTICE_MS = 10_000;
 const APPROVAL_SLUG_LENGTH = 8;
 
 export const execSchema = Type.Object({
-  command: Type.String({ description: "Shell command to execute" }),
+  command: Type.Optional(Type.String({ description: "Shell command to execute" })),
+  cmd: Type.Optional(
+    Type.String({
+      description: "Alias for command (some providers/models emit cmd instead of command).",
+    }),
+  ),
   workdir: Type.Optional(Type.String({ description: "Working directory (defaults to cwd)" })),
   env: Type.Optional(Type.Record(Type.String(), Type.String())),
   yieldMs: Type.Optional(
@@ -164,6 +171,12 @@ export const execSchema = Type.Object({
   node: Type.Optional(
     Type.String({
       description: "Node id/name for host=node.",
+    }),
+  ),
+  onComplete: Type.Optional(
+    Type.String({
+      description:
+        'Completion behavior. "notify" backgrounds the command and sends a notification when it exits.',
     }),
   ),
 });
@@ -218,11 +231,15 @@ export function renderExecTargetLabel(target: ExecTarget) {
 export function isRequestedExecTargetAllowed(params: {
   configuredTarget: ExecTarget;
   requestedTarget: ExecTarget;
+  sandboxAvailable?: boolean;
 }) {
   if (params.requestedTarget === params.configuredTarget) {
     return true;
   }
   if (params.configuredTarget === "auto") {
+    if (params.sandboxAvailable && params.requestedTarget === "gateway") {
+      return false;
+    }
     return true;
   }
   return false;
@@ -236,33 +253,39 @@ export function resolveExecTarget(params: {
 }) {
   const configuredTarget = params.configuredTarget ?? "auto";
   const requestedTarget = params.requestedTarget ?? null;
-  if (params.elevatedRequested) {
-    return {
-      configuredTarget,
-      requestedTarget,
-      selectedTarget: "gateway" as const,
-      effectiveHost: "gateway" as const,
-    };
-  }
   if (
     requestedTarget &&
     !isRequestedExecTargetAllowed({
       configuredTarget,
       requestedTarget,
+      sandboxAvailable: params.sandboxAvailable,
     })
   ) {
+    const allowedConfig = Array.from(
+      new Set(
+        requestedTarget === "gateway" && !params.sandboxAvailable
+          ? ["gateway", "auto"]
+          : [renderExecTargetLabel(requestedTarget), "auto"],
+      ),
+    ).join(" or ");
     throw new Error(
       `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; ` +
-        `configure tools.exec.host=${renderExecTargetLabel(configuredTarget)} to allow).`,
+        `configured host is ${renderExecTargetLabel(configuredTarget)}; ` +
+        `set tools.exec.host=${allowedConfig} to allow this override).`,
     );
   }
   const selectedTarget = requestedTarget ?? configuredTarget;
+  const resolvedTarget = params.elevatedRequested
+    ? selectedTarget === "node"
+      ? "node"
+      : "gateway"
+    : selectedTarget;
   const effectiveHost =
-    selectedTarget === "auto" ? (params.sandboxAvailable ? "sandbox" : "gateway") : selectedTarget;
+    resolvedTarget === "auto" ? (params.sandboxAvailable ? "sandbox" : "gateway") : resolvedTarget;
   return {
     configuredTarget,
     requestedTarget,
-    selectedTarget,
+    selectedTarget: resolvedTarget,
     effectiveHost,
   };
 }
@@ -302,7 +325,12 @@ export function applyShellPath(env: Record<string, string>, shellPath?: string |
 }
 
 function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "failed") {
-  if (!session.backgrounded || !session.notifyOnExit || session.exitNotified) {
+  if (session.exitNotified || !session.backgrounded) {
+    return;
+  }
+  // Only fire if the caller explicitly opted in via onComplete="notify" or
+  // the tool defaults already had notifyOnExit enabled.
+  if (!session.explicitOnComplete && !session.notifyOnExit) {
     return;
   }
   const sessionKey = session.sessionKey?.trim();
@@ -322,10 +350,8 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
   const summary = output
     ? `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel}) :: ${output}`
     : `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel})`;
-  enqueueSystemEvent(summary, { sessionKey });
-  requestHeartbeatNow(
-    scopedHeartbeatWakeOptions(sessionKey, { reason: `exec:${session.id}:exit` }),
-  );
+  enqueueSystemEvent(summary, { sessionKey, trusted: false });
+  requestHeartbeatNow(scopedHeartbeatWakeOptions(sessionKey, { reason: "exec-event" }));
 }
 
 export function createApprovalSlug(id: string) {
@@ -336,8 +362,9 @@ export function buildApprovalPendingMessage(params: {
   warningText?: string;
   approvalSlug: string;
   approvalId: string;
+  allowedDecisions?: readonly ExecApprovalDecision[];
   command: string;
-  cwd: string;
+  cwd: string | undefined;
   host: "gateway" | "node";
   nodeId?: string;
 }) {
@@ -347,6 +374,8 @@ export function buildApprovalPendingMessage(params: {
   }
   const commandBlock = `${fence}sh\n${params.command}\n${fence}`;
   const lines: string[] = [];
+  const allowedDecisions = params.allowedDecisions ?? resolveExecApprovalAllowedDecisions();
+  const decisionText = allowedDecisions.join("|");
   const warningText = params.warningText?.trim();
   if (warningText) {
     lines.push(warningText, "");
@@ -356,12 +385,21 @@ export function buildApprovalPendingMessage(params: {
   if (params.nodeId) {
     lines.push(`Node: ${params.nodeId}`);
   }
-  lines.push(`CWD: ${params.cwd}`);
+  lines.push(`CWD: ${params.cwd ?? "(node default)"}`);
   lines.push("Command:");
   lines.push(commandBlock);
   lines.push("Mode: foreground (interactive approvals available).");
-  lines.push("Background mode requires pre-approved policy (allow-always or ask=off).");
-  lines.push(`Reply with: /approve ${params.approvalSlug} allow-once|allow-always|deny`);
+  lines.push(
+    allowedDecisions.includes("allow-always")
+      ? "Background mode requires pre-approved policy (allow-always or ask=off)."
+      : "Background mode requires an effective policy that allows pre-approval (for example ask=off).",
+  );
+  lines.push(`Reply with: /approve ${params.approvalSlug} ${decisionText}`);
+  if (!allowedDecisions.includes("allow-always")) {
+    lines.push(
+      "The effective approval policy requires approval every time, so Allow Always is unavailable.",
+    );
+  }
   lines.push("If the short code is ambiguous, use the full id in /approve.");
   return lines.join("\n");
 }
@@ -425,8 +463,8 @@ export function formatExecFailureReason(params: {
       return "Command not executable (permission denied)";
     case "overall-timeout":
       return typeof params.timeoutSec === "number" && params.timeoutSec > 0
-        ? `Command timed out after ${params.timeoutSec} seconds. If this command is expected to take longer, re-run with a higher timeout (e.g., exec timeout=300).`
-        : "Command timed out. If this command is expected to take longer, re-run with a higher timeout (e.g., exec timeout=300).";
+        ? `Command timed out after ${params.timeoutSec} seconds. If this command is expected to take longer, re-run with a higher timeout (e.g., exec timeout=300). If it should keep running, start it with exec background=true or yieldMs so OpenClaw can register a pollable process session. Do not rely on shell backgrounding with a trailing &.`
+        : "Command timed out. If this command is expected to take longer, re-run with a higher timeout (e.g., exec timeout=300). If it should keep running, start it with exec background=true or yieldMs so OpenClaw can register a pollable process session. Do not rely on shell backgrounding with a trailing &.";
     case "no-output-timeout":
       return "Command timed out waiting for output";
     case "signal":
@@ -513,6 +551,7 @@ export async function runExecProcess(opts: {
   pendingMaxOutput: number;
   notifyOnExit: boolean;
   notifyOnExitEmptySuccess?: boolean;
+  explicitOnComplete?: boolean;
   scopeKey?: string;
   sessionKey?: string;
   timeoutSec: number | null;
@@ -534,6 +573,7 @@ export async function runExecProcess(opts: {
     sessionKey: opts.sessionKey,
     notifyOnExit: opts.notifyOnExit,
     notifyOnExitEmptySuccess: opts.notifyOnExitEmptySuccess === true,
+    explicitOnComplete: opts.explicitOnComplete === true,
     exitNotified: false,
     child: undefined,
     stdin: undefined,
@@ -558,23 +598,37 @@ export async function runExecProcess(opts: {
   };
   addSession(session);
 
+  let updateSuppressed = false;
   const emitUpdate = () => {
     if (!opts.onUpdate) {
       return;
     }
+    if (session.backgrounded || session.exited || updateSuppressed) {
+      return;
+    }
     const tailText = session.tail || session.aggregated;
     const warningText = opts.warnings.length ? `${opts.warnings.join("\n")}\n\n` : "";
-    opts.onUpdate({
-      content: [{ type: "text", text: warningText + (tailText || "") }],
-      details: {
-        status: "running",
-        sessionId,
-        pid: session.pid ?? undefined,
-        startedAt,
-        cwd: session.cwd,
-        tail: session.tail,
-      },
-    });
+    try {
+      opts.onUpdate({
+        content: [{ type: "text", text: warningText + (tailText || "") }],
+        details: {
+          status: "running",
+          sessionId,
+          pid: session.pid ?? undefined,
+          startedAt,
+          cwd: session.cwd,
+          tail: session.tail,
+        },
+      });
+    } catch (err) {
+      // The agent run may have ended while the exec process is still producing
+      // output (e.g. late stdout arriving after tool-call abort or turn timeout).
+      // Suppress further updates for this session to avoid repeated throws.
+      updateSuppressed = true;
+      logDebug(
+        `[exec] onUpdate suppressed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   };
 
   const handleStdout = (data: string) => {

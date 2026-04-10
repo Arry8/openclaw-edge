@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { normalizeOptionalString, readStringValue } from "openclaw/plugin-sdk/text-runtime";
+import { asRecord } from "../record-shared.js";
 import type { ChromeMcpSnapshotNode } from "./chrome-mcp.snapshot.js";
 import type { BrowserTab } from "./client.js";
 import { BrowserProfileUnavailableError, BrowserTabNotFoundError } from "./errors.js";
@@ -31,6 +33,34 @@ type ChromeMcpSessionFactory = (
   userDataDir?: string,
 ) => Promise<ChromeMcpSession>;
 
+export function formatChromeMcpAttachFailureMessage(params: {
+  profileName: string;
+  userDataDir?: string;
+  details: string;
+}): string {
+  const details = params.details.trim();
+  const targetLabel = params.userDataDir
+    ? `the configured Chromium user data dir (${params.userDataDir})`
+    : "Google Chrome's default profile";
+
+  const base =
+    `Chrome MCP existing-session attach failed for profile "${params.profileName}". ` +
+    `Make sure ${targetLabel} is running locally with remote debugging enabled.`;
+
+  const lower = details.toLowerCase();
+  if (lower.includes("devtoolsactiveport")) {
+    return (
+      `${base} ` +
+      `Chrome did not expose a DevTools endpoint (DevToolsActivePort missing). ` +
+      `Start/keep Chrome running with remote debugging enabled (e.g. ` +
+      `--remote-debugging-port=9222 or --remote-debugging-port=0) and try again. ` +
+      `Details: ${details}`
+    );
+  }
+
+  return `${base} Details: ${details}`;
+}
+
 const DEFAULT_CHROME_MCP_COMMAND = "npx";
 const DEFAULT_CHROME_MCP_ARGS = [
   "-y",
@@ -40,16 +70,12 @@ const DEFAULT_CHROME_MCP_ARGS = [
   "--experimentalStructuredContent",
   "--experimental-page-id-routing",
 ];
+const STALE_SELECTED_PAGE_ERROR =
+  "The selected page has been closed. Call list_pages to see open pages.";
 
 const sessions = new Map<string, ChromeMcpSession>();
 const pendingSessions = new Map<string, Promise<ChromeMcpSession>>();
 let sessionFactory: ChromeMcpSessionFactory | null = null;
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 function asPages(value: unknown): ChromeMcpStructuredPage[] {
   if (!Array.isArray(value)) {
@@ -63,7 +89,7 @@ function asPages(value: unknown): ChromeMcpStructuredPage[] {
     }
     out.push({
       id: record.id,
-      url: typeof record.url === "string" ? record.url : undefined,
+      url: readStringValue(record.url),
       selected: record.selected === true,
     });
   }
@@ -111,7 +137,7 @@ function extractTextPages(result: ChromeMcpToolResult): ChromeMcpStructuredPage[
       }
       pages.push({
         id: Number.parseInt(match[1] ?? "", 10),
-        url: match[2]?.trim() || undefined,
+        url: normalizeOptionalString(match[2]),
         selected: Boolean(match[3]),
       });
     }
@@ -151,6 +177,12 @@ function extractMessageText(result: ChromeMcpToolResult): string {
 function extractToolErrorMessage(result: ChromeMcpToolResult, name: string): string {
   const message = extractMessageText(result).trim();
   return message || `Chrome MCP tool "${name}" failed.`;
+}
+
+function shouldReconnectForToolError(name: string, message: string): boolean {
+  // Some chrome-devtools-mcp failures are emitted as tool errors even though the
+  // session state is no longer usable. Reset the cached session and retry once.
+  return name === "list_pages" && message.includes(STALE_SELECTED_PAGE_ERROR);
 }
 
 function extractJsonMessage(result: ChromeMcpToolResult): unknown {
@@ -246,13 +278,12 @@ async function createRealSession(
       }
     } catch (err) {
       await client.close().catch(() => {});
-      const targetLabel = userDataDir
-        ? `the configured Chromium user data dir (${userDataDir})`
-        : "Google Chrome's default profile";
       throw new BrowserProfileUnavailableError(
-        `Chrome MCP existing-session attach failed for profile "${profileName}". ` +
-          `Make sure ${targetLabel} is running locally with remote debugging enabled. ` +
-          `Details: ${String(err)}`,
+        formatChromeMcpAttachFailureMessage({
+          profileName,
+          userDataDir,
+          details: String(err),
+        }),
       );
     }
   })();
@@ -314,25 +345,39 @@ async function callTool(
   args: Record<string, unknown> = {},
 ): Promise<ChromeMcpToolResult> {
   const cacheKey = buildChromeMcpSessionCacheKey(profileName, userDataDir);
-  const session = await getSession(profileName, userDataDir);
-  let result: ChromeMcpToolResult;
-  try {
-    result = (await session.client.callTool({
-      name,
-      arguments: args,
-    })) as ChromeMcpToolResult;
-  } catch (err) {
-    // Transport/connection error — tear down session so it reconnects on next call
-    sessions.delete(cacheKey);
-    await session.client.close().catch(() => {});
-    throw err;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const session = await getSession(profileName, userDataDir);
+    let result: ChromeMcpToolResult;
+    try {
+      result = (await session.client.callTool({
+        name,
+        arguments: args,
+      })) as ChromeMcpToolResult;
+    } catch (err) {
+      // Transport/connection error — tear down session so it reconnects on next call
+      sessions.delete(cacheKey);
+      await session.client.close().catch(() => {});
+      throw err;
+    }
+    // Most tool-level errors (element not found, script error, etc.) do not
+    // indicate a broken connection. Some page-state errors do leave the session
+    // unusable, so reset and retry once in-band.
+    if (result.isError) {
+      const message = extractToolErrorMessage(result, name);
+      if (shouldReconnectForToolError(name, message)) {
+        sessions.delete(cacheKey);
+        await session.client.close().catch(() => {});
+        if (attempt === 0) {
+          continue;
+        }
+      }
+      throw new Error(message);
+    }
+    return result;
   }
-  // Tool-level errors (element not found, script error, etc.) don't indicate a
-  // broken connection — don't tear down the session for these.
-  if (result.isError) {
-    throw new Error(extractToolErrorMessage(result, name));
-  }
-  return result;
+  // Unreachable in practice: each attempt either returns or throws, but keep
+  // this fallback so TypeScript accepts the bounded retry loop as exhaustive.
+  throw new Error(`Chrome MCP tool "${name}" failed after reconnect.`);
 }
 
 async function withTempFile<T>(fn: (filePath: string) => Promise<T>): Promise<T> {

@@ -5,6 +5,7 @@ import {
   mergeUsageLatency,
 } from "../../../../src/shared/usage-aggregates.js";
 import { t } from "../../i18n/index.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { UsageSessionEntry, UsageTotals, UsageAggregates } from "./usageTypes.ts";
 
 const CHARS_PER_TOKEN = 4;
@@ -55,11 +56,12 @@ function forEachSessionHourSlice(
   const durationMs = Math.max(endMs - startMs, 1);
   const totalMinutes = durationMs / 60000;
 
+  // Use half-open slices [cursor, nextBoundary) so exact hour boundaries do
+  // not create zero-duration buckets and DST transitions remain monotonic.
   let cursor = startMs;
   while (cursor < endMs) {
     const date = new Date(cursor);
-    const nextHour = setToHourEnd(date, timeZone);
-    const nextMs = Math.min(nextHour.getTime(), endMs);
+    const nextMs = getNextHourBoundaryMs(cursor, endMs, timeZone);
     const minutes = Math.max((nextMs - cursor) / 60000, 0);
     visitor({
       usage,
@@ -67,7 +69,7 @@ function forEachSessionHourSlice(
       weekday: getZonedWeekday(date, timeZone),
       share: minutes / totalMinutes,
     });
-    cursor = nextMs + 1;
+    cursor = nextMs;
   }
 
   return true;
@@ -105,7 +107,7 @@ function buildPeakErrorHours(sessions: UsageSessionEntry[], timeZone: "local" | 
     .map((entry) => ({
       label: formatHourLabel(entry.hour),
       value: `${(entry.rate * 100).toFixed(2)}%`,
-      sub: `${Math.round(entry.errors)} ${t("usage.overview.errors").toLowerCase()} · ${Math.round(entry.msgs)} ${t("usage.overview.messagesAbbrev")}`,
+      sub: `${Math.round(entry.errors)} ${normalizeLowercaseStringOrEmpty(t("usage.overview.errors"))} · ${Math.round(entry.msgs)} ${t("usage.overview.messagesAbbrev")}`,
     }));
 }
 
@@ -124,14 +126,54 @@ function getZonedWeekday(date: Date, zone: "local" | "utc"): number {
   return zone === "utc" ? date.getUTCDay() : date.getDay();
 }
 
-function setToHourEnd(date: Date, zone: "local" | "utc"): Date {
+function getNextHourStart(date: Date, zone: "local" | "utc"): Date {
   const next = new Date(date);
   if (zone === "utc") {
-    next.setUTCMinutes(59, 59, 999);
+    next.setUTCHours(next.getUTCHours() + 1, 0, 0, 0);
   } else {
-    next.setMinutes(59, 59, 999);
+    // Advance in local wall time so repeated and skipped hours are handled by
+    // the runtime's timezone rules instead of reconstructing an ambiguous end.
+    next.setHours(next.getHours() + 1, 0, 0, 0);
   }
   return next;
+}
+
+function getNextHourBoundaryMs(cursor: number, endMs: number, zone: "local" | "utc"): number {
+  const nextStartMs = getNextHourStart(new Date(cursor), zone).getTime();
+  const boundedNextMs = Math.min(nextStartMs, endMs);
+  // Guard against non-monotonic timezone transitions so the UI never stalls.
+  return boundedNextMs > cursor ? boundedNextMs : endMs;
+}
+
+function sessionTouchesHours(
+  session: UsageSessionEntry,
+  timeZone: "local" | "utc",
+  hours: number[],
+): boolean {
+  if (hours.length === 0) {
+    return true;
+  }
+
+  const usage = session.usage;
+  const start = usage?.firstActivity ?? session.updatedAt;
+  const end = usage?.lastActivity ?? session.updatedAt;
+  if (!start || !end) {
+    return false;
+  }
+
+  const startMs = Math.min(start, end);
+  const endMs = Math.max(start, end);
+  let cursor = startMs;
+
+  while (true) {
+    if (hours.includes(getZonedHour(new Date(cursor), timeZone))) {
+      return true;
+    }
+    if (cursor >= endMs) {
+      return false;
+    }
+    cursor = getNextHourBoundaryMs(cursor, endMs, timeZone);
+  }
 }
 
 function buildUsageMosaicStats(
@@ -198,7 +240,7 @@ function renderUsageMosaic(
             <div class="usage-mosaic-sub">${t("usage.mosaic.subtitleEmpty")}</div>
           </div>
           <div class="usage-mosaic-total">
-            ${formatTokens(0)} ${t("usage.metrics.tokens").toLowerCase()}
+            ${formatTokens(0)} ${normalizeLowercaseStringOrEmpty(t("usage.metrics.tokens"))}
           </div>
         </div>
         <div class="usage-empty-block usage-empty-block--compact">
@@ -226,7 +268,8 @@ function renderUsageMosaic(
           </div>
         </div>
         <div class="usage-mosaic-total">
-          ${formatTokens(stats.totalTokens)} ${t("usage.metrics.tokens").toLowerCase()}
+          ${formatTokens(stats.totalTokens)}
+          ${normalizeLowercaseStringOrEmpty(t("usage.metrics.tokens"))}
         </div>
       </div>
       <div class="usage-mosaic-grid">
@@ -260,7 +303,9 @@ function renderUsageMosaic(
                 value > 0
                   ? `color-mix(in srgb, var(--accent) ${(8 + intensity * 70).toFixed(1)}%, transparent)`
                   : "transparent";
-              const title = `${hour}:00 · ${formatTokens(value)} ${t("usage.metrics.tokens").toLowerCase()}`;
+              const title = `${hour}:00 · ${formatTokens(value)} ${normalizeLowercaseStringOrEmpty(
+                t("usage.metrics.tokens"),
+              )}`;
               const border =
                 intensity > 0.7
                   ? "color-mix(in srgb, var(--accent) 60%, transparent)"
@@ -596,6 +641,10 @@ const buildUsageInsightStats = (
   };
 };
 
+export const __test = {
+  getNextHourStart,
+};
+
 export type { UsageInsightStats };
 export {
   buildAggregatesFromSessions,
@@ -610,5 +659,5 @@ export {
   formatTokens,
   getZonedHour,
   renderUsageMosaic,
-  setToHourEnd,
+  sessionTouchesHours,
 };

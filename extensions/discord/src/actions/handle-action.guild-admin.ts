@@ -6,6 +6,7 @@ import {
   readStringParam,
 } from "openclaw/plugin-sdk/agent-runtime";
 import type { ChannelMessageActionContext } from "openclaw/plugin-sdk/channel-contract";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import { handleDiscordAction } from "../../action-runtime-api.js";
 import {
   isDiscordModerationAction,
@@ -14,7 +15,7 @@ import {
 
 type Ctx = Pick<
   ChannelMessageActionContext,
-  "action" | "params" | "cfg" | "accountId" | "requesterSenderId"
+  "action" | "params" | "cfg" | "accountId" | "requesterSenderId" | "mediaLocalRoots"
 >;
 
 export async function tryHandleDiscordMessageActionGuildAdmin(params: {
@@ -197,6 +198,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
       integer: true,
     });
     const availableTags = parseAvailableTags(actionParams.availableTags);
+    const appliedTags = readStringArrayParam(actionParams, "appliedTags");
     return await handleDiscordAction(
       {
         action: "channelEdit",
@@ -212,6 +214,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
         locked,
         autoArchiveDuration: autoArchiveDuration ?? undefined,
         availableTags,
+        appliedTags: appliedTags ?? undefined,
       },
       cfg,
     );
@@ -335,6 +338,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
     const channelId = readStringParam(actionParams, "channelId");
     const location = readStringParam(actionParams, "location");
     const entityType = readStringParam(actionParams, "eventType");
+    const image = readStringParam(actionParams, "image", { trim: false });
     return await handleDiscordAction(
       {
         action: "eventCreate",
@@ -347,8 +351,10 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
         channelId,
         location,
         entityType,
+        image,
       },
       cfg,
+      { mediaLocalRoots: ctx.mediaLocalRoots },
     );
   }
 
@@ -360,7 +366,7 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
         integer: true,
       }),
     });
-    const senderUserId = ctx.requesterSenderId?.trim() || undefined;
+    const senderUserId = normalizeOptionalString(ctx.requesterSenderId);
     return await handleDiscordAction(
       {
         action: moderation.action,

@@ -34,6 +34,11 @@ const DEFAULT_REDACT_PATTERNS: string[] = [
   String.raw`\b(AIza[0-9A-Za-z\-_]{20,})\b`,
   String.raw`\b(pplx-[A-Za-z0-9_-]{10,})\b`,
   String.raw`\b(npm_[A-Za-z0-9]{10,})\b`,
+  // Additional access-key and token-style prefixes.
+  String.raw`\b(AKID[A-Za-z0-9]{10,})\b`,
+  String.raw`\b(LTAI[A-Za-z0-9]{10,})\b`,
+  String.raw`\b(hf_[A-Za-z0-9]{10,})\b`,
+  String.raw`\b(r8_[A-Za-z0-9]{10,})\b`,
   // Telegram Bot API URLs embed the token as `/bot<token>/...` (no word-boundary before digits).
   String.raw`\bbot(\d{6,}:[A-Za-z0-9_-]{20,})\b`,
   String.raw`\b(\d{6,}:[A-Za-z0-9_-]{20,})\b`,
@@ -63,6 +68,17 @@ function parsePattern(raw: string): RegExp | null {
 function resolvePatterns(value?: string[]): RegExp[] {
   const source = value?.length ? value : DEFAULT_REDACT_PATTERNS;
   return source.map(parsePattern).filter((re): re is RegExp => Boolean(re));
+}
+
+/**
+ * Merge user-configured redact patterns with the built-in defaults so custom
+ * patterns are additive — adding an email regex must not drop API-key detection.
+ */
+function mergeWithDefaults(userPatterns?: string[]): string[] {
+  if (!userPatterns?.length) {
+    return DEFAULT_REDACT_PATTERNS;
+  }
+  return [...DEFAULT_REDACT_PATTERNS, ...userPatterns];
 }
 
 function maskToken(token: string): string {
@@ -127,23 +143,30 @@ export function redactSensitiveText(text: string, options?: RedactOptions): stri
   if (!text) {
     return text;
   }
-  const resolved = options ?? resolveConfigRedaction();
-  if (normalizeMode(resolved.mode) === "off") {
+  if (options) {
+    // Caller supplied explicit options — use them directly.
+    if (normalizeMode(options.mode) === "off") {
+      return text;
+    }
+    const patterns = resolvePatterns(options.patterns);
+    return patterns.length ? redactText(text, patterns) : text;
+  }
+  // No explicit options — resolve from config and merge patterns with defaults.
+  const cfg = resolveConfigRedaction();
+  if (normalizeMode(cfg.mode) === "off") {
     return text;
   }
-  const patterns = resolvePatterns(resolved.patterns);
-  if (!patterns.length) {
-    return text;
-  }
-  return redactText(text, patterns);
+  const patterns = resolvePatterns(mergeWithDefaults(cfg.patterns));
+  return patterns.length ? redactText(text, patterns) : text;
 }
 
 export function redactToolDetail(detail: string): string {
-  const resolved = resolveConfigRedaction();
-  if (normalizeMode(resolved.mode) !== "tools") {
+  const cfg = resolveConfigRedaction();
+  if (normalizeMode(cfg.mode) !== "tools") {
     return detail;
   }
-  return redactSensitiveText(detail, resolved);
+  const patterns = resolvePatterns(mergeWithDefaults(cfg.patterns));
+  return patterns.length ? redactText(detail, patterns) : detail;
 }
 
 export function getDefaultRedactPatterns(): string[] {

@@ -297,6 +297,33 @@ function Add-ToPath {
     }
 }
 
+$script:InstallExitCode = 0
+
+function Fail-Install {
+    param([int]$Code = 1)
+
+    $script:InstallExitCode = $Code
+    return $false
+}
+
+function Complete-Install {
+    param([bool]$Succeeded)
+
+    if ($Succeeded) {
+        return
+    }
+
+    # `exit` kills the current PowerShell host when the installer is invoked via
+    # `iex`/scriptblock. Keep that behavior only for direct script execution and
+    # use a terminating error otherwise so callers still observe a non-zero
+    # failure without losing their interactive session.
+    if ($PSCommandPath) {
+        exit $script:InstallExitCode
+    }
+
+    throw "OpenClaw installation failed with exit code $($script:InstallExitCode)."
+}
+
 # Main
 function Main {
     Write-Banner
@@ -307,16 +334,16 @@ function Main {
     if (!(Ensure-ExecutionPolicy)) {
         Write-Host ""
         Write-Host "Installation cannot continue due to execution policy restrictions" -Level error
-        exit 1
+        return (Fail-Install)
     }
     
     if (!(Ensure-Node)) {
-        exit 1
+        return (Fail-Install)
     }
     
     if ($InstallMethod -eq "git") {
         if (!(Ensure-Git)) {
-            exit 1
+            return (Fail-Install)
         }
         
         if ($DryRun) {
@@ -327,14 +354,15 @@ function Main {
     } else {
         # npm method
         if (!(Ensure-Git)) {
-            Write-Host "Git is required for npm installs. Please install Git and try again." -Level warn
+            Write-Host "Git is required but not found. Install Git from: https://git-scm.com/download/win" -Level error
+            exit 1
         }
         
         if ($DryRun) {
             Write-Host "[DRY RUN] Would install OpenClaw via npm ($((Resolve-PackageInstallSpec -Target $Tag)))" -Level info
         } else {
             if (!(Install-OpenClawNpm -Target $Tag)) {
-                exit 1
+                return (Fail-Install)
             }
         }
     }
@@ -354,6 +382,9 @@ function Main {
     
     Write-Host ""
     Write-Host "🦞 OpenClaw installed successfully!" -Level success
+    return $true
 }
 
-Main
+$installSucceeded = Main
+
+Complete-Install -Succeeded:$installSucceeded

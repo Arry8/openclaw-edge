@@ -8,17 +8,20 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -88,6 +91,7 @@ class MicCaptureManager(
   val isSending: StateFlow<Boolean> = _isSending
 
   private val messageQueue = ArrayDeque<String>()
+  private val messageQueueLock = Any()
   private var flushedPartialTranscript: String? = null
   private var pendingRunId: String? = null
   private var pendingAssistantEntryId: String? = null
@@ -99,11 +103,63 @@ class MicCaptureManager(
   private var transcriptFlushJob: Job? = null
   private var pendingRunTimeoutJob: Job? = null
   private var stopRequested = false
+  private val ttsPauseLock = Any()
+  private var ttsPauseDepth = 0
+  private var resumeMicAfterTts = false
+
+  private fun enqueueMessage(message: String) {
+    synchronized(messageQueueLock) {
+      messageQueue.addLast(message)
+    }
+  }
+
+  private fun snapshotMessageQueue(): List<String> {
+    return synchronized(messageQueueLock) {
+      messageQueue.toList()
+    }
+  }
+
+  private fun hasQueuedMessages(): Boolean {
+    return synchronized(messageQueueLock) {
+      messageQueue.isNotEmpty()
+    }
+  }
+
+  private fun firstQueuedMessage(): String? {
+    return synchronized(messageQueueLock) {
+      messageQueue.firstOrNull()
+    }
+  }
+
+  private fun removeFirstQueuedMessage(): String? {
+    return synchronized(messageQueueLock) {
+      if (messageQueue.isEmpty()) null else messageQueue.removeFirst()
+    }
+  }
+
+  private fun queuedMessageCount(): Int {
+    return synchronized(messageQueueLock) {
+      messageQueue.size
+    }
+  }
 
   fun setMicEnabled(enabled: Boolean) {
     if (_micEnabled.value == enabled) return
     _micEnabled.value = enabled
     if (enabled) {
+      val pausedForTts =
+        synchronized(ttsPauseLock) {
+          if (ttsPauseDepth > 0) {
+            resumeMicAfterTts = true
+            true
+          } else {
+            false
+          }
+        }
+      if (pausedForTts) {
+        _statusText.value = if (_isSending.value) "Speaking · waiting for reply" else "Speaking…"
+        return
+      }
       start()
       sendQueuedIfIdle()
     } else {
@@ -126,6 +182,58 @@ class MicCaptureManager(
     }
   }
 
+  suspend fun pauseForTts() {
+    val shouldPause =
+      synchronized(ttsPauseLock) {
+        ttsPauseDepth += 1
+        if (ttsPauseDepth > 1) return@synchronized false
+        resumeMicAfterTts = _micEnabled.value
+        val active = resumeMicAfterTts || recognizer != null || _isListening.value
+        if (!active) return@synchronized false
+        stopRequested = true
+        restartJob?.cancel()
+        restartJob = null
+        transcriptFlushJob?.cancel()
+        transcriptFlushJob = null
+        _isListening.value = false
+        _inputLevel.value = 0f
+        _liveTranscript.value = null
+        _statusText.value = if (_isSending.value) "Speaking · waiting for reply" else "Speaking…"
+        true
+      }
+    if (!shouldPause) return
+    withContext(Dispatchers.Main) {
+      recognizer?.cancel()
+      recognizer?.destroy()
+      recognizer = null
+    }
+  }
+
+  suspend fun resumeAfterTts() {
+    val shouldResume =
+      synchronized(ttsPauseLock) {
+        if (ttsPauseDepth == 0) return@synchronized false
+        ttsPauseDepth -= 1
+        if (ttsPauseDepth > 0) return@synchronized false
+        val resume = resumeMicAfterTts && _micEnabled.value
+        resumeMicAfterTts = false
+        if (!resume) {
+          _statusText.value =
+            when {
+              _micEnabled.value && _isSending.value -> "Listening · sending queued voice"
+              _micEnabled.value -> "Listening"
+              _isSending.value -> "Mic off · sending…"
+              else -> "Mic off"
+            }
+        }
+        resume
+      }
+    if (!shouldResume) return
+    stopRequested = false
+    start()
+    sendQueuedIfIdle()
+  }
+
   fun onGatewayConnectionChanged(connected: Boolean) {
     gatewayConnected = connected
     if (connected) {
@@ -137,7 +245,7 @@ class MicCaptureManager(
     pendingRunId = null
     pendingAssistantEntryId = null
     _isSending.value = false
-    if (messageQueue.isNotEmpty()) {
+    if (hasQueuedMessages()) {
       _statusText.value = queuedWaitingStatus()
     }
   }
@@ -188,9 +296,10 @@ class MicCaptureManager(
   private fun start() {
     stopRequested = false
     if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-      _statusText.value = "Speech recognizer unavailable"
-      _micEnabled.value = false
-      return
+      // On many Chinese OEM devices (Xiaomi, Huawei, OPPO, vivo), this returns false
+      // even though a working OEM speech engine is installed. Log a warning but continue
+      // so we can attempt to use the device's configured speech recognition service.
+      Log.w(tag, "isRecognitionAvailable=false; will attempt OEM speech engine fallback")
     }
     if (!hasMicPermission()) {
       _statusText.value = "Microphone permission required"
@@ -201,7 +310,7 @@ class MicCaptureManager(
     mainHandler.post {
       try {
         if (recognizer == null) {
-          recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { it.setRecognitionListener(listener) }
+          recognizer = createBestAvailableRecognizer().also { it.setRecognitionListener(listener) }
         }
         startListeningSession()
       } catch (err: Throwable) {
@@ -209,6 +318,41 @@ class MicCaptureManager(
         _micEnabled.value = false
       }
     }
+  }
+
+  /**
+   * Create the best available [SpeechRecognizer] for this device.
+   *
+   * 1. If the platform reports recognition as available, use the default recognizer.
+   * 2. Otherwise, query `Settings.Secure.voice_recognition_service` for the device's
+   *    configured OEM speech engine (e.g. Xiaomi's mibrain, Huawei's HiVoice, etc.)
+   *    and create a recognizer targeting that component directly.
+   * 3. If no OEM engine is configured either, fall back to the default recognizer
+   *    and let the platform surface its own error.
+   */
+  private fun createBestAvailableRecognizer(): SpeechRecognizer {
+    if (SpeechRecognizer.isRecognitionAvailable(context)) {
+      return SpeechRecognizer.createSpeechRecognizer(context)
+    }
+
+    val oemServiceFlat = try {
+      Settings.Secure.getString(context.contentResolver, "voice_recognition_service")
+    } catch (e: Throwable) {
+      Log.w(tag, "Failed to query voice_recognition_service setting", e)
+      null
+    }
+
+    if (!oemServiceFlat.isNullOrBlank()) {
+      val component = android.content.ComponentName.unflattenFromString(oemServiceFlat)
+      if (component != null) {
+        Log.i(tag, "Using OEM speech engine: $component")
+        return SpeechRecognizer.createSpeechRecognizer(context, component)
+      }
+      Log.w(tag, "voice_recognition_service value '$oemServiceFlat' could not be parsed as ComponentName")
+    }
+
+    Log.w(tag, "No OEM speech engine found; falling back to default recognizer")
+    return SpeechRecognizer.createSpeechRecognizer(context)
   }
 
   private fun stop() {
@@ -245,7 +389,7 @@ class MicCaptureManager(
     _statusText.value =
       when {
         _isSending.value -> "Listening · sending queued voice"
-        messageQueue.isNotEmpty() -> "Listening · ${messageQueue.size} queued"
+        hasQueuedMessages() -> "Listening · ${queuedMessageCount()} queued"
         else -> "Listening"
       }
     _isListening.value = true
@@ -278,7 +422,7 @@ class MicCaptureManager(
       role = VoiceConversationRole.User,
       text = message,
     )
-    messageQueue.addLast(message)
+    enqueueMessage(message)
     publishQueue()
   }
 
@@ -297,12 +441,12 @@ class MicCaptureManager(
   }
 
   private fun publishQueue() {
-    _queuedMessages.value = messageQueue.toList()
+    _queuedMessages.value = snapshotMessageQueue()
   }
 
   private fun sendQueuedIfIdle() {
     if (_isSending.value) return
-    if (messageQueue.isEmpty()) {
+    if (!hasQueuedMessages()) {
       if (_micEnabled.value) {
         _statusText.value = "Listening"
       } else {
@@ -315,7 +459,7 @@ class MicCaptureManager(
       return
     }
 
-    val next = messageQueue.first()
+    val next = firstQueuedMessage() ?: return
     _isSending.value = true
     pendingRunTimeoutJob?.cancel()
     pendingRunTimeoutJob = null
@@ -333,7 +477,7 @@ class MicCaptureManager(
         if (runId == null) {
           pendingRunTimeoutJob?.cancel()
           pendingRunTimeoutJob = null
-          messageQueue.removeFirst()
+          removeFirstQueuedMessage()
           publishQueue()
           _isSending.value = false
           pendingAssistantEntryId = null
@@ -379,8 +523,7 @@ class MicCaptureManager(
   private fun completePendingTurn() {
     pendingRunTimeoutJob?.cancel()
     pendingRunTimeoutJob = null
-    if (messageQueue.isNotEmpty()) {
-      messageQueue.removeFirst()
+    if (removeFirstQueuedMessage() != null) {
       publishQueue()
     }
     pendingRunId = null
@@ -390,7 +533,7 @@ class MicCaptureManager(
   }
 
   private fun queuedWaitingStatus(): String {
-    return "${messageQueue.size} queued · waiting for gateway"
+    return "${queuedMessageCount()} queued · waiting for gateway"
   }
 
   private fun appendConversation(

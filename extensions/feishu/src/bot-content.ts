@@ -196,6 +196,11 @@ export function parseMergeForwardContent(params: { content: string; log?: Feishu
     msg_type?: string;
     body?: { content?: string };
     sender?: { id?: string };
+    mentions?: Array<{
+      key?: string;
+      id?: string | { open_id?: string; user_id?: string; union_id?: string };
+      name?: string;
+    }>;
     upper_message_id?: string;
     create_time?: string;
   }>;
@@ -220,7 +225,27 @@ export function parseMergeForwardContent(params: { content: string; log?: Feishu
 
   const lines = ["[Merged and Forwarded Messages]"];
   for (const item of subMessages.slice(0, maxMessages)) {
-    lines.push(`- ${formatSubMessageContent(item.body?.content || "", item.msg_type || "text")}`);
+    const formatted = formatSubMessageContent(item.body?.content || "", item.msg_type || "text");
+    const senderId = item.sender?.id || "unknown";
+
+    // Resolve @_user_N placeholders using item.mentions from Feishu API
+    let resolved = formatted;
+    if (item.mentions && item.mentions.length > 0) {
+      // Sort by key length descending to avoid @_user_1 matching inside @_user_10
+      const sorted = [...item.mentions].sort((a, b) => (b.key?.length ?? 0) - (a.key?.length ?? 0));
+      for (const m of sorted) {
+        if (m.key) {
+          const mId =
+            typeof m.id === "string"
+              ? m.id
+              : m.id?.open_id || m.id?.user_id || m.id?.union_id || "";
+          const display = m.name && mId ? `${m.name}(${mId})` : m.name || mId || m.key;
+          resolved = resolved.replaceAll(m.key, () => `@${display}`);
+        }
+      }
+    }
+
+    lines.push(`- [${senderId}] ${resolved}`);
   }
   if (subMessages.length > maxMessages) {
     lines.push(`... and ${subMessages.length - maxMessages} more messages`);
@@ -232,9 +257,10 @@ export function checkBotMentioned(event: FeishuMessageLike, botOpenId?: string):
   if (!botOpenId) {
     return false;
   }
-  if ((event.message.content ?? "").includes("@_all")) {
-    return true;
-  }
+  // @_all (@所有人) is a broadcast to all human members, not a targeted bot
+  // mention. Treating it as mentioning every bot causes all bots in the group
+  // to respond simultaneously (#49761). Skip the @_all shortcut and fall
+  // through to the standard mention-matching logic below.
   const mentions = event.message.mentions ?? [];
   if (mentions.length > 0) {
     return mentions.some((mention) => mention.id.open_id === botOpenId);
@@ -278,6 +304,16 @@ export function normalizeFeishuCommandProbeBody(text: string): string {
     .replace(/(^|\s)@[^/\s]+(?=\s|$|\/)/gu, "$1")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Safely parse message content JSON for passing to download heuristics. */
+function safeParsedContent(content: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseMediaKeys(
@@ -431,6 +467,7 @@ export async function resolveFeishuMediaList(params: {
       messageId,
       fileKey,
       type: toMessageResourceType(messageType),
+      content: safeParsedContent(content),
       accountId,
     });
     const contentType =

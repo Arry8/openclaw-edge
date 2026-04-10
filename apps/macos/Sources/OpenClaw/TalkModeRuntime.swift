@@ -18,6 +18,7 @@ actor TalkModeRuntime {
     private static let defaultModelIdFallback = "eleven_v3"
     private static let defaultTalkProvider = "elevenlabs"
     private static let defaultSilenceTimeoutMs = TalkDefaults.silenceTimeoutMs
+    private static let defaultUseLocalVoice = false
 
     private final class RMSMeter: @unchecked Sendable {
         private let lock = NSLock()
@@ -124,8 +125,9 @@ actor TalkModeRuntime {
     private func start() async {
         let gen = self.lifecycleGeneration
         guard voiceWakeSupported else { return }
-        guard PermissionManager.voiceWakePermissionsGranted() else {
-            self.logger.debug("talk runtime not starting: permissions missing")
+        
+        guard await PermissionManager.ensureVoiceWakePermissions(interactive: true) else {
+            self.logger.error("talk runtime not starting: permissions missing")
             return
         }
         await self.reloadConfig()
@@ -687,13 +689,35 @@ actor TalkModeRuntime {
         await MainActor.run { TalkModeController.shared.updatePhase(.speaking) }
         self.phase = .speaking
         await TalkSystemSpeechSynthesizer.shared.stop()
+        
+        if Self.defaultUseLocalVoice {
+            try await self.playLocalVoice(input: input)
+        } else {
         // Use app locale as fallback when no explicit language is set (e.g. system voice without ElevenLabs directive).
         let appLocale = await MainActor.run { AppStateStore.shared.voiceWakeLocaleID }
         let ttsLanguage = input.language ?? appLocale
         try await TalkSystemSpeechSynthesizer.shared.speak(
             text: input.cleanedText,
             language: ttsLanguage)
+        }
         self.ttsLogger.info("talk system voice done")
+    }
+
+    private func playLocalVoice(input: TalkPlaybackInput) async throws {
+        self.ttsLogger.info("talk local voice (MLX) start chars=\(input.cleanedText.count, privacy: .public)")
+        await self.stopMLX()
+        
+        // Extract voice preset from directive if available
+        let voicePreset = input.directive?.voiceId
+        let speed = input.directive?.speed
+        
+        try await self.playMLX(
+            text: input.cleanedText,
+            language: input.language,
+            speed: speed,
+            voicePreset: voicePreset
+        )
+        self.ttsLogger.info("talk local voice (MLX) done")
     }
 
     private func prepareForPlayback(generation: Int) async -> Bool {
@@ -753,6 +777,7 @@ actor TalkModeRuntime {
         let interruptedAt = usePCM ? await self.stopPCM() : await self.stopMP3()
         _ = usePCM ? await self.stopMP3() : await self.stopPCM()
         await TalkSystemSpeechSynthesizer.shared.stop()
+        await self.stopMLX()
         guard self.phase == .speaking else { return }
         if reason == .speech, let interruptedAt {
             self.lastInterruptedAtSeconds = interruptedAt
@@ -795,6 +820,26 @@ extension TalkModeRuntime {
         StreamingAudioPlayer.shared.stop()
     }
 
+    @MainActor
+    private func playMLX(
+        text: String,
+        language: String?,
+        speed: Double?,
+        voicePreset: String?) async throws
+    {
+        try await TalkMLXSpeechSynthesizer.shared.speak(
+            text: text,
+            language: language,
+            speed: speed,
+            voicePreset: voicePreset
+        )
+    }
+
+    @MainActor
+    private func stopMLX() {
+        TalkMLXSpeechSynthesizer.shared.stop()
+    }
+
     // MARK: - Config
 
     private func reloadConfig() async {
@@ -810,11 +855,21 @@ extension TalkModeRuntime {
         }
         self.defaultOutputFormat = cfg.outputFormat
         self.interruptOnSpeech = cfg.interruptOnSpeech
-        self.silenceWindow = TimeInterval(cfg.silenceTimeoutMs) / 1000
+        let configuredSilenceMs = cfg.silenceTimeoutMs
+        let locale = await MainActor.run { AppStateStore.shared.voiceWakeLocaleID }
+        let isCJKLocale = locale.hasPrefix("ko") || locale.hasPrefix("ja") || locale.hasPrefix("zh")
+        let effectiveSilenceMs = isCJKLocale ? max(configuredSilenceMs, 2000) : configuredSilenceMs
+        if isCJKLocale, configuredSilenceMs < 2000 {
+            self.logger
+                .info(
+                    "talk CJK locale: silence timeout clamped " +
+                        "\(configuredSilenceMs, privacy: .public)ms -> 2000ms")
+        }
+        self.silenceWindow = TimeInterval(effectiveSilenceMs) / 1000
         self.apiKey = cfg.apiKey
         let hasApiKey = (cfg.apiKey?.isEmpty == false)
-        let voiceLabel = (cfg.voiceId?.isEmpty == false) ? cfg.voiceId! : "none"
-        let modelLabel = (cfg.modelId?.isEmpty == false) ? cfg.modelId! : "none"
+        let voiceLabel = cfg.voiceId.flatMap { $0.isEmpty ? nil : $0 } ?? "none"
+        let modelLabel = cfg.modelId.flatMap { $0.isEmpty ? nil : $0 } ?? "none"
         self.logger
             .info(
                 "talk config voiceId=\(voiceLabel, privacy: .public) " +

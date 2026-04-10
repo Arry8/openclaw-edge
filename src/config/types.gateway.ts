@@ -49,17 +49,9 @@ export type CanvasHostConfig = {
 };
 
 export type TalkProviderConfig = {
-  /** Default voice ID for the provider's Talk mode implementation. */
-  voiceId?: string;
-  /** Optional voice name -> provider voice ID map. */
-  voiceAliases?: Record<string, string>;
-  /** Default provider model ID for Talk mode. */
-  modelId?: string;
-  /** Default provider output format (for example pcm_44100). */
-  outputFormat?: string;
   /** Provider API key (optional; provider-specific env fallback may apply). */
   apiKey?: SecretInput;
-  /** Provider-specific extensions. */
+  /** Provider-owned Talk config fields. */
   [key: string]: unknown;
 };
 
@@ -71,7 +63,7 @@ export type ResolvedTalkConfig = {
 };
 
 export type TalkConfig = {
-  /** Active Talk TTS provider (for example "elevenlabs"). */
+  /** Active Talk TTS provider (for example "acme-speech"). */
   provider?: string;
   /** Provider-specific Talk config keyed by provider id. */
   providers?: Record<string, TalkProviderConfig>;
@@ -79,16 +71,6 @@ export type TalkConfig = {
   interruptOnSpeech?: boolean;
   /** Milliseconds of user silence before Talk mode sends the transcript after a pause. */
   silenceTimeoutMs?: number;
-
-  /**
-   * Legacy ElevenLabs compatibility fields.
-   * Kept during rollout while older clients migrate to provider/providers.
-   */
-  voiceId?: string;
-  voiceAliases?: Record<string, string>;
-  modelId?: string;
-  outputFormat?: string;
-  apiKey?: SecretInput;
 };
 
 export type TalkConfigResponse = TalkConfig & {
@@ -124,7 +106,7 @@ export type GatewayAuthMode = "none" | "token" | "password" | "trusted-proxy";
 
 /**
  * Configuration for trusted reverse proxy authentication.
- * Used when Clawdbot runs behind an identity-aware proxy (Pomerium, Caddy + OAuth, etc.)
+ * Used when OpenClaw runs behind an identity-aware proxy (Pomerium, Caddy + OAuth, etc.)
  * that handles authentication and passes user identity via headers.
  */
 export type GatewayTrustedProxyConfig = {
@@ -145,6 +127,18 @@ export type GatewayTrustedProxyConfig = {
    * Example: ["nick@example.com", "admin@company.org"]
    */
   allowUsers?: string[];
+  /**
+   * Optional header name that must match authValue exactly.
+    * Use this to prove requests came from your reverse proxy and are not forged
+    * by another local process.
+   * Example: "x-gateway-proxy-auth"
+   */
+  authHeader?: string;
+  /**
+   * Optional shared secret value expected in authHeader.
+   * If either authHeader or authValue is set, both must be set.
+   */
+  authValue?: string;
 };
 
 export type GatewayAuthConfig = {
@@ -156,6 +150,14 @@ export type GatewayAuthConfig = {
   password?: SecretInput;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
+  /**
+   * Scopes granted to connections authenticated via shared token or password
+   * that do not present a paired device identity.
+   * Without this, device-less token/password connections receive no scopes,
+   * which prevents auto-pairing flows from calling device.pair.approve.
+   * Default when absent: [] (no scopes for device-less connections).
+   */
+  scopes?: string[];
   /** Rate-limit configuration for failed authentication attempts. */
   rateLimit?: GatewayAuthRateLimitConfig;
   /**
@@ -393,6 +395,12 @@ export type GatewayToolsConfig = {
 export type GatewayWebchatConfig = {
   /** Max characters per text field in chat.history responses before truncation (default: 12000). */
   chatHistoryMaxChars?: number;
+  /**
+   * Optional canonical/operator peer id for WebChat/TUI default session routing.
+   * When set, WebChat/TUI defaults to the DM session resolved from this peer id
+   * instead of the legacy main session.
+   */
+  defaultPeerId?: string;
 };
 
 export type GatewayConfig = {
@@ -435,6 +443,13 @@ export type GatewayConfig = {
    * Default: false (safer fail-closed behavior).
    */
   allowRealIpFallback?: boolean;
+  /**
+   * A2A (Agent-to-Agent) Protocol server configuration.
+   * When enabled, exposes a JSON-RPC 2.0 endpoint at /a2a and an
+   * Agent Card at /.well-known/agent.json for cross-network agent
+   * discovery and task exchange per the A2A specification.
+   */
+  a2a?: GatewayA2aConfig;
   /** Tool access restrictions for HTTP /tools/invoke endpoint. */
   tools?: GatewayToolsConfig;
   /** WebChat display/history settings. */
@@ -457,4 +472,48 @@ export type GatewayConfig = {
    * the rolling window expires. Default: 10.
    */
   channelMaxRestartsPerHour?: number;
+};
+
+// ---------------------------------------------------------------------------
+// A2A (Agent-to-Agent) Protocol types
+// ---------------------------------------------------------------------------
+
+export type GatewayA2aSkill = {
+  /** Unique skill identifier (e.g. "summarize", "translate"). */
+  id: string;
+  /** Human-readable skill name. */
+  name: string;
+  /** Description of what this skill does. */
+  description?: string;
+  /** JSON Schema describing the expected input. */
+  inputSchema?: Record<string, unknown>;
+};
+
+export type GatewayA2aAuthConfig = {
+  /** API key required for incoming A2A requests. */
+  apiKey?: SecretInput;
+  /** Accept Bearer tokens (e.g. OAuth2 / JWT). */
+  bearerTokens?: boolean;
+};
+
+export type GatewayA2aConfig = {
+  /** Enable the A2A server endpoint (default: false). */
+  enabled?: boolean;
+  /** Human-readable name for the Agent Card (defaults to first agent name). */
+  name?: string;
+  /** Description for the Agent Card. */
+  description?: string;
+  /** Public URL for the A2A endpoint (used in Agent Card; auto-detected if omitted). */
+  url?: string;
+  /** Provider organization info for the Agent Card. */
+  provider?: {
+    name?: string;
+    url?: string;
+  };
+  /** Skills to advertise in the Agent Card. */
+  skills?: GatewayA2aSkill[];
+  /** Authentication configuration for incoming A2A requests. */
+  auth?: GatewayA2aAuthConfig;
+  /** Target agent ID to route incoming A2A tasks to (defaults to default agent). */
+  targetAgentId?: string;
 };

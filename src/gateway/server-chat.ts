@@ -1,15 +1,18 @@
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
 import { normalizeVerboseLevel } from "../auto-reply/thinking.js";
-import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
+import {
+  isSilentReplyPrefixText,
+  isSilentReplyText,
+  SILENT_REPLY_TOKEN,
+} from "../auto-reply/tokens.js";
 import { loadConfig } from "../config/config.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
 import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
-import {
-  deriveGatewaySessionLifecycleSnapshot,
-  persistGatewaySessionLifecycleEvent,
-} from "./session-lifecycle-state.js";
-import { loadGatewaySessionRow, loadSessionEntry } from "./session-utils.js";
+import { loadGatewaySessionRow } from "./server-chat.load-gateway-session-row.runtime.js";
+import { persistGatewaySessionLifecycleEvent } from "./server-chat.persist-session-lifecycle.runtime.js";
+import { deriveGatewaySessionLifecycleSnapshot } from "./session-lifecycle-state.js";
+import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
 function resolveHeartbeatAckMaxChars(): number {
@@ -26,9 +29,14 @@ function resolveHeartbeatAckMaxChars(): number {
 
 function resolveHeartbeatContext(runId: string, sourceRunId?: string) {
   const primary = getAgentRunContext(runId);
-  if (primary?.isHeartbeat) {
+
+  // Case 1: primary exists and is explicitly NOT a heartbeat → interactive user message
+  // Don't hide output - user is actively communicating
+  if (primary && primary.isHeartbeat === false) {
     return primary;
   }
+
+  // For all other cases (primary undefined or heartbeat), check sourceRunId fallback
   if (sourceRunId && sourceRunId !== runId) {
     const source = getAgentRunContext(sourceRunId);
     if (source?.isHeartbeat) {
@@ -79,6 +87,15 @@ function normalizeHeartbeatChatFinalText(params: {
   return { suppress: false, text: stripped.text };
 }
 
+function isSuppressedControlReplyText(text: string): boolean {
+  const normalized = text.trim();
+  return (
+    isSilentReplyText(normalized, SILENT_REPLY_TOKEN) ||
+    normalized === "ANNOUNCE_SKIP" ||
+    normalized === "REPLY_SKIP"
+  );
+}
+
 function isSilentReplyLeadFragment(text: string): boolean {
   const normalized = text.trim().toUpperCase();
   if (!normalized) {
@@ -93,22 +110,26 @@ function isSilentReplyLeadFragment(text: string): boolean {
   return SILENT_REPLY_TOKEN.startsWith(normalized);
 }
 
-function appendUniqueSuffix(base: string, suffix: string): string {
+export function appendDelta(base: string, suffix: string): string {
   if (!suffix) {
     return base;
   }
   if (!base) {
     return suffix;
   }
-  if (base.endsWith(suffix)) {
-    return base;
-  }
-  const maxOverlap = Math.min(base.length, suffix.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    if (base.slice(-overlap) === suffix.slice(0, overlap)) {
-      return base + suffix.slice(overlap);
-    }
-  }
+  // Streaming deltas are incremental tokens — just concatenate.
+  //
+  // The previous implementation tried to detect overlapping text between the
+  // tail of `base` and the head of `suffix` and deduplicate the overlap.
+  // This is incorrect for repeated characters: when streaming "999999" one
+  // digit at a time, each "9" delta was detected as "overlapping" the
+  // previous "9" and swallowed, causing the TUI to display only "9".
+  //
+  // Providers (OpenAI-compatible, Anthropic, etc.) emit purely incremental
+  // deltas that never overlap with previously emitted content. The overlap
+  // detection was a defensive measure that caused more harm than good.
+  //
+  // Fixes #43828.
   return base + suffix;
 }
 
@@ -127,7 +148,7 @@ function resolveMergedAssistantText(params: {
     }
   }
   if (nextDelta) {
-    return appendUniqueSuffix(previousText, nextDelta);
+    return appendDelta(previousText, nextDelta);
   }
   if (nextText) {
     return nextText;
@@ -264,6 +285,11 @@ type ToolRecipientEntry = {
 
 const TOOL_EVENT_RECIPIENT_TTL_MS = 10 * 60 * 1000;
 const TOOL_EVENT_RECIPIENT_FINAL_GRACE_MS = 30 * 1000;
+/**
+ * Keep this aligned with the agent.wait lifecycle-error grace so chat surfaces
+ * do not finalize a run before fallback or retry reuses the same runId.
+ */
+const AGENT_LIFECYCLE_ERROR_RETRY_GRACE_MS = 15_000;
 
 export function createSessionEventSubscriberRegistry(): SessionEventSubscriberRegistry {
   const connIds = new Set<string>();
@@ -450,6 +476,8 @@ export type AgentEventHandlerOptions = {
   clearAgentRunContext: (runId: string) => void;
   toolEventRecipients: ToolEventRecipientRegistry;
   sessionEventSubscribers: SessionEventSubscriberRegistry;
+  lifecycleErrorRetryGraceMs?: number;
+  isChatSendRunActive?: (runId: string) => boolean;
 };
 
 export function createAgentEventHandler({
@@ -462,9 +490,28 @@ export function createAgentEventHandler({
   clearAgentRunContext,
   toolEventRecipients,
   sessionEventSubscribers,
+  lifecycleErrorRetryGraceMs = AGENT_LIFECYCLE_ERROR_RETRY_GRACE_MS,
+  isChatSendRunActive = () => false,
 }: AgentEventHandlerOptions) {
+  const pendingTerminalLifecycleErrors = new Map<string, NodeJS.Timeout>();
+
+  const clearBufferedChatState = (clientRunId: string) => {
+    chatRunState.buffers.delete(clientRunId);
+    chatRunState.deltaSentAt.delete(clientRunId);
+    chatRunState.deltaLastBroadcastLen.delete(clientRunId);
+  };
+
+  const clearPendingTerminalLifecycleError = (runId: string) => {
+    const pending = pendingTerminalLifecycleErrors.get(runId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending);
+    pendingTerminalLifecycleErrors.delete(runId);
+  };
+
   const buildSessionEventSnapshot = (sessionKey: string, evt?: AgentEventPayload) => {
-    const row = loadGatewaySessionRow(sessionKey);
+    const row = loadGatewaySessionRow(sessionKey, { includeTranscriptUsage: true });
     const lifecyclePatch = evt
       ? deriveGatewaySessionLifecycleSnapshot({
           session: row
@@ -532,6 +579,110 @@ export function createAgentEventHandler({
     };
   };
 
+  const finalizeLifecycleEvent = (
+    evt: AgentEventPayload,
+    opts?: { skipChatErrorFinal?: boolean },
+  ) => {
+    const lifecyclePhase =
+      evt.stream === "lifecycle" && typeof evt.data?.phase === "string" ? evt.data.phase : null;
+    if (lifecyclePhase !== "end" && lifecyclePhase !== "error") {
+      return;
+    }
+
+    clearPendingTerminalLifecycleError(evt.runId);
+
+    const chatLink = chatRunState.registry.peek(evt.runId);
+    const eventSessionKey =
+      typeof evt.sessionKey === "string" && evt.sessionKey.trim() ? evt.sessionKey : undefined;
+    const isControlUiVisible = getAgentRunContext(evt.runId)?.isControlUiVisible ?? true;
+    const sessionKey =
+      chatLink?.sessionKey ?? eventSessionKey ?? resolveSessionKeyForRun(evt.runId);
+    const clientRunId = chatLink?.clientRunId ?? evt.runId;
+    const eventRunId = chatLink?.clientRunId ?? evt.runId;
+    const isAborted =
+      chatRunState.abortedRuns.has(clientRunId) || chatRunState.abortedRuns.has(evt.runId);
+
+    if (isControlUiVisible && sessionKey) {
+      if (!isAborted) {
+        const evtStopReason =
+          typeof evt.data?.stopReason === "string" ? evt.data.stopReason : undefined;
+        if (chatLink) {
+          const finished = chatRunState.registry.shift(evt.runId);
+          if (!finished) {
+            clearAgentRunContext(evt.runId);
+            return;
+          }
+          if (!(opts?.skipChatErrorFinal && lifecyclePhase === "error")) {
+            emitChatFinal(
+              finished.sessionKey,
+              finished.clientRunId,
+              evt.runId,
+              evt.seq,
+              lifecyclePhase === "error" ? "error" : "done",
+              evt.data?.error,
+              evtStopReason,
+            );
+          }
+        } else if (!(opts?.skipChatErrorFinal && lifecyclePhase === "error")) {
+          emitChatFinal(
+            sessionKey,
+            eventRunId,
+            evt.runId,
+            evt.seq,
+            lifecyclePhase === "error" ? "error" : "done",
+            evt.data?.error,
+            evtStopReason,
+          );
+        }
+      } else {
+        chatRunState.abortedRuns.delete(clientRunId);
+        chatRunState.abortedRuns.delete(evt.runId);
+        clearBufferedChatState(clientRunId);
+        if (chatLink) {
+          chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
+        }
+      }
+    }
+
+    toolEventRecipients.markFinal(evt.runId);
+    clearAgentRunContext(evt.runId);
+    agentRunSeq.delete(evt.runId);
+    agentRunSeq.delete(clientRunId);
+
+    if (sessionKey) {
+      void persistGatewaySessionLifecycleEvent({ sessionKey, event: evt }).catch(() => undefined);
+      const sessionEventConnIds = sessionEventSubscribers.getAll();
+      if (sessionEventConnIds.size > 0) {
+        broadcastToConnIds(
+          "sessions.changed",
+          {
+            sessionKey,
+            phase: lifecyclePhase,
+            runId: evt.runId,
+            ts: evt.ts,
+            ...buildSessionEventSnapshot(sessionKey, evt),
+          },
+          sessionEventConnIds,
+          { dropIfSlow: true },
+        );
+      }
+    }
+  };
+
+  const scheduleTerminalLifecycleError = (
+    evt: AgentEventPayload,
+    opts?: { skipChatErrorFinal?: boolean },
+  ) => {
+    clearPendingTerminalLifecycleError(evt.runId);
+    const delayMs = Math.max(1, Math.min(Math.floor(lifecycleErrorRetryGraceMs), 2_147_483_647));
+    const timer = setTimeout(() => {
+      pendingTerminalLifecycleErrors.delete(evt.runId);
+      finalizeLifecycleEvent(evt, opts);
+    }, delayMs);
+    timer.unref?.();
+    pendingTerminalLifecycleErrors.set(evt.runId, timer);
+  };
+
   const emitChatDelta = (
     sessionKey: string,
     clientRunId: string,
@@ -553,7 +704,7 @@ export function createAgentEventHandler({
       return;
     }
     chatRunState.buffers.set(clientRunId, mergedText);
-    if (isSilentReplyText(mergedText, SILENT_REPLY_TOKEN)) {
+    if (isSuppressedControlReplyText(mergedText)) {
       return;
     }
     if (isSilentReplyLeadFragment(mergedText)) {
@@ -595,7 +746,7 @@ export function createAgentEventHandler({
     });
     const text = normalizedHeartbeatText.text.trim();
     const shouldSuppressSilent =
-      normalizedHeartbeatText.suppress || isSilentReplyText(text, SILENT_REPLY_TOKEN);
+      normalizedHeartbeatText.suppress || isSuppressedControlReplyText(text);
     return { text, shouldSuppressSilent };
   };
 
@@ -604,6 +755,7 @@ export function createAgentEventHandler({
     clientRunId: string,
     sourceRunId: string,
     seq: number,
+    opts?: { suppressIncompleteNarration?: boolean },
   ) => {
     const { text, shouldSuppressSilent } = resolveBufferedChatTextState(clientRunId, sourceRunId);
     const shouldSuppressSilentLeadFragment = isSilentReplyLeadFragment(text);
@@ -611,11 +763,15 @@ export function createAgentEventHandler({
       clientRunId,
       sourceRunId,
     );
+    // Skip colon-ending narration so it merges with subsequent tool output
+    // instead of being flushed as an orphaned fragment before the tool card.
+    const isIncompleteNarration = opts?.suppressIncompleteNarration && text.endsWith(":");
     if (
       !text ||
       shouldSuppressSilent ||
       shouldSuppressSilentLeadFragment ||
-      shouldSuppressHeartbeatStreaming
+      shouldSuppressHeartbeatStreaming ||
+      isIncompleteNarration
     ) {
       return;
     }
@@ -669,7 +825,7 @@ export function createAgentEventHandler({
         state: "final" as const,
         ...(stopReason && { stopReason }),
         message:
-          text && !shouldSuppressSilent
+          text && !shouldSuppressSilent && !isSilentReplyPrefixText(text, SILENT_REPLY_TOKEN)
             ? {
                 role: "assistant",
                 content: [{ type: "text", text }],
@@ -715,6 +871,12 @@ export function createAgentEventHandler({
   };
 
   return (evt: AgentEventPayload) => {
+    const lifecyclePhase =
+      evt.stream === "lifecycle" && typeof evt.data?.phase === "string" ? evt.data.phase : null;
+    if (evt.stream !== "lifecycle" || lifecyclePhase !== "error") {
+      clearPendingTerminalLifecycleError(evt.runId);
+    }
+
     const chatLink = chatRunState.registry.peek(evt.runId);
     const eventSessionKey =
       typeof evt.sessionKey === "string" && evt.sessionKey.trim() ? evt.sessionKey : undefined;
@@ -730,6 +892,7 @@ export function createAgentEventHandler({
     const agentPayload = sessionKey ? { ...eventForClients, sessionKey } : eventForClients;
     const last = agentRunSeq.get(evt.runId) ?? 0;
     const isToolEvent = evt.stream === "tool";
+    const isItemEvent = evt.stream === "item";
     const toolVerbose = isToolEvent ? resolveToolVerboseLevel(evt.runId, sessionKey) : "off";
     // Build tool payload: strip result/partialResult unless verbose=full
     const toolPayload =
@@ -762,7 +925,9 @@ export function createAgentEventHandler({
       // Flush pending assistant text before tool-start events so clients can
       // render complete pre-tool text above tool cards (not truncated by delta throttle).
       if (toolPhase === "start" && isControlUiVisible && sessionKey && !isAborted) {
-        flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq);
+        flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq, {
+          suppressIncompleteNarration: true,
+        });
       }
       // Always broadcast tool events to registered WS recipients with
       // tool-events capability, regardless of verboseLevel. The verbose
@@ -793,11 +958,12 @@ export function createAgentEventHandler({
         }
       }
     } else {
+      const itemPhase = isItemEvent && typeof evt.data?.phase === "string" ? evt.data.phase : "";
+      if (itemPhase === "start" && isControlUiVisible && sessionKey && !isAborted) {
+        flushBufferedChatDeltaIfNeeded(sessionKey, clientRunId, evt.runId, evt.seq);
+      }
       broadcast("agent", agentPayload);
     }
-
-    const lifecyclePhase =
-      evt.stream === "lifecycle" && typeof evt.data?.phase === "string" ? evt.data.phase : null;
 
     if (isControlUiVisible && sessionKey) {
       // Send tool events to node/channel subscribers only when verbose is enabled;
@@ -811,57 +977,26 @@ export function createAgentEventHandler({
       }
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
         emitChatDelta(sessionKey, clientRunId, evt.runId, evt.seq, evt.data.text, evt.data.delta);
-      } else if (!isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {
-        const evtStopReason =
-          typeof evt.data?.stopReason === "string" ? evt.data.stopReason : undefined;
-        if (chatLink) {
-          const finished = chatRunState.registry.shift(evt.runId);
-          if (!finished) {
-            clearAgentRunContext(evt.runId);
-            return;
-          }
-          emitChatFinal(
-            finished.sessionKey,
-            finished.clientRunId,
-            evt.runId,
-            evt.seq,
-            lifecyclePhase === "error" ? "error" : "done",
-            evt.data?.error,
-            evtStopReason,
-          );
-        } else {
-          emitChatFinal(
-            sessionKey,
-            eventRunId,
-            evt.runId,
-            evt.seq,
-            lifecyclePhase === "error" ? "error" : "done",
-            evt.data?.error,
-            evtStopReason,
-          );
-        }
-      } else if (isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {
-        chatRunState.abortedRuns.delete(clientRunId);
-        chatRunState.abortedRuns.delete(evt.runId);
-        chatRunState.buffers.delete(clientRunId);
-        chatRunState.deltaSentAt.delete(clientRunId);
-        if (chatLink) {
-          chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
-        }
       }
     }
 
-    if (lifecyclePhase === "end" || lifecyclePhase === "error") {
-      toolEventRecipients.markFinal(evt.runId);
-      clearAgentRunContext(evt.runId);
-      agentRunSeq.delete(evt.runId);
-      agentRunSeq.delete(clientRunId);
+    if (lifecyclePhase === "error") {
+      clearBufferedChatState(clientRunId);
+      const skipChatErrorFinal = isChatSendRunActive(evt.runId) && !chatLink;
+      if (isAborted || lifecycleErrorRetryGraceMs <= 0) {
+        finalizeLifecycleEvent(evt, { skipChatErrorFinal });
+      } else {
+        scheduleTerminalLifecycleError(evt, { skipChatErrorFinal });
+      }
+      return;
     }
 
-    if (
-      sessionKey &&
-      (lifecyclePhase === "start" || lifecyclePhase === "end" || lifecyclePhase === "error")
-    ) {
+    if (lifecyclePhase === "end") {
+      finalizeLifecycleEvent(evt);
+      return;
+    }
+
+    if (sessionKey && lifecyclePhase === "start") {
       void persistGatewaySessionLifecycleEvent({ sessionKey, event: evt }).catch(() => undefined);
       const sessionEventConnIds = sessionEventSubscribers.getAll();
       if (sessionEventConnIds.size > 0) {

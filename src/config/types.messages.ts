@@ -64,9 +64,9 @@ export type StatusReactionsEmojiConfig = {
 export type StatusReactionsTimingConfig = {
   /** Debounce interval for intermediate states (ms). Default: 700. */
   debounceMs?: number;
-  /** Soft stall warning timeout (ms). Default: 25000. */
+  /** Soft stall warning timeout (ms). Default: 10000. */
   stallSoftMs?: number;
-  /** Hard stall warning timeout (ms). Default: 60000. */
+  /** Hard stall warning timeout (ms). Default: 30000. */
   stallHardMs?: number;
   /** How long to hold done emoji before cleanup (ms). Default: 1500. */
   doneHoldMs?: number;
@@ -83,6 +83,8 @@ export type StatusReactionsConfig = {
   timing?: StatusReactionsTimingConfig;
 };
 
+export type ModelEmojiMap = Record<string, string>;
+
 export type MessagesConfig = {
   /** @deprecated Use `whatsapp.messagePrefix` (WhatsApp-only inbound prefix). */
   messagePrefix?: string;
@@ -98,14 +100,48 @@ export type MessagesConfig = {
    * - `{provider}` - provider name (e.g., `anthropic`, `openai`)
    * - `{thinkingLevel}` or `{think}` - current thinking level (`high`, `low`, `off`)
    * - `{identity.name}` or `{identityName}` - agent identity name
+   * - `{modelEmoji}` - emoji resolved from `modelEmojiMap` by matching model/provider/alias
+   * - `{thinkEmoji}` - emoji for thinking state: first entry when thinking is active, second when off
    *
-   * Example: `"[{model} | think:{thinkingLevel}]"` → `"[claude-opus-4-6 | think:high]"`
+   * Example: `"{modelEmoji}{thinkEmoji}"` → `"🧠💭"` (Opus with thinking on)
    *
    * Unresolved variables remain as literal text (e.g., `{model}` if context unavailable).
    *
    * Default: none
    */
   responsePrefix?: string;
+  /**
+   * Map model names, provider names, or aliases to emoji strings for `{modelEmoji}`.
+   *
+   * Keys are matched case-insensitively against (in order):
+   * 1. Short model name (e.g., `claude-opus-4-6`)
+   * 2. Provider name (e.g., `anthropic`)
+   * 3. Model alias (e.g., `opus`)
+   *
+   * First match wins. If no match, `{modelEmoji}` resolves to empty string.
+   *
+   * Example:
+   * ```json5
+   * {
+   *   "claude-opus-4-6": "🧠",
+   *   "claude-sonnet-4-5": "🎵",
+   *   "gpt-5.3-codex": "🤖",
+   *   "kimi-k2.5": "🌙",
+   * }
+   * ```
+   */
+  modelEmojiMap?: ModelEmojiMap;
+  /**
+   * Emoji pair for `{thinkEmoji}` — [active, inactive].
+   *
+   * When thinking level is "high" or "low", the first emoji is used.
+   * When thinking is "off" or unavailable, the second emoji is used (or empty string if not set).
+   *
+   * Example: `["💭", ""]` → shows 💭 when thinking, nothing when not.
+   *
+   * Default: none (variable resolves to empty string)
+   */
+  thinkEmoji?: [string, string];
   groupChat?: GroupChatConfig;
   queue?: QueueConfig;
   /** Debounce rapid inbound messages per sender (global + per-channel overrides). */
@@ -120,6 +156,14 @@ export type MessagesConfig = {
   statusReactions?: StatusReactionsConfig;
   /** When true, suppress ⚠️ tool-error warnings from being shown to the user. Default: false. */
   suppressToolErrors?: boolean;
+  /**
+   * When true, suppress transient API error messages (rate limit, overload) and
+   * non-mutating tool-error warnings from being sent to the chat surface.
+   * Useful in group chats where these messages cause confusion among non-technical users.
+   * Billing, auth, and mutating tool errors are always shown regardless.
+   * Errors are still logged internally. Default: false.
+   */
+  suppressApiErrors?: boolean;
   /** Text-to-speech settings for outbound replies. */
   tts?: TtsConfig;
 };

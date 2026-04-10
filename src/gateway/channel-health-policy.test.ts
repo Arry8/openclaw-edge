@@ -51,6 +51,33 @@ describe("evaluateChannelHealth", () => {
     expect(evaluation).toEqual({ healthy: true, reason: "startup-connect-grace" });
   });
 
+  it("flags channels that never report connected=true after startup grace when connected is tracked", () => {
+    const evaluation = evaluateDiscordHealth({
+      running: true,
+      connected: undefined,
+      enabled: true,
+      configured: true,
+      lastStartAt: 0,
+    });
+    expect(evaluation).toEqual({ healthy: false, reason: "disconnected" });
+  });
+
+  it("flags connected snapshots inherited from a previous lifecycle", () => {
+    const evaluation = evaluateDiscordHealth(
+      {
+        running: true,
+        connected: true,
+        enabled: true,
+        configured: true,
+        lastStartAt: 50_000,
+        lastConnectedAt: 10_000,
+        lastEventAt: 10_000,
+      },
+      75_000,
+    );
+    expect(evaluation).toEqual({ healthy: false, reason: "disconnected" });
+  });
+
   it("treats active runs as busy even when disconnected", () => {
     const now = 100_000;
     const evaluation = evaluateChannelHealth(
@@ -82,6 +109,54 @@ describe("evaluateChannelHealth", () => {
         configured: true,
         activeRuns: 1,
         lastRunActivityAt: now - 26 * 60_000,
+      },
+      {
+        channelId: "discord",
+        now,
+        channelConnectGraceMs: 10_000,
+        staleEventThresholdMs: 30_000,
+      },
+    );
+    expect(evaluation).toEqual({ healthy: false, reason: "stuck" });
+  });
+
+  it("keeps connected busy channels healthy when fresh events still arrive", () => {
+    const now = 100_000;
+    const evaluation = evaluateChannelHealth(
+      {
+        running: true,
+        connected: true,
+        enabled: true,
+        configured: true,
+        lastStartAt: now - 27 * 60_000,
+        activeRuns: 1,
+        busy: true,
+        lastRunActivityAt: now - 26 * 60_000,
+        lastEventAt: now - 5_000,
+      },
+      {
+        channelId: "discord",
+        now,
+        channelConnectGraceMs: 10_000,
+        staleEventThresholdMs: 30_000,
+      },
+    );
+    expect(evaluation).toEqual({ healthy: true, reason: "healthy" });
+  });
+
+  it("does not trust future event timestamps to suppress stuck recovery", () => {
+    const now = 100_000;
+    const evaluation = evaluateChannelHealth(
+      {
+        running: true,
+        connected: true,
+        enabled: true,
+        configured: true,
+        lastStartAt: now - 27 * 60_000,
+        activeRuns: 1,
+        busy: true,
+        lastRunActivityAt: now - 26 * 60_000,
+        lastEventAt: now + 60_000,
       },
       {
         channelId: "discord",

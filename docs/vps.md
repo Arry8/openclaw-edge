@@ -19,12 +19,15 @@ tuning that applies everywhere.
 <CardGroup cols={2}>
   <Card title="Railway" href="/install/railway">One-click, browser setup</Card>
   <Card title="Northflank" href="/install/northflank">One-click, browser setup</Card>
+  <Card title="xCloud" href="/install/xcloud">Managed VPS, dashboard setup</Card>
   <Card title="DigitalOcean" href="/install/digitalocean">Simple paid VPS</Card>
   <Card title="Oracle Cloud" href="/install/oracle">Always Free ARM tier</Card>
   <Card title="Fly.io" href="/install/fly">Fly Machines</Card>
   <Card title="Hetzner" href="/install/hetzner">Docker on Hetzner VPS</Card>
+  <Card title="Hostinger" href="/install/hostinger">Docker on Hostinger</Card>
   <Card title="GCP" href="/install/gcp">Compute Engine</Card>
-  <Card title="Azure" href="/install/azure">Linux VM</Card>
+  <Card title="Azure VM" href="/install/azure">Linux VM</Card>
+  <Card title="Azure Container Apps" href="/install/azure-containers">Serverless containers</Card>
   <Card title="exe.dev" href="/install/exe-dev">VM with HTTPS proxy</Card>
   <Card title="Raspberry Pi" href="/install/raspberry-pi">ARM self-hosted</Card>
 </CardGroup>
@@ -43,6 +46,21 @@ A community video walkthrough is available at
   If you bind to `lan` or `tailnet`, require `gateway.auth.token` or `gateway.auth.password`.
 
 Related pages: [Gateway remote access](/gateway/remote), [Platforms hub](/platforms).
+
+## Harden admin access first
+
+Before you install OpenClaw on a public VPS, decide how you want to administer
+the box itself.
+
+- If you want Tailnet-only admin access, install Tailscale first, join the VPS
+  to your tailnet, verify a second SSH session over the Tailscale IP or
+  MagicDNS name, then restrict public SSH.
+- If you are not using Tailscale, apply the equivalent hardening for your SSH
+  path before exposing more services.
+- This is separate from Gateway access. You can still keep OpenClaw bound to
+  loopback and use an SSH tunnel or Tailscale Serve for the dashboard.
+
+Tailscale-specific Gateway options live in [Tailscale](/gateway/tailscale).
 
 ## Shared company agent on a VPS
 
@@ -93,10 +111,10 @@ For VM hosts using `systemd`, consider:
   - `TimeoutStartSec=90`
 - Prefer SSD-backed disks for state/cache paths to reduce random-I/O cold-start penalties.
 
-Example:
+For the standard `openclaw onboard --install-daemon` path, edit the user unit:
 
 ```bash
-sudo systemctl edit openclaw
+systemctl --user edit openclaw-gateway.service
 ```
 
 ```ini
@@ -107,6 +125,9 @@ Restart=always
 RestartSec=2
 TimeoutStartSec=90
 ```
+
+If you deliberately installed a system unit instead, edit
+`openclaw-gateway.service` via `sudo systemctl edit openclaw-gateway.service`.
 
 How `Restart=` policies help automated recovery:
 [systemd can automate service recovery](https://www.redhat.com/en/blog/systemd-automate-recovery).

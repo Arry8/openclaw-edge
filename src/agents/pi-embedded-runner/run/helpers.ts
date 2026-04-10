@@ -38,7 +38,9 @@ export function resolveOverloadProfileRotationLimit(cfg?: OpenClawConfig): numbe
 }
 
 export function resolveRateLimitProfileRotationLimit(cfg?: OpenClawConfig): number {
-  return cfg?.auth?.cooldowns?.rateLimitedProfileRotations ?? DEFAULT_MAX_RATE_LIMIT_PROFILE_ROTATIONS;
+  return (
+    cfg?.auth?.cooldowns?.rateLimitedProfileRotations ?? DEFAULT_MAX_RATE_LIMIT_PROFILE_ROTATIONS
+  );
 }
 
 const ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL = "ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL";
@@ -77,9 +79,12 @@ export function resolveActiveErrorContext(params: {
   provider: string;
   model: string;
 }): { provider: string; model: string } {
+  // Always prefer the current attempt's provider/model for error attribution.
+  // lastAssistant may come from session history (a previous provider's error turn)
+  // and must not contaminate the current attempt's error context.
   return {
-    provider: params.lastAssistant?.provider ?? params.provider,
-    model: params.lastAssistant?.model ?? params.model,
+    provider: params.provider,
+    model: params.model,
   };
 }
 

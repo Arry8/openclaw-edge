@@ -224,6 +224,32 @@ describe("secrets audit", () => {
     expect(hasFinding(report, (entry) => entry.code === "PLAINTEXT_FOUND")).toBe(true);
   });
 
+  it("ignores env variable references in .env while still flagging real plaintext values", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {},
+    });
+    await fs.writeFile(
+      fixture.envPath,
+      [
+        `${OPENAI_API_KEY_MARKER}=\${OPENAI_API_KEY}`,
+        `${OPENAI_API_KEY_MARKER}=$OPENAI_API_KEY`,
+        `${OPENAI_API_KEY_MARKER}=sk-openai-plaintext`, // pragma: allowlist secret
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    const envPlaintextFindings = report.findings.filter(
+      (entry) =>
+        entry.code === "PLAINTEXT_FOUND" &&
+        entry.file === fixture.envPath &&
+        entry.jsonPath === `$env.${OPENAI_API_KEY_MARKER}`,
+    );
+
+    expect(envPlaintextFindings).toHaveLength(1);
+  });
+
   it("does not mutate legacy auth.json during audit", async () => {
     await fs.rm(fixture.authStorePath, { force: true });
     await writeJsonFile(fixture.authJsonPath, {
@@ -552,6 +578,90 @@ describe("secrets audit", () => {
       ),
     ).toBe(true);
     expect(report.filesScanned).toContain(externalModelsPath);
+  });
+
+  it("does not flag $VAR shorthand env refs in auth profiles as plaintext", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "$OPENAI_API_KEY", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not flag ${VAR} template env refs in auth profiles as plaintext", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "${OPENAI_API_KEY}", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(false);
+  });
+
+  it("still flags $lowercase refs as plaintext (shorthand requires uppercase)", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "$openai_api_key", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(true);
+  });
+
+  it("still flags actual plaintext keys in auth profiles", async () => {
+    await writeJsonFile(fixture.authStorePath, {
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-proj-actual-secret-key-12345", // pragma: allowlist secret
+        },
+      },
+    });
+
+    const report = await runSecretsAudit({ env: fixture.env });
+    expect(
+      hasFinding(
+        report,
+        (entry) => entry.code === "PLAINTEXT_FOUND" && entry.file === fixture.authStorePath,
+      ),
+    ).toBe(true);
   });
 
   it("does not flag non-sensitive routing headers in openclaw config", async () => {

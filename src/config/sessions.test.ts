@@ -125,7 +125,7 @@ describe("sessions", () => {
     {
       name: "keeps group chats distinct",
       scope: "per-sender" as const,
-      ctx: { From: "12345-678@g.us" },
+      ctx: { From: "12345-678@g.us", ChatType: "group", Provider: "whatsapp" },
       expected: "whatsapp:group:12345-678@g.us",
     },
     {
@@ -200,7 +200,7 @@ describe("sessions", () => {
     {
       name: "leaves groups untouched even with main key",
       scope: "per-sender" as const,
-      ctx: { From: "12345-678@g.us" },
+      ctx: { From: "12345-678@g.us", ChatType: "group", Provider: "whatsapp" },
       mainKey: "main",
       expected: "agent:main:whatsapp:group:12345-678@g.us",
     },
@@ -598,6 +598,33 @@ describe("sessions", () => {
     });
   });
 
+  it("remaps same-agent cross-root absolute sessionFile paths into the current state dir", () => {
+    withStateDir(path.resolve("/different/state"), () => {
+      const originalBase = path.resolve("/home/rai/.openclaw");
+      const staleMainSession = path.join(
+        originalBase,
+        "agents",
+        "shikamaru",
+        "sessions",
+        "sess-1.jsonl",
+      );
+      const sessionFile = resolveSessionFilePath(
+        "sess-1",
+        { sessionFile: staleMainSession },
+        { agentId: "shikamaru" },
+      );
+      expect(sessionFile).toBe(
+        path.join(
+          path.resolve("/different/state"),
+          "agents",
+          "shikamaru",
+          "sessions",
+          "sess-1.jsonl",
+        ),
+      );
+    });
+  });
+
   it("falls back when structural cross-root path traverses after sessions", () => {
     withStateDir(path.resolve("/different/state"), () => {
       const originalBase = path.resolve("/original/state");
@@ -699,7 +726,7 @@ describe("sessions", () => {
       update: async () => {
         firstStarted.resolve();
         await releaseFirst.promise;
-        return { modelOverride: "anthropic/claude-opus-4-5" };
+        return { modelOverride: "anthropic/claude-opus-4-6" };
       },
     });
     const p2 = updateSessionStoreEntry({
@@ -716,7 +743,7 @@ describe("sessions", () => {
     await Promise.all([p1, p2]);
 
     const store = loadSessionStore(storePath);
-    expect(store[mainSessionKey]?.modelOverride).toBe("anthropic/claude-opus-4-5");
+    expect(store[mainSessionKey]?.modelOverride).toBe("anthropic/claude-opus-4-6");
     expect(store[mainSessionKey]?.thinkingLevel).toBe("high");
     await expect(fs.stat(`${storePath}.lock`)).rejects.toThrow();
   });
@@ -760,5 +787,32 @@ describe("sessions", () => {
     const store = loadSessionStore(storePath);
     expect(store[mainSessionKey]?.providerOverride).toBe("anthropic");
     expect(store[mainSessionKey]?.thinkingLevel).toBe("high");
+  });
+
+  it("loadSessionStore skipCache returns a fresh mutable store without tainting cached reads", async () => {
+    const mainSessionKey = "agent:main:main";
+    const { storePath } = await createSessionStoreFixture({
+      prefix: "loadSessionStore-skip-cache-fresh",
+      entries: {
+        [mainSessionKey]: {
+          sessionId: "sess-1",
+          updatedAt: 123,
+          thinkingLevel: "low",
+        },
+      },
+    });
+
+    const fresh = loadSessionStore(storePath, { skipCache: true });
+    expect(fresh[mainSessionKey]?.thinkingLevel).toBe("low");
+
+    fresh[mainSessionKey] = {
+      ...fresh[mainSessionKey],
+      thinkingLevel: "high",
+    };
+
+    expect(loadSessionStore(storePath)[mainSessionKey]?.thinkingLevel).toBe("low");
+    expect(loadSessionStore(storePath, { skipCache: true })[mainSessionKey]?.thinkingLevel).toBe(
+      "low",
+    );
   });
 });

@@ -2,12 +2,14 @@ import { resolveFailoverReasonFromError } from "../../agents/failover-error.js";
 import type { CronConfig, CronRetryOn } from "../../config/types.cron.js";
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import { DEFAULT_AGENT_ID } from "../../routing/session-key.js";
+import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
 import {
   completeTaskRunByRunId,
   createRunningTaskRun,
   failTaskRunByRunId,
 } from "../../tasks/task-executor.js";
-import { resolveCronDeliveryPlan } from "../delivery.js";
+import { clearCronJobActive, markCronJobActive } from "../active-jobs.js";
+import { resolveCronDeliveryPlan } from "../delivery-plan.js";
 import { sweepCronRunSessions } from "../session-reaper.js";
 import type {
   CronDeliveryStatus,
@@ -46,6 +48,8 @@ const MIN_REFIRE_GAP_MS = 2_000;
 
 const DEFAULT_MISSED_JOB_STAGGER_MS = 5_000;
 const DEFAULT_MAX_MISSED_JOBS_PER_RESTART = 5;
+/** Default idle threshold for skipWhenIdle: 30 minutes. */
+const DEFAULT_SKIP_WHEN_IDLE_MS = 30 * 60_000;
 const DEFAULT_FAILURE_ALERT_AFTER = 2;
 const DEFAULT_FAILURE_ALERT_COOLDOWN_MS = 60 * 60_000; // 1 hour
 
@@ -225,7 +229,7 @@ const TRANSIENT_PATTERNS: Record<string, RegExp> = {
   overloaded:
     /\b529\b|\boverloaded(?:_error)?\b|high demand|temporar(?:ily|y) overloaded|capacity exceeded/i,
   network: /(network|econnreset|econnrefused|fetch failed|socket)/i,
-  timeout: /(timeout|etimedout)/i,
+  timeout: /(timeout|timed\s+out|etimedout)/i,
   server_error: /\b5\d{2}\b/,
 };
 
@@ -250,21 +254,33 @@ function resolveRetryConfig(cronConfig?: CronConfig) {
   };
 }
 
+// Minimum backoff (1 s) to prevent zero-delay tight loops when a user configures backoffMs: [0].
+const MIN_RECURRING_BACKOFF_MS = 1_000;
+
+function resolveRecurringErrorBackoffSchedule(cronConfig?: CronConfig): number[] {
+  const retryConfig = resolveRetryConfig(cronConfig);
+  const schedule =
+    Array.isArray(cronConfig?.retry?.backoffMs) && cronConfig.retry.backoffMs.length > 0
+      ? retryConfig.backoffMs
+      : DEFAULT_BACKOFF_SCHEDULE_MS;
+  return schedule.map((ms) => Math.max(ms, MIN_RECURRING_BACKOFF_MS));
+}
+
 function resolveDeliveryStatus(params: { job: CronJob; delivered?: boolean }): CronDeliveryStatus {
   if (params.delivered === true) {
     return "delivered";
   }
+  const plan = resolveCronDeliveryPlan(params.job);
   if (params.delivered === false) {
-    return "not-delivered";
+    // When delivery was not requested (mode="none"), delivered=false is expected
+    // and should be reported as "not-requested" instead of "not-delivered".
+    return plan.mode === "none" ? "not-requested" : "not-delivered";
   }
-  return resolveCronDeliveryPlan(params.job).requested ? "unknown" : "not-requested";
+  return plan.requested ? "unknown" : "not-requested";
 }
 
 function normalizeCronMessageChannel(input: unknown): CronMessageChannel | undefined {
-  if (typeof input !== "string") {
-    return undefined;
-  }
-  const channel = input.trim().toLowerCase();
+  const channel = normalizeOptionalLowercaseString(input);
   return channel ? (channel as CronMessageChannel) : undefined;
 }
 
@@ -501,8 +517,13 @@ export function applyJobResult(
         }
       }
     } else if (result.status === "error" && isJobEnabled(job)) {
-      // Apply exponential backoff for errored jobs to prevent retry storms.
-      const backoff = errorBackoffMs(job.state.consecutiveErrors ?? 1);
+      // Recurring jobs: use default transient patterns only. cron.retry.retryOn is documented
+      // for one-shot retries; narrowing it must not disable recurring network/timeout retries.
+      const transient = isTransientCronError(result.error);
+      // Custom cron.retry.backoffMs applies here via retryConfig (parity with one-shot path).
+      // If unset, use full default ladder (one-shot uses resolveRetryConfig's shorter default).
+      const recurringBackoffMs = resolveRecurringErrorBackoffSchedule(state.deps.cronConfig);
+      const backoff = errorBackoffMs(job.state.consecutiveErrors ?? 1, recurringBackoffMs);
       let normalNext: number | undefined;
       try {
         normalNext =
@@ -516,12 +537,29 @@ export function applyJobResult(
         recordScheduleComputeError({ state, job, err });
       }
       const backoffNext = result.endedAt + backoff;
-      // Use whichever is later: the natural next run or the backoff delay.
-      job.state.nextRunAtMs =
-        normalNext !== undefined ? Math.max(normalNext, backoffNext) : backoffNext;
+      if (transient) {
+        // Transient error (network, timeout, rate-limit, 5xx): retry soon with
+        // backoff regardless of schedule interval. Without this, long-period jobs
+        // (hourly, daily) would wait until the next natural schedule time even
+        // when the error is self-healing (e.g. a brief network blip).
+        // Force runs (preserveSchedule) keep the intended cadence instead of
+        // scheduling an immediate backoff retry.
+        if (opts?.preserveSchedule && normalNext !== undefined) {
+          job.state.nextRunAtMs = Math.max(normalNext, backoffNext);
+        } else {
+          job.state.nextRunAtMs = backoffNext;
+        }
+      } else {
+        // Permanent error: respect natural schedule. Math.max ensures short-interval
+        // jobs still observe the backoff cool-down and don't form retry storms.
+        job.state.nextRunAtMs =
+          normalNext !== undefined ? Math.max(normalNext, backoffNext) : backoffNext;
+      }
       state.deps.log.info(
         {
           jobId: job.id,
+          jobName: job.name,
+          transient,
           consecutiveErrors: job.state.consecutiveErrors,
           backoffMs: backoff,
           nextRunAtMs: job.state.nextRunAtMs,
@@ -541,16 +579,24 @@ export function applyJobResult(
         // so a persistent throw doesn't cause a MIN_REFIRE_GAP_MS hot loop.
         recordScheduleComputeError({ state, job, err });
       }
-      if (job.schedule.kind === "cron") {
-        // Safety net: ensure the next fire is at least MIN_REFIRE_GAP_MS
-        // after the current run ended.  Prevents spin-loops when the
-        // schedule computation lands in the same second due to
-        // timezone/croner edge cases (see #17821).
-        const minNext = result.endedAt + MIN_REFIRE_GAP_MS;
-        job.state.nextRunAtMs =
-          naturalNext !== undefined ? Math.max(naturalNext, minNext) : minNext;
-      } else {
+      // Safety net: ensure the next fire is at least MIN_REFIRE_GAP_MS
+      // after the current run ended.  For cron schedules this is
+      // unconditional — second-granularity expressions can land right at
+      // endedAt causing spin-loops (#17821).  For every-schedules we
+      // only enforce the floor when naturalNext lands at or before
+      // endedAt (execution time >= interval, #52097); when the next
+      // tick is already past endedAt the job keeps its natural cadence
+      // so short-interval every-jobs aren't penalised by 2 s.
+      const minNext = result.endedAt + MIN_REFIRE_GAP_MS;
+      if (naturalNext === undefined) {
+        // For cron schedules, fall back to minNext (croner edge cases).
+        // For every-schedules, undefined means a malformed everyMs —
+        // leave unscheduled so a force-run doesn't create a 2 s hot loop.
+        job.state.nextRunAtMs = job.schedule.kind === "cron" ? minNext : undefined;
+      } else if (job.schedule.kind === "every" && naturalNext > result.endedAt) {
         job.state.nextRunAtMs = naturalNext;
+      } else {
+        job.state.nextRunAtMs = Math.max(naturalNext, minNext);
       }
     } else {
       job.state.nextRunAtMs = undefined;
@@ -561,6 +607,7 @@ export function applyJobResult(
 }
 
 function applyOutcomeToStoredJob(state: CronServiceState, result: TimedCronRunOutcome): void {
+  clearCronJobActive(result.jobId);
   tryFinishCronTaskRun(state, result);
   const store = state.store;
   if (!store) {
@@ -593,6 +640,17 @@ function applyOutcomeToStoredJob(state: CronServiceState, result: TimedCronRunOu
 }
 
 export function armTimer(state: CronServiceState) {
+  // If a timer tick is currently executing, don't interfere with its timer.
+  // The running tick will call armTimer() in its finally block after setting
+  // state.running = false, ensuring proper timer re-arm without race conditions.
+  // Without this guard, rapid add()/remove() calls can clear the watchdog timer
+  // set by armRunningRecheckTimer(), leaving the scheduler without a safety net
+  // if execution hangs.
+  // See: https://github.com/openclaw/openclaw/issues/18121
+  if (state.running) {
+    state.deps.log.debug({}, "cron: armTimer skipped - tick in progress");
+    return;
+  }
   if (state.timer) {
     clearTimeout(state.timer);
   }
@@ -716,6 +774,7 @@ export async function onTimer(state: CronServiceState) {
       const { id, job } = params;
       const startedAt = state.deps.nowMs();
       job.state.runningAtMs = startedAt;
+      markCronJobActive(job.id);
       emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
       const jobTimeoutMs = resolveCronJobTimeoutMs(job);
       const taskRunId = tryCreateCronTaskRun({ state, job, startedAt });
@@ -826,9 +885,22 @@ export async function onTimer(state: CronServiceState) {
   }
 }
 
+function hasAlreadyExecutedScheduledSlot(job: CronJob, scheduledAtMs: number): boolean {
+  const lastRunAtMs = job.state.lastRunAtMs;
+  // Guard against stale expired nextRunAtMs values that still point at a slot
+  // the scheduler already executed (for example via startup catch-up). In that
+  // case we must not treat the expired timestamp as runnable again.
+  // Use strict > (not >=) so that retry slots where nextRunAtMs === lastRunAtMs
+  // (e.g. zero-backoff retries finishing in the same millisecond) are still permitted.
+  return (
+    typeof lastRunAtMs === "number" && Number.isFinite(lastRunAtMs) && lastRunAtMs > scheduledAtMs
+  );
+}
+
 function isRunnableJob(params: {
   job: CronJob;
   nowMs: number;
+  cronConfig?: CronConfig;
   skipJobIds?: ReadonlySet<string>;
   skipAtIfAlreadyRan?: boolean;
   allowCronMissedRunByLastRun?: boolean;
@@ -865,13 +937,15 @@ function isRunnableJob(params: {
   }
   const next = job.state.nextRunAtMs;
   if (typeof next === "number" && Number.isFinite(next) && nowMs >= next) {
-    return true;
+    if (!hasAlreadyExecutedScheduledSlot(job, next)) {
+      return true;
+    }
   }
   if (
     typeof next === "number" &&
     Number.isFinite(next) &&
     next > nowMs &&
-    isErrorBackoffPending(job, nowMs)
+    isErrorBackoffPending(job, nowMs, params.cronConfig)
   ) {
     // Respect active retry backoff windows on restart, but allow missed-slot
     // replay once the backoff window has elapsed.
@@ -897,7 +971,7 @@ function isRunnableJob(params: {
   return previousRunAtMs > lastRunAtMs;
 }
 
-function isErrorBackoffPending(job: CronJob, nowMs: number): boolean {
+function isErrorBackoffPending(job: CronJob, nowMs: number, cronConfig?: CronConfig): boolean {
   if (job.schedule.kind === "at" || job.state.lastStatus !== "error") {
     return false;
   }
@@ -910,7 +984,8 @@ function isErrorBackoffPending(job: CronJob, nowMs: number): boolean {
     typeof consecutiveErrorsRaw === "number" && Number.isFinite(consecutiveErrorsRaw)
       ? Math.max(1, Math.floor(consecutiveErrorsRaw))
       : 1;
-  return nowMs < lastRunAtMs + errorBackoffMs(consecutiveErrors);
+  const backoffSchedule = resolveRecurringErrorBackoffSchedule(cronConfig);
+  return nowMs < lastRunAtMs + errorBackoffMs(consecutiveErrors, backoffSchedule);
 }
 
 function collectRunnableJobs(
@@ -929,6 +1004,7 @@ function collectRunnableJobs(
     isRunnableJob({
       job,
       nowMs,
+      cronConfig: state.deps.cronConfig,
       skipJobIds: opts?.skipJobIds,
       skipAtIfAlreadyRan: opts?.skipAtIfAlreadyRan,
       allowCronMissedRunByLastRun: opts?.allowCronMissedRunByLastRun,
@@ -1143,6 +1219,37 @@ export async function executeJobCore(
   if (abortSignal?.aborted) {
     return resolveAbortError();
   }
+
+  // skipWhenIdle: skip main-session jobs when the user has been idle too long.
+  // This is the inverse of a "deferWhileActive" check — here we skip when there
+  // has been *no* recent user interaction to avoid burning tokens while idle.
+  if (job.sessionTarget === "main" && job.schedule.kind !== "at" && job.skipWhenIdle !== false && job.skipWhenIdle) {
+    const idleMs = job.skipWhenIdle.idleMs ?? DEFAULT_SKIP_WHEN_IDLE_MS;
+    const lastInbound = state.deps.getLastInboundAtMs?.();
+    const now = state.deps.nowMs();
+    if (typeof lastInbound === "number" && now - lastInbound > idleMs) {
+      state.deps.log.debug(
+        {
+          jobId: job.id,
+          jobName: job.name,
+          idleMs,
+          lastInboundAtMs: lastInbound,
+          elapsedMs: now - lastInbound,
+        },
+        "cron: skipping job — session idle",
+      );
+      return { status: "skipped", error: "session-idle" };
+    }
+    // If getLastInboundAtMs is not available, skip to be safe (no activity data = idle).
+    if (lastInbound === undefined) {
+      state.deps.log.debug(
+        { jobId: job.id, jobName: job.name },
+        "cron: skipping job — no inbound activity data available",
+      );
+      return { status: "skipped", error: "session-idle" };
+    }
+  }
+
   if (job.sessionTarget === "main") {
     return await executeMainSessionCronJob(state, job, abortSignal, waitWithAbort);
   }
@@ -1259,9 +1366,40 @@ async function executeDetachedCronJob(
     return resolveAbortError();
   }
 
+  // Defensive: extract string content from message in case the payload was
+  // persisted with an object value (e.g. { text: "..." }) instead of a plain
+  // string, which would coerce to "[object Object]" in template literals.
+  const rawMessage = job.payload.message;
+  let message: string;
+  if (typeof rawMessage === "string") {
+    message = rawMessage;
+  } else if (typeof rawMessage === "object" && rawMessage !== null) {
+    const obj = rawMessage as Record<string, unknown>;
+    // Try common string fields in priority order.
+    const extracted =
+      typeof obj.text === "string"
+        ? obj.text
+        : typeof obj.message === "string"
+          ? obj.message
+          : typeof obj.content === "string"
+            ? obj.content
+            : undefined;
+    if (extracted !== undefined) {
+      message = extracted;
+    } else {
+      message = JSON.stringify(rawMessage);
+      state.deps.log.debug(
+        { rawMessage: message },
+        "cron: message was an unrecognized object shape, used JSON.stringify fallback",
+      );
+    }
+  } else {
+    message = JSON.stringify(rawMessage);
+  }
+
   const res = await state.deps.runIsolatedAgentJob({
     job,
-    message: job.payload.message,
+    message,
     abortSignal,
   });
 
@@ -1299,6 +1437,7 @@ export async function executeJob(
   const startedAt = state.deps.nowMs();
   job.state.runningAtMs = startedAt;
   job.state.lastError = undefined;
+  markCronJobActive(job.id);
   emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
 
   let coreResult: {
@@ -1327,6 +1466,7 @@ export async function executeJob(
     state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
     emit(state, { jobId: job.id, action: "removed" });
   }
+  clearCronJobActive(job.id);
 }
 
 function emitJobFinished(
@@ -1361,15 +1501,15 @@ function emitJobFinished(
 
 export function wake(
   state: CronServiceState,
-  opts: { mode: "now" | "next-heartbeat"; text: string },
+  opts: { mode: "now" | "next-heartbeat"; text: string; agentId?: string },
 ) {
   const text = opts.text.trim();
   if (!text) {
     return { ok: false } as const;
   }
-  state.deps.enqueueSystemEvent(text);
+  state.deps.enqueueSystemEvent(text, opts.agentId ? { agentId: opts.agentId } : undefined);
   if (opts.mode === "now") {
-    state.deps.requestHeartbeatNow({ reason: "wake" });
+    state.deps.requestHeartbeatNow({ reason: "wake", agentId: opts.agentId });
   }
   return { ok: true } as const;
 }

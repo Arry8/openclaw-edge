@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setConsoleSubsystemFilter } from "./console.js";
-import { resetLogger, setLoggerOverride } from "./logger.js";
+import { getChildLogger, resetLogger, setLoggerOverride } from "./logger.js";
 import { loggingState } from "./state.js";
 import { createSubsystemLogger } from "./subsystem.js";
 
@@ -39,6 +42,26 @@ describe("createSubsystemLogger().isEnabled", () => {
     expect(log.isEnabled("debug")).toBe(true);
     expect(log.isEnabled("debug", "console")).toBe(true);
     expect(log.isEnabled("debug", "file")).toBe(false);
+  });
+
+  it("uses threshold ordering for non-equal console levels", () => {
+    setLoggerOverride({ level: "silent", consoleLevel: "fatal" });
+    const fatalOnly = createSubsystemLogger("agent/embedded");
+
+    expect(fatalOnly.isEnabled("error", "console")).toBe(false);
+    expect(fatalOnly.isEnabled("fatal", "console")).toBe(true);
+
+    setLoggerOverride({ level: "silent", consoleLevel: "trace" });
+    const traceLogger = createSubsystemLogger("agent/embedded");
+
+    expect(traceLogger.isEnabled("debug", "console")).toBe(true);
+  });
+
+  it("never treats silent as an emittable console level", () => {
+    setLoggerOverride({ level: "silent", consoleLevel: "info" });
+    const log = createSubsystemLogger("agent/embedded");
+
+    expect(log.isEnabled("silent", "console")).toBe(false);
   });
 
   it("returns false when neither console nor file logging would emit", () => {
@@ -143,5 +166,149 @@ describe("createSubsystemLogger().isEnabled", () => {
     });
 
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes info-level logs to stderr when stdout is not a TTY", () => {
+    setLoggerOverride({ level: "silent", consoleLevel: "info" });
+    const logSpy = vi.fn();
+    const errorSpy = vi.fn();
+    loggingState.rawConsole = {
+      log: logSpy,
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: errorSpy,
+    };
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
+    try {
+      const log = createSubsystemLogger("plugins");
+      log.info("graphiti-kg: registered");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
+    }
+  });
+
+  it("routes info-level logs to stdout when stdout is a TTY", () => {
+    setLoggerOverride({ level: "silent", consoleLevel: "info" });
+    const logSpy = vi.fn();
+    const errorSpy = vi.fn();
+    loggingState.rawConsole = {
+      log: logSpy,
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: errorSpy,
+    };
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    try {
+      const log = createSubsystemLogger("plugins");
+      log.info("graphiti-kg: registered");
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
+    }
+  });
+});
+
+describe("createSubsystemLogger file logger staleness (#62381)", () => {
+  it("refreshes child logger when parent logger is rebuilt (date roll)", () => {
+    setLoggerOverride({ level: "info", consoleLevel: "silent" });
+
+    const log = createSubsystemLogger("test/date-roll");
+
+    // First log call — creates and caches the child logger.
+    log.info("day 1 message");
+
+    // Capture the child logger reference via getChildLogger (same parent).
+    const firstChild = getChildLogger({ subsystem: "test/date-roll" });
+
+    // Simulate a date-roll rebuild: reset the parent logger so the next
+    // getLogger() call produces a new instance (different reference).
+    resetLogger();
+    setLoggerOverride({ level: "info", consoleLevel: "silent" });
+
+    // Second log call — should detect the parent changed and refresh the child.
+    log.info("day 2 message");
+
+    // After the rebuild, a new getChildLogger call should produce a
+    // different child instance (derived from the new parent).
+    const secondChild = getChildLogger({ subsystem: "test/date-roll" });
+
+    // The child logger instances must differ, proving the subsystem logger
+    // refreshed its cached child after the parent was rebuilt.
+    expect(firstChild).not.toBe(secondChild);
+  });
+
+  it("reuses cached child logger when parent has not changed", () => {
+    setLoggerOverride({ level: "info", consoleLevel: "silent" });
+
+    const log = createSubsystemLogger("test/stable");
+
+    // Two log calls without resetting — should reuse the same child.
+    log.info("message 1");
+    const parentAfterFirst = loggingState.cachedLogger;
+    log.info("message 2");
+    const parentAfterSecond = loggingState.cachedLogger;
+
+    // Parent reference unchanged — child was reused (no unnecessary rebuild).
+    expect(parentAfterFirst).toBe(parentAfterSecond);
+  });
+});
+
+describe("subsystem logger caches file logger", () => {
+  it("reuses the same child logger across multiple writes", () => {
+    setLoggerOverride({ level: "info", consoleLevel: "silent" });
+    const log = createSubsystemLogger("diagnostic");
+
+    // Multiple writes should not throw; the child logger is created once and reused.
+    log.info("write 1");
+    log.info("write 2");
+    log.info("write 3");
+  });
+});
+
+describe("file transport date rollover", () => {
+  function localDateStr(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  it("switches to the new date file after midnight", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-log-rollover-"));
+    // Use two instants 24h apart at noon UTC — guaranteed to land on different
+    // local dates regardless of the host timezone.
+    const day1Time = new Date("2026-04-07T12:00:00.000Z");
+    const day2Time = new Date("2026-04-08T12:00:00.000Z");
+    const day1Str = localDateStr(day1Time);
+    const day2Str = localDateStr(day2Time);
+
+    vi.useFakeTimers({ now: day1Time });
+    try {
+      const day1File = path.join(tmpDir, `openclaw-${day1Str}.log`);
+      setLoggerOverride({ level: "info", consoleLevel: "silent", file: day1File });
+      const log = createSubsystemLogger("diagnostic");
+
+      log.info("before midnight");
+      expect(fs.existsSync(day1File)).toBe(true);
+      expect(fs.readFileSync(day1File, "utf8")).toContain("before midnight");
+
+      // Advance to the next day.
+      vi.setSystemTime(day2Time);
+
+      log.info("after midnight");
+      const day2File = path.join(tmpDir, `openclaw-${day2Str}.log`);
+      expect(fs.existsSync(day2File)).toBe(true);
+      expect(fs.readFileSync(day2File, "utf8")).toContain("after midnight");
+      // Day 1 file should NOT contain the post-midnight log.
+      expect(fs.readFileSync(day1File, "utf8")).not.toContain("after midnight");
+    } finally {
+      vi.useRealTimers();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

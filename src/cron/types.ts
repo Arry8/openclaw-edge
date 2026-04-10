@@ -17,7 +17,7 @@ export type CronSchedule =
 export type CronSessionTarget = "main" | "isolated" | "current" | `session:${string}`;
 export type CronWakeMode = "next-heartbeat" | "now";
 
-export type CronMessageChannel = ChannelId | "last";
+export type CronMessageChannel = ChannelId;
 
 export type CronDeliveryMode = "none" | "announce" | "webhook";
 
@@ -54,10 +54,33 @@ export type CronUsageSummary = {
   cache_write_tokens?: number;
 };
 
+/**
+ * An action the agent evaluated but chose not to take during a cron run.
+ * Recording rejections turns the run log into a judgment ledger, not just
+ * an output ledger — making agent reasoning auditable over time.
+ */
+export type CronRejection = {
+  /** Brief description of the action that was considered. */
+  action: string;
+  /** Why the agent decided not to take it. */
+  reason: string;
+};
+
 export type CronRunTelemetry = {
   model?: string;
   provider?: string;
   usage?: CronUsageSummary;
+  /**
+   * Actions the agent evaluated but chose not to take, with brief reasons.
+   * Populated by the isolated agent when it decides to skip an opportunity.
+   * Example: [{ action: "submit OpenWork task", reason: "142 existing submissions, win odds < 1%" }]
+   */
+  rejections?: CronRejection[];
+  /**
+   * Agent's self-reported confidence in this run's output (0–1).
+   * 1.0 = high confidence; 0.0 = uncertain/fallback output.
+   */
+  confidence?: number;
 };
 
 export type CronRunOutcome = {
@@ -108,7 +131,9 @@ type CronAgentTurnPayload = {
 
 type CronAgentTurnPayloadPatch = {
   kind: "agentTurn";
-} & Partial<CronAgentTurnPayloadFields>;
+} & Partial<Omit<CronAgentTurnPayloadFields, "toolsAllow">> & {
+    toolsAllow?: string[] | null;
+  };
 export type CronJobState = {
   nextRunAtMs?: number;
   runningAtMs?: number;
@@ -135,6 +160,11 @@ export type CronJobState = {
   lastDelivered?: boolean;
 };
 
+export type CronSkipWhenIdle = {
+  /** Skip if last inbound message was more than this many ms ago. Default: 1800000 (30 min). */
+  idleMs?: number;
+};
+
 export type CronJob = CronJobBase<
   CronSchedule,
   CronSessionTarget,
@@ -143,6 +173,7 @@ export type CronJob = CronJobBase<
   CronDelivery,
   CronFailureAlert | false
 > & {
+  skipWhenIdle?: CronSkipWhenIdle | false;
   state: CronJobState;
 };
 

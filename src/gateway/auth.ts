@@ -8,6 +8,10 @@ import { resolveSecretInputRef } from "../config/types.secrets.js";
 import { readTailscaleWhoisIdentity, type TailscaleWhoisIdentity } from "../infra/tailscale.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
 import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../shared/string-coerce.js";
+import {
   AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
   type AuthRateLimiter,
   type RateLimitCheckResult,
@@ -20,6 +24,7 @@ import {
   resolveClientIp,
 } from "./net.js";
 import { checkBrowserOrigin } from "./origin-check.js";
+import { withSerializedRateLimitAttempt } from "./rate-limit-attempt-serialization.js";
 
 export type ResolvedGatewayAuthMode = "none" | "token" | "password" | "trusted-proxy";
 export type ResolvedGatewayAuthModeSource =
@@ -35,7 +40,14 @@ export type ResolvedGatewayAuth = {
   token?: string;
   password?: string;
   allowTailscale: boolean;
+  /** Scopes granted to device-less token/password connections. */
+  scopes?: string[];
   trustedProxy?: GatewayTrustedProxyConfig;
+};
+
+export type EffectiveSharedGatewayAuth = {
+  mode: "token" | "password";
+  secret: string | undefined;
 };
 
 export type GatewayAuthResult = {
@@ -99,8 +111,14 @@ type TailscaleUser = {
 
 type TailscaleWhoisLookup = (ip: string) => Promise<TailscaleWhoisIdentity | null>;
 
+function hasExplicitSharedSecretAuth(connectAuth?: ConnectAuth | null): boolean {
+  return Boolean(
+    normalizeOptionalString(connectAuth?.token) || normalizeOptionalString(connectAuth?.password),
+  );
+}
+
 function normalizeLogin(login: string): string {
-  return login.trim().toLowerCase();
+  return normalizeLowercaseStringOrEmpty(login);
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -147,17 +165,17 @@ function getTailscaleUser(req?: IncomingMessage): TailscaleUser | null {
   if (!req) {
     return null;
   }
-  const login = req.headers["tailscale-user-login"];
-  if (typeof login !== "string" || !login.trim()) {
+  const login = normalizeOptionalString(req.headers["tailscale-user-login"]);
+  if (!login) {
     return null;
   }
   const nameRaw = req.headers["tailscale-user-name"];
   const profilePic = req.headers["tailscale-user-profile-pic"];
-  const name = typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : login.trim();
+  const name = normalizeOptionalString(nameRaw) ?? login;
   return {
-    login: login.trim(),
+    login,
     name,
-    profilePic: typeof profilePic === "string" && profilePic.trim() ? profilePic.trim() : undefined,
+    profilePic: normalizeOptionalString(profilePic),
   };
 }
 
@@ -278,14 +296,42 @@ export function resolveGatewayAuth(params: {
     authConfig.allowTailscale ??
     (params.tailscaleMode === "serve" && mode !== "password" && mode !== "trusted-proxy");
 
+  const scopes =
+    Array.isArray(authConfig.scopes) && authConfig.scopes.length > 0
+      ? authConfig.scopes.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+      : undefined;
+
   return {
     mode,
     modeSource,
     token,
     password,
     allowTailscale,
+    scopes,
     trustedProxy,
   };
+}
+
+export function resolveEffectiveSharedGatewayAuth(params: {
+  authConfig?: GatewayAuthConfig | null;
+  authOverride?: GatewayAuthConfig | null;
+  env?: NodeJS.ProcessEnv;
+  tailscaleMode?: GatewayTailscaleMode;
+}): EffectiveSharedGatewayAuth | null {
+  const resolvedAuth = resolveGatewayAuth(params);
+  if (resolvedAuth.mode === "token") {
+    return {
+      mode: "token",
+      secret: resolvedAuth.token,
+    };
+  }
+  if (resolvedAuth.mode === "password") {
+    return {
+      mode: "password",
+      secret: resolvedAuth.password,
+    };
+  }
+  return null;
 }
 
 export function assertGatewayAuthConfigured(
@@ -322,6 +368,23 @@ export function assertGatewayAuthConfigured(
         "gateway auth mode is trusted-proxy, but trustedProxy.userHeader is empty (set gateway.auth.trustedProxy.userHeader)",
       );
     }
+    const trustedProxyAuthHeader = auth.trustedProxy.authHeader;
+    const trustedProxyAuthValue = auth.trustedProxy.authValue;
+    if (
+      (trustedProxyAuthHeader !== undefined && trustedProxyAuthHeader.trim() === "") ||
+      (trustedProxyAuthValue !== undefined && trustedProxyAuthValue.trim() === "")
+    ) {
+      throw new Error(
+        "gateway auth mode is trusted-proxy, but trustedProxy.authHeader and trustedProxy.authValue must be non-empty when configured",
+      );
+    }
+    const hasTrustedProxyAuthHeader = trustedProxyAuthHeader !== undefined;
+    const hasTrustedProxyAuthValue = trustedProxyAuthValue !== undefined;
+    if (hasTrustedProxyAuthHeader !== hasTrustedProxyAuthValue) {
+      throw new Error(
+        "gateway auth mode is trusted-proxy, but trustedProxy.authHeader and trustedProxy.authValue must be set together",
+      );
+    }
     if (auth.token) {
       throw new Error(
         "gateway auth mode is trusted-proxy, but a shared token is also configured; remove gateway.auth.token / OPENCLAW_GATEWAY_TOKEN because trusted-proxy and token auth are mutually exclusive",
@@ -350,18 +413,44 @@ function authorizeTrustedProxy(params: {
     return { reason: "trusted_proxy_untrusted_source" };
   }
   if (isLoopbackAddress(remoteAddr)) {
-    return { reason: "trusted_proxy_loopback_source" };
+    // Same-host reverse proxies on localhost are allowed only when loopback
+    // is explicitly trusted in gateway.trustedProxies, the client chain
+    // resolves to a non-loopback address, and the proxy proves its identity
+    // with a shared authenticity header. Non-loopback XFF alone is not enough
+    // because any local process can forge forwarded headers.
+    const forwardedClientIp = resolveClientIp({
+      remoteAddr,
+      forwardedFor: headerValue(req.headers?.["x-forwarded-for"]),
+      trustedProxies,
+    });
+    if (!forwardedClientIp || isLoopbackAddress(forwardedClientIp)) {
+      return { reason: "trusted_proxy_loopback_source" };
+    }
+    if (!trustedProxyConfig.authHeader?.trim() || !trustedProxyConfig.authValue?.trim()) {
+      return { reason: "trusted_proxy_loopback_source" };
+    }
+  }
+
+  const trustedProxyAuthHeader = trustedProxyConfig.authHeader?.trim();
+  const trustedProxyAuthValue = trustedProxyConfig.authValue?.trim();
+  if (trustedProxyAuthHeader && trustedProxyAuthValue) {
+    const suppliedProxyAuthValue = headerValue(req.headers[trustedProxyAuthHeader.toLowerCase()]);
+    if (!suppliedProxyAuthValue || !safeEqualSecret(suppliedProxyAuthValue.trim(), trustedProxyAuthValue)) {
+      return { reason: "trusted_proxy_auth_header_mismatch" };
+    }
   }
 
   const requiredHeaders = trustedProxyConfig.requiredHeaders ?? [];
   for (const header of requiredHeaders) {
-    const value = headerValue(req.headers[header.toLowerCase()]);
+    const value = headerValue(req.headers[normalizeLowercaseStringOrEmpty(header)]);
     if (!value || value.trim() === "") {
       return { reason: `trusted_proxy_missing_header_${header}` };
     }
   }
 
-  const userHeaderValue = headerValue(req.headers[trustedProxyConfig.userHeader.toLowerCase()]);
+  const userHeaderValue = headerValue(
+    req.headers[normalizeLowercaseStringOrEmpty(trustedProxyConfig.userHeader)],
+  );
   if (!userHeaderValue || userHeaderValue.trim() === "") {
     return { reason: "trusted_proxy_user_missing" };
   }
@@ -433,6 +522,41 @@ function authorizeTokenAuth(params: {
 export async function authorizeGatewayConnect(
   params: AuthorizeGatewayConnectParams,
 ): Promise<GatewayAuthResult> {
+  const { auth, req, trustedProxies } = params;
+  const authSurface = params.authSurface ?? "http";
+  const limiter = params.rateLimiter;
+  const ip =
+    params.clientIp ??
+    resolveRequestClientIp(req, trustedProxies, params.allowRealIpFallback === true) ??
+    req?.socket?.remoteAddress;
+  const rateLimitScope = params.rateLimitScope ?? AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET;
+  const localDirect = isLocalDirectRequest(
+    req,
+    trustedProxies,
+    params.allowRealIpFallback === true,
+  );
+
+  // Keep the limiter strict on the async Tailscale branch by serializing
+  // attempts for the same {scope, ip} key across the pre-check and failure write.
+  if (
+    limiter &&
+    shouldAllowTailscaleHeaderAuth(authSurface) &&
+    auth.allowTailscale &&
+    !localDirect
+  ) {
+    return await withSerializedRateLimitAttempt({
+      ip,
+      scope: rateLimitScope,
+      run: async () => await authorizeGatewayConnectCore(params),
+    });
+  }
+
+  return await authorizeGatewayConnectCore(params);
+}
+
+async function authorizeGatewayConnectCore(
+  params: AuthorizeGatewayConnectParams,
+): Promise<GatewayAuthResult> {
   const { auth, connectAuth, req, trustedProxies } = params;
   const tailscaleWhois = params.tailscaleWhois ?? readTailscaleWhoisIdentity;
   const authSurface = params.authSurface ?? "http";
@@ -476,6 +600,12 @@ export async function authorizeGatewayConnect(
       }
       return { ok: true, method: "trusted-proxy", user: result.user };
     }
+    // Local direct connections (e.g. ACPX child processes) bypass trusted-proxy
+    // auth — they connect from localhost without proxy headers, which is expected
+    // since they are spawned by the gateway itself.
+    if (localDirect) {
+      return { ok: true, method: "none", user: "local" };
+    }
     return { ok: false, reason: result.reason };
   }
 
@@ -495,7 +625,12 @@ export async function authorizeGatewayConnect(
     }
   }
 
-  if (allowTailscaleHeaderAuth && auth.allowTailscale && !localDirect) {
+  if (
+    allowTailscaleHeaderAuth &&
+    auth.allowTailscale &&
+    !localDirect &&
+    !hasExplicitSharedSecretAuth(connectAuth)
+  ) {
     const tailscaleCheck = await resolveVerifiedTailscaleUser({
       req,
       tailscaleWhois,

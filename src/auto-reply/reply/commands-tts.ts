@@ -1,5 +1,9 @@
 import { logVerbose } from "../../globals.js";
 import {
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
+import {
   canonicalizeSpeechProviderId,
   getSpeechProvider,
   listSpeechProviders,
@@ -46,7 +50,10 @@ function parseTtsCommand(normalized: string): ParsedTtsCommand | null {
     return { action: "status", args: "" };
   }
   const [action, ...tail] = rest.split(/\s+/);
-  return { action: action.toLowerCase(), args: tail.join(" ").trim() };
+  return {
+    action: normalizeOptionalLowercaseString(action) ?? "",
+    args: normalizeOptionalString(tail.join(" ")) ?? "",
+  };
 }
 
 function formatAttemptDetails(attempts: TtsAttemptDetail[] | undefined): string | undefined {
@@ -69,7 +76,10 @@ function ttsUsage(): ReplyPayload {
       `🔊 **TTS (Text-to-Speech) Help**\n\n` +
       `**Commands:**\n` +
       `• /tts on — Enable automatic TTS for replies\n` +
+      `• /tts always — Enable automatic TTS for replies (alias for on)\n` +
       `• /tts off — Disable TTS\n` +
+      `• /tts inbound — Only reply with audio when you send a voice note\n` +
+      `• /tts tagged — Only reply with audio when reply includes [[tts]] tags\n` +
       `• /tts status — Show current settings\n` +
       `• /tts provider [name] — View/change provider\n` +
       `• /tts limit [number] — View/change text limit\n` +
@@ -214,7 +224,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
       };
     }
 
-    const requested = args.trim().toLowerCase();
+    const requested = normalizeOptionalLowercaseString(args) ?? "";
     const resolvedProvider = getSpeechProvider(requested, params.cfg);
     if (!resolvedProvider) {
       return { shouldContinue: false, reply: ttsUsage() };
@@ -273,7 +283,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
         },
       };
     }
-    const requested = args.trim().toLowerCase();
+    const requested = normalizeOptionalLowercaseString(args) ?? "";
     if (requested !== "on" && requested !== "off") {
       return { shouldContinue: false, reply: ttsUsage() };
     }

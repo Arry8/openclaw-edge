@@ -62,8 +62,10 @@ Docker is **optional**. Use it only if you want a containerized gateway or to va
   </Step>
 
   <Step title="Open the Control UI">
-    Open `http://127.0.0.1:18789/` in your browser and paste the token into
-    Settings.
+    Open `http://127.0.0.1:18789/` in your browser and paste the configured
+    shared secret into Settings. The setup script writes a token to `.env` by
+    default; if you switch the container config to password auth, use that
+    password instead.
 
     Need the URL again?
 
@@ -101,12 +103,7 @@ docker build -t openclaw:local -f Dockerfile .
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
   dist/index.js onboard --mode local --no-install-daemon
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
-  dist/index.js config set gateway.mode local
-docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
-  dist/index.js config set gateway.bind lan
-docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
-  dist/index.js config set gateway.controlUi.allowedOrigins \
-  '["http://localhost:18789","http://127.0.0.1:18789"]' --strict-json
+  dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"},{"path":"gateway.controlUi.allowedOrigins","value":["http://localhost:18789","http://127.0.0.1:18789"]}]'
 docker compose up -d openclaw-gateway
 ```
 
@@ -176,6 +173,12 @@ Docker Compose bind-mounts `OPENCLAW_CONFIG_DIR` to `/home/node/.openclaw` and
 `OPENCLAW_WORKSPACE_DIR` to `/home/node/.openclaw/workspace`, so those paths
 survive container replacement.
 
+That mounted config directory is where OpenClaw keeps:
+
+- `openclaw.json` for behavior config
+- `agents/<agentId>/agent/auth-profiles.json` for stored provider OAuth/API-key auth
+- `.env` for env-backed runtime secrets such as `OPENCLAW_GATEWAY_TOKEN`
+
 For full persistence details on VM deployments, see
 [Docker VM Runtime - What persists where](/install/docker-vm-runtime#what-persists-where).
 
@@ -196,6 +199,20 @@ If you installed ClawDock from the older `scripts/shell-helpers/clawdock-helpers
 Then use `clawdock-start`, `clawdock-stop`, `clawdock-dashboard`, etc. Run
 `clawdock-help` for all commands.
 See [ClawDock](/install/clawdock) for the full helper guide.
+
+### Keep macOS awake (optional)
+
+Docker itself does not reliably keep macOS awake. If the gateway must stay
+online for Slack, webhooks, or scheduled jobs:
+
+```bash
+scripts/openclaw-keepawake.sh on
+scripts/openclaw-keepawake.sh status
+scripts/openclaw-keepawake.sh off
+```
+
+By default this uses `caffeinate -imsu`, which allows the displays to sleep.
+Set `OPENCLAW_KEEPAWAKE_FLAGS=-dimsu` if you also want to keep the displays on.
 
 <AccordionGroup>
   <Accordion title="Enable agent sandbox for Docker gateway">
@@ -300,6 +317,90 @@ See [ClawDock](/install/clawdock) for the full helper guide.
   </Accordion>
 </AccordionGroup>
 
+## Backup and migration (Intel Mac to Apple Silicon)
+
+For low-disruption host migration, move OpenClaw data and config, then rebuild
+the Docker image natively on the new machine.
+
+Use:
+
+- `scripts/migrate/backup-openclaw.sh` on the source host
+- `scripts/migrate/restore-openclaw.sh` on the target host
+
+### 1) Create a backup on the source host
+
+From the repo root:
+
+```bash
+scripts/migrate/backup-openclaw.sh
+```
+
+The archive includes:
+
+- OpenClaw config dir (`OPENCLAW_CONFIG_DIR` or `~/.openclaw`)
+- OpenClaw workspace dir (`OPENCLAW_WORKSPACE_DIR` or `~/.openclaw/workspace`)
+- `.env` and Docker setup files from the repo root
+- metadata and an internal checksum manifest
+
+Output files:
+
+- `backups/openclaw-backup-<timestamp>.tar.gz`
+- `backups/openclaw-backup-<timestamp>.tar.gz.sha256`
+
+Optional path overrides:
+
+```bash
+scripts/migrate/backup-openclaw.sh \
+  --config-dir "$HOME/.openclaw" \
+  --workspace-dir "$HOME/.openclaw/workspace" \
+  --output-dir "$HOME/openclaw-backups"
+```
+
+### 2) Transfer the archive to the target host
+
+Copy the archive and checksum file to the new machine using your normal secure
+transfer method. `restore-openclaw.sh` expects the companion `.sha256` file to
+sit next to the archive.
+
+### 3) Restore on the target host
+
+From the repo root on the target host:
+
+```bash
+scripts/migrate/restore-openclaw.sh --archive /path/to/openclaw-backup-<timestamp>.tar.gz
+```
+
+Default restore behavior:
+
+- verifies archive checksums
+- stops `openclaw-gateway` before restore
+- snapshots current config and workspace as `.pre-restore-<timestamp>`
+- restores config and workspace from backup
+- writes the backup env file as `.env.from-backup` for review
+
+To overwrite `.env` directly:
+
+```bash
+scripts/migrate/restore-openclaw.sh \
+  --archive /path/to/openclaw-backup-<timestamp>.tar.gz \
+  --apply-env
+```
+
+### 4) Rebuild and validate on the target architecture
+
+Always rebuild on Apple Silicon:
+
+```bash
+docker compose up -d --build --force-recreate openclaw-gateway
+docker compose run --rm openclaw-cli health
+docker compose run --rm openclaw-cli channels status --probe
+```
+
+### Architecture migration note
+
+Do not carry over architecture-specific binary caches from x86 to arm hosts.
+Rebuild containers and reinstall native toolchains on the target host.
+
 ### Running on a VPS?
 
 See [Hetzner (Docker VPS)](/install/hetzner) and
@@ -387,8 +488,7 @@ scripts/sandbox-setup.sh
     Reset gateway mode and bind:
 
     ```bash
-    docker compose run --rm openclaw-cli config set gateway.mode local
-    docker compose run --rm openclaw-cli config set gateway.bind lan
+    docker compose run --rm openclaw-cli config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"}]'
     docker compose run --rm openclaw-cli devices list --url ws://127.0.0.1:18789
     ```
 

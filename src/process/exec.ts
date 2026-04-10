@@ -6,29 +6,122 @@ import { promisify } from "node:util";
 import { danger, shouldLogVerbose } from "../globals.js";
 import { markOpenClawExecEnv } from "../infra/openclaw-exec-env.js";
 import { logDebug, logError } from "../logger.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { resolveCommandStdio } from "./spawn-utils.js";
 import { resolveWindowsCommandShim } from "./windows-command.js";
 
 const execFileAsync = promisify(execFile);
 
-const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>^%\r\n]/;
+/**
+ * Windows cmd.exe dangerous characters that can be used for command injection.
+ * Reference: Microsoft documentation on cmd.exe parsing and CVE-2024-27980
+ * 
+ * Characters blocked:
+ * &  - Command separator (command1 & command2)
+ * |  - Pipe (command1 | command2)
+ * <  - Input redirection
+ * >  - Output redirection
+ * ^  - Escape character
+ * %  - Variable expansion (%VAR%)
+ * \r - Carriage return (command splitting)
+ * \n - Newline (command splitting)
+ * ;  - Command separator (in some contexts)
+ * `  - Backtick (potential subcommand in PowerShell)
+ * $  - Variable expansion (PowerShell)
+ * (  - Subshell/ grouping
+ * )  - Subshell/ grouping
+ * [  - Alternative stream redirection (cmd.exe)
+ * ]  - Alternative stream redirection (cmd.exe)
+ * {  - Potential scripting
+ * }  - Potential scripting
+ * =  - Assignment
+ * +  - Arithmetic/concatenation
+ * '  - String delimiter (PowerShell)
+ * "  - String delimiter (already handled by escaping)
+ * \  - Path separator (can be used for UNC injection)
+ * /  - Path separator/switch prefix
+ * !  - Delayed expansion (cmd.exe)
+ * ~  - Tilde expansion
+ * *  - Wildcard
+ * ?  - Wildcard
+ */
+const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>\^%\r\n;`$(){}[\]=+'\\/*?!~]/;
+
+/**
+ * Additional check for PowerShell-specific dangerous patterns.
+ * Used when the command might be executed via PowerShell.
+ */
+const POWERSHELL_UNSAFE_PATTERNS_RE = /\b(Invoke-Expression|IEX|Invoke-Command|Start-Process|Invoke-WebRequest|DownloadFile|Add-Type|Import-Module)\b/i;
 
 function isWindowsBatchCommand(resolvedCommand: string): boolean {
   if (process.platform !== "win32") {
     return false;
   }
-  const ext = path.extname(resolvedCommand).toLowerCase();
+  const ext = normalizeLowercaseStringOrEmpty(path.extname(resolvedCommand));
   return ext === ".cmd" || ext === ".bat";
 }
 
-function escapeForCmdExe(arg: string): string {
-  // Reject cmd metacharacters to avoid injection when we must pass a single command line.
+/**
+ * Validates argument for Windows cmd.exe execution.
+ * Throws if dangerous characters or patterns are detected.
+ * 
+ * SECURITY: This is a critical security check to prevent command injection
+ * on Windows platforms. When shell mode is required, all arguments must
+ * pass this validation.
+ */
+function validateWindowsArgument(arg: string, context?: string): void {
   if (WINDOWS_UNSAFE_CMD_CHARS_RE.test(arg)) {
+    const charMatch = arg.match(WINDOWS_UNSAFE_CMD_CHARS_RE);
+    const dangerousChar = charMatch ? charMatch[0] : "unknown";
     throw new Error(
       `Unsafe Windows cmd.exe argument detected: ${JSON.stringify(arg)}. ` +
-        "Pass an explicit shell-wrapper argv at the call site instead.",
+      `Dangerous character '${dangerousChar}' found. ` +
+      (context ? `Context: ${context}. ` : "") +
+      "Pass an explicit shell-wrapper argv at the call site instead."
     );
   }
+  
+  // Additional check for PowerShell-specific patterns
+  if (POWERSHELL_UNSAFE_PATTERNS_RE.test(arg)) {
+    throw new Error(
+      `Unsafe PowerShell pattern detected in argument: ${JSON.stringify(arg)}. ` +
+      "PowerShell cmdlets like Invoke-Expression are blocked for security."
+    );
+  }
+  
+  // Check for null bytes (can truncate strings in some contexts)
+  if (arg.includes('\0')) {
+    throw new Error(
+      `Null byte detected in argument: ${JSON.stringify(arg)}. ` +
+      "Null bytes can be used to bypass security checks."
+    );
+  }
+  
+  // Check for Unicode control characters
+  const controlCharMatch = arg.match(/[\u0000-\u001F\u007F-\u009F]/);
+  if (controlCharMatch) {
+    throw new Error(
+      `Control character detected in argument (code: ${controlCharMatch[0].charCodeAt(0)}). ` +
+      "Control characters are blocked for security."
+    );
+  }
+}
+
+/**
+ * Escapes argument for safe use in Windows cmd.exe command line.
+ * 
+ * SECURITY: This function assumes the argument has already been validated
+ * by validateWindowsArgument(). Never use this on untrusted input without
+ * prior validation.
+ * 
+ * @param arg - The argument to escape
+ * @returns Escaped argument safe for cmd.exe
+ * @throws Error if argument contains dangerous characters
+ */
+function escapeForCmdExe(arg: string): string {
+  // SECURITY: Validate before escaping
+  validateWindowsArgument(arg, "escapeForCmdExe");
+  
   // Quote when needed; double inner quotes for cmd parsing.
   if (!arg.includes(" ") && !arg.includes('"')) {
     return arg;
@@ -49,10 +142,10 @@ function resolveNpmArgvForWindows(argv: string[]): string[] | null {
   if (process.platform !== "win32" || argv.length === 0) {
     return null;
   }
-  const basename = path
-    .basename(argv[0])
-    .toLowerCase()
-    .replace(/\.(cmd|exe|bat)$/, "");
+  const basename = normalizeLowercaseStringOrEmpty(path.basename(argv[0])).replace(
+    /\.(cmd|exe|bat)$/,
+    "",
+  );
   const cliName = basename === "npx" ? "npx-cli.js" : basename === "npm" ? "npm-cli.js" : null;
   if (!cliName) {
     return null;
@@ -64,7 +157,7 @@ function resolveNpmArgvForWindows(argv: string[]): string[] | null {
     // Fall back to npm.cmd/npx.cmd so we still route through cmd wrapper
     // (avoids direct .cmd spawn EINVAL on patched Node).
     const command = argv[0] ?? "";
-    const ext = path.extname(command).toLowerCase();
+    const ext = normalizeLowercaseStringOrEmpty(path.extname(command));
     const shimmedCommand = ext ? command : `${command}.cmd`;
     return [shimmedCommand, ...argv.slice(1)];
   }
@@ -79,8 +172,50 @@ function resolveNpmArgvForWindows(argv: string[]): string[] | null {
 function resolveCommand(command: string): string {
   return resolveWindowsCommandShim({
     command,
-    cmdCommands: ["pnpm", "yarn"],
+    cmdCommands: ["corepack", "pnpm", "yarn"],
   });
+}
+
+function resolveChildProcessInvocation(params: {
+  argv: string[];
+  windowsVerbatimArguments?: boolean;
+}): {
+  args: string[];
+  command: string;
+  usesWindowsExitCodeShim: boolean;
+  windowsHide: true;
+  windowsVerbatimArguments?: boolean;
+} {
+  const finalArgv =
+    process.platform === "win32"
+      ? (resolveNpmArgvForWindows(params.argv) ?? params.argv)
+      : params.argv;
+  const resolvedCommand =
+    finalArgv !== params.argv ? (finalArgv[0] ?? "") : resolveCommand(params.argv[0] ?? "");
+  const useCmdWrapper = isWindowsBatchCommand(resolvedCommand);
+
+  return {
+    command: useCmdWrapper ? (process.env.ComSpec ?? "cmd.exe") : resolvedCommand,
+    args: useCmdWrapper
+      ? ["/d", "/s", "/c", buildCmdExeCommandLine(resolvedCommand, finalArgv.slice(1))]
+      : finalArgv.slice(1),
+    usesWindowsExitCodeShim:
+      process.platform === "win32" && (useCmdWrapper || finalArgv !== params.argv),
+    windowsHide: true,
+    windowsVerbatimArguments: useCmdWrapper ? true : params.windowsVerbatimArguments,
+  };
+}
+
+/**
+ * Export validation function for use by other modules.
+ * Allows callers to validate arguments before passing to exec/spawn.
+ * 
+ * @param arg - Argument to validate
+ * @param context - Optional context for error messages
+ * @throws Error if argument is unsafe
+ */
+export function validateWindowsCommandArgument(arg: string, context?: string): void {
+  validateWindowsArgument(arg, context);
 }
 
 export function shouldSpawnWithShell(params: {
@@ -112,30 +247,12 @@ export async function runExec(
           encoding: "utf8" as const,
         };
   try {
-    const argv = [command, ...args];
-    let execCommand: string;
-    let execArgs: string[];
-    if (process.platform === "win32") {
-      const resolved = resolveNpmArgvForWindows(argv);
-      if (resolved) {
-        execCommand = resolved[0] ?? "";
-        execArgs = resolved.slice(1);
-      } else {
-        execCommand = resolveCommand(command);
-        execArgs = args;
-      }
-    } else {
-      execCommand = resolveCommand(command);
-      execArgs = args;
-    }
-    const useCmdWrapper = isWindowsBatchCommand(execCommand);
-    const { stdout, stderr } = useCmdWrapper
-      ? await execFileAsync(
-          process.env.ComSpec ?? "cmd.exe",
-          ["/d", "/s", "/c", buildCmdExeCommandLine(execCommand, execArgs)],
-          { ...options, windowsVerbatimArguments: true },
-        )
-      : await execFileAsync(execCommand, execArgs, options);
+    const invocation = resolveChildProcessInvocation({ argv: [command, ...args] });
+    const { stdout, stderr } = await execFileAsync(invocation.command, invocation.args, {
+      ...options,
+      windowsHide: invocation.windowsHide,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+    });
     if (shouldLogVerbose()) {
       if (stdout.trim()) {
         logDebug(stdout.trim());
@@ -241,32 +358,24 @@ export async function runCommandWithTimeout(
   const options: CommandOptions =
     typeof optionsOrTimeout === "number" ? { timeoutMs: optionsOrTimeout } : optionsOrTimeout;
   const { timeoutMs, cwd, input, env, noOutputTimeoutMs } = options;
-  const { windowsVerbatimArguments } = options;
   const hasInput = input !== undefined;
   const resolvedEnv = resolveCommandEnv({ argv, env });
-
   const stdio = resolveCommandStdio({ hasInput, preferInherit: true });
-  const finalArgv = process.platform === "win32" ? (resolveNpmArgvForWindows(argv) ?? argv) : argv;
-  const resolvedCommand = finalArgv !== argv ? (finalArgv[0] ?? "") : resolveCommand(argv[0] ?? "");
-  const useCmdWrapper = isWindowsBatchCommand(resolvedCommand);
-  const usesWindowsExitCodeShim =
-    process.platform === "win32" && (useCmdWrapper || finalArgv !== argv);
+  const invocation = resolveChildProcessInvocation({
+    argv,
+    windowsVerbatimArguments: options.windowsVerbatimArguments,
+  });
 
-  const child = spawn(
-    useCmdWrapper ? (process.env.ComSpec ?? "cmd.exe") : resolvedCommand,
-    useCmdWrapper
-      ? ["/d", "/s", "/c", buildCmdExeCommandLine(resolvedCommand, finalArgv.slice(1))]
-      : finalArgv.slice(1),
-    {
-      stdio,
-      cwd,
-      env: resolvedEnv,
-      windowsVerbatimArguments: useCmdWrapper ? true : windowsVerbatimArguments,
-      ...(shouldSpawnWithShell({ resolvedCommand, platform: process.platform })
-        ? { shell: true }
-        : {}),
-    },
-  );
+  const child = spawn(invocation.command, invocation.args, {
+    stdio,
+    cwd,
+    env: resolvedEnv,
+    windowsHide: invocation.windowsHide,
+    windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+    ...(shouldSpawnWithShell({ resolvedCommand: invocation.command, platform: process.platform })
+      ? { shell: true }
+      : {}),
+  });
   // Spawn with inherited stdin (TTY) so tools like `pi` stay interactive when needed.
   return await new Promise((resolve, reject) => {
     let stdout = "";
@@ -299,6 +408,14 @@ export async function runCommandWithTimeout(
       closeFallbackTimer = null;
     };
 
+    const killChild = () => {
+      if (settled || typeof child?.kill !== "function") {
+        return;
+      }
+      killIssuedByTimeout = true;
+      child.kill("SIGKILL");
+    };
+
     const armNoOutputTimer = () => {
       if (!shouldTrackOutputTimeout || settled) {
         return;
@@ -309,19 +426,13 @@ export async function runCommandWithTimeout(
           return;
         }
         noOutputTimedOut = true;
-        if (typeof child.kill === "function") {
-          killIssuedByTimeout = true;
-          child.kill("SIGKILL");
-        }
+        killChild();
       }, Math.floor(noOutputTimeoutMs));
     };
 
     const timer = setTimeout(() => {
       timedOut = true;
-      if (typeof child.kill === "function") {
-        killIssuedByTimeout = true;
-        child.kill("SIGKILL");
-      }
+      killChild();
     }, timeoutMs);
     armNoOutputTimer();
 
@@ -374,7 +485,7 @@ export async function runCommandWithTimeout(
         explicitCode: childExitState?.code ?? code,
         childExitCode: child.exitCode,
         resolvedSignal,
-        usesWindowsExitCodeShim,
+        usesWindowsExitCodeShim: invocation.usesWindowsExitCodeShim,
         timedOut,
         noOutputTimedOut,
         killIssuedByTimeout,

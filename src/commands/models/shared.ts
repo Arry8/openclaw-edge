@@ -18,6 +18,7 @@ import { toAgentModelListLike } from "../../config/model-input.js";
 import type { AgentModelEntryConfig } from "../../config/types.agent-defaults.js";
 import type { AgentModelConfig } from "../../config/types.agents-shared.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 
 export const ensureFlagCompatibility = (opts: { json?: boolean; plain?: boolean }) => {
   if (opts.json && opts.plain) {
@@ -51,7 +52,7 @@ export const formatMs = (value?: number | null) => {
 export const isLocalBaseUrl = (baseUrl: string) => {
   try {
     const url = new URL(baseUrl);
-    const host = url.hostname.toLowerCase();
+    const host = normalizeLowercaseStringOrEmpty(url.hostname);
     return (
       host === "localhost" ||
       host === "127.0.0.1" ||
@@ -201,7 +202,11 @@ export function mergePrimaryFallbackConfig(
     next.primary = patch.primary;
   }
   if (patch.fallbacks !== undefined) {
-    next.fallbacks = patch.fallbacks;
+    if (patch.fallbacks.length === 0) {
+      delete next.fallbacks;
+    } else {
+      next.fallbacks = patch.fallbacks;
+    }
   }
   return next;
 }

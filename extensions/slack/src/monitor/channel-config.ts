@@ -5,12 +5,14 @@ import {
   type ChannelMatchSource,
 } from "openclaw/plugin-sdk/channel-targets";
 import type { SlackReactionNotificationMode } from "openclaw/plugin-sdk/config-runtime";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import type { SlackMessageEvent } from "../types.js";
 import { allowListMatches, normalizeAllowListLower, normalizeSlackSlug } from "./allow-list.js";
 
 export type SlackChannelConfigResolved = {
   allowed: boolean;
   requireMention: boolean;
+  threadRequireExplicitMention?: boolean;
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -21,8 +23,8 @@ export type SlackChannelConfigResolved = {
 
 export type SlackChannelConfigEntry = {
   enabled?: boolean;
-  allow?: boolean;
   requireMention?: boolean;
+  thread?: { requireExplicitMention?: boolean };
   allowBots?: boolean;
   users?: Array<string | number>;
   skills?: string[];
@@ -109,12 +111,18 @@ export function resolveSlackChannelConfig(params: {
   // operators commonly write them in lowercase in their config. Add both
   // case variants so the lookup is case-insensitive without requiring a full
   // entry-scan. buildChannelKeyCandidates deduplicates identical keys.
-  const channelIdLower = channelId.toLowerCase();
+  const channelIdLower = normalizeLowercaseStringOrEmpty(channelId);
   const channelIdUpper = channelId.toUpperCase();
+  const channelTarget = `channel:${channelId}`;
+  const channelTargetLower = `channel:${channelIdLower}`;
+  const channelTargetUpper = `channel:${channelIdUpper}`;
   const candidates = buildChannelKeyCandidates(
     channelId,
     channelIdLower !== channelId ? channelIdLower : undefined,
     channelIdUpper !== channelId ? channelIdUpper : undefined,
+    channelTarget,
+    channelTargetLower !== channelTarget ? channelTargetLower : undefined,
+    channelTargetUpper !== channelTarget ? channelTargetUpper : undefined,
     allowNameMatching ? (channelName ? `#${directName}` : undefined) : undefined,
     allowNameMatching ? directName : undefined,
     allowNameMatching ? normalizedName : undefined,
@@ -135,9 +143,7 @@ export function resolveSlackChannelConfig(params: {
   }
 
   const resolved = matched ?? fallback ?? {};
-  const allowed =
-    firstDefined(resolved.enabled, resolved.allow, fallback?.enabled, fallback?.allow, true) ??
-    true;
+  const allowed = firstDefined(resolved.enabled, fallback?.enabled, true) ?? true;
   const requireMention =
     firstDefined(resolved.requireMention, fallback?.requireMention, requireMentionDefault) ??
     requireMentionDefault;
@@ -145,9 +151,14 @@ export function resolveSlackChannelConfig(params: {
   const users = firstDefined(resolved.users, fallback?.users);
   const skills = firstDefined(resolved.skills, fallback?.skills);
   const systemPrompt = firstDefined(resolved.systemPrompt, fallback?.systemPrompt);
+  const threadRequireExplicitMention = firstDefined(
+    resolved.thread?.requireExplicitMention,
+    fallback?.thread?.requireExplicitMention,
+  );
   const result: SlackChannelConfigResolved = {
     allowed,
     requireMention,
+    threadRequireExplicitMention,
     allowBots,
     users,
     skills,

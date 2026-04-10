@@ -1,26 +1,32 @@
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
-import { loadConfig } from "../config/config.js";
+import { extractTextFromChatContent } from "../shared/chat-content.js";
 import {
+  captureSubagentCompletionReplyUsing,
+  readLatestSubagentOutputWithRetryUsing,
+} from "./subagent-announce-capture.js";
+import {
+  callGateway,
+  loadConfig,
   loadSessionStore,
   resolveAgentIdFromSessionKey,
   resolveStorePath,
-} from "../config/sessions.js";
-import { callGateway } from "../gateway/call.js";
-import { extractTextFromChatContent } from "../shared/chat-content.js";
+} from "./subagent-announce.runtime.js";
 import { readLatestAssistantReply } from "./tools/agent-step.js";
-import { sanitizeTextContent, extractAssistantText } from "./tools/sessions-helpers.js";
-import { isAnnounceSkip } from "./tools/sessions-send-helpers.js";
+import { extractAssistantText, sanitizeTextContent } from "./tools/session-message-text.js";
+import { isAnnounceSkip } from "./tools/sessions-send-tokens.js";
 
 const FAST_TEST_RETRY_INTERVAL_MS = 8;
 
 type SubagentAnnounceOutputDeps = {
   callGateway: typeof callGateway;
   loadConfig: typeof loadConfig;
+  readLatestAssistantReply: typeof readLatestAssistantReply;
 };
 
 const defaultSubagentAnnounceOutputDeps: SubagentAnnounceOutputDeps = {
   callGateway,
   loadConfig,
+  readLatestAssistantReply,
 };
 
 let subagentAnnounceOutputDeps: SubagentAnnounceOutputDeps = defaultSubagentAnnounceOutputDeps;
@@ -39,6 +45,7 @@ type SubagentOutputSnapshot = {
   latestSilentText?: string;
   latestRawText?: string;
   assistantFragments: string[];
+  toolResultFragments: string[];
   toolCallCount: number;
 };
 
@@ -85,6 +92,15 @@ function extractToolResultText(content: unknown): string {
     if (typeof obj.summary === "string") {
       return sanitizeTextContent(obj.summary);
     }
+    // Handle nested content arrays (e.g. AgentToolResult wrapping)
+    if (Array.isArray(obj.content)) {
+      const nested = extractTextFromChatContent(obj.content, {
+        sanitizeText: sanitizeTextContent,
+        normalizeText: (text) => text,
+        joinWith: "\n",
+      });
+      return nested?.trim() ?? "";
+    }
   }
   if (!Array.isArray(content)) {
     return "";
@@ -117,17 +133,7 @@ function extractSubagentOutputText(message: unknown): string {
   const role = (message as { role?: unknown }).role;
   const content = (message as { content?: unknown }).content;
   if (role === "assistant") {
-    const assistantText = extractAssistantText(message);
-    if (assistantText) {
-      return assistantText;
-    }
-    if (typeof content === "string") {
-      return sanitizeTextContent(content);
-    }
-    if (Array.isArray(content)) {
-      return extractInlineTextContent(content);
-    }
-    return "";
+    return extractAssistantText(message) ?? "";
   }
   if (role === "toolResult" || role === "tool") {
     return extractToolResultText((message as ToolResultMessage).content);
@@ -169,6 +175,7 @@ function countAssistantToolCalls(content: unknown): number {
 function summarizeSubagentOutputHistory(messages: Array<unknown>): SubagentOutputSnapshot {
   const snapshot: SubagentOutputSnapshot = {
     assistantFragments: [],
+    toolResultFragments: [],
     toolCallCount: 0,
   };
   for (const message of messages) {
@@ -177,7 +184,13 @@ function summarizeSubagentOutputHistory(messages: Array<unknown>): SubagentOutpu
     }
     const role = (message as { role?: unknown }).role;
     if (role === "assistant") {
-      snapshot.toolCallCount += countAssistantToolCalls((message as { content?: unknown }).content);
+      const toolCalls = countAssistantToolCalls((message as { content?: unknown }).content);
+      snapshot.toolCallCount += toolCalls;
+      // Reset tool result fragments when a new tool-call round starts,
+      // so only the final round's results are included in the output.
+      if (toolCalls > 0) {
+        snapshot.toolResultFragments = [];
+      }
       const text = extractSubagentOutputText(message).trim();
       if (!text) {
         continue;
@@ -186,6 +199,7 @@ function summarizeSubagentOutputHistory(messages: Array<unknown>): SubagentOutpu
         snapshot.latestSilentText = text;
         snapshot.latestAssistantText = undefined;
         snapshot.assistantFragments = [];
+        snapshot.toolResultFragments = [];
         continue;
       }
       snapshot.latestSilentText = undefined;
@@ -196,6 +210,9 @@ function summarizeSubagentOutputHistory(messages: Array<unknown>): SubagentOutpu
     const text = extractSubagentOutputText(message).trim();
     if (text) {
       snapshot.latestRawText = text;
+      if (role === "toolResult" || role === "tool") {
+        snapshot.toolResultFragments.push(text);
+      }
     }
   }
   return snapshot;
@@ -231,6 +248,17 @@ function selectSubagentOutputText(
   if (snapshot.latestSilentText) {
     return snapshot.latestSilentText;
   }
+  // When tool calls were executed and we have tool result output, include it
+  // alongside the assistant text. The assistant text may be a summary that
+  // omits the actual exec stdout/stderr the parent needs.
+  if (
+    snapshot.latestAssistantText &&
+    snapshot.toolCallCount > 0 &&
+    snapshot.toolResultFragments.length > 0
+  ) {
+    const toolOutput = snapshot.toolResultFragments.join("\n\n");
+    return `${toolOutput}\n\n${snapshot.latestAssistantText}`;
+  }
   if (snapshot.latestAssistantText) {
     return snapshot.latestAssistantText;
   }
@@ -254,7 +282,10 @@ export async function readSubagentOutput(
   if (selected?.trim()) {
     return selected;
   }
-  const latestAssistant = await readLatestAssistantReply({ sessionKey, limit: 100 });
+  const latestAssistant = await subagentAnnounceOutputDeps.readLatestAssistantReply({
+    sessionKey,
+    limit: 100,
+  });
   return latestAssistant?.trim() ? latestAssistant : undefined;
 }
 
@@ -263,24 +294,13 @@ export async function readLatestSubagentOutputWithRetry(params: {
   maxWaitMs: number;
   outcome?: SubagentRunOutcome;
 }): Promise<string | undefined> {
-  const retryIntervalMs = isFastTestMode() ? FAST_TEST_RETRY_INTERVAL_MS : 100;
-  const maxWaitMs = Math.max(0, Math.min(params.maxWaitMs, 15_000));
-  let waitedMs = 0;
-  let result: string | undefined;
-  while (waitedMs < maxWaitMs) {
-    result = await readSubagentOutput(params.sessionKey, params.outcome);
-    if (result?.trim()) {
-      return result;
-    }
-    const remainingMs = maxWaitMs - waitedMs;
-    if (remainingMs <= 0) {
-      break;
-    }
-    const sleepMs = Math.min(retryIntervalMs, remainingMs);
-    await new Promise((resolve) => setTimeout(resolve, sleepMs));
-    waitedMs += sleepMs;
-  }
-  return result;
+  return await readLatestSubagentOutputWithRetryUsing({
+    sessionKey: params.sessionKey,
+    maxWaitMs: params.maxWaitMs,
+    outcome: params.outcome,
+    retryIntervalMs: isFastTestMode() ? FAST_TEST_RETRY_INTERVAL_MS : 100,
+    readSubagentOutput,
+  });
 }
 
 export async function waitForSubagentRunOutcome(
@@ -328,14 +348,14 @@ export function applySubagentWaitOutcome(params: {
 
 export async function captureSubagentCompletionReply(
   sessionKey: string,
+  options?: { waitForReply?: boolean },
 ): Promise<string | undefined> {
-  const immediate = await readSubagentOutput(sessionKey);
-  if (immediate?.trim()) {
-    return immediate;
-  }
-  return await readLatestSubagentOutputWithRetry({
+  return await captureSubagentCompletionReplyUsing({
     sessionKey,
+    waitForReply: options?.waitForReply,
     maxWaitMs: isFastTestMode() ? 50 : 1_500,
+    retryIntervalMs: isFastTestMode() ? FAST_TEST_RETRY_INTERVAL_MS : 100,
+    readSubagentOutput: async (nextSessionKey) => await readSubagentOutput(nextSessionKey),
   });
 }
 

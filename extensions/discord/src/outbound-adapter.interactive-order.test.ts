@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   createDiscordOutboundHoisted,
   installDiscordOutboundModuleSpies,
@@ -59,6 +59,7 @@ describe("discordOutbound shared interactive ordering", () => {
       channel: "discord",
       messageId: "msg-1",
       channelId: "123456",
+      meta: { transcriptText: "First\n[Approve]\nLast" },
     });
   });
 });

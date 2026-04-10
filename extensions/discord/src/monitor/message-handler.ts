@@ -4,7 +4,11 @@ import {
   shouldDebounceTextInbound,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { resolveOpenProviderRuntimeGroupPolicy } from "openclaw/plugin-sdk/config-runtime";
-import { createDedupeCache } from "openclaw/plugin-sdk/core";
+import {
+  createDedupeCache,
+  resolveGlobalDedupeCache,
+  type DedupeCache,
+} from "openclaw/plugin-sdk/infra-runtime";
 import { danger } from "openclaw/plugin-sdk/runtime-env";
 import { buildDiscordInboundJob } from "./inbound-job.js";
 import {
@@ -12,6 +16,7 @@ import {
   type DiscordInboundWorkerTestingHooks,
 } from "./inbound-worker.js";
 import type { DiscordMessageEvent, DiscordMessageHandler } from "./listeners.js";
+import { applyImplicitReplyBatchGate } from "./message-handler.batch-gate.js";
 import { preflightDiscordMessage } from "./message-handler.preflight.js";
 import type { DiscordMessagePreflightParams } from "./message-handler.preflight.types.js";
 import {
@@ -33,6 +38,7 @@ type DiscordMessageHandlerParams = Omit<
 
 type DiscordMessageHandlerTestingHooks = DiscordInboundWorkerTestingHooks & {
   preflightDiscordMessage?: typeof preflightDiscordMessage;
+  inboundDedupeCache?: DedupeCache;
 };
 
 export type DiscordMessageHandlerWithLifecycle = DiscordMessageHandler & {
@@ -41,6 +47,12 @@ export type DiscordMessageHandlerWithLifecycle = DiscordMessageHandler & {
 
 const RECENT_DISCORD_MESSAGE_TTL_MS = 5 * 60_000;
 const RECENT_DISCORD_MESSAGE_MAX = 5000;
+const RECENT_DISCORD_MESSAGE_CACHE_KEY = Symbol.for("openclaw.discord.recentInboundMessages");
+
+const recentDiscordInboundMessages = resolveGlobalDedupeCache(RECENT_DISCORD_MESSAGE_CACHE_KEY, {
+  ttlMs: RECENT_DISCORD_MESSAGE_TTL_MS,
+  maxSize: RECENT_DISCORD_MESSAGE_MAX,
+});
 
 function buildDiscordInboundDedupeKey(params: {
   accountId: string;
@@ -50,14 +62,14 @@ function buildDiscordInboundDedupeKey(params: {
   if (!messageId) {
     return null;
   }
-  const channelId = resolveDiscordMessageChannelId({
-    message: params.data.message,
-    eventChannelId: params.data.channel_id,
-  });
-  if (!channelId) {
-    return null;
-  }
-  return `${params.accountId}:${channelId}:${messageId}`;
+  // Discord message ids are globally unique snowflakes, so account + message id
+  // is enough to reject duplicate deliveries even when the same inbound message
+  // is observed by multiple handler instances or under different channel aliases.
+  return `${params.accountId}:${messageId}`;
+}
+
+export function __resetDiscordInboundDedupeForTest(): void {
+  recentDiscordInboundMessages.clear();
 }
 
 export function createDiscordMessageHandler(
@@ -79,6 +91,7 @@ export function createDiscordMessageHandler(
     setStatus: params.setStatus,
     abortSignal: params.abortSignal,
     runTimeoutMs: params.workerRunTimeoutMs,
+    inboundDedupeCache: params.__testing?.inboundDedupeCache ?? recentDiscordInboundMessages,
     __testing: params.__testing,
   });
   const recentInboundMessages = createDedupeCache({
@@ -114,8 +127,11 @@ export function createDiscordMessageHandler(
         return false;
       }
       const baseText = resolveDiscordMessageText(message, { includeForwarded: false });
+      const hasForwardedContent = Boolean(
+        (message as { message_snapshots?: unknown[] }).message_snapshots?.length,
+      );
       return shouldDebounceTextInbound({
-        text: baseText,
+        text: baseText || (hasForwardedContent ? resolveDiscordMessageText(message, { includeForwarded: true }) : ""),
         cfg: params.cfg,
         hasMedia: Boolean(
           (message.attachments && message.attachments.length > 0) ||
@@ -144,11 +160,17 @@ export function createDiscordMessageHandler(
         if (!ctx) {
           return;
         }
-        inboundWorker.enqueue(buildDiscordInboundJob(ctx));
+        applyImplicitReplyBatchGate(ctx, params.replyToMode, false);
+        inboundWorker.enqueue(buildDiscordInboundJob(ctx), {
+          dedupeKey: buildDiscordInboundDedupeKey({
+            accountId: params.accountId,
+            data: last.data,
+          }),
+        });
         return;
       }
       const combinedBaseText = entries
-        .map((entry) => resolveDiscordMessageText(entry.data.message, { includeForwarded: false }))
+        .map((entry) => resolveDiscordMessageText(entry.data.message, { includeForwarded: true }))
         .filter(Boolean)
         .join("\n");
       const syntheticMessage = {
@@ -176,6 +198,7 @@ export function createDiscordMessageHandler(
       if (!ctx) {
         return;
       }
+      applyImplicitReplyBatchGate(ctx, params.replyToMode, true);
       if (entries.length > 1) {
         const ids = entries.map((entry) => entry.data.message?.id).filter(Boolean) as string[];
         if (ids.length > 0) {
@@ -189,7 +212,12 @@ export function createDiscordMessageHandler(
           ctxBatch.MessageSidLast = ids[ids.length - 1];
         }
       }
-      inboundWorker.enqueue(buildDiscordInboundJob(ctx));
+      inboundWorker.enqueue(buildDiscordInboundJob(ctx), {
+        dedupeKey: buildDiscordInboundDedupeKey({
+          accountId: params.accountId,
+          data: last.data,
+        }),
+      });
     },
     onError: (err) => {
       params.runtime.error?.(danger(`discord debounce flush failed: ${String(err)}`));

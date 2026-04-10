@@ -5,6 +5,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { AnyAgentTool } from "../../pi-tools.types.js";
+import { buildEmbeddedAttemptToolRunContext } from "./attempt.tool-run-context.js";
 
 const MEMORY_RELATIVE_PATH = "memory/2026-03-24.md";
 
@@ -36,9 +37,22 @@ function createAttemptParams(workspaceDir: string) {
 
 describe("runEmbeddedAttempt memory flush tool forwarding", () => {
   it("forwards memory trigger metadata into tool creation so append-only guards activate", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-attempt-memory-flush-"));
+
+    try {
+      expect(buildEmbeddedAttemptToolRunContext(createAttemptParams(workspaceDir))).toMatchObject({
+        trigger: "memory",
+        memoryFlushWritePath: MEMORY_RELATIVE_PATH,
+      });
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards toolsAllow as forceAllowTools before post-filtering the tool list", async () => {
     vi.resetModules();
 
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-attempt-memory-flush-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-attempt-tools-allow-"));
     const stop = new Error("stop after tool creation");
     const capturedOptions: Array<Record<string, unknown> | undefined> = [];
 
@@ -57,12 +71,16 @@ describe("runEmbeddedAttempt memory flush tool forwarding", () => {
 
       const { runEmbeddedAttempt } = await import("./attempt.js");
 
-      await expect(runEmbeddedAttempt(createAttemptParams(workspaceDir))).rejects.toBe(stop);
+      await expect(
+        runEmbeddedAttempt({
+          ...createAttemptParams(workspaceDir),
+          toolsAllow: ["exec", "read"],
+        }),
+      ).rejects.toBe(stop);
 
       expect(capturedOptions).toHaveLength(1);
       expect(capturedOptions[0]).toMatchObject({
-        trigger: "memory",
-        memoryFlushWritePath: MEMORY_RELATIVE_PATH,
+        forceAllowTools: ["exec", "read"],
       });
     } finally {
       vi.doUnmock("../../pi-tools.js");

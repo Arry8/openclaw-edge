@@ -1,4 +1,5 @@
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import type { SlackFile, SlackMessageEvent } from "../../types.js";
 import {
   MAX_SLACK_MEDIA_FILES,
@@ -42,6 +43,7 @@ export async function resolveSlackMessageContent(params: {
   isBotMessage: boolean;
   botToken: string;
   mediaMaxBytes: number;
+  client?: import("@slack/web-api").WebClient;
 }): Promise<SlackResolvedMessageContent | null> {
   const ownFiles = filterInheritedParentFiles({
     files: params.message.files,
@@ -53,12 +55,14 @@ export async function resolveSlackMessageContent(params: {
     files: ownFiles,
     token: params.botToken,
     maxBytes: params.mediaMaxBytes,
+    client: params.client,
   });
 
   const attachmentContent = await resolveSlackAttachmentContent({
     attachments: params.message.attachments,
     token: params.botToken,
     maxBytes: params.mediaMaxBytes,
+    client: params.client,
   });
 
   const mergedMedia = [...(media ?? []), ...(attachmentContent?.media ?? [])];
@@ -72,7 +76,7 @@ export async function resolveSlackMessageContent(params: {
     !mediaPlaceholder && fallbackFiles.length > 0
       ? fallbackFiles
           .slice(0, MAX_SLACK_MEDIA_FILES)
-          .map((file) => file.name?.trim() || "file")
+          .map((file) => normalizeOptionalString(file.name) ?? "file")
           .join(", ")
       : undefined;
   const fileOnlyPlaceholder = fileOnlyFallback ? `[Slack file: ${fileOnlyFallback}]` : undefined;
@@ -80,14 +84,18 @@ export async function resolveSlackMessageContent(params: {
   const botAttachmentText =
     params.isBotMessage && !attachmentContent?.text
       ? (params.message.attachments ?? [])
-          .map((attachment) => attachment.text?.trim() || attachment.fallback?.trim())
+          .map(
+            (attachment) =>
+              normalizeOptionalString(attachment.text) ??
+              normalizeOptionalString(attachment.fallback),
+          )
           .filter(Boolean)
           .join("\n")
       : undefined;
 
   const rawBody =
     [
-      (params.message.text ?? "").trim(),
+      normalizeOptionalString(params.message.text),
       attachmentContent?.text,
       botAttachmentText,
       mediaPlaceholder,

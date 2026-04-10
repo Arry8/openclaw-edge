@@ -1,8 +1,9 @@
 import type * as Lark from "@larksuiteoapi/node-sdk";
 import { Type } from "@sinclair/typebox";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { OpenClawPluginApi } from "../runtime-api.js";
 import { listEnabledFeishuAccounts } from "./accounts.js";
-import { createFeishuToolClient } from "./tool-account.js";
+import { createFeishuToolClient, resolveAnyEnabledFeishuToolsConfig } from "./tool-account.js";
 
 // ============ Helpers ============
 
@@ -81,7 +82,7 @@ function parseBitableUrl(url: string): { token: string; tableId?: string; isWiki
     const u = new URL(url);
     const tableId = u.searchParams.get("table") ?? undefined;
 
-    // Wiki format: /wiki/XXXXX?table=YYY
+// Wiki format: /wiki/XXXXX?table=YYY
     const wikiMatch = u.pathname.match(/\/wiki\/([A-Za-z0-9]+)/);
     if (wikiMatch) {
       return { token: wikiMatch[1], tableId, isWiki: true };
@@ -189,12 +190,20 @@ async function listRecords(
   tableId: string,
   pageSize?: number,
   pageToken?: string,
+  filter?: string,
+  sort?: string[],
+  fieldNames?: string[],
+  viewId?: string,
 ) {
   const res = await client.bitable.appTableRecord.list({
     path: { app_token: appToken, table_id: tableId },
     params: {
       page_size: pageSize ?? 100,
       ...(pageToken && { page_token: pageToken }),
+      ...(filter && { filter }),
+      ...(sort && sort.length > 0 && { sort: JSON.stringify(sort) }),
+      ...(fieldNames && fieldNames.length > 0 && { field_names: JSON.stringify(fieldNames) }),
+      ...(viewId && { view_id: viewId }),
     },
   });
   ensureLarkSuccess(res, "bitable.appTableRecord.list", { appToken, tableId, pageSize });
@@ -279,7 +288,7 @@ async function cleanupNewBitable(
         });
         cleanedFields++;
       } catch (err) {
-        logger.debug(`Failed to rename primary field: ${err}`);
+        logger.debug(`Failed to rename primary field: ${String(err)}`);
       }
     }
 
@@ -300,7 +309,7 @@ async function cleanupNewBitable(
           });
           cleanedFields++;
         } catch (err) {
-          logger.debug(`Failed to delete default field ${field.field_name}: ${err}`);
+          logger.debug(`Failed to delete default field ${field.field_name}: ${String(err)}`);
         }
       }
     }
@@ -313,8 +322,32 @@ async function cleanupNewBitable(
   });
 
   if (recordsRes.code === 0 && recordsRes.data?.items) {
+    const isEmptyValue = (v: unknown): boolean => {
+      if (v === null || v === undefined || v === "") return true;
+      if (Array.isArray(v)) {
+        return v.length === 0 || v.every((item) => isEmptyValue(item));
+      }
+      if (typeof v === "object") {
+        const obj = v as Record<string, unknown>;
+        // Rich text fields: [{type:'text', text:''}]
+        if ("text" in obj && Object.keys(obj).length <= 2) {
+          const otherKeys = Object.keys(obj).filter((k) => k !== "text");
+          if (otherKeys.length === 0 || otherKeys[0] === "type") {
+            return obj.text === "" || obj.text === null || obj.text === undefined;
+          }
+        }
+        return Object.values(obj).every((val) => isEmptyValue(val));
+      }
+      return false;
+    };
+
     const emptyRecordIds = recordsRes.data.items
-      .filter((r) => !r.fields || Object.keys(r.fields).length === 0)
+      .filter((r) => {
+        if (!r.fields) return true;
+        const keys = Object.keys(r.fields);
+        if (keys.length === 0) return true;
+        return Object.values(r.fields).every((v) => isEmptyValue(v));
+      })
       .map((r) => r.record_id)
       .filter((id): id is string => Boolean(id));
 
@@ -334,7 +367,7 @@ async function cleanupNewBitable(
             });
             cleanedRows++;
           } catch (err) {
-            logger.debug(`Failed to delete empty row ${recordId}: ${err}`);
+            logger.debug(`Failed to delete empty row ${recordId}: ${String(err)}`);
           }
         }
       }
@@ -363,7 +396,7 @@ async function createApp(
     throw new Error("Failed to create Bitable: no app_token returned");
   }
 
-  const log: CleanupLogger = logger ?? { debug: () => {}, warn: () => {} };
+  const log: CleanupLogger = logger ?? { debug: () => { }, warn: () => { } };
   let tableId: string | undefined;
   let cleanedRows = 0;
   let cleanedFields = 0;
@@ -381,7 +414,7 @@ async function createApp(
       }
     }
   } catch (err) {
-    log.debug(`Cleanup failed (non-critical): ${err}`);
+    log.debug(`Cleanup failed (non-critical): ${String(err)}`);
   }
 
   return {
@@ -446,6 +479,23 @@ async function updateRecord(
   };
 }
 
+async function deleteRecord(
+  client: Lark.Client,
+  appToken: string,
+  tableId: string,
+  recordId: string,
+) {
+  const res = await client.bitable.appTableRecord.delete({
+    path: { app_token: appToken, table_id: tableId, record_id: recordId },
+  });
+  ensureLarkSuccess(res, "bitable.appTableRecord.delete", { appToken, tableId, recordId });
+
+  return {
+    deleted: true,
+    record_id: recordId,
+  };
+}
+
 // ============ Schemas ============
 
 const GetMetaSchema = Type.Object({
@@ -466,6 +516,26 @@ const ListRecordsSchema = Type.Object({
     description: "Bitable app token (use feishu_bitable_get_meta to get from URL)",
   }),
   table_id: Type.String({ description: "Table ID (from URL: ?table=YYY)" }),
+  view_id: Type.Optional(
+    Type.String({ description: "View ID to scope the query to a specific view" }),
+  ),
+  filter: Type.Optional(
+    Type.String({
+      description:
+        'Server-side filter expression. Syntax: AND/OR(condition1, condition2, ...). Conditions: CurrentValue.[field]="value", CurrentValue.[field]>123, etc. Example: AND(CurrentValue.[Status]="Open", CurrentValue.[Score]>7)',
+    }),
+  ),
+  sort: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        'Array of sort expressions. Example: ["Score DESC", "Name ASC"]. Each entry is "field_name DESC" or "field_name ASC".',
+    }),
+  ),
+  field_names: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Only return these fields (by name). Omit to return all fields.",
+    }),
+  ),
   page_size: Type.Optional(
     Type.Number({
       description: "Number of records per page (1-500, default 100)",
@@ -538,6 +608,14 @@ const UpdateRecordSchema = Type.Object({
   }),
 });
 
+const DeleteRecordSchema = Type.Object({
+  app_token: Type.String({
+    description: "Bitable app token (use feishu_bitable_get_meta to get from URL)",
+  }),
+  table_id: Type.String({ description: "Table ID (from URL: ?table=YYY)" }),
+  record_id: Type.String({ description: "Record ID to delete" }),
+});
+
 // ============ Tool Registration ============
 
 export function registerFeishuBitableTools(api: OpenClawPluginApi) {
@@ -549,6 +627,12 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
   const accounts = listEnabledFeishuAccounts(api.config);
   if (accounts.length === 0) {
     api.logger.debug?.("feishu_bitable: No Feishu accounts configured, skipping bitable tools");
+    return;
+  }
+
+  const toolsCfg = resolveAnyEnabledFeishuToolsConfig(accounts);
+  if (!toolsCfg.bitable) {
+    api.logger.debug?.("feishu_bitable: Bitable tools disabled by config");
     return;
   }
 
@@ -579,7 +663,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
               }),
             );
           } catch (err) {
-            return json({ error: err instanceof Error ? err.message : String(err) });
+            return json({ error: formatErrorMessage(err) });
           }
         },
       }),
@@ -611,6 +695,10 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
   registerBitableTool<{
     app_token: string;
     table_id: string;
+    view_id?: string;
+    filter?: string;
+    sort?: string[];
+    field_names?: string[];
     page_size?: number;
     page_token?: string;
     accountId?: string;
@@ -626,6 +714,10 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
         params.table_id,
         params.page_size,
         params.page_token,
+        params.filter,
+        params.sort,
+        params.field_names,
+        params.view_id,
       );
     },
   });
@@ -692,6 +784,27 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     },
   });
 
+  registerBitableTool<{
+    app_token: string;
+    table_id: string;
+    record_id: string;
+    accountId?: string;
+  }>({
+    name: "feishu_bitable_delete_record",
+    label: "Feishu Bitable Delete Record",
+    description:
+      "Permanently delete a record (row) from a Bitable table. This action is irreversible.",
+    parameters: DeleteRecordSchema,
+    async execute({ params, defaultAccountId }) {
+      return deleteRecord(
+        getClient(params, defaultAccountId),
+        params.app_token,
+        params.table_id,
+        params.record_id,
+      );
+    },
+  });
+
   registerBitableTool<{ name: string; folder_token?: string; accountId?: string }>({
     name: "feishu_bitable_create_app",
     label: "Feishu Bitable Create App",
@@ -729,5 +842,5 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     },
   });
 
-  api.logger.info?.("feishu_bitable: Registered bitable tools");
+  api.logger.debug?.("feishu_bitable: Registered bitable tools");
 }

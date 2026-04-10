@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,13 +6,12 @@ import { stageBundledPluginRuntime } from "../../scripts/stage-bundled-plugin-ru
 import { bundledDistPluginFile } from "../../test/helpers/bundled-plugin-paths.js";
 import { discoverOpenClawPlugins } from "./discovery.js";
 import { loadPluginManifestRegistry } from "./manifest-registry.js";
+import { cleanupTrackedTempDirs, makeTrackedTempDir } from "./test-helpers/fs-fixtures.js";
 
 const tempDirs: string[] = [];
 
 function makeRepoRoot(prefix: string): string {
-  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  tempDirs.push(repoRoot);
-  return repoRoot;
+  return makeTrackedTempDir(prefix, tempDirs);
 }
 
 function createDistPluginDir(repoRoot: string, pluginId: string) {
@@ -74,9 +72,7 @@ function expectRuntimeArtifactText(params: {
 }
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0, tempDirs.length)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  cleanupTrackedTempDirs(tempDirs);
 });
 
 describe("stageBundledPluginRuntime", () => {
@@ -302,6 +298,73 @@ describe("stageBundledPluginRuntime", () => {
     expect(fs.readFileSync(runtimePackagePath, "utf8")).toContain('"extensions": [');
   });
 
+  it("copies plugin skills into the runtime overlay so they stay within the runtime root", () => {
+    const repoRoot = makeRepoRoot("openclaw-stage-bundled-runtime-skills-");
+    const distPluginDir = path.join(repoRoot, "dist", "extensions", "acpx");
+    const distSkillDir = path.join(distPluginDir, "skills", "acp-router");
+    fs.mkdirSync(distSkillDir, { recursive: true });
+    fs.writeFileSync(path.join(distSkillDir, "SKILL.md"), "# ACP Router\n", "utf8");
+    fs.writeFileSync(path.join(distSkillDir, "guide.txt"), "ok\n", "utf8");
+
+    stageBundledPluginRuntime({ repoRoot });
+
+    const runtimeSkillDir = path.join(
+      repoRoot,
+      "dist-runtime",
+      "extensions",
+      "acpx",
+      "skills",
+      "acp-router",
+    );
+    const runtimeSkillPath = path.join(runtimeSkillDir, "SKILL.md");
+    const runtimeGuidePath = path.join(runtimeSkillDir, "guide.txt");
+    const realRuntimeSkillDir = fs.realpathSync(runtimeSkillDir);
+
+    expect(fs.lstatSync(runtimeSkillPath).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(runtimeSkillPath, "utf8")).toBe("# ACP Router\n");
+    expect(fs.realpathSync(runtimeSkillPath)).toBe(path.join(realRuntimeSkillDir, "SKILL.md"));
+    expect(fs.lstatSync(runtimeGuidePath).isSymbolicLink()).toBe(false);
+    expect(fs.realpathSync(runtimeGuidePath)).toBe(path.join(realRuntimeSkillDir, "guide.txt"));
+  });
+
+  it("copies bundled dependency-backed skills into the runtime overlay", () => {
+    const repoRoot = makeRepoRoot("openclaw-stage-bundled-runtime-generated-skills-");
+    const bundledSkillDir = path.join(
+      repoRoot,
+      "dist",
+      "extensions",
+      "tlon",
+      "bundled-skills",
+      "@tloncorp",
+      "tlon-skill",
+    );
+    fs.mkdirSync(path.join(bundledSkillDir, "references"), { recursive: true });
+    fs.writeFileSync(path.join(bundledSkillDir, "SKILL.md"), "# Tlon\n", "utf8");
+    fs.writeFileSync(path.join(bundledSkillDir, "references", "hooks.md"), "ok\n", "utf8");
+
+    stageBundledPluginRuntime({ repoRoot });
+
+    const runtimeSkillDir = path.join(
+      repoRoot,
+      "dist-runtime",
+      "extensions",
+      "tlon",
+      "bundled-skills",
+      "@tloncorp",
+      "tlon-skill",
+    );
+    const runtimeSkillPath = path.join(runtimeSkillDir, "SKILL.md");
+    const runtimeReferencePath = path.join(runtimeSkillDir, "references", "hooks.md");
+    const realRuntimeSkillDir = fs.realpathSync(runtimeSkillDir);
+
+    expect(fs.lstatSync(runtimeSkillPath).isSymbolicLink()).toBe(false);
+    expect(fs.realpathSync(runtimeSkillPath)).toBe(path.join(realRuntimeSkillDir, "SKILL.md"));
+    expect(fs.lstatSync(runtimeReferencePath).isSymbolicLink()).toBe(false);
+    expect(fs.realpathSync(runtimeReferencePath)).toBe(
+      path.join(realRuntimeSkillDir, "references", "hooks.md"),
+    );
+  });
+
   it("preserves package metadata needed for bundled plugin discovery from dist-runtime", () => {
     const repoRoot = makeRepoRoot("openclaw-stage-bundled-runtime-discovery-");
     const runtimeExtensionsDir = path.join(repoRoot, "dist-runtime", "extensions");
@@ -338,6 +401,7 @@ describe("stageBundledPluginRuntime", () => {
 
     const env = {
       ...process.env,
+      OPENCLAW_DISABLE_BUNDLED_PLUGINS: undefined,
       OPENCLAW_BUNDLED_PLUGINS_DIR: runtimeExtensionsDir,
     };
     const discovery = discoverOpenClawPlugins({

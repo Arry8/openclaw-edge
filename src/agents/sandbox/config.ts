@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SandboxSshSettings } from "../../config/types.sandbox.js";
 import { normalizeSecretInputString } from "../../config/types.secrets.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { resolveAgentConfig } from "../agent-scope.js";
 import {
   DEFAULT_SANDBOX_BROWSER_AUTOSTART_TIMEOUT_MS,
@@ -14,6 +15,7 @@ import {
   DEFAULT_SANDBOX_IDLE_HOURS,
   DEFAULT_SANDBOX_IMAGE,
   DEFAULT_SANDBOX_MAX_AGE_DAYS,
+  DEFAULT_SANDBOX_PIDS_LIMIT,
   DEFAULT_SANDBOX_WORKDIR,
   DEFAULT_SANDBOX_WORKSPACE_ROOT,
 } from "./constants.js";
@@ -31,6 +33,7 @@ export const DANGEROUS_SANDBOX_DOCKER_BOOLEAN_KEYS = [
   "dangerouslyAllowReservedContainerTargets",
   "dangerouslyAllowExternalBindSources",
   "dangerouslyAllowContainerNamespaceJoin",
+  "dangerouslyAllowHostNetwork",
 ] as const;
 
 const DEFAULT_SANDBOX_SSH_COMMAND = "ssh";
@@ -111,7 +114,7 @@ export function resolveSandboxDockerConfig(params: {
     capDrop: agentDocker?.capDrop ?? globalDocker?.capDrop ?? ["ALL"],
     env,
     setupCommand: agentDocker?.setupCommand ?? globalDocker?.setupCommand,
-    pidsLimit: agentDocker?.pidsLimit ?? globalDocker?.pidsLimit,
+    pidsLimit: agentDocker?.pidsLimit ?? globalDocker?.pidsLimit ?? DEFAULT_SANDBOX_PIDS_LIMIT,
     memory: agentDocker?.memory ?? globalDocker?.memory,
     memorySwap: agentDocker?.memorySwap ?? globalDocker?.memorySwap,
     cpus: agentDocker?.cpus ?? globalDocker?.cpus,
@@ -173,11 +176,6 @@ export function resolveSandboxPruneConfig(params: {
   };
 }
 
-function normalizeOptionalString(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 function normalizeRemoteRoot(value: string | undefined, fallback: string): string {
   const normalized = normalizeOptionalString(value) ?? fallback;
   const posix = normalized.replaceAll("\\", "/");
@@ -233,10 +231,14 @@ export function resolveSandboxConfigForAgent(
   if (agentConfig?.sandbox) {
     agentSandbox = agentConfig.sandbox;
   }
+  const legacyAgentSandbox = agentSandbox as
+    | (typeof agentSandbox & { perSession?: boolean })
+    | undefined;
+  const legacyDefaultSandbox = agent as (typeof agent & { perSession?: boolean }) | undefined;
 
   const scope = resolveSandboxScope({
     scope: agentSandbox?.scope ?? agent?.scope,
-    perSession: agentSandbox?.perSession ?? agent?.perSession,
+    perSession: legacyAgentSandbox?.perSession ?? legacyDefaultSandbox?.perSession,
   });
 
   const toolPolicy = resolveSandboxToolPolicyForAgent(cfg, agentId);

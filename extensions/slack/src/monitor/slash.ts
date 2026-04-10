@@ -11,7 +11,7 @@ import {
 } from "openclaw/plugin-sdk/config-runtime";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
 import { danger, logVerbose } from "openclaw/plugin-sdk/runtime-env";
-import { chunkItems } from "openclaw/plugin-sdk/text-runtime";
+import { chunkItems, normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import type { ResolvedSlackAccount } from "../accounts.js";
 import { truncateSlackText } from "../truncate.js";
 import { resolveSlackAllowListMatch, resolveSlackUserAllowed } from "./allow-list.js";
@@ -220,23 +220,25 @@ function buildSlackCommandArgMenuBlocks(params: {
           },
         ]
       : encodedChoices.length <= SLACK_COMMAND_ARG_BUTTON_ROW_SIZE || !canUseStaticSelect
-        ? chunkItems(encodedChoices, SLACK_COMMAND_ARG_BUTTON_ROW_SIZE).map((choices) => ({
-            type: "actions",
-            elements: choices.map((choice) => ({
-              type: "button",
-              action_id: SLACK_COMMAND_ARG_ACTION_ID,
-              text: { type: "plain_text", text: choice.label },
-              value: choice.value,
-              confirm: buildSlackArgMenuConfirm({ command: params.command, arg: params.arg }),
-            })),
-          }))
+        ? chunkItems(encodedChoices, SLACK_COMMAND_ARG_BUTTON_ROW_SIZE).map(
+            (choices, rowIndex) => ({
+              type: "actions",
+              elements: choices.map((choice, choiceIndex) => ({
+                type: "button",
+                action_id: `${SLACK_COMMAND_ARG_ACTION_ID}_${rowIndex}_${choiceIndex}`,
+                text: { type: "plain_text", text: choice.label },
+                value: choice.value,
+                confirm: buildSlackArgMenuConfirm({ command: params.command, arg: params.arg }),
+              })),
+            }),
+          )
         : chunkItems(encodedChoices, SLACK_COMMAND_ARG_SELECT_OPTIONS_MAX).map(
             (choices, index) => ({
               type: "actions",
               elements: [
                 {
                   type: "static_select",
-                  action_id: SLACK_COMMAND_ARG_ACTION_ID,
+                  action_id: `${SLACK_COMMAND_ARG_ACTION_ID}_${index}`,
                   confirm: buildSlackArgMenuConfirm({ command: params.command, arg: params.arg }),
                   placeholder: {
                     type: "plain_text",
@@ -308,7 +310,9 @@ export async function registerSlackMonitorSlashCommands(params: {
         );
         return;
       }
-      if (!prompt.trim()) {
+      // When contextAware is enabled, empty prompts are allowed - we'll fetch channel history
+      const isContextAwareMode = slashCommand.contextAware && !prompt.trim();
+      if (!prompt.trim() && !slashCommand.contextAware) {
         await ack({
           text: "Message required.",
           response_type: "ephemeral",
@@ -547,9 +551,45 @@ export async function registerSlackMonitorSlashCommands(params: {
         targetSessionKey: route.sessionKey,
         lowercaseSessionKey: true,
       });
+
+      // Context-aware mode: fetch recent channel history when no prompt provided
+      let effectivePrompt = prompt;
+      let contextHistory: string | undefined;
+      if (isContextAwareMode && isRoomish) {
+        try {
+          const historyResponse = await ctx.app.client.conversations.history({
+            token: ctx.botToken,
+            channel: command.channel_id,
+            limit: 10,
+          });
+          const messages = historyResponse.messages ?? [];
+          if (messages.length > 0) {
+            // Build context from recent messages (oldest first)
+            const recentContext = messages
+              .reverse()
+              .map((msg) => {
+                const msgUser = msg.user ?? "unknown";
+                const msgText = msg.text ?? "";
+                return `[${msgUser}]: ${msgText}`;
+              })
+              .join("\n");
+            contextHistory = recentContext;
+            effectivePrompt = `[Respond to the recent conversation in this channel]\n\nRecent messages:\n${recentContext}`;
+          } else {
+            effectivePrompt = "[No recent messages to respond to]";
+          }
+        } catch (err) {
+          runtime.error?.(danger(`slack slash: failed to fetch channel history: ${String(err)}`));
+          effectivePrompt = "[Respond to the recent conversation in this channel]";
+        }
+      } else if (isContextAwareMode && !isRoomish) {
+        // Context-aware in DMs - just use a simple prompt
+        effectivePrompt = "[Continue the conversation]";
+      }
+
       const ctxPayload = finalizeInboundContext({
-        Body: prompt,
-        BodyForAgent: prompt,
+        Body: effectivePrompt,
+        BodyForAgent: effectivePrompt,
         RawBody: prompt,
         CommandBody: prompt,
         CommandArgs: commandArgs,
@@ -572,7 +612,7 @@ export async function registerSlackMonitorSlashCommands(params: {
                 : `slack:group:${command.channel_id}`,
           }) ?? (isDirectMessage ? senderName : roomLabel),
         GroupSubject: isRoomish ? roomLabel : undefined,
-        GroupSystemPrompt: isRoomish ? groupSystemPrompt : undefined,
+        GroupSystemPrompt: groupSystemPrompt,
         UntrustedContext: untrustedChannelMetadata ? [untrustedChannelMetadata] : undefined,
         SenderName: senderName,
         SenderId: command.user_id,
@@ -731,7 +771,7 @@ export async function registerSlackMonitorSlashCommands(params: {
   const registerArgOptions = () => {
     const appWithOptions = ctx.app as unknown as {
       options?: (
-        actionId: string,
+        actionId: string | RegExp,
         handler: (args: {
           ack: (payload: { options: unknown[] }) => Promise<void>;
           body: unknown;
@@ -741,7 +781,7 @@ export async function registerSlackMonitorSlashCommands(params: {
     if (typeof appWithOptions.options !== "function") {
       return;
     }
-    appWithOptions.options(SLACK_COMMAND_ARG_ACTION_ID, async ({ ack, body }) => {
+    appWithOptions.options(/^openclaw_cmdarg/, async ({ ack, body }) => {
       if (ctx.shouldDropMismatchedSlackEvent?.(body)) {
         await ack({ options: [] });
         runtime.log?.("slack: drop slash arg options payload (mismatched app/team)");
@@ -769,9 +809,9 @@ export async function registerSlackMonitorSlashCommands(params: {
         await ack({ options: [] });
         return;
       }
-      const query = typedBody.value?.trim().toLowerCase() ?? "";
+      const query = normalizeLowercaseStringOrEmpty(typedBody.value);
       const options = entry.choices
-        .filter((choice) => !query || choice.label.toLowerCase().includes(query))
+        .filter((choice) => !query || normalizeLowercaseStringOrEmpty(choice.label).includes(query))
         .slice(0, SLACK_COMMAND_ARG_SELECT_OPTIONS_MAX)
         .map((choice) => ({
           text: { type: "plain_text", text: choice.label.slice(0, 75) },
@@ -792,12 +832,12 @@ export async function registerSlackMonitorSlashCommands(params: {
     );
   }
 
-  const registerArgAction = (actionId: string) => {
+  const registerArgAction = (actionIdPattern: string | RegExp) => {
     (
       ctx.app as unknown as {
         action: NonNullable<(typeof ctx.app & { action?: unknown })["action"]>;
       }
-    ).action(actionId, async (args: SlackActionMiddlewareArgs) => {
+    ).action(actionIdPattern, async (args: SlackActionMiddlewareArgs) => {
       const { ack, body, respond } = args;
       const action = args.action as { value?: string; selected_option?: { value?: string } };
       await ack();
@@ -870,5 +910,5 @@ export async function registerSlackMonitorSlashCommands(params: {
       });
     });
   };
-  registerArgAction(SLACK_COMMAND_ARG_ACTION_ID);
+  registerArgAction(/^openclaw_cmdarg/);
 }

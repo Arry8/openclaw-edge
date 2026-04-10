@@ -13,8 +13,8 @@ vi.mock("./gateway-rpc.js", () => ({
   callGatewayFromCli,
 }));
 
-vi.mock("../runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../runtime.js")>()),
+vi.mock("../runtime.js", async () => ({
+  ...(await vi.importActual<typeof import("../runtime.js")>("../runtime.js")),
   defaultRuntime,
   writeRuntimeJson: (runtime: { log: (...args: unknown[]) => void }, value: unknown, space = 2) =>
     runtime.log(JSON.stringify(value, null, space > 0 ? space : undefined)),
@@ -59,6 +59,17 @@ describe("system-cli", () => {
     await runCli(["system", "event", "--text", "hello", "--json"]);
 
     expect(runtimeLogs).toEqual([JSON.stringify({ id: "wake-1" }, null, 2)]);
+  });
+
+  it("passes --agent-id to gateway params", async () => {
+    await runCli(["system", "event", "--text", "hello", "--agent-id", "my-agent"]);
+
+    expect(callGatewayFromCli).toHaveBeenCalledWith(
+      "wake",
+      expect.objectContaining({ text: "hello", agentId: "my-agent" }),
+      { mode: "next-heartbeat", text: "hello", agentId: "my-agent" },
+      { expectFinal: false },
+    );
   });
 
   it("handles invalid wake mode as runtime error", async () => {

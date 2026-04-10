@@ -4,12 +4,8 @@ import {
   resolveInboundDebounceMs,
 } from "openclaw/plugin-sdk/reply-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPluginRuntimeMock } from "../../../test/helpers/plugins/plugin-runtime-mock.js";
-import {
-  createNonExitingTypedRuntimeEnv,
-  createRuntimeEnv,
-} from "../../../test/helpers/plugins/runtime-env.js";
-import type { ClawdbotConfig, RuntimeEnv } from "../runtime-api.js";
+import { createNonExitingTypedRuntimeEnv } from "../../../test/helpers/plugins/runtime-env.js";
+import type { ClawdbotConfig, PluginRuntime, RuntimeEnv } from "../runtime-api.js";
 import { parseFeishuMessageEvent, type FeishuMessageEvent } from "./bot.js";
 import * as dedup from "./dedup.js";
 import { monitorSingleAccount } from "./monitor.account.js";
@@ -230,6 +226,24 @@ function createMention(params: { openId: string; name: string; key?: string }): 
   };
 }
 
+function createFeishuMonitorRuntime(params?: {
+  createInboundDebouncer?: PluginRuntime["channel"]["debounce"]["createInboundDebouncer"];
+  resolveInboundDebounceMs?: PluginRuntime["channel"]["debounce"]["resolveInboundDebounceMs"];
+  hasControlCommand?: PluginRuntime["channel"]["text"]["hasControlCommand"];
+}): PluginRuntime {
+  return {
+    channel: {
+      debounce: {
+        createInboundDebouncer: params?.createInboundDebouncer ?? createInboundDebouncer,
+        resolveInboundDebounceMs: params?.resolveInboundDebounceMs ?? resolveInboundDebounceMs,
+      },
+      text: {
+        hasControlCommand: params?.hasControlCommand ?? hasControlCommand,
+      },
+    },
+  } as unknown as PluginRuntime;
+}
+
 async function enqueueDebouncedMessage(
   onMessage: (data: unknown) => Promise<void>,
   event: FeishuMessageEvent,
@@ -435,19 +449,7 @@ describe("monitorSingleAccount lifecycle", () => {
   });
 
   it("stops the Feishu thread binding manager when the monitor exits", async () => {
-    setFeishuRuntime(
-      createPluginRuntimeMock({
-        channel: {
-          debounce: {
-            resolveInboundDebounceMs,
-            createInboundDebouncer,
-          },
-          text: {
-            hasControlCommand,
-          },
-        },
-      }),
-    );
+    setFeishuRuntime(createFeishuMonitorRuntime());
 
     await monitorSingleAccount({
       cfg: buildDebounceConfig(),
@@ -466,19 +468,7 @@ describe("monitorSingleAccount lifecycle", () => {
   });
 
   it("stops the Feishu thread binding manager when setup fails before transport starts", async () => {
-    setFeishuRuntime(
-      createPluginRuntimeMock({
-        channel: {
-          debounce: {
-            resolveInboundDebounceMs,
-            createInboundDebouncer,
-          },
-          text: {
-            hasControlCommand,
-          },
-        },
-      }),
-    );
+    setFeishuRuntime(createFeishuMonitorRuntime());
     createEventDispatcherMock.mockReturnValue({
       get register() {
         throw new Error("register failed");
@@ -509,19 +499,7 @@ describe("Feishu inbound debounce regressions", () => {
     vi.useFakeTimers();
     handlers = {};
     handleFeishuMessageMock.mockClear();
-    setFeishuRuntime(
-      createPluginRuntimeMock({
-        channel: {
-          debounce: {
-            createInboundDebouncer,
-            resolveInboundDebounceMs,
-          },
-          text: {
-            hasControlCommand,
-          },
-        },
-      }),
-    );
+    setFeishuRuntime(createFeishuMonitorRuntime());
   });
 
   afterEach(() => {
@@ -693,24 +671,14 @@ describe("Feishu inbound debounce regressions", () => {
     setDedupPassThroughMocks();
     const enqueueMock = vi.fn();
     setFeishuRuntime(
-      createPluginRuntimeMock({
-        channel: {
-          debounce: {
-            createInboundDebouncer: <T>(params: {
-              onError?: (err: unknown, items: T[]) => void;
-            }) => ({
-              enqueue: async (item: T) => {
-                enqueueMock(item);
-                params.onError?.(new Error("dispatch failed"), [item]);
-              },
-              flushKey: async () => {},
-            }),
-            resolveInboundDebounceMs,
+      createFeishuMonitorRuntime({
+        createInboundDebouncer: <T>(params: { onError?: (err: unknown, items: T[]) => void }) => ({
+          enqueue: async (item: T) => {
+            enqueueMock(item);
+            params.onError?.(new Error("dispatch failed"), [item]);
           },
-          text: {
-            hasControlCommand,
-          },
-        },
+          flushKey: async () => {},
+        }),
       }),
     );
     const onMessage = await setupDebounceMonitor();
@@ -733,6 +701,54 @@ describe("Feishu inbound debounce regressions", () => {
     await enqueueDebouncedMessage(onMessage, event);
     await vi.advanceTimersByTimeAsync(25);
 
+    expect(handleFeishuMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not debounce group @Bot /help command message", async () => {
+    vi.spyOn(dedup, "tryRecordMessage").mockReturnValue(true);
+    vi.spyOn(dedup, "tryRecordMessagePersistent").mockResolvedValue(true);
+    vi.spyOn(dedup, "hasRecordedMessage").mockReturnValue(false);
+    vi.spyOn(dedup, "hasRecordedMessagePersistent").mockResolvedValue(false);
+    const onMessage = await setupDebounceMonitor();
+
+    await onMessage(
+      createTextEvent({
+        messageId: "om_cmd",
+        text: "@_user_1 /help",
+        mentions: [{ key: "@_user_1", id: { open_id: "ou_bot" }, name: "Bot" }],
+      }),
+    );
+    // Drain the fire-and-forget microtask chain (enqueue → onFlush → dispatchFeishuMessage
+    // → chat queue → handleFeishuMessage).  Multiple turns are needed because each async
+    // hop re-schedules as a microtask.
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+
+    // Command should be dispatched immediately without waiting for the debounce window.
+    expect(handleFeishuMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still debounces group @Bot conversational message", async () => {
+    vi.spyOn(dedup, "tryRecordMessage").mockReturnValue(true);
+    vi.spyOn(dedup, "tryRecordMessagePersistent").mockResolvedValue(true);
+    vi.spyOn(dedup, "hasRecordedMessage").mockReturnValue(false);
+    vi.spyOn(dedup, "hasRecordedMessagePersistent").mockResolvedValue(false);
+    const onMessage = await setupDebounceMonitor();
+
+    await onMessage(
+      createTextEvent({
+        messageId: "om_chat",
+        text: "@_user_1 hello",
+        mentions: [{ key: "@_user_1", id: { open_id: "ou_bot" }, name: "Bot" }],
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Conversational message should be buffered; not dispatched yet.
+    expect(handleFeishuMessageMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    // After debounce window, dispatch should have occurred.
     expect(handleFeishuMessageMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -173,7 +173,6 @@ describe("fetchRemoteMedia", () => {
   const telegramFileUrl = `https://api.telegram.org/file/bot${telegramToken}/photos/1.jpg`;
 
   beforeAll(async () => {
-    vi.resetModules();
     ({ fetchRemoteMedia } = await import("./fetch.js"));
   });
 
@@ -286,5 +285,27 @@ describe("fetchRemoteMedia", () => {
     }
 
     await expectBoundedErrorBodyCase(testCase.fetchImpl);
+  });
+
+  it("passes ssrfPolicy with allowRfc2544BenchmarkRange through to SSRF guard", async () => {
+    const imageBuffer = Buffer.from("fake-image-data");
+    fetchWithSsrFGuardMock.mockResolvedValueOnce({
+      response: new Response(imageBuffer, {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      }),
+      finalUrl: "http://198.18.0.1/photo.jpg",
+      release: async () => {},
+    });
+
+    await fetchRemoteMedia({
+      url: "http://198.18.0.1/photo.jpg",
+      maxBytes: 1024 * 1024,
+      ssrfPolicy: { allowRfc2544BenchmarkRange: true },
+    });
+
+    expect(fetchWithSsrFGuardMock).toHaveBeenCalledTimes(1);
+    const callArg = fetchWithSsrFGuardMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArg.policy).toEqual(expect.objectContaining({ allowRfc2544BenchmarkRange: true }));
   });
 });

@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { drainFormattedSystemEvents } from "../auto-reply/reply/session-updates.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveMainSessionKey } from "../config/sessions.js";
+import { buildAgentSessionKey } from "../routing/resolve-route.js";
 import { isCronSystemEvent } from "./heartbeat-runner.js";
 import {
   drainSystemEventEntries,
@@ -64,8 +65,90 @@ describe("system events (session routing)", () => {
     expect(peekSystemEvents("discord:group:123")).toEqual([]);
   });
 
+  it("drains canonical main-session events into per-channel-peer DM sessions", async () => {
+    vi.useFakeTimers();
+    try {
+      const scopedCfg = { session: { dmScope: "per-channel-peer" } } as OpenClawConfig;
+      const scopedMainKey = resolveMainSessionKey(scopedCfg);
+      const activeSessionKey = buildAgentSessionKey({
+        agentId: "main",
+        channel: "telegram",
+        peer: { kind: "direct", id: "6534796624" },
+        dmScope: "per-channel-peer",
+      });
+
+      vi.setSystemTime(new Date("2026-03-14T10:00:00Z"));
+      enqueueSystemEvent("Cron wake queued on main session", {
+        sessionKey: scopedMainKey,
+      });
+
+      vi.setSystemTime(new Date("2026-03-14T10:00:05Z"));
+      enqueueSystemEvent("Telegram DM event queued on active session", {
+        sessionKey: activeSessionKey,
+      });
+
+      const result = await drainFormattedSystemEvents({
+        cfg: scopedCfg,
+        sessionKey: activeSessionKey,
+        isMainSession: false,
+        isNewSession: false,
+      });
+
+      expect(result).toBeDefined();
+      expect(result).toContain("Cron wake queued on main session");
+      expect(result).toContain("Telegram DM event queued on active session");
+      expect(result!.indexOf("Cron wake queued on main session")).toBeLessThan(
+        result!.indexOf("Telegram DM event queued on active session"),
+      );
+      expect(peekSystemEvents(scopedMainKey)).toEqual([]);
+      expect(peekSystemEvents(activeSessionKey)).toEqual([]);
+      expect(
+        await drainFormattedSystemEvents({
+          cfg: scopedCfg,
+          sessionKey: activeSessionKey,
+          isMainSession: false,
+          isNewSession: false,
+        }),
+      ).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("requires an explicit session key", () => {
     expect(() => enqueueSystemEvent("Node: Mac Studio", { sessionKey: " " })).toThrow("sessionKey");
+  });
+
+  it("normalizes session key case so channel sessions match", () => {
+    // Plugins may pass mixed-case keys (Slack channel IDs are uppercase),
+    // but the heartbeat runner normalizes to lowercase via parseAgentSessionKey.
+    // Without case normalization, events enqueued with mixed case are invisible
+    // to peek/drain calls using the canonical lowercase key. (#34338)
+    enqueueSystemEvent("CI passed on PR #365", {
+      sessionKey: "agent:main:slack:channel:C0AKA9RBSAU",
+    });
+
+    // Lookup with lowercase (as the heartbeat runner does) must find the event
+    expect(peekSystemEvents("agent:main:slack:channel:c0aka9rbsau")).toEqual([
+      "CI passed on PR #365",
+    ]);
+
+    // Lookup with original mixed case must also find the event
+    expect(peekSystemEvents("agent:main:slack:channel:C0AKA9RBSAU")).toEqual([
+      "CI passed on PR #365",
+    ]);
+  });
+
+  it("deduplicates across case variants of the same session key", () => {
+    enqueueSystemEvent("event one", {
+      sessionKey: "agent:main:slack:channel:C0XX",
+    });
+    enqueueSystemEvent("event two", {
+      sessionKey: "agent:main:slack:channel:c0xx",
+    });
+
+    // Both events should be in the same queue
+    expect(peekSystemEvents("agent:main:slack:channel:c0xx")).toEqual(["event one", "event two"]);
   });
 
   it("returns false for consecutive duplicate events", () => {

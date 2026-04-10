@@ -1,6 +1,7 @@
 import { html, svg, nothing } from "lit";
 import { formatDurationCompact } from "../../../../src/infra/format-time/format-duration.ts";
 import { t } from "../../i18n/index.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { parseToolSummary } from "../usage-helpers.ts";
 import { charsToTokens, formatCost, formatTokens } from "./usage-metrics.ts";
 import { renderInsightList } from "./usage-render-overview.ts";
@@ -124,8 +125,10 @@ function renderSessionSummary(
         <div class="session-summary-title">${t("usage.overview.messages")}</div>
         <div class="stat-value session-summary-value">${usage.messageCounts?.total ?? 0}</div>
         <div class="session-summary-meta">
-          ${usage.messageCounts?.user ?? 0} ${t("usage.overview.user").toLowerCase()} ·
-          ${usage.messageCounts?.assistant ?? 0} ${t("usage.overview.assistant").toLowerCase()}
+          ${usage.messageCounts?.user ?? 0}
+          ${normalizeLowercaseStringOrEmpty(t("usage.overview.user"))} ·
+          ${usage.messageCounts?.assistant ?? 0}
+          ${normalizeLowercaseStringOrEmpty(t("usage.overview.assistant"))}
         </div>
       </div>
       <div class="stat session-summary-card">
@@ -280,9 +283,10 @@ function renderSessionDetailPanel(
           ${usage
             ? html`
                 <span
-                  ><strong>${formatTokens(headerStats.totalTokens)}</strong> ${t(
-                    "usage.metrics.tokens",
-                  ).toLowerCase()}${cursorIndicator}</span
+                  ><strong>${formatTokens(headerStats.totalTokens)}</strong>
+                  ${normalizeLowercaseStringOrEmpty(
+                    t("usage.metrics.tokens"),
+                  )}${cursorIndicator}</span
                 >
                 <span><strong>${formatCost(headerStats.totalCost)}</strong>${cursorIndicator}</span>
               `
@@ -564,8 +568,8 @@ function renderTimeSeriesCompact(
           <!-- X axis labels (first and last) -->
           ${points.length > 0
             ? svg`
-            <text x="${padding.left}" y="${padding.top + chartHeight + 10}" text-anchor="start" class="ts-axis-label">${new Date(points[0].timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</text>
-            <text x="${width - padding.right}" y="${padding.top + chartHeight + 10}" text-anchor="end" class="ts-axis-label">${new Date(points[points.length - 1].timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</text>
+            <text x="${padding.left}" y="${padding.top + chartHeight + 10}" text-anchor="start" class="ts-axis-label">${new Date(points[0].timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}</text>
+            <text x="${width - padding.right}" y="${padding.top + chartHeight + 10}" text-anchor="end" class="ts-axis-label">${new Date(points[points.length - 1].timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}</text>
           `
             : nothing}
           <!-- Bars -->
@@ -582,7 +586,7 @@ function renderTimeSeriesCompact(
                 hour: "2-digit",
                 minute: "2-digit",
               }),
-              `${formatTokens(val)} ${t("usage.metrics.tokens").toLowerCase()}`,
+              `${formatTokens(val)} ${normalizeLowercaseStringOrEmpty(t("usage.metrics.tokens"))}`,
             ];
             if (breakdownByType) {
               tooltipLines.push(`Out ${formatTokens(p.output)}`);
@@ -732,9 +736,11 @@ function renderTimeSeriesCompact(
               </span>
               ·
               ${new Date(rangeStartTs).toLocaleTimeString(undefined, {
+                hour12: false,
                 hour: "2-digit",
                 minute: "2-digit",
               })}–${new Date(rangeEndTs).toLocaleTimeString(undefined, {
+                hour12: false,
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -1034,7 +1040,7 @@ function renderSessionLogsCompact(
     `;
   }
 
-  const normalizedQuery = filters.query.trim().toLowerCase();
+  const normalizedQuery = normalizeLowercaseStringOrEmpty(filters.query);
   const entries = logs.map((log) => {
     const toolInfo = parseToolSummary(log.content);
     const cleanContent = toolInfo.cleanContent || log.content;
@@ -1069,7 +1075,7 @@ function renderSessionLogsCompact(
       }
     }
     if (normalizedQuery) {
-      const haystack = entry.cleanContent.toLowerCase();
+      const haystack = normalizeLowercaseStringOrEmpty(entry.cleanContent);
       if (!haystack.includes(normalizedQuery)) {
         return false;
       }
@@ -1093,7 +1099,7 @@ function renderSessionLogsCompact(
         <span>
           ${t("usage.details.conversation")}
           <span class="session-logs-header-count">
-            (${displayedCount} ${t("usage.overview.messages").toLowerCase()})
+            (${displayedCount} ${normalizeLowercaseStringOrEmpty(t("usage.overview.messages"))})
           </span>
         </span>
         <button class="btn btn--sm" @click=${onToggleExpandedAll}>

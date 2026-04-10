@@ -8,6 +8,7 @@ import { readBooleanParam } from "openclaw/plugin-sdk/boolean-param";
 import { resolveReactionMessageId } from "openclaw/plugin-sdk/channel-actions";
 import type { ChannelMessageActionContext } from "openclaw/plugin-sdk/channel-contract";
 import { normalizeInteractiveReply } from "openclaw/plugin-sdk/interactive-runtime";
+import { normalizeOptionalStringifiedId } from "openclaw/plugin-sdk/text-runtime";
 import { handleDiscordAction } from "../../action-runtime-api.js";
 import { buildDiscordInteractiveComponents } from "../shared-interactive.js";
 import { resolveDiscordChannelId } from "../targets.js";
@@ -90,6 +91,39 @@ export async function handleDiscordMessageAction(
     );
   }
 
+  if (action === "upload-file") {
+    const to = readStringParam(params, "to", { required: true });
+    const mediaUrl =
+      readStringParam(params, "filePath", { trim: false }) ??
+      readStringParam(params, "path", { trim: false }) ??
+      readStringParam(params, "media", { trim: false });
+    if (!mediaUrl) {
+      throw new Error("upload-file requires filePath, path, or media");
+    }
+    const content = readStringParam(params, "message") ?? readStringParam(params, "content");
+    const filename = readStringParam(params, "filename");
+    const replyTo = readStringParam(params, "replyTo");
+    const silent = readBooleanParam(params, "silent") === true;
+    const sessionKey = readStringParam(params, "__sessionKey");
+    const agentId = readStringParam(params, "__agentId");
+    return await handleDiscordAction(
+      {
+        action: "sendMessage",
+        accountId: accountId ?? undefined,
+        to,
+        content: content ?? "",
+        mediaUrl,
+        filename: filename ?? undefined,
+        replyTo: replyTo ?? undefined,
+        silent,
+        __sessionKey: sessionKey ?? undefined,
+        __agentId: agentId ?? undefined,
+      },
+      cfg,
+      actionOptions,
+    );
+  }
+
   if (action === "poll") {
     const to = readStringParam(params, "to", { required: true });
     const question = readStringParam(params, "pollQuestion", {
@@ -119,7 +153,7 @@ export async function handleDiscordMessageAction(
 
   if (action === "react") {
     const messageIdRaw = resolveReactionMessageId({ args: params, toolContext: ctx.toolContext });
-    const messageId = messageIdRaw != null ? String(messageIdRaw).trim() : "";
+    const messageId = normalizeOptionalStringifiedId(messageIdRaw) ?? "";
     if (!messageId) {
       throw new Error(
         "messageId required. Provide messageId explicitly or react to the current inbound message.",
@@ -198,6 +232,34 @@ export async function handleDiscordMessageAction(
         accountId: accountId ?? undefined,
         channelId: resolveChannelId(),
         messageId,
+      },
+      cfg,
+      actionOptions,
+    );
+  }
+
+  if (action === "upload-file") {
+    const to = readStringParam(params, "to", { required: true });
+    const filePath =
+      readStringParam(params, "filePath", { trim: false }) ??
+      readStringParam(params, "path", { trim: false }) ??
+      readStringParam(params, "media", { trim: false });
+    if (!filePath) {
+      throw new Error("upload-file requires filePath, path, or media");
+    }
+    const initialComment =
+      readStringParam(params, "initialComment", { allowEmpty: true }) ??
+      readStringParam(params, "message", { allowEmpty: true }) ??
+      "";
+    const filename = readStringParam(params, "filename");
+    return await handleDiscordAction(
+      {
+        action: "uploadFile",
+        accountId: accountId ?? undefined,
+        to,
+        filePath,
+        initialComment,
+        filename: filename ?? undefined,
       },
       cfg,
       actionOptions,

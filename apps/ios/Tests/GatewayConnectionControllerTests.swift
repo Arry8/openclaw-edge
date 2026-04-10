@@ -70,6 +70,52 @@ import UIKit
         }
     }
 
+    @Test @MainActor func operatorConnectOptionsOnlyRequestApprovalScopeWhenEnabled() {
+        let appModel = NodeAppModel()
+        let withoutApprovalScope = appModel._test_makeOperatorConnectOptions(
+            clientId: "openclaw-ios",
+            displayName: "OpenClaw iOS",
+            includeApprovalScope: false)
+        let withApprovalScope = appModel._test_makeOperatorConnectOptions(
+            clientId: "openclaw-ios",
+            displayName: "OpenClaw iOS",
+            includeApprovalScope: true)
+
+        #expect(withoutApprovalScope.role == "operator")
+        #expect(withoutApprovalScope.scopes.contains("operator.read"))
+        #expect(withoutApprovalScope.scopes.contains("operator.write"))
+        #expect(!withoutApprovalScope.scopes.contains("operator.approvals"))
+        #expect(withoutApprovalScope.scopes.contains("operator.talk.secrets"))
+
+        #expect(withApprovalScope.scopes.contains("operator.approvals"))
+    }
+
+    @Test func operatorApprovalScopeRequestsStayBackwardCompatible() {
+        #expect(
+            !NodeAppModel._test_shouldRequestOperatorApprovalScope(
+                token: nil,
+                password: nil,
+                storedOperatorScopes: ["operator.read", "operator.write", "operator.talk.secrets"])
+        )
+        #expect(
+            NodeAppModel._test_shouldRequestOperatorApprovalScope(
+                token: nil,
+                password: nil,
+                storedOperatorScopes: [
+                    "operator.approvals",
+                    "operator.read",
+                    "operator.write",
+                    "operator.talk.secrets",
+                ])
+        )
+        #expect(
+            NodeAppModel._test_shouldRequestOperatorApprovalScope(
+                token: "shared-token",
+                password: nil,
+                storedOperatorScopes: [])
+        )
+    }
+
     @Test @MainActor func loadLastConnectionReadsSavedValues() {
         let prior = KeychainStore.loadString(service: "ai.openclaw.gateway", account: "lastConnection")
         defer {
@@ -112,5 +158,77 @@ import UIKit
             let loaded = GatewaySettingsStore.loadLastGatewayConnection()
             #expect(loaded == nil)
         }
+    }
+
+    @Test @MainActor func startAutoConnectReappliesConfigAfterDisconnect() async {
+        let defaults = UserDefaults.standard
+        let priorInstanceId = defaults.object(forKey: "node.instanceId")
+        defaults.set("ios-test", forKey: "node.instanceId")
+        defer {
+            if let priorInstanceId {
+                defaults.set(priorInstanceId, forKey: "node.instanceId")
+            } else {
+                defaults.removeObject(forKey: "node.instanceId")
+            }
+        }
+
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
+        let url = URL(string: "wss://gateway.example.com:443")!
+
+        appModel.disconnectGateway()
+        #expect(appModel.activeGatewayConnectConfig == nil)
+        #expect(appModel.gatewayAutoReconnectEnabled == false)
+
+        await controller._test_startAutoConnect(
+            url: url,
+            gatewayStableID: "manual|gateway.example.com|443")
+
+        #expect(appModel.activeGatewayConnectConfig?.url == url)
+        #expect(appModel.activeGatewayConnectConfig?.effectiveStableID == "manual|gateway.example.com|443")
+        #expect(appModel.gatewayAutoReconnectEnabled == true)
+    }
+
+    @Test @MainActor func startAutoConnectCanReplaceExistingGatewayConfig() async {
+        let defaults = UserDefaults.standard
+        let priorInstanceId = defaults.object(forKey: "node.instanceId")
+        defaults.set("ios-test", forKey: "node.instanceId")
+        defer {
+            if let priorInstanceId {
+                defaults.set(priorInstanceId, forKey: "node.instanceId")
+            } else {
+                defaults.removeObject(forKey: "node.instanceId")
+            }
+        }
+
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
+        let firstURL = URL(string: "wss://first.example.com:443")!
+        let secondURL = URL(string: "wss://second.example.com:443")!
+
+        appModel.applyGatewayConnectConfig(
+            GatewayConnectConfig(
+                url: firstURL,
+                stableID: "manual|first.example.com|443",
+                tls: nil,
+                token: nil,
+                bootstrapToken: nil,
+                password: nil,
+                nodeOptions: GatewayConnectOptions(
+                    role: "node",
+                    scopes: [],
+                    caps: [],
+                    commands: [],
+                    permissions: [:],
+                    clientId: "openclaw-ios",
+                    clientMode: "node",
+                    clientDisplayName: "Test Node")))
+
+        await controller._test_startAutoConnect(
+            url: secondURL,
+            gatewayStableID: "manual|second.example.com|443")
+
+        #expect(appModel.activeGatewayConnectConfig?.url == secondURL)
+        #expect(appModel.activeGatewayConnectConfig?.effectiveStableID == "manual|second.example.com|443")
     }
 }

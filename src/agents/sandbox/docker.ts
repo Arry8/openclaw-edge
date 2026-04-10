@@ -91,7 +91,7 @@ export function execDockerRaw(
       if (signal.aborted) {
         handleAbort();
       } else {
-        signal.addEventListener("abort", handleAbort);
+        signal.addEventListener("abort", handleAbort, { once: true });
       }
     }
 
@@ -225,6 +225,26 @@ export async function readDockerContainerEnvVar(
   return null;
 }
 
+export async function readDockerNetworkGateway(network: string): Promise<string | null> {
+  const result = await execDocker(
+    ["network", "inspect", "-f", "{{range .IPAM.Config}}{{println .Gateway}}{{end}}", network],
+    { allowFailure: true },
+  );
+  if (result.code !== 0) {
+    return null;
+  }
+  // Filter valid, non-empty gateways (handles dual-stack / multi-subnet networks
+  // and filters Docker's "<no value>" sentinel for nil IPAM entries).
+  const gateways = result.stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && l !== "<no value>");
+  // Prefer IPv4: the CDP relay binds on 0.0.0.0 so an IPv6-only range would
+  // reject forwarded IPv4 traffic from the bridge gateway.
+  const gw = gateways.find((g) => !g.includes(":")) ?? gateways[0] ?? "";
+  return gw || null;
+}
+
 export async function readDockerPort(containerName: string, port: number) {
   const result = await execDocker(["port", containerName, `${port}/tcp`], {
     allowFailure: true,
@@ -261,9 +281,19 @@ export async function ensureDockerImage(image: string) {
     return;
   }
   if (image === DEFAULT_SANDBOX_IMAGE) {
-    await execDocker(["pull", "debian:bookworm-slim"]);
-    await execDocker(["tag", "debian:bookworm-slim", DEFAULT_SANDBOX_IMAGE]);
-    return;
+    // Prefer the pre-built image from GitHub Container Registry (contains python3 + tools).
+    // Falls back to building locally from Dockerfile.sandbox if the registry pull fails.
+    const registryImage = "ghcr.io/openclaw/openclaw:main-slim-amd64";
+    try {
+      await execDocker(["pull", registryImage]);
+      await execDocker(["tag", registryImage, DEFAULT_SANDBOX_IMAGE]);
+      return;
+    } catch {
+      // Registry pull failed; build locally from the included Dockerfile.sandbox
+      const dockerfilePath = process.cwd() + "/Dockerfile.sandbox";
+      await execDocker(["build", "-t", DEFAULT_SANDBOX_IMAGE, "-f", dockerfilePath, "."]);
+      return;
+    }
   }
   throw new Error(`Sandbox image not found: ${image}. Build or pull it first.`);
 }

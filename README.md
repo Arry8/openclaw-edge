@@ -1,10 +1,9 @@
+
+test only
 # 🦞 OpenClaw — Personal AI Assistant
 
 <p align="center">
-    <picture>
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.svg">
-        <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.svg" alt="OpenClaw" width="500">
-    </picture>
+  <img src="./docs/assets/openclaw-cover.jpg" alt="OpenClaw cover" width="360">
 </p>
 
 <p align="center">
@@ -15,6 +14,7 @@
   <a href="https://github.com/openclaw/openclaw/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/openclaw/openclaw/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/openclaw/openclaw/releases"><img src="https://img.shields.io/github/v/release/openclaw/openclaw?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
   <a href="https://discord.gg/clawd"><img src="https://img.shields.io/discord/1456350064065904867?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
+  <a href="https://www.npmjs.com/package/openclaw"><img src="https://img.shields.io/npm/dm/openclaw?style=for-the-badge&logo=npm&color=CB3837" alt="npm downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
@@ -25,6 +25,11 @@ If you want a personal, single-user assistant that feels local, fast, and always
 
 [Website](https://openclaw.ai) · [Docs](https://docs.openclaw.ai) · [Vision](VISION.md) · [DeepWiki](https://deepwiki.com/openclaw/openclaw) · [Getting Started](https://docs.openclaw.ai/start/getting-started) · [Updating](https://docs.openclaw.ai/install/updating) · [Showcase](https://docs.openclaw.ai/start/showcase) · [FAQ](https://docs.openclaw.ai/help/faq) · [Onboarding](https://docs.openclaw.ai/start/wizard) · [Nix](https://github.com/openclaw/nix-openclaw) · [Docker](https://docs.openclaw.ai/install/docker) · [Discord](https://discord.gg/clawd)
 
+## Chinese community / 中文入口
+
+OpenClaw already ships Chinese documentation for onboarding, CLI, and channel setup.
+Start here: [中文文档首页](https://docs.openclaw.ai/zh-CN) · [中文入门指南](https://docs.openclaw.ai/zh-CN/start/getting-started) · [飞书 / Lark 接入指南](https://docs.openclaw.ai/zh-CN/channels/feishu)
+
 Preferred setup: run `openclaw onboard` in your terminal.
 OpenClaw Onboard guides you step by step through setting up the gateway, workspace, channels, and skills. It is the recommended CLI setup path and works on **macOS, Linux, and Windows (via WSL2; strongly recommended)**.
 Works with npm, pnpm, or bun.
@@ -34,7 +39,7 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
 
 <table>
   <tr>
-    <td align="center" width="20%">
+    <td align="center" width="16.66%">
       <a href="https://openai.com/">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/openai-light.svg">
@@ -42,7 +47,15 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
         </picture>
       </a>
     </td>
-    <td align="center" width="20%">
+    <td align="center" width="16.66%">
+      <a href="https://github.com/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github-light.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github.svg" alt="GitHub" height="28">
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="16.66%">
       <a href="https://www.nvidia.com/">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/nvidia.svg">
@@ -50,7 +63,7 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
         </picture>
       </a>
     </td>
-    <td align="center" width="20%">
+    <td align="center" width="16.66%">
       <a href="https://vercel.com/">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/vercel-light.svg">
@@ -58,7 +71,7 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
         </picture>
       </a>
     </td>
-    <td align="center" width="20%">
+    <td align="center" width="16.66%">
       <a href="https://blacksmith.sh/">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/blacksmith-light.svg">
@@ -66,7 +79,7 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
         </picture>
       </a>
     </td>
-    <td align="center" width="20%">
+    <td align="center" width="16.66%">
       <a href="https://www.convex.dev/">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/convex-light.svg">
@@ -81,7 +94,7 @@ New install? Start here: [Getting started](https://docs.openclaw.ai/start/gettin
 
 - **[OpenAI](https://openai.com/)** (ChatGPT/Codex)
 
-Model note: while many providers/models are supported, for the best experience and lower prompt-injection risk use the strongest latest-generation model available to you. See [Onboarding](https://docs.openclaw.ai/start/onboarding).
+Model note: while many providers and models are supported, prefer a current flagship model from the provider you trust and already use. See [Onboarding](https://docs.openclaw.ai/start/onboarding).
 
 ## Models (selection + auth)
 
@@ -92,9 +105,19 @@ Model note: while many providers/models are supported, for the best experience a
 
 Runtime: **Node 24 (recommended) or Node 22.16+**.
 
+> **⚠️ Important:** Use **pnpm** for global installation. OpenClaw uses a pnpm workspace and
+> some channel plugin dependencies (Discord, Slack, Telegram, Feishu) may not resolve correctly
+> when installed via `npm install -g`. If you see errors like `Cannot find package '@slack/logger'`
+> or `Cannot find package '@buape/carbon'` after installing with npm, reinstall using pnpm.
+> Note: `openclaw doctor --fix` will also fail in this state — reinstalling with pnpm is the fix.
+> See [#61787](https://github.com/openclaw/openclaw/issues/61787) for details.
+
 ```bash
+# Recommended
+pnpm add -g openclaw@latest
+
+# npm also works for most setups, but pnpm is preferred
 npm install -g openclaw@latest
-# or: pnpm add -g openclaw@latest
 
 openclaw onboard --install-daemon
 ```
@@ -110,10 +133,18 @@ Full beginner guide (auth, pairing, channels): [Getting started](https://docs.op
 ```bash
 openclaw onboard --install-daemon
 
+# Check daemon state first
+openclaw gateway status
+
 openclaw gateway --port 18789 --verbose
 
+# Manage the gateway daemon service
+openclaw gateway restart
+openclaw gateway stop
+openclaw gateway start
+
 # Send a message
-openclaw message send --to +1234567890 --message "Hello from OpenClaw"
+openclaw message send --target +1234567890 --message "Hello from OpenClaw"
 
 # Talk to the assistant (optionally deliver back to any connected channel: WhatsApp/Telegram/Slack/Discord/Google Chat/Signal/iMessage/BlueBubbles/IRC/Microsoft Teams/Matrix/Feishu/LINE/Mattermost/Nextcloud Talk/Nostr/Synology Chat/Tlon/Twitch/Zalo/Zalo Personal/WeChat/WebChat)
 openclaw agent --message "Ship checklist" --thinking high
@@ -177,7 +208,19 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=openclaw/openclaw&type=date&legend=top-left)](https://www.star-history.com/#openclaw/openclaw&type=date&legend=top-left)
+<p align="center">
+  <a href="https://www.star-history.com/#openclaw/openclaw&type=date&legend=top-left">
+    <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=openclaw/openclaw&type=date&theme=dark&legend=top-left" />
+     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=openclaw/openclaw&type=date&legend=top-left" />
+     <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=openclaw/openclaw&type=date&legend=top-left" />
+    </picture>
+  </a>
+</p>
+
+## Tech stack used
+
+![Stack Fingerprint](https://stackfingerprint.vercel.app/api/card?repo=openclaw/openclaw&theme=ember&layout=classic&size=md&icons=color&pills=round)
 
 ## Everything we built so far
 
@@ -308,6 +351,12 @@ ClawHub is a minimal skill registry. With ClawHub enabled, the agent can search 
 
 [ClawHub](https://clawhub.com)
 
+## Third-party package marketplaces
+
+Community-built marketplaces and curated package registries for OpenClaw:
+
+- [AgentStandard](https://agentstandard.ai) — Certified AI agent package marketplace. 37 curated packages for OpenClaw, Claude, and Telegram. Every package includes SKILL.md for one-command install. ✦ reviewed.
+
 ## Chat commands
 
 Send these in WhatsApp/Telegram/Slack/Google Chat/Microsoft Teams/WebChat (group commands are owner-only):
@@ -363,7 +412,7 @@ Minimal `~/.openclaw/openclaw.json` (model + defaults):
 ```json5
 {
   agent: {
-    model: "anthropic/claude-opus-4-6",
+    model: "<provider>/<model-id>",
   },
 }
 ```
@@ -537,10 +586,25 @@ by Peter Steinberger and the community.
 - [steipete.me](https://steipete.me)
 - [@openclaw](https://x.com/openclaw)
 
+## Desktop Apps & GUI Clients
+
+Prefer a GUI over the terminal? These community-built desktop apps wrap OpenClaw in a one-click installer:
+
+| App | Platform | Description |
+|---|---|---|
+| [OpenClaw Easy](https://github.com/openclaw-easy/openclaw-easy-desktop) | macOS, Windows | Community desktop app — no terminal, no WSL2, drag-and-drop install |
+
+> **Want to list your app here?** Open a PR adding a row to this table.
+
+
 ## Community
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, maintainers, and how to submit PRs.
 AI/vibe-coded PRs welcome! 🤖
+
+### Community Resources
+
+- **[Comprehensive Chinese Tutorial](https://github.com/xianyu110/awesome-openclaw-tutorial)** - A detailed 423,000-word tutorial with 15 chapters, 15 appendices, and 70+ practical cases, updated to OpenClaw v2026.3.12. Covers installation, core features, advanced skills, and multi-platform integration. (Thanks to @xianyu110 for this extensive community contribution!)
 
 Special thanks to [Mario Zechner](https://mariozechner.at/) for his support and for
 [pi-mono](https://github.com/badlogic/pi-mono).
@@ -602,5 +666,6 @@ Thanks to all clawtributors:
   <a href="https://github.com/sktbrd"><img src="https://avatars.githubusercontent.com/u/116202536?v=4&s=48" width="48" height="48" alt="sktbrd" title="sktbrd"/></a> <a href="https://github.com/larlyssa"><img src="https://avatars.githubusercontent.com/u/13128869?v=4&s=48" width="48" height="48" alt="larlyssa" title="larlyssa"/></a> <a href="https://github.com/Mind-Dragon"><img src="https://avatars.githubusercontent.com/u/262945885?v=4&s=48" width="48" height="48" alt="Mind-Dragon" title="Mind-Dragon"/></a> <a href="https://github.com/pcty-nextgen-service-account"><img src="https://avatars.githubusercontent.com/u/112553441?v=4&s=48" width="48" height="48" alt="pcty-nextgen-service-account" title="pcty-nextgen-service-account"/></a> <a href="https://github.com/tmchow"><img src="https://avatars.githubusercontent.com/u/517103?v=4&s=48" width="48" height="48" alt="tmchow" title="tmchow"/></a> <a href="https://github.com/uli-will-code"><img src="https://avatars.githubusercontent.com/u/49715419?v=4&s=48" width="48" height="48" alt="uli-will-code" title="uli-will-code"/></a> <a href="https://github.com/mgratch"><img src="https://avatars.githubusercontent.com/u/2238658?v=4&s=48" width="48" height="48" alt="Marc Gratch" title="Marc Gratch"/></a> <a href="https://github.com/JackyWay"><img src="https://avatars.githubusercontent.com/u/53031570?v=4&s=48" width="48" height="48" alt="JackyWay" title="JackyWay"/></a> <a href="https://github.com/aaronveklabs"><img src="https://avatars.githubusercontent.com/u/225997828?v=4&s=48" width="48" height="48" alt="aaronveklabs" title="aaronveklabs"/></a> <a href="https://github.com/CJWTRUST"><img src="https://avatars.githubusercontent.com/u/235565898?v=4&s=48" width="48" height="48" alt="CJWTRUST" title="CJWTRUST"/></a>
   <a href="https://github.com/erik-agens"><img src="https://avatars.githubusercontent.com/u/80908960?v=4&s=48" width="48" height="48" alt="erik-agens" title="erik-agens"/></a> <a href="https://github.com/odnxe"><img src="https://avatars.githubusercontent.com/u/403141?v=4&s=48" width="48" height="48" alt="odnxe" title="odnxe"/></a> <a href="https://github.com/T5-AndyML"><img src="https://avatars.githubusercontent.com/u/22801233?v=4&s=48" width="48" height="48" alt="T5-AndyML" title="T5-AndyML"/></a> <a href="https://github.com/j1philli"><img src="https://avatars.githubusercontent.com/u/3744255?v=4&s=48" width="48" height="48" alt="Josh Phillips" title="Josh Phillips"/></a> <a href="https://github.com/mujiannan"><img src="https://avatars.githubusercontent.com/u/46643837?v=4&s=48" width="48" height="48" alt="mujiannan" title="mujiannan"/></a> <a href="https://github.com/marcodd23"><img src="https://avatars.githubusercontent.com/u/3519682?v=4&s=48" width="48" height="48" alt="Marco Di Dionisio" title="Marco Di Dionisio"/></a> <a href="https://github.com/RandyVentures"><img src="https://avatars.githubusercontent.com/u/149904821?v=4&s=48" width="48" height="48" alt="Randy Torres" title="Randy Torres"/></a> <a href="https://github.com/afern247"><img src="https://avatars.githubusercontent.com/u/34192856?v=4&s=48" width="48" height="48" alt="afern247" title="afern247"/></a> <a href="https://github.com/0oAstro"><img src="https://avatars.githubusercontent.com/u/79555780?v=4&s=48" width="48" height="48" alt="0oAstro" title="0oAstro"/></a> <a href="https://github.com/alexanderatallah"><img src="https://avatars.githubusercontent.com/u/1011391?v=4&s=48" width="48" height="48" alt="alexanderatallah" title="alexanderatallah"/></a>
   <a href="https://github.com/testingabc321"><img src="https://avatars.githubusercontent.com/u/8577388?v=4&s=48" width="48" height="48" alt="testingabc321" title="testingabc321"/></a> <a href="https://github.com/humanwritten"><img src="https://avatars.githubusercontent.com/u/206531610?v=4&s=48" width="48" height="48" alt="humanwritten" title="humanwritten"/></a> <a href="https://github.com/aaronn"><img src="https://avatars.githubusercontent.com/u/1653630?v=4&s=48" width="48" height="48" alt="aaronn" title="aaronn"/></a> <a href="https://github.com/Alphonse-arianee"><img src="https://avatars.githubusercontent.com/u/254457365?v=4&s=48" width="48" height="48" alt="Alphonse-arianee" title="Alphonse-arianee"/></a> <a href="https://github.com/gtsifrikas"><img src="https://avatars.githubusercontent.com/u/8904378?v=4&s=48" width="48" height="48" alt="gtsifrikas" title="gtsifrikas"/></a> <a href="https://github.com/hrdwdmrbl"><img src="https://avatars.githubusercontent.com/u/554881?v=4&s=48" width="48" height="48" alt="hrdwdmrbl" title="hrdwdmrbl"/></a> <a href="https://github.com/hugobarauna"><img src="https://avatars.githubusercontent.com/u/2719?v=4&s=48" width="48" height="48" alt="hugobarauna" title="hugobarauna"/></a> <a href="https://github.com/jiulingyun"><img src="https://avatars.githubusercontent.com/u/126459548?v=4&s=48" width="48" height="48" alt="jiulingyun" title="jiulingyun"/></a> <a href="https://github.com/kitze"><img src="https://avatars.githubusercontent.com/u/1160594?v=4&s=48" width="48" height="48" alt="kitze" title="kitze"/></a> <a href="https://github.com/loukotal"><img src="https://avatars.githubusercontent.com/u/18210858?v=4&s=48" width="48" height="48" alt="loukotal" title="loukotal"/></a>
-  <a href="https://github.com/MSch"><img src="https://avatars.githubusercontent.com/u/7475?v=4&s=48" width="48" height="48" alt="MSch" title="MSch"/></a> <a href="https://github.com/odrobnik"><img src="https://avatars.githubusercontent.com/u/333270?v=4&s=48" width="48" height="48" alt="odrobnik" title="odrobnik"/></a> <a href="https://github.com/reeltimeapps"><img src="https://avatars.githubusercontent.com/u/637338?v=4&s=48" width="48" height="48" alt="reeltimeapps" title="reeltimeapps"/></a> <a href="https://github.com/rhjoh"><img src="https://avatars.githubusercontent.com/u/105699450?v=4&s=48" width="48" height="48" alt="rhjoh" title="rhjoh"/></a> <a href="https://github.com/ronak-guliani"><img src="https://avatars.githubusercontent.com/u/23518228?v=4&s=48" width="48" height="48" alt="ronak-guliani" title="ronak-guliani"/></a> <a href="https://github.com/snopoke"><img src="https://avatars.githubusercontent.com/u/249606?v=4&s=48" width="48" height="48" alt="snopoke" title="snopoke"/></a>
+  <a href="https://github.com/MSch"><img src="https://avatars.githubusercontent.com/u/7475?v=4&s=48" width="48" height="48" alt="MSch" title="MSch"/></a> <a href="https://github.com/odrobnik"><img src="https://avatars.githubusercontent.com/u/333270?v=4&s=48" width="48" height="48" alt="odrobnik" title="odrobnik"/></a> <a href="https://github.com/reeltimeapps"><img src="https://avatars.githubusercontent.com/u/637338?v=4&s=48" width="48" height="48" alt="reeltimeapps" title="reeltimeapps"/></a> <a href="https://github.com/rhjoh"><img src="https://avatars.githubusercontent.com/u/105699450?v=4&s=48" width="48" height="48" alt="rhjoh" title="rhjoh"/></a> <a href="https://github.com/ronak-guliani"><img src="https://avatars.githubusercontent.com/u/23518228?v=4&s=48" width="48" height="48" alt="ronak-guliani" title="ronak-guliani"/></a> <a href="https://github.com/snopoke"><img src="https://avatars.githubusercontent.com/u/249606?v=4&s=48" width="48" height="48" alt="snopoke" title="snopoke"/></a> <a href="https://github.com/SwissArmyBud"><img src="https://avatars.githubusercontent.com/u/7257907?v=4&s=48" width="48" height="48" alt="SwissArmyBud" title="SwissArmyBud"/></a>
 </p>
+中文文档请查看仓库内相关文件

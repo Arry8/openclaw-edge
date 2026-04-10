@@ -1,5 +1,5 @@
+import { withFetchPreconnect } from "openclaw/plugin-sdk/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withFetchPreconnect } from "../../../test/helpers/plugins/fetch-mock.js";
 import { fetchDiscord } from "./api.js";
 import { jsonResponse } from "./test-http-helpers.js";
 
@@ -46,6 +46,20 @@ describe("fetchDiscord", () => {
     ).rejects.toThrow("Discord API /users/@me/guilds failed (404): Not Found");
   });
 
+  it("sends a Discord-compliant User-Agent header", async () => {
+    let capturedHeaders: Headers | undefined;
+    const fetcher = withFetchPreconnect(async (url: string | URL | Request, init?: RequestInit) => {
+      capturedHeaders = new Headers(init?.headers);
+      return jsonResponse([{ id: "1", name: "Guild" }], 200);
+    });
+
+    await fetchDiscord("/users/@me/guilds", "test-token", fetcher);
+
+    expect(capturedHeaders).toBeDefined();
+    expect(capturedHeaders!.get("User-Agent")).toMatch(/^DiscordBot \(/);
+    expect(capturedHeaders!.get("Authorization")).toBe("Bot test-token");
+  });
+
   it("retries rate limits before succeeding", async () => {
     let calls = 0;
     const fetcher = withFetchPreconnect(async () => {
@@ -67,7 +81,7 @@ describe("fetchDiscord", () => {
       "/users/@me/guilds",
       "test",
       fetcher,
-      { retry: { attempts: 2, minDelayMs: 0, maxDelayMs: 0 } },
+      { retry: { attempts: 2, minDelayMs: 0, maxDelayMs: 0, jitter: 0 } },
     );
 
     expect(result).toHaveLength(1);

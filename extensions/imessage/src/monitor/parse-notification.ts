@@ -1,8 +1,5 @@
+import { isRecord } from "openclaw/plugin-sdk/text-runtime";
 import type { IMessagePayload } from "./types.js";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function isOptionalString(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || typeof value === "string";
@@ -72,10 +69,13 @@ export function parseIMessageNotification(raw: unknown): IMessagePayload | null 
     !isOptionalString(message.created_at) ||
     !isOptionalAttachments(message.attachments) ||
     !isOptionalString(message.chat_identifier) ||
+    !isOptionalString(message.destination_caller_id) ||
     !isOptionalString(message.chat_guid) ||
     !isOptionalString(message.chat_name) ||
     !isOptionalStringArray(message.participants) ||
-    !isOptionalBoolean(message.is_group)
+    !isOptionalBoolean(message.is_group) ||
+    !isOptionalBoolean(message.is_tapback) ||
+    !isOptionalNumber(message.associated_message_type)
   ) {
     return null;
   }

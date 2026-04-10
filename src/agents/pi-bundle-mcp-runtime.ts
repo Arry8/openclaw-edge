@@ -7,6 +7,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import { logWarn } from "../logger.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { redactSensitiveUrlLikeString } from "../shared/net/redact-sensitive-url.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { loadEmbeddedPiMcpConfig } from "./embedded-pi-mcp.js";
 import { isMcpConfigRecord } from "./mcp-config-shared.js";
 import { resolveMcpTransport } from "./mcp-transport.js";
@@ -80,7 +81,7 @@ async function disposeSession(session: BundleMcpSession) {
 }
 
 function createCatalogFingerprint(servers: Record<string, unknown>): string {
-  return crypto.createHash("sha1").update(JSON.stringify(servers)).digest("hex");
+  return crypto.createHash("sha256").update(JSON.stringify(servers)).digest("hex");
 }
 
 function loadSessionMcpConfig(params: {
@@ -206,7 +207,7 @@ export function createSessionMcpRuntime(params: {
                 safeServerName,
                 toolName,
                 title: tool.title,
-                description: tool.description?.trim() || undefined,
+                description: normalizeOptionalString(tool.description),
                 inputSchema: tool.inputSchema,
                 fallbackDescription: `Provided by bundle MCP server "${serverName}" (${resolved.description}).`,
               });
@@ -269,10 +270,21 @@ export function createSessionMcpRuntime(params: {
       if (!session) {
         throw new Error(`bundle-mcp server "${serverName}" is not connected`);
       }
-      return (await session.client.callTool({
-        name: toolName,
-        arguments: isMcpConfigRecord(input) ? input : {},
-      })) as CallToolResult;
+      return (await session.client.callTool(
+        {
+          name: toolName,
+          arguments: isMcpConfigRecord(input) ? input : {},
+        },
+        undefined,
+        {
+          // MCP SDK defaults to 60s which is too short for long-running tools
+          // (code execution, web scraping, complex analysis). Use 5 minutes and
+          // reset the timer on progress notifications so tools that report
+          // progress can run indefinitely.
+          timeout: 300_000,
+          resetTimeoutOnProgress: true,
+        },
+      )) as CallToolResult;
     },
     async dispose() {
       if (disposed) {

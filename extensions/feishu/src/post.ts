@@ -1,7 +1,9 @@
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
+import { isRecord } from "./comment-shared.js";
 import { normalizeFeishuExternalKey } from "./external-keys.js";
 
 const FALLBACK_POST_TEXT = "[Rich text message]";
-const MARKDOWN_SPECIAL_CHARS = /([\\`*_{}\[\]()#+\-!|>~])/g;
+const MARKDOWN_SPECIAL_CHARS = /([\\`*_{}[\]()#+\-!|>~])/g;
 
 type PostParseResult = {
   textContent: string;
@@ -15,16 +17,14 @@ type PostPayload = {
   content: unknown[];
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function toStringOrEmpty(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
 function escapeMarkdownText(text: string): string {
-  return text.replace(MARKDOWN_SPECIAL_CHARS, "\\$1");
+  const escaped = text.replace(MARKDOWN_SPECIAL_CHARS, "\\$1");
+  // Feishu post payloads can mis-handle trailing ":" in rendered text runs.
+  return escaped.replace(/:$/g, "\\:");
 }
 
 function toBoolean(value: unknown): boolean {
@@ -136,7 +136,7 @@ function renderElement(
     return escapeMarkdownText(toStringOrEmpty(element));
   }
 
-  const tag = toStringOrEmpty(element.tag).toLowerCase();
+  const tag = normalizeLowercaseStringOrEmpty(toStringOrEmpty(element.tag));
   switch (tag) {
     case "text":
       return renderTextElement(element);
@@ -253,9 +253,27 @@ export function parsePostContent(content: string): PostParseResult {
       }
       let renderedParagraph = "";
       for (const element of paragraph) {
-        renderedParagraph += renderElement(element, imageKeys, mediaKeys, mentionedOpenIds);
+        let rendered = renderElement(element, imageKeys, mediaKeys, mentionedOpenIds);
+        const isTagNeedsSpace =
+          isRecord(element) && ["a", "at"].includes(toStringOrEmpty(element.tag).toLowerCase());
+
+        if (isTagNeedsSpace && rendered.length > 0) {
+          // Ensure space before
+          if (
+            renderedParagraph.length > 0 &&
+            !renderedParagraph.endsWith(" ") &&
+            !renderedParagraph.endsWith("\n")
+          ) {
+            renderedParagraph += " ";
+          }
+          renderedParagraph += rendered;
+          // Ensure space after (we will just append it, and later trim)
+          renderedParagraph += " ";
+        } else {
+          renderedParagraph += rendered;
+        }
       }
-      paragraphs.push(renderedParagraph);
+      paragraphs.push(renderedParagraph.trim());
     }
 
     const title = escapeMarkdownText(payload.title.trim());

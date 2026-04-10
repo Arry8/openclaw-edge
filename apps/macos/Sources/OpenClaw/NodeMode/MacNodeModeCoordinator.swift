@@ -33,6 +33,7 @@ final class MacNodeModeCoordinator {
         var retryDelay: UInt64 = 1_000_000_000
         var lastCameraEnabled: Bool?
         var lastBrowserControlEnabled: Bool?
+        var lastBlockedOnOnboarding = false
         let defaults = UserDefaults.standard
 
         while !Task.isCancelled {
@@ -40,6 +41,22 @@ final class MacNodeModeCoordinator {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 continue
             }
+
+            let root = OpenClawConfigFile.loadDict()
+            let onboardingComplete = Self.shouldConnectNodeMode(
+                onboardingSeen: defaults.bool(forKey: onboardingSeenKey),
+                onboardingVersion: defaults.integer(forKey: onboardingVersionKey),
+                root: root)
+            if !onboardingComplete {
+                if !lastBlockedOnOnboarding {
+                    self.logger.info("mac node waiting for onboarding completion")
+                    lastBlockedOnOnboarding = true
+                }
+                await self.session.disconnect()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                continue
+            }
+            lastBlockedOnOnboarding = false
 
             let cameraEnabled = defaults.object(forKey: cameraEnabledKey) as? Bool ?? false
             if lastCameraEnabled == nil {
@@ -116,6 +133,20 @@ final class MacNodeModeCoordinator {
         }
     }
 
+    static func shouldConnectNodeMode(
+        onboardingSeen: Bool,
+        onboardingVersion: Int,
+        root: [String: Any]
+    ) -> Bool {
+        if onboardingSeen && onboardingVersion >= currentOnboardingVersion {
+            return true
+        }
+
+        // Preserve runtime connectivity for existing local installs when a newer
+        // app build refreshes onboarding copy or flow.
+        return OnboardingWizardModel.hasExistingLocalSetup(root: root)
+    }
+
     private func currentCaps() -> [String] {
         var caps: [String] = [OpenClawCapability.canvas.rawValue, OpenClawCapability.screen.rawValue]
         if OpenClawConfigFile.browserControlEnabled() {
@@ -171,16 +202,9 @@ final class MacNodeModeCoordinator {
     }
 
     private func buildSessionBox(url: URL) -> WebSocketSessionBox? {
-        guard url.scheme?.lowercased() == "wss" else { return nil }
-        let host = url.host ?? "gateway"
-        let port = url.port ?? 443
-        let stableID = "\(host):\(port)"
-        let stored = GatewayTLSStore.loadFingerprint(stableID: stableID)
-        let params = GatewayTLSParams(
-            required: true,
-            expectedFingerprint: stored,
-            allowTOFU: stored == nil,
-            storeKey: stableID)
+        guard let params = GatewayTLSPinningSupport.tlsParams(url: url, allowTOFU: true) else {
+            return nil
+        }
         let session = GatewayTLSPinningSession(params: params)
         return WebSocketSessionBox(session: session)
     }

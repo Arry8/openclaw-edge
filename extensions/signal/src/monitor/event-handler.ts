@@ -1,25 +1,37 @@
-import { resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
-import { logTypingFailure } from "openclaw/plugin-sdk/channel-feedback";
+import { resolveAckReaction, resolveHumanDelayConfig } from "openclaw/plugin-sdk/agent-runtime";
+import {
+  createStatusReactionController,
+  logTypingFailure,
+  shouldAckReaction,
+  type StatusReactionController,
+} from "openclaw/plugin-sdk/channel-feedback";
 import {
   buildMentionRegexes,
   createChannelInboundDebouncer,
   formatInboundEnvelope,
   formatInboundFromLabel,
   matchesMentionPatterns,
+  resolveInboundMentionDecision,
   resolveEnvelopeFormatOptions,
   shouldDebounceTextInbound,
 } from "openclaw/plugin-sdk/channel-inbound";
-import {
-  logInboundDrop,
-  resolveMentionGatingWithBypass,
-} from "openclaw/plugin-sdk/channel-inbound";
+import { logInboundDrop } from "openclaw/plugin-sdk/channel-inbound";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
-import { enqueueSystemEvent } from "openclaw/plugin-sdk/channel-runtime";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
 import { hasControlCommand } from "openclaw/plugin-sdk/command-auth";
-import { resolveChannelGroupRequireMention } from "openclaw/plugin-sdk/config-runtime";
+import {
+  resolveChannelGroupPolicy,
+  resolveChannelGroupRequireMention,
+} from "openclaw/plugin-sdk/config-runtime";
 import { readSessionUpdatedAt, resolveStorePath } from "openclaw/plugin-sdk/config-runtime";
 import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
+import {
+  createInternalHookEvent,
+  fireAndForgetHook,
+  toInternalMessageReceivedContext,
+  triggerInternalHook,
+} from "openclaw/plugin-sdk/hook-runtime";
+import { enqueueSystemEvent, requestHeartbeatNow } from "openclaw/plugin-sdk/infra-runtime";
 import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import {
   buildPendingHistoryContextFromMap,
@@ -35,7 +47,7 @@ import {
   DM_GROUP_ACCESS_REASON,
   resolvePinnedMainDmOwnerFromAllowlist,
 } from "openclaw/plugin-sdk/security-runtime";
-import { normalizeE164 } from "openclaw/plugin-sdk/text-runtime";
+import { normalizeE164, normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import {
   formatSignalPairingIdLine,
   formatSignalSenderDisplay,
@@ -48,6 +60,7 @@ import {
   type SignalSender,
 } from "../identity.js";
 import { normalizeSignalMessagingTarget } from "../normalize.js";
+import { sendReactionSignal } from "../send-reactions.js";
 import { sendMessageSignal, sendReadReceiptSignal, sendTypingSignal } from "../send.js";
 import { handleSignalDirectMessageAccess, resolveSignalAccessState } from "./access-policy.js";
 import type {
@@ -56,6 +69,7 @@ import type {
   SignalReactionMessage,
   SignalReceivePayload,
 } from "./event-handler.types.js";
+import { resolveSignalQuoteContext } from "./inbound-context.js";
 import { renderSignalMentions } from "./mentions.js";
 
 function formatAttachmentKindCount(kind: string, count: number): string {
@@ -114,6 +128,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     mediaTypes?: string[];
     commandAuthorized: boolean;
     wasMentioned?: boolean;
+    replyToId?: string;
+    replyToBody?: string;
+    replyToSender?: string;
+    replyToIsQuote?: boolean;
+    replyToAuthor?: string;
   };
 
   async function handleSignalInboundMessage(entry: SignalInboundEntry) {
@@ -205,6 +224,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       Provider: "signal" as const,
       Surface: "signal" as const,
       MessageSid: entry.messageId,
+      ReplyToId: entry.replyToId,
+      ReplyToBody: entry.replyToBody,
+      ReplyToSender: entry.replyToSender,
+      ReplyToIsQuote: entry.replyToIsQuote,
+      ReplyToAuthor: entry.replyToAuthor,
       Timestamp: entry.timestamp ?? undefined,
       MediaPath: entry.mediaPath,
       MediaType: entry.mediaType,
@@ -307,27 +331,123 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       },
     });
 
-    const { queuedFinal } = await dispatchInboundMessage({
-      ctx: ctxPayload,
-      cfg: deps.cfg,
-      dispatcher,
-      replyOptions: {
-        ...replyOptions,
-        disableBlockStreaming:
-          typeof deps.blockStreaming === "boolean" ? !deps.blockStreaming : undefined,
-        onModelSelected,
-      },
+    // Status reactions: show emoji on the inbound message as agent progresses
+    const statusReactionsConfig = deps.cfg.messages?.statusReactions;
+    const ackEmoji = resolveAckReaction(deps.cfg, route.agentId, {
+      channel: "signal",
+      accountId: deps.accountId,
     });
-    markDispatchIdle();
-    if (!queuedFinal) {
-      if (entry.isGroup && historyKey) {
-        clearHistoryEntriesIfEnabled({
-          historyMap: deps.groupHistories,
-          historyKey,
-          limit: deps.historyLimit,
-        });
+    const canAckReact =
+      Boolean(ackEmoji) &&
+      shouldAckReaction({
+        scope: deps.cfg.messages?.ackReactionScope,
+        isDirect: !entry.isGroup,
+        isGroup: entry.isGroup,
+        isMentionableGroup: entry.isGroup,
+        requireMention: false,
+        canDetectMention: true,
+        effectiveWasMentioned: entry.wasMentioned === true,
+      });
+    const statusReactionsEnabled =
+      statusReactionsConfig?.enabled === true && canAckReact && Boolean(entry.timestamp);
+    let statusReactions: StatusReactionController | null = null;
+    if (statusReactionsEnabled && entry.timestamp) {
+      const msgTimestamp = entry.timestamp;
+      const reactionRecipient = entry.isGroup ? "" : (entry.senderRecipient ?? "");
+      const reactionGroupId = entry.isGroup ? (entry.groupId ?? undefined) : undefined;
+      const reactionOpts = {
+        cfg: deps.cfg,
+        baseUrl: deps.baseUrl,
+        account: deps.account,
+        accountId: deps.accountId,
+        targetAuthor: entry.senderRecipient,
+        groupId: reactionGroupId,
+      };
+      statusReactions = createStatusReactionController({
+        enabled: true,
+        adapter: {
+          // Signal auto-replaces reactions (one per user per message).
+          // No explicit removal needed — just send the new emoji.
+          setReaction: async (emoji: string) => {
+            try {
+              await sendReactionSignal(reactionRecipient, msgTimestamp, emoji, reactionOpts);
+            } catch (err) {
+              logVerbose(`signal status-reaction set failed: ${String(err)}`);
+            }
+          },
+        },
+        initialEmoji: ackEmoji,
+        emojis: deps.cfg.messages?.statusReactions?.emojis,
+        timing: deps.cfg.messages?.statusReactions?.timing,
+        onError: (err) => {
+          logVerbose(`signal status-reaction error: ${String(err)}`);
+        },
+      });
+      void statusReactions.setQueued();
+      // Start thinking debounce early (before dispatch) so the 700ms
+      // timer has time to fire — matches Telegram's approach.
+      void statusReactions.setThinking();
+    }
+
+    let dispatchError = false;
+    try {
+      const { queuedFinal } = await dispatchInboundMessage({
+        ctx: ctxPayload,
+        cfg: deps.cfg,
+        dispatcher,
+        replyOptions: {
+          ...replyOptions,
+          disableBlockStreaming:
+            typeof deps.blockStreaming === "boolean" ? !deps.blockStreaming : undefined,
+          onModelSelected,
+          ...(statusReactions
+            ? {
+                onReplyStart: async () => {
+                  await replyOptions.onReplyStart?.();
+                  await statusReactions!.setThinking();
+                },
+                onReasoningStream: async () => {
+                  await statusReactions!.setThinking();
+                },
+                onToolStart: async (payload: { name?: string }) => {
+                  await statusReactions!.setTool(payload.name);
+                },
+                onCompactionStart: async () => {
+                  await statusReactions!.setCompacting();
+                },
+                onCompactionEnd: async () => {
+                  statusReactions!.cancelPending();
+                  await statusReactions!.setThinking();
+                },
+              }
+            : {}),
+        },
+      });
+      markDispatchIdle();
+      if (!queuedFinal) {
+        if (entry.isGroup && historyKey) {
+          clearHistoryEntriesIfEnabled({
+            historyMap: deps.groupHistories,
+            historyKey,
+            limit: deps.historyLimit,
+          });
+        }
+        if (statusReactions) {
+          void statusReactions.restoreInitial();
+        }
+        return;
       }
-      return;
+    } catch (err) {
+      dispatchError = true;
+      throw err;
+    } finally {
+      if (statusReactions) {
+        if (dispatchError) {
+          void statusReactions.setError();
+        } else {
+          void statusReactions.setDone();
+        }
+      }
     }
     if (entry.isGroup && historyKey) {
       clearHistoryEntriesIfEnabled({
@@ -402,7 +522,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     if (params.reaction.isRemove) {
       return true; // Ignore reaction removals
     }
-    const emojiLabel = params.reaction.emoji?.trim() || "emoji";
+    const emojiLabel = normalizeOptionalString(params.reaction.emoji) ?? "emoji";
     const senderName = params.envelope.sourceName ?? params.senderDisplay;
     logVerbose(`signal reaction: ${emojiLabel} from ${senderName}`);
     const groupId = params.reaction.groupInfo?.groupId ?? undefined;
@@ -459,6 +579,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       .filter(Boolean)
       .join(":");
     enqueueSystemEvent(text, { sessionKey: route.sessionKey, contextKey });
+    requestHeartbeatNow({ coalesceMs: 500, sessionKey: route.sessionKey });
     return true;
   }
 
@@ -519,10 +640,9 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const rawMessage = dataMessage?.message ?? "";
     const normalizedMessage = renderSignalMentions(rawMessage, dataMessage?.mentions);
     const messageText = normalizedMessage.trim();
+    const groupId = dataMessage?.groupInfo?.groupId ?? undefined;
+    const isGroup = Boolean(groupId);
 
-    const quoteText = dataMessage?.quote?.text?.trim() ?? "";
-    const hasBodyContent =
-      Boolean(messageText || quoteText) || Boolean(!reaction && dataMessage?.attachments?.length);
     const senderDisplay = formatSignalSenderDisplay(sender);
     const { resolveAccessDecision, dmAccess, effectiveDmAllow, effectiveGroupAllow } =
       await resolveSignalAccessState({
@@ -533,6 +653,23 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         groupAllowFrom: deps.groupAllowFrom,
         sender,
       });
+    const quoteText = normalizeOptionalString(dataMessage?.quote?.text) ?? "";
+    const { contextVisibilityMode, quoteSenderAllowed, visibleQuoteText, visibleQuoteSender } =
+      resolveSignalQuoteContext({
+        cfg: deps.cfg,
+        accountId: deps.accountId,
+        isGroup,
+        dataMessage,
+        effectiveGroupAllow,
+      });
+    if (quoteText && !visibleQuoteText && isGroup) {
+      logVerbose(
+        `signal: drop quote context (mode=${contextVisibilityMode}, sender_allowed=${quoteSenderAllowed ? "yes" : "no"})`,
+      );
+    }
+    const hasBodyContent =
+      Boolean(messageText || visibleQuoteText) ||
+      Boolean(!reaction && dataMessage?.attachments?.length);
 
     if (
       reaction &&
@@ -558,9 +695,22 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       return;
     }
     const senderIdLine = formatSignalPairingIdLine(sender);
-    const groupId = dataMessage.groupInfo?.groupId ?? undefined;
     const groupName = dataMessage.groupInfo?.groupName ?? undefined;
-    const isGroup = Boolean(groupId);
+
+    // Skip signal-cli system messages that have no user-visible content
+    const isTimerUpdate =
+      !messageText &&
+      !quoteText &&
+      !dataMessage.attachments?.length &&
+      (dataMessage.isExpirationUpdate === true ||
+        (typeof dataMessage.expiresInSeconds === "number" && dataMessage.expiresInSeconds > 0));
+    const isGroupV2Change = Boolean(dataMessage.groupV2Change);
+    if (isTimerUpdate || isGroupV2Change) {
+      logVerbose(
+        `signal: skipping system message (isTimerUpdate=${isTimerUpdate}, isGroupV2Change=${isGroupV2Change})`,
+      );
+      return;
+    }
 
     if (!isGroup) {
       const allowedDirectMessage = await handleSignalDirectMessageAccess({
@@ -642,26 +792,29 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         accountId: deps.accountId,
       });
     const canDetectMention = mentionRegexes.length > 0;
-    const mentionGate = resolveMentionGatingWithBypass({
-      isGroup,
-      requireMention: Boolean(requireMention),
-      canDetectMention,
-      wasMentioned,
-      implicitMention: false,
-      hasAnyMention: false,
-      allowTextCommands: true,
-      hasControlCommand: hasControlCommandInMessage,
-      commandAuthorized,
+    const mentionDecision = resolveInboundMentionDecision({
+      facts: {
+        canDetectMention,
+        wasMentioned,
+        hasAnyMention: false,
+        implicitMentionKinds: [],
+      },
+      policy: {
+        isGroup,
+        requireMention: Boolean(requireMention),
+        allowTextCommands: true,
+        hasControlCommand: hasControlCommandInMessage,
+        commandAuthorized,
+      },
     });
-    const effectiveWasMentioned = mentionGate.effectiveWasMentioned;
-    if (isGroup && requireMention && canDetectMention && mentionGate.shouldSkip) {
+    const effectiveWasMentioned = mentionDecision.effectiveWasMentioned;
+    if (isGroup && requireMention && canDetectMention && mentionDecision.shouldSkip) {
       logInboundDrop({
         log: logVerbose,
         channel: "signal",
         reason: "no mention",
         target: senderDisplay,
       });
-      const quoteText = dataMessage.quote?.text?.trim() || "";
       const pendingPlaceholder = (() => {
         if (!dataMessage.attachments?.length) {
           return "";
@@ -681,7 +834,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         const pendingKind = kindFromMime(firstContentType ?? undefined);
         return pendingKind ? `<media:${pendingKind}>` : "<media:attachment>";
       })();
-      const pendingBodyText = messageText || pendingPlaceholder || quoteText;
+      const pendingBodyText = messageText || pendingPlaceholder || visibleQuoteText;
       const historyKey = groupId ?? "unknown";
       recordPendingHistoryEntryIfEnabled({
         historyMap: deps.groupHistories,
@@ -695,6 +848,47 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
             typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined,
         },
       });
+      const signalGroupPolicy = resolveChannelGroupPolicy({
+        cfg: deps.cfg,
+        channel: "signal",
+        groupId,
+        accountId: deps.accountId,
+      });
+      if (
+        (signalGroupPolicy.groupConfig?.ingest ?? signalGroupPolicy.defaultConfig?.ingest) === true
+      ) {
+        const canonicalGroupTarget =
+          normalizeSignalMessagingTarget(`group:${groupId}`) ?? `group:${groupId}`;
+        fireAndForgetHook(
+          triggerInternalHook(
+            createInternalHookEvent(
+              "message",
+              "received",
+              route.sessionKey,
+              toInternalMessageReceivedContext({
+                from: `group:${groupId}`,
+                to: canonicalGroupTarget,
+                content: pendingBodyText,
+                timestamp: envelope.timestamp ?? undefined,
+                channelId: "signal",
+                accountId: deps.accountId,
+                conversationId: canonicalGroupTarget,
+                messageId:
+                  typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined,
+                senderId: senderDisplay,
+                senderName: envelope.sourceName ?? undefined,
+                provider: "signal",
+                surface: "signal",
+                originatingChannel: "signal",
+                originatingTo: canonicalGroupTarget,
+                isGroup: true,
+                groupId: canonicalGroupTarget,
+              }),
+            ),
+          ),
+          "signal: mention-skip message hook failed",
+        );
+      }
       return;
     }
 
@@ -745,7 +939,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       }
     }
 
-    const bodyText = messageText || placeholder || dataMessage.quote?.text?.trim() || "";
+    const bodyText = messageText || placeholder || visibleQuoteText || "";
     if (!bodyText) {
       return;
     }
@@ -778,6 +972,12 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const senderName = envelope.sourceName ?? senderDisplay;
     const messageId =
       typeof envelope.timestamp === "number" ? String(envelope.timestamp) : undefined;
+    const quoteId = dataMessage.quote?.id;
+    const quoteAuthor =
+      dataMessage.quote?.author?.trim() ||
+      dataMessage.quote?.authorUuid?.trim() ||
+      dataMessage.quote?.authorNumber?.trim() ||
+      undefined;
     await inboundDebouncer.enqueue({
       senderName,
       senderDisplay,
@@ -796,6 +996,11 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       mediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
       commandAuthorized,
       wasMentioned: effectiveWasMentioned,
+      replyToId: typeof quoteId === "number" ? String(quoteId) : undefined,
+      replyToBody: visibleQuoteText || undefined,
+      replyToSender: visibleQuoteSender,
+      replyToIsQuote: visibleQuoteText ? true : undefined,
+      replyToAuthor: quoteAuthor,
     });
   };
 }

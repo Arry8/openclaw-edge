@@ -5,10 +5,16 @@ import type { OpenClawConfig } from "../config/config.js";
 import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { renderFileContextBlock } from "../media/file-context.js";
 import {
+  DEFAULT_INPUT_FILE_MAX_CHARS,
   extractFileContentFromSource,
   normalizeMimeType,
   resolveInputFileLimits,
 } from "../media/input-files.js";
+import { wrapExternalContent } from "../security/external-content.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+} from "../shared/string-coerce.js";
 import { resolveAttachmentKind } from "./attachments.js";
 import { runWithConcurrency } from "./concurrency.js";
 import { DEFAULT_ECHO_TRANSCRIPT_FORMAT, sendTranscriptEcho } from "./echo-transcript.js";
@@ -43,6 +49,8 @@ export type ApplyMediaUnderstandingResult = {
 };
 
 const CAPABILITY_ORDER: MediaUnderstandingCapability[] = ["image", "audio", "video"];
+const EMPTY_VOICE_NOTE_PLACEHOLDER =
+  "[Voice note was empty or contained only silence — no speech detected]";
 const EXTRA_TEXT_MIMES = [
   "application/xml",
   "text/xml",
@@ -70,10 +78,7 @@ const TEXT_EXT_MIME = new Map<string, string>([
 ]);
 
 function sanitizeMimeType(value?: string): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const trimmed = value.trim().toLowerCase();
+  const trimmed = normalizeOptionalLowercaseString(value);
   if (!trimmed) {
     return undefined;
   }
@@ -84,8 +89,14 @@ function sanitizeMimeType(value?: string): string | undefined {
 function resolveFileLimits(cfg: OpenClawConfig) {
   const files = cfg.gateway?.http?.endpoints?.responses?.files;
   const allowedMimesConfigured = Boolean(files?.allowedMimes?.length);
+  const base = resolveInputFileLimits(files);
   return {
-    ...resolveInputFileLimits(files),
+    ...base,
+    // Inbound attachment extraction shares the OpenResponses input-file config for
+    // MIME allowlists/timeouts, but should stay fail-safe even when operators raise
+    // OpenResponses `maxChars` for API use. Without a conservative cap, a single
+    // extracted attachment can exceed model context and brick a session (#14231).
+    maxChars: Math.min(base.maxChars, DEFAULT_INPUT_FILE_MAX_CHARS),
     allowedMimesConfigured,
   };
 }
@@ -100,6 +111,13 @@ function appendFileBlocks(body: string | undefined, blocks: string[]): string {
     return suffix;
   }
   return `${base}\n\n${suffix}`.trim();
+}
+
+function wrapUntrustedAttachmentContent(content: string): string {
+  return wrapExternalContent(content, {
+    source: "unknown",
+    includeWarning: false,
+  });
 }
 
 function resolveUtf16Charset(buffer?: Buffer): "utf-16le" | "utf-16be" | undefined {
@@ -279,8 +297,73 @@ function resolveTextMimeFromName(name?: string): string | undefined {
   if (!name) {
     return undefined;
   }
-  const ext = path.extname(name).toLowerCase();
+  const ext = normalizeLowercaseStringOrEmpty(path.extname(name));
   return TEXT_EXT_MIME.get(ext);
+}
+
+function buildSyntheticSkippedAudioOutputs(
+  decisions: MediaUnderstandingDecision[],
+): MediaUnderstandingOutput[] {
+  const audioDecision = decisions.find((decision) => decision.capability === "audio");
+  if (!audioDecision) {
+    return [];
+  }
+  return audioDecision.attachments.flatMap((attachment) => {
+    const hasTooSmallAttempt = attachment.attempts.some((attempt) =>
+      attempt.reason?.trim().startsWith("tooSmall"),
+    );
+    if (!hasTooSmallAttempt) {
+      return [];
+    }
+    return [
+      {
+        kind: "audio.transcription" as const,
+        attachmentIndex: attachment.attachmentIndex,
+        text: EMPTY_VOICE_NOTE_PLACEHOLDER,
+        provider: "openclaw",
+        model: "synthetic-empty-audio",
+      },
+    ];
+  });
+}
+
+function mergeAudioOutputsPreservingAttachmentOrder(params: {
+  outputs: MediaUnderstandingOutput[];
+  syntheticOutputs: MediaUnderstandingOutput[];
+}): MediaUnderstandingOutput[] {
+  const { outputs, syntheticOutputs } = params;
+  if (syntheticOutputs.length === 0) {
+    return outputs;
+  }
+  if (outputs.length === 0) {
+    return syntheticOutputs;
+  }
+
+  const merged = [...outputs];
+  for (const synthetic of syntheticOutputs) {
+    const insertAt = merged.findIndex(
+      (existing) => synthetic.attachmentIndex < existing.attachmentIndex,
+    );
+    if (insertAt === -1) {
+      merged.push(synthetic);
+    } else {
+      merged.splice(insertAt, 0, synthetic);
+    }
+  }
+  return merged;
+}
+
+function mediaOutputCapabilityRank(output: MediaUnderstandingOutput): number {
+  if (output.kind.startsWith("image.")) {
+    return 0;
+  }
+  if (output.kind === "audio.transcription") {
+    return 1;
+  }
+  if (output.kind.startsWith("video.")) {
+    return 2;
+  }
+  return CAPABILITY_ORDER.length;
 }
 
 function isBinaryMediaMime(mime?: string): boolean {
@@ -293,14 +376,23 @@ function isBinaryMediaMime(mime?: string): boolean {
   if (mime === "application/octet-stream") {
     return true;
   }
+  if (mime === "application/msword") {
+    return true;
+  }
   if (
     mime === "application/zip" ||
     mime === "application/x-zip-compressed" ||
     mime === "application/gzip" ||
     mime === "application/x-gzip" ||
     mime === "application/x-rar-compressed" ||
-    mime === "application/x-7z-compressed"
+    mime === "application/x-7z-compressed" ||
+    mime === "application/x-cfb" ||
+    mime === "application/msword"
   ) {
+    return true;
+  }
+  // Legacy Microsoft Office binary formats (OLE/CFB container)
+  if (mime === "application/msword" || mime === "application/x-cfb") {
     return true;
   }
   if (mime.startsWith("application/vnd.")) {
@@ -426,7 +518,7 @@ async function extractFileBlocks(params: {
       continue;
     }
     const text = extracted?.text?.trim() ?? "";
-    let blockText = text;
+    let blockText = text ? wrapUntrustedAttachmentContent(text) : "";
     if (!blockText) {
       if (extracted?.images && extracted.images.length > 0) {
         blockText = "[PDF content rendered to images; images not forwarded to model]";
@@ -495,6 +587,45 @@ export async function applyMediaUnderstanding(params: {
       decisions.push(entry.decision);
     }
 
+    const audioOutputAttachmentIndexes = new Set(
+      outputs
+        .filter((output) => output.kind === "audio.transcription")
+        .map((output) => output.attachmentIndex),
+    );
+    const syntheticSkippedAudioOutputs = buildSyntheticSkippedAudioOutputs(decisions).filter(
+      (output) => !audioOutputAttachmentIndexes.has(output.attachmentIndex),
+    );
+
+    // Merge synthetic placeholders into the audio outputs only — sorted by
+    // attachmentIndex within the audio slice — then splice them back into
+    // their original position in the outputs array. This preserves:
+    //  1. Cross-capability ordering (image → audio → video from CAPABILITY_ORDER)
+    //  2. Per-capability `attachments.prefer` ordering for non-audio outputs
+    //  3. Correct attachment-index ordering for audio (real + synthetic mixed)
+    if (syntheticSkippedAudioOutputs.length > 0) {
+      const firstAudioIdx = outputs.findIndex((o) => o.kind === "audio.transcription");
+      if (firstAudioIdx >= 0) {
+        const before = outputs.slice(0, firstAudioIdx);
+        const existingAudio = outputs.filter((o) => o.kind === "audio.transcription");
+        const afterLastAudio = outputs.slice(
+          outputs.reduce((last, o, i) => (o.kind === "audio.transcription" ? i : last), firstAudioIdx) + 1,
+        );
+        const mergedAudio = mergeAudioOutputsPreservingAttachmentOrder({
+          outputs: existingAudio,
+          syntheticOutputs: syntheticSkippedAudioOutputs,
+        });
+        outputs.length = 0;
+        outputs.push(...before, ...mergedAudio, ...afterLastAudio);
+      } else {
+        const insertIndex = outputs.findIndex((output) => mediaOutputCapabilityRank(output) > 1);
+        if (insertIndex === -1) {
+          outputs.push(...syntheticSkippedAudioOutputs);
+        } else {
+          outputs.splice(insertIndex, 0, ...syntheticSkippedAudioOutputs);
+        }
+      }
+    }
+
     if (decisions.length > 0) {
       ctx.MediaUnderstandingDecisions = [...(ctx.MediaUnderstandingDecisions ?? []), ...decisions];
     }
@@ -528,9 +659,19 @@ export async function applyMediaUnderstanding(params: {
       }
       ctx.MediaUnderstanding = [...(ctx.MediaUnderstanding ?? []), ...outputs];
     }
+    // Only skip file extraction for attachments that have a real (non-synthetic)
+    // audio transcription. Synthetic placeholders should not prevent file extraction
+    // for tiny audio-MIME files that could be recovered as text via forcedTextMime.
+    const syntheticAudioIndexes = new Set(
+      syntheticSkippedAudioOutputs.map((o) => o.attachmentIndex),
+    );
     const audioAttachmentIndexes = new Set(
       outputs
-        .filter((output) => output.kind === "audio.transcription")
+        .filter(
+          (output) =>
+            output.kind === "audio.transcription" &&
+            !syntheticAudioIndexes.has(output.attachmentIndex),
+        )
         .map((output) => output.attachmentIndex),
     );
     const fileBlocks = await extractFileBlocks({

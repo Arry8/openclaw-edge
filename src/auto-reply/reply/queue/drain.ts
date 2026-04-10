@@ -11,6 +11,7 @@ import {
   waitForQueueDebounce,
 } from "../../../utils/queue-helpers.js";
 import { isRoutableChannel } from "../route-reply.js";
+import { stripLeadingInboundMetadata } from "../strip-inbound-meta.js";
 import { FOLLOWUP_QUEUES } from "./state.js";
 import type { FollowupRun } from "./types.js";
 
@@ -48,14 +49,27 @@ type OriginRoutingMetadata = Pick<
 >;
 
 function resolveOriginRoutingMetadata(items: FollowupRun[]): OriginRoutingMetadata {
+  // Resolve all routing fields from a single source item. Picking each field
+  // independently with separate .find() calls can combine originatingChannel
+  // from one item with originatingTo from another when items carry partial
+  // metadata — silently routing a collect-batch reply to the wrong channel.
+  // Using one consistent source prevents cross-item field mixing. Fixes #45514.
+  const source = items.find(
+    (item) =>
+      item.originatingChannel ||
+      item.originatingTo ||
+      item.originatingAccountId ||
+      // Support both number (Telegram topic) and string (Slack thread_ts) thread IDs.
+      (item.originatingThreadId != null && item.originatingThreadId !== ""),
+  );
+  if (!source) {
+    return {};
+  }
   return {
-    originatingChannel: items.find((item) => item.originatingChannel)?.originatingChannel,
-    originatingTo: items.find((item) => item.originatingTo)?.originatingTo,
-    originatingAccountId: items.find((item) => item.originatingAccountId)?.originatingAccountId,
-    // Support both number (Telegram topic) and string (Slack thread_ts) thread IDs.
-    originatingThreadId: items.find(
-      (item) => item.originatingThreadId != null && item.originatingThreadId !== "",
-    )?.originatingThreadId,
+    originatingChannel: source.originatingChannel,
+    originatingTo: source.originatingTo,
+    originatingAccountId: source.originatingAccountId,
+    originatingThreadId: source.originatingThreadId,
   };
 }
 
@@ -127,7 +141,14 @@ export function scheduleFollowupDrain(
             title: "[Queued messages while agent was busy]",
             items,
             summary,
-            renderItem: (item, idx) => `---\nQueued #${idx + 1}\n${item.prompt}`.trim(),
+            renderItem: (item, idx) => {
+              // Strip leading inbound metadata blocks (Conversation info, Sender, etc.)
+              // before embedding each queued prompt in the batch.  The model should never
+              // see raw metadata envelopes — they only belong in the per-message context
+              // and cause the model to echo them verbatim when batched (issue #30405).
+              const cleanPrompt = stripLeadingInboundMetadata(item.prompt);
+              return `---\nQueued #${idx + 1}\n${cleanPrompt}`.trim();
+            },
           });
           await effectiveRunFollowup({
             prompt,

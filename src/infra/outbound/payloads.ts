@@ -5,6 +5,7 @@ import {
   isRenderablePayload,
   shouldSuppressReasoningPayload,
 } from "../../auto-reply/reply/reply-payloads.js";
+import { stripInboundMetadata } from "../../auto-reply/reply/strip-inbound-meta.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import {
   hasInteractiveReplyBlocks,
@@ -60,7 +61,8 @@ export function normalizeReplyPayloadsForDelivery(
     if (shouldSuppressReasoningPayload(payload)) {
       continue;
     }
-    const parsed = parseReplyDirectives(payload.text ?? "");
+    const cleanText = stripInboundMetadata(payload.text ?? "");
+    const parsed = parseReplyDirectives(cleanText);
     const explicitMediaUrls = payload.mediaUrls ?? parsed.mediaUrls;
     const explicitMediaUrl = payload.mediaUrl ?? parsed.mediaUrl;
     const mergedMedia = mergeMediaUrls(

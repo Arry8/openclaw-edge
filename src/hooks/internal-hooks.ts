@@ -10,6 +10,7 @@ import type { CliDeps } from "../cli/deps.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { SessionsPatchParams } from "../gateway/protocol/index.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
@@ -228,7 +229,13 @@ export function registerInternalHook(eventKey: string, handler: InternalHookHand
   if (!handlers.has(eventKey)) {
     handlers.set(eventKey, []);
   }
-  handlers.get(eventKey)!.push(handler);
+  const existing = handlers.get(eventKey)!;
+  // Deduplicate: skip if the exact same handler function is already registered.
+  // Without this guard, periodic config reloads re-register the same handlers,
+  // causing hooks to fire N times after N reload cycles.
+  if (!existing.includes(handler)) {
+    existing.push(handler);
+  }
 }
 
 /**
@@ -299,7 +306,7 @@ export async function triggerInternalHook(event: InternalHookEvent): Promise<voi
     try {
       await handler(event);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = formatErrorMessage(err);
       log.error(`Hook error [${event.type}:${event.action}]: ${message}`);
     }
   }
@@ -359,6 +366,13 @@ function hasBooleanContextField<T extends Record<string, unknown>>(
   key: keyof T,
 ): boolean {
   return typeof context[key] === "boolean";
+}
+
+function hasNumberContextField<T extends Record<string, unknown>>(
+  context: Partial<T>,
+  key: keyof T,
+): boolean {
+  return typeof context[key] === "number";
 }
 
 export function isAgentBootstrapEvent(event: InternalHookEvent): event is AgentBootstrapHookEvent {
@@ -453,5 +467,35 @@ export function isSessionPatchEvent(event: InternalHookEvent): event is SessionP
     context.cfg !== null &&
     typeof context.sessionEntry === "object" &&
     context.sessionEntry !== null
+  );
+}
+
+// ============================================================================
+// Agent Turn End Hook Event
+// ============================================================================
+
+export type AgentTurnEndHookContext = {
+  success: boolean;
+  durationMs: number;
+  errorCode?: string;
+};
+
+export type AgentTurnEndHookEvent = InternalHookEvent & {
+  type: "agent";
+  action: "turn:end";
+  context: AgentTurnEndHookContext;
+};
+
+export function isAgentTurnEndEvent(event: InternalHookEvent): event is AgentTurnEndHookEvent {
+  if (!isHookEventTypeAndAction(event, "agent", "turn:end")) {
+    return false;
+  }
+  const context = getHookContext<AgentTurnEndHookContext>(event);
+  if (!context) {
+    return false;
+  }
+  return (
+    hasBooleanContextField(context, "success") &&
+    hasNumberContextField(context, "durationMs")
   );
 }

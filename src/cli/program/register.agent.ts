@@ -5,12 +5,14 @@ import {
   agentsBindingsCommand,
   agentsBindCommand,
   agentsDeleteCommand,
+  agentsImportCommand,
   agentsListCommand,
   agentsSetIdentityCommand,
   agentsUnbindCommand,
 } from "../../commands/agents.js";
 import { setVerbose } from "../../globals.js";
 import { defaultRuntime } from "../../runtime.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
@@ -26,6 +28,7 @@ export function registerAgentCommands(program: Command, args: { agentChannelOpti
     .requiredOption("-m, --message <text>", "Message body for the agent")
     .option("-t, --to <number>", "Recipient number in E.164 used to derive the session key")
     .option("--session-id <id>", "Use an explicit session id")
+    .option("--session-key <key>", "Use an explicit session key")
     .option("--agent <id>", "Agent id (overrides routing bindings)")
     .option("--thinking <level>", "Thinking level: off | minimal | low | medium | high | xhigh")
     .option("--verbose <on|off>", "Persist agent verbose level for the session")
@@ -73,7 +76,8 @@ ${formatHelpExamples([
 ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/agent")}`,
     )
     .action(async (opts) => {
-      const verboseLevel = typeof opts.verbose === "string" ? opts.verbose.toLowerCase() : "";
+      const verboseLevel =
+        typeof opts.verbose === "string" ? normalizeLowercaseStringOrEmpty(opts.verbose) : "";
       setVerbose(verboseLevel === "on");
       // Build default deps (keeps parity with other commands; future-proofing).
       const deps = createDefaultDeps();
@@ -262,6 +266,26 @@ ${formatHelpExamples([
           {
             id: String(id),
             force: Boolean(opts.force),
+            json: Boolean(opts.json),
+          },
+          defaultRuntime,
+        );
+      });
+    });
+
+  agents
+    .command("import <file>")
+    .description("Import an agent from a .tar.gz archive")
+    .option("--force", "Overwrite existing agent without prompting", false)
+    .option("--non-interactive", "Disable prompts; requires --force", false)
+    .option("--json", "Output JSON summary", false)
+    .action(async (file, opts) => {
+      await runCommandWithRuntime(defaultRuntime, async () => {
+        await agentsImportCommand(
+          {
+            file: String(file),
+            force: Boolean(opts.force),
+            nonInteractive: Boolean(opts.nonInteractive),
             json: Boolean(opts.json),
           },
           defaultRuntime,

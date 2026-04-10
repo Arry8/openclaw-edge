@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { normalizeOptionalString, readStringValue } from "openclaw/plugin-sdk/text-runtime";
 import {
   executeActAction,
   executeConsoleAction,
@@ -15,6 +16,7 @@ import {
   browserArmDialog,
   browserArmFileChooser,
   browserCloseTab,
+  browserDoctor,
   browserFocusTab,
   browserNavigate,
   browserOpenTab,
@@ -46,6 +48,7 @@ const browserToolDeps = {
   browserArmDialog,
   browserArmFileChooser,
   browserCloseTab,
+  browserDoctor,
   browserFocusTab,
   browserNavigate,
   browserOpenTab,
@@ -70,6 +73,7 @@ export const __testing = {
       browserArmDialog: typeof browserArmDialog;
       browserArmFileChooser: typeof browserArmFileChooser;
       browserCloseTab: typeof browserCloseTab;
+      browserDoctor: typeof browserDoctor;
       browserFocusTab: typeof browserFocusTab;
       browserNavigate: typeof browserNavigate;
       browserOpenTab: typeof browserOpenTab;
@@ -92,6 +96,7 @@ export const __testing = {
     browserToolDeps.browserArmFileChooser =
       overrides?.browserArmFileChooser ?? browserArmFileChooser;
     browserToolDeps.browserCloseTab = overrides?.browserCloseTab ?? browserCloseTab;
+    browserToolDeps.browserDoctor = overrides?.browserDoctor ?? browserDoctor;
     browserToolDeps.browserFocusTab = overrides?.browserFocusTab ?? browserFocusTab;
     browserToolDeps.browserNavigate = overrides?.browserNavigate ?? browserNavigate;
     browserToolDeps.browserOpenTab = overrides?.browserOpenTab ?? browserOpenTab;
@@ -114,7 +119,7 @@ export const __testing = {
 };
 
 function readOptionalTargetAndTimeout(params: Record<string, unknown>) {
-  const targetId = typeof params.targetId === "string" ? params.targetId.trim() : undefined;
+  const targetId = normalizeOptionalString(params.targetId);
   const timeoutMs =
     typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
       ? params.timeoutMs
@@ -325,7 +330,7 @@ function resolveBrowserBaseUrl(params: {
   target?: "sandbox" | "host";
   sandboxBridgeUrl?: string;
   allowHostControl?: boolean;
-}): string | undefined {
+}): string {
   const cfg = loadConfig();
   const resolved = resolveBrowserConfig(cfg.browser, cfg);
   const normalizedSandbox = params.sandboxBridgeUrl?.trim() ?? "";
@@ -348,7 +353,7 @@ function resolveBrowserBaseUrl(params: {
       "Browser control is disabled. Set browser.enabled=true in ~/.openclaw/openclaw.json.",
     );
   }
-  return undefined;
+  return `http://127.0.0.1:${resolved.controlPort}`;
 }
 
 function shouldPreferHostForProfile(profileName: string | undefined) {
@@ -454,6 +459,17 @@ export function createBrowserTool(opts?: {
         : null;
 
       switch (action) {
+        case "doctor":
+          if (proxyRequest) {
+            return jsonResult(
+              await proxyRequest({
+                method: "GET",
+                path: "/doctor",
+                profile,
+              }),
+            );
+          }
+          return jsonResult(await browserToolDeps.browserDoctor(baseUrl, { profile }));
         case "status":
           if (proxyRequest) {
             return jsonResult(
@@ -647,7 +663,7 @@ export function createBrowserTool(opts?: {
             proxyRequest,
           });
         case "pdf": {
-          const targetId = typeof params.targetId === "string" ? params.targetId.trim() : undefined;
+          const targetId = normalizeOptionalString(params.targetId);
           const result = proxyRequest
             ? ((await proxyRequest({
                 method: "POST",
@@ -709,7 +725,7 @@ export function createBrowserTool(opts?: {
         }
         case "dialog": {
           const accept = Boolean(params.accept);
-          const promptText = typeof params.promptText === "string" ? params.promptText : undefined;
+          const promptText = readStringValue(params.promptText);
           const { targetId, timeoutMs } = readOptionalTargetAndTimeout(params);
           if (proxyRequest) {
             const result = await proxyRequest({

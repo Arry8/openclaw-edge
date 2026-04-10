@@ -123,6 +123,9 @@ class IncludeProcessor {
   private processObject(obj: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
+      if (isBlockedObjectKey(key)) {
+        continue;
+      }
       result[key] = this.process(value);
     }
     return result;
@@ -130,7 +133,7 @@ class IncludeProcessor {
 
   private processInclude(obj: Record<string, unknown>): unknown {
     const includeValue = obj[INCLUDE_KEY];
-    const otherKeys = Object.keys(obj).filter((k) => k !== INCLUDE_KEY);
+    const otherKeys = Object.keys(obj).filter((k) => k !== INCLUDE_KEY && !isBlockedObjectKey(k));
     const included = this.resolveInclude(includeValue);
 
     if (otherKeys.length === 0) {
@@ -343,4 +346,63 @@ export function resolveConfigIncludes(
   resolver: IncludeResolver = defaultResolver,
 ): unknown {
   return new IncludeProcessor(configPath, resolver).process(obj);
+}
+
+// ============================================================================
+// Restore $include directives on write
+// ============================================================================
+
+/**
+ * Recursively restore $include directives from original parsed config
+ * to the resolved config that we're about to write back.
+ * This preserves the modular config structure.
+ */
+export function restoreIncludes(
+  resolved: unknown,
+  original: unknown,
+): unknown {
+  if (typeof resolved !== "object" || resolved === null) {
+    return resolved;
+  }
+  if (typeof original !== "object" || original === null) {
+    return resolved;
+  }
+
+  const resolvedObj = resolved as Record<string, unknown>;
+  const originalObj = original as Record<string, unknown>;
+
+  // If original has $include at this level, prefer it over resolved value
+  if (INCLUDE_KEY in originalObj && !(INCLUDE_KEY in resolvedObj)) {
+    const result = { ...resolvedObj };
+    result[INCLUDE_KEY] = originalObj[INCLUDE_KEY];
+    return result;
+  }
+
+  // Recursively restore $include in nested objects
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(resolvedObj)) {
+    const resVal = resolvedObj[key];
+    const orgVal = originalObj[key];
+
+    if (
+      typeof resVal === "object" &&
+      resVal !== null &&
+      typeof orgVal === "object" &&
+      orgVal !== null &&
+      !Array.isArray(resVal) &&
+      !Array.isArray(orgVal)
+    ) {
+      result[key] = restoreIncludes(resVal, orgVal);
+    } else {
+      result[key] = resVal;
+    }
+  }
+
+  for (const key of Object.keys(originalObj)) {
+    if (!(key in result)) {
+      result[key] = originalObj[key];
+    }
+  }
+
+  return result;
 }

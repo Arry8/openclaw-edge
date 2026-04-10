@@ -10,19 +10,12 @@ import type {
   BlockReplyChunking,
   SubscribeEmbeddedPiSessionParams,
 } from "./pi-embedded-subscribe.types.js";
+import type { ToolErrorSummary } from "./tool-error-summary.js";
 import type { NormalizedUsage } from "./usage.js";
 
 export type EmbeddedSubscribeLogger = {
   debug: (message: string, meta?: Record<string, unknown>) => void;
   warn: (message: string, meta?: Record<string, unknown>) => void;
-};
-
-export type ToolErrorSummary = {
-  toolName: string;
-  meta?: string;
-  error?: string;
-  mutatingAction?: boolean;
-  actionFingerprint?: string;
 };
 
 export type ToolCallSummary = {
@@ -36,6 +29,9 @@ export type EmbeddedPiSubscribeState = {
   toolMetas: Array<{ toolName?: string; meta?: string }>;
   toolMetaById: Map<string, ToolCallSummary>;
   toolSummaryById: Set<string>;
+  itemActiveIds: Set<string>;
+  itemStartedCount: number;
+  itemCompletedCount: number;
   lastToolError?: ToolErrorSummary;
 
   blockReplyBreak: "text_end" | "message_end";
@@ -79,7 +75,18 @@ export type EmbeddedPiSubscribeState = {
   pendingMessagingMediaUrls: Map<string, string[]>;
   pendingToolMediaUrls: string[];
   pendingToolAudioAsVoice: boolean;
+  deterministicApprovalPromptPending: boolean;
   deterministicApprovalPromptSent: boolean;
+  /**
+   * Tracks whether we're currently inside an assistant message (between message_start and message_end).
+   * Used to detect malformed streams where message_start arrives before the previous message_end.
+   */
+  inAssistantMessage: boolean;
+  /**
+   * Normalized assistant texts that were already force-closed after an out-of-order
+   * message_start and whose later real message_end should be ignored once.
+   */
+  staleSyntheticMessageEndTexts: string[];
   lastAssistant?: AgentMessage;
 };
 
@@ -100,8 +107,8 @@ export type EmbeddedPiSubscribeContext = {
     text: string,
     state: { thinking: boolean; final: boolean; inlineCode?: InlineCodeState },
   ) => string;
-  emitBlockChunk: (text: string) => void;
-  flushBlockReplyBuffer: () => void;
+  emitBlockChunk: (text: string, options?: { assistantMessageIndex?: number }) => void;
+  flushBlockReplyBuffer: (options?: { assistantMessageIndex?: number }) => void | Promise<void>;
   emitReasoningStream: (text: string) => void;
   consumeReplyDirectives: (
     text: string,
@@ -144,6 +151,7 @@ export type ToolHandlerParams = Pick<
   | "sessionKey"
   | "sessionId"
   | "agentId"
+  | "toolResultFormat"
 >;
 
 export type ToolHandlerState = Pick<
@@ -151,12 +159,16 @@ export type ToolHandlerState = Pick<
   | "toolMetaById"
   | "toolMetas"
   | "toolSummaryById"
+  | "itemActiveIds"
+  | "itemStartedCount"
+  | "itemCompletedCount"
   | "lastToolError"
   | "pendingMessagingTargets"
   | "pendingMessagingTexts"
   | "pendingMessagingMediaUrls"
   | "pendingToolMediaUrls"
   | "pendingToolAudioAsVoice"
+  | "deterministicApprovalPromptPending"
   | "messagingToolSentTexts"
   | "messagingToolSentTextsNormalized"
   | "messagingToolSentMediaUrls"
@@ -170,7 +182,7 @@ export type ToolHandlerContext = {
   state: ToolHandlerState;
   log: EmbeddedSubscribeLogger;
   hookRunner?: HookRunner;
-  flushBlockReplyBuffer: () => void;
+  flushBlockReplyBuffer: () => void | Promise<void>;
   shouldEmitToolResult: () => boolean;
   shouldEmitToolOutput: () => boolean;
   emitToolSummary: (toolName?: string, meta?: string) => void;

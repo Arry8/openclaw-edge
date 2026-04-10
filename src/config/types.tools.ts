@@ -1,7 +1,9 @@
 import type { ChatType } from "../channels/chat-type.js";
 import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import type { AgentElevatedAllowFromConfig, SessionSendPolicyAction } from "./types.base.js";
 import type { MemoryQmdIndexPath } from "./types.memory.js";
+import type { ConfiguredProviderRequest } from "./types.provider-request.js";
 import type { SecretInput } from "./types.secrets.js";
 
 export type MediaUnderstandingScopeMatch = {
@@ -44,6 +46,8 @@ type MediaProviderRequestConfig = {
   baseUrl?: string;
   /** Optional headers merged into provider requests. */
   headers?: Record<string, string>;
+  /** Optional request transport overrides for provider HTTP calls. */
+  request?: ConfiguredProviderRequest;
 };
 
 export type MediaUnderstandingModelConfig = MediaProviderRequestConfig & {
@@ -135,6 +139,13 @@ export type MediaToolsConfig = {
   models?: MediaUnderstandingModelConfig[];
   /** Max concurrent media understanding runs. */
   concurrency?: number;
+  asyncCompletion?: {
+    /**
+     * Enable direct channel sends for completed async media generation tasks.
+     * Default: false.
+     */
+    directSend?: boolean;
+  };
   image?: MediaUnderstandingConfig;
   audio?: MediaUnderstandingConfig;
   video?: MediaUnderstandingConfig;
@@ -152,7 +163,7 @@ export type ToolLoopDetectionDetectorConfig = {
 };
 
 export type ToolLoopDetectionConfig = {
-  /** Enable tool-loop protection (default: false). */
+  /** Enable tool-loop protection (default: true). */
   enabled?: boolean;
   /** Maximum tool call history entries retained for loop detection (default: 30). */
   historySize?: number;
@@ -162,6 +173,8 @@ export type ToolLoopDetectionConfig = {
   criticalThreshold?: number;
   /** Global no-progress breaker threshold (default: 30). */
   globalCircuitBreakerThreshold?: number;
+  /** Milliseconds after which idle tool call history is considered stale and cleared (default: 60 000). Align with the heartbeat interval to avoid false positives across cycles. */
+  staleThresholdMs?: number;
   /** Detector toggles. */
   detectors?: ToolLoopDetectionDetectorConfig;
 };
@@ -198,7 +211,7 @@ export function parseToolsBySenderTypedKey(
   if (!trimmed) {
     return undefined;
   }
-  const lowered = trimmed.toLowerCase();
+  const lowered = normalizeLowercaseStringOrEmpty(trimmed);
   for (const type of TOOLS_BY_SENDER_KEY_TYPES) {
     const prefix = `${type}:`;
     if (!lowered.startsWith(prefix)) {
@@ -239,6 +252,8 @@ export type ExecToolConfig = {
   pathPrepend?: string[];
   /** Safe stdin-only binaries that can run without allowlist entries. */
   safeBins?: string[];
+  /** Command-pattern denylist that always blocks matching commands (supports glob wildcards). */
+  denylist?: string[];
   /**
    * Require explicit approval for interpreter inline-eval forms (`python -c`, `node -e`, etc.).
    * Prevents silent allowlist reuse and allow-always persistence for those forms.
@@ -274,7 +289,7 @@ export type ExecToolConfig = {
     workspaceOnly?: boolean;
     /**
      * Optional allowlist of model ids that can use apply_patch.
-     * Accepts either raw ids (e.g. "gpt-5.2") or full ids (e.g. "openai/gpt-5.2").
+     * Accepts either raw ids (e.g. "gpt-5.4") or full ids (e.g. "openai/gpt-5.4").
      */
     allowModels?: string[];
   };
@@ -352,6 +367,8 @@ export type MemorySearchConfig = {
     baseUrl?: string;
     apiKey?: SecretInput;
     headers?: Record<string, string>;
+    /** Max concurrent non-batch embedding tasks during indexing. Useful for slower local providers such as Ollama. */
+    nonBatchConcurrency?: number;
     batch?: {
       /** Enable batch API for embedding indexing (OpenAI/Gemini; default: true). */
       enabled?: boolean;
@@ -461,23 +478,6 @@ export type MemorySearchConfig = {
   };
 };
 
-type XSearchToolConfig = {
-  /** Enable X search tool (default: true when an xAI API key is available). */
-  enabled?: boolean;
-  /** API key for xAI (defaults to XAI_API_KEY env var). Supports SecretRef. */
-  apiKey?: SecretInput;
-  /** Model id to use for X search. */
-  model?: string;
-  /** Keep inline citations in the xAI response payload when available. */
-  inlineCitations?: boolean;
-  /** Optional max search/tool turns for xAI to use internally. */
-  maxTurns?: number;
-  /** Timeout in seconds for X search requests. */
-  timeoutSeconds?: number;
-  /** Cache TTL in minutes for X search results. */
-  cacheTtlMinutes?: number;
-};
-
 export type ToolsConfig = {
   /** Base tool profile applied before allow/deny lists. */
   profile?: ToolProfileId;
@@ -493,6 +493,8 @@ export type ToolsConfig = {
       enabled?: boolean;
       /** Search provider id. */
       provider?: string;
+      /** Ordered list of provider ids to try when the primary provider fails with rate_limit or billing error. */
+      fallbacks?: string[];
       /** Shared API key slot used by providers that do not need nested config. */
       apiKey?: SecretInput;
       /** Default search results count (1-10). */
@@ -521,10 +523,25 @@ export type ToolsConfig = {
       };
     } & Record<string, unknown>;
     /** X (formerly Twitter) search tool configuration using xAI Grok. */
-    x_search?: XSearchToolConfig;
+    x_search?: {
+      /** Enable X search tool (default: true when xAI auth is available via plugin config or XAI_API_KEY). */
+      enabled?: boolean;
+      /** Model id to use for X search. */
+      model?: string;
+      /** Keep inline citations in the xAI response payload when available. */
+      inlineCitations?: boolean;
+      /** Optional max search/tool turns for xAI to use internally. */
+      maxTurns?: number;
+      /** Timeout in seconds for X search requests. */
+      timeoutSeconds?: number;
+      /** Cache TTL in minutes for X search results. */
+      cacheTtlMinutes?: number;
+    };
     fetch?: {
       /** Enable web fetch tool (default: true). */
       enabled?: boolean;
+      /** Web fetch fallback provider id. */
+      provider?: string;
       /** Max characters to return from fetched content. */
       maxChars?: number;
       /** Hard cap for maxChars (tool or config), defaults to 50000. */
@@ -541,20 +558,6 @@ export type ToolsConfig = {
       userAgent?: string;
       /** Use Readability to extract main content (default: true). */
       readability?: boolean;
-      firecrawl?: {
-        /** Enable Firecrawl fallback (default: true when apiKey is set). */
-        enabled?: boolean;
-        /** Firecrawl API key (optional; defaults to FIRECRAWL_API_KEY env var). */
-        apiKey?: SecretInput;
-        /** Firecrawl base URL (default: https://api.firecrawl.dev). */
-        baseUrl?: string;
-        /** Whether to keep only main content (default: true). */
-        onlyMainContent?: boolean;
-        /** Max age (ms) for cached Firecrawl content. */
-        maxAgeMs?: number;
-        /** Timeout in seconds for Firecrawl requests. */
-        timeoutSeconds?: number;
-      };
     };
   };
   media?: MediaToolsConfig;
@@ -639,5 +642,10 @@ export type ToolsConfig = {
       alsoAllow?: string[];
       deny?: string[];
     };
+  };
+  /** Experimental tool flags. Default off unless explicitly enabled or runtime auto-enabled. */
+  experimental?: {
+    /** Enable or disable the structured `update_plan` tool. OpenAI-family runs auto-enable it unless this is false. */
+    planTool?: boolean;
   };
 };

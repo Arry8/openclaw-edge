@@ -5,6 +5,7 @@ import {
 import {
   chunkByParagraph,
   chunkMarkdownTextWithMode,
+  chunkText,
   resolveChunkMode,
   resolveTextChunkLimit,
 } from "../../auto-reply/chunk.js";
@@ -15,10 +16,7 @@ import type {
   ChannelOutboundContext,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import {
-  appendAssistantMessageToSessionTranscript,
-  resolveMirroredTranscriptText,
-} from "../../config/sessions.js";
+import { resolveMirroredTranscriptText } from "../../config/sessions/transcript-mirror.js";
 import { fireAndForgetHook } from "../../hooks/fire-and-forget.js";
 import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import {
@@ -32,14 +30,13 @@ import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { formatErrorMessage } from "../errors.js";
 import { throwIfAborted } from "./abort.js";
-import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
 import { ackDelivery, enqueueDelivery, failDelivery } from "./delivery-queue.js";
 import type { OutboundIdentity } from "./identity.js";
 import type { DeliveryMirror } from "./mirror.js";
 import type { NormalizedOutboundPayload } from "./payloads.js";
 import { normalizeReplyPayloadsForDelivery } from "./payloads.js";
-import { isPlainTextSurface, sanitizeForPlainText } from "./sanitize-text.js";
 import { resolveOutboundSendDep, type OutboundSendDeps } from "./send-deps.js";
 import type { OutboundSessionContext } from "./session-context.js";
 import type { OutboundChannel } from "./targets.js";
@@ -49,6 +46,23 @@ export { normalizeOutboundPayloads } from "./payloads.js";
 export { resolveOutboundSendDep, type OutboundSendDeps } from "./send-deps.js";
 
 const log = createSubsystemLogger("outbound/deliver");
+let transcriptRuntimePromise:
+  | Promise<typeof import("../../config/sessions/transcript.runtime.js")>
+  | undefined;
+
+async function loadTranscriptRuntime() {
+  transcriptRuntimePromise ??= import("../../config/sessions/transcript.runtime.js");
+  return await transcriptRuntimePromise;
+}
+
+let channelBootstrapRuntimePromise:
+  | Promise<typeof import("./channel-bootstrap.runtime.js")>
+  | undefined;
+
+async function loadChannelBootstrapRuntime() {
+  channelBootstrapRuntimePromise ??= import("./channel-bootstrap.runtime.js");
+  return await channelBootstrapRuntimePromise;
+}
 
 export type OutboundDeliveryResult = {
   channel: Exclude<OutboundChannel, "none">;
@@ -71,6 +85,7 @@ type ChannelHandler = {
   chunkerMode?: "text" | "markdown";
   textChunkLimit?: number;
   supportsMedia: boolean;
+  sanitizeText?: (payload: ReplyPayload) => string;
   normalizePayload?: (payload: ReplyPayload) => ReplyPayload | null;
   shouldSkipPlainTextSanitization?: (payload: ReplyPayload) => boolean;
   resolveEffectiveTextChunkLimit?: (fallbackLimit?: number) => number | undefined;
@@ -124,6 +139,7 @@ type ChannelHandlerParams = {
   to: string;
   accountId?: string;
   replyToId?: string | null;
+  replyToAuthor?: string | null;
   threadId?: string | number | null;
   identity?: OutboundIdentity;
   deps?: OutboundSendDeps;
@@ -136,14 +152,15 @@ type ChannelHandlerParams = {
 
 // Channel docking: outbound delivery delegates to plugin.outbound adapters.
 async function createChannelHandler(params: ChannelHandlerParams): Promise<ChannelHandler> {
-  // Recover channel plugins the same way target resolution does so direct cron
-  // delivery still works when a prior test or lazy path left the active plugin
-  // registry empty.
-  resolveOutboundChannelPlugin({
-    channel: params.channel,
-    cfg: params.cfg,
-  });
-  const outbound = await loadChannelOutboundAdapter(params.channel);
+  let outbound = await loadChannelOutboundAdapter(params.channel);
+  if (!outbound) {
+    const { bootstrapOutboundChannelPlugin } = await loadChannelBootstrapRuntime();
+    bootstrapOutboundChannelPlugin({
+      channel: params.channel,
+      cfg: params.cfg,
+    });
+    outbound = await loadChannelOutboundAdapter(params.channel);
+  }
   const handler = createPluginHandler({ ...params, outbound });
   if (!handler) {
     throw new Error(`Outbound not configured for channel: ${params.channel}`);
@@ -178,6 +195,9 @@ function createPluginHandler(
     chunkerMode,
     textChunkLimit: outbound.textChunkLimit,
     supportsMedia: Boolean(sendMedia),
+    sanitizeText: outbound.sanitizeText
+      ? (payload) => outbound.sanitizeText!({ text: payload.text ?? "", payload })
+      : undefined,
     normalizePayload: outbound.normalizePayload
       ? (payload) => outbound.normalizePayload!({ payload })
       : undefined,
@@ -237,14 +257,41 @@ function createPluginHandler(
   };
 }
 
+function mergeMediaLocalRoots(
+  baseRoots: readonly string[] | undefined,
+  extraRoots: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if ((!baseRoots || baseRoots.length === 0) && (!extraRoots || extraRoots.length === 0)) {
+    return undefined;
+  }
+  return Array.from(new Set([...(baseRoots ?? []), ...(extraRoots ?? [])]));
+}
+
 function createChannelOutboundContextBase(
   params: ChannelHandlerParams,
 ): Omit<ChannelOutboundContext, "text" | "mediaUrl"> {
+  const whatsappConfig = params.channel === "whatsapp" ? params.cfg.channels?.whatsapp : undefined;
+  const whatsappAccountConfig =
+    params.channel === "whatsapp" && params.accountId
+      ? whatsappConfig?.accounts?.[params.accountId]
+      : undefined;
+  const mediaLocalRoots =
+    params.channel === "whatsapp"
+      ? mergeMediaLocalRoots(
+          params.mediaAccess?.localRoots,
+          mergeMediaLocalRoots(
+            whatsappConfig?.mediaLocalRoots,
+            whatsappAccountConfig?.mediaLocalRoots,
+          ),
+        )
+      : params.mediaAccess?.localRoots;
+
   return {
     cfg: params.cfg,
     to: params.to,
     accountId: params.accountId,
     replyToId: params.replyToId,
+    replyToAuthor: params.replyToAuthor,
     threadId: params.threadId,
     identity: params.identity,
     gifPlayback: params.gifPlayback,
@@ -252,7 +299,7 @@ function createChannelOutboundContextBase(
     deps: params.deps,
     silent: params.silent,
     mediaAccess: params.mediaAccess,
-    mediaLocalRoots: params.mediaAccess?.localRoots,
+    mediaLocalRoots,
     mediaReadFile: params.mediaAccess?.readFile,
     gatewayClientScopes: params.gatewayClientScopes,
   };
@@ -267,6 +314,7 @@ type DeliverOutboundPayloadsCoreParams = {
   accountId?: string;
   payloads: ReplyPayload[];
   replyToId?: string | null;
+  replyToAuthor?: string | null;
   threadId?: string | number | null;
   identity?: OutboundIdentity;
   deps?: OutboundSendDeps;
@@ -321,20 +369,16 @@ function normalizeEmptyPayloadForDelivery(payload: ReplyPayload): ReplyPayload |
 
 function normalizePayloadsForChannelDelivery(
   payloads: ReplyPayload[],
-  channel: Exclude<OutboundChannel, "none">,
   handler: ChannelHandler,
 ): ReplyPayload[] {
   const normalizedPayloads: ReplyPayload[] = [];
   for (const payload of normalizeReplyPayloadsForDelivery(payloads)) {
     let sanitizedPayload = payload;
-    // Strip HTML tags for plain-text surfaces (WhatsApp, Signal, etc.)
-    // Models occasionally produce <br>, <b>, etc. that render as literal text.
-    // See https://github.com/openclaw/openclaw/issues/31884
-    if (isPlainTextSurface(channel) && sanitizedPayload.text) {
+    if (handler.sanitizeText && sanitizedPayload.text) {
       if (!handler.shouldSkipPlainTextSanitization?.(sanitizedPayload)) {
         sanitizedPayload = {
           ...sanitizedPayload,
-          text: sanitizeForPlainText(sanitizedPayload.text),
+          text: handler.sanitizeText(sanitizedPayload),
         };
       }
     }
@@ -547,9 +591,7 @@ export async function deliverOutboundPayloads(
       if (isAbortError(err)) {
         await ackDelivery(queueId).catch(() => {});
       } else {
-        await failDelivery(queueId, err instanceof Error ? err.message : String(err)).catch(
-          () => {},
-        );
+        await failDelivery(queueId, formatErrorMessage(err)).catch(() => {});
       }
     }
     throw err;
@@ -577,6 +619,7 @@ async function deliverOutboundPayloadsCore(
     deps,
     accountId,
     replyToId: params.replyToId,
+    replyToAuthor: params.replyToAuthor,
     threadId: params.threadId,
     identity: params.identity,
     gifPlayback: params.gifPlayback,
@@ -585,15 +628,25 @@ async function deliverOutboundPayloadsCore(
     mediaAccess,
     gatewayClientScopes: params.gatewayClientScopes,
   });
-  const configuredTextLimit = handler.chunker
-    ? resolveTextChunkLimit(cfg, channel, accountId, {
-        fallbackLimit: handler.textChunkLimit,
-      })
-    : undefined;
+  // Always resolve the text chunk limit when the channel declares one, even without
+  // a custom chunker.  This ensures messages that exceed the channel's character cap
+  // are auto-split using a default chunker instead of being sent as-is (which causes
+  // silent failures on Telegram, Discord, etc.).
+  // See: https://github.com/openclaw/openclaw/issues/47909
+  const configuredTextLimit =
+    handler.chunker || handler.textChunkLimit
+      ? resolveTextChunkLimit(cfg, channel, accountId, {
+          fallbackLimit: handler.textChunkLimit,
+        })
+      : undefined;
   const textLimit = handler.resolveEffectiveTextChunkLimit
     ? handler.resolveEffectiveTextChunkLimit(configuredTextLimit)
     : configuredTextLimit;
   const chunkMode = handler.chunker ? resolveChunkMode(cfg, channel, accountId) : "length";
+  // Use the channel's chunker when available, otherwise fall back to a plain
+  // length-aware text chunker so every channel gets auto-splitting.
+  const effectiveChunker: Chunker | null =
+    handler.chunker ?? (textLimit !== undefined ? chunkText : null);
 
   const sendTextChunks = async (
     text: string,
@@ -604,7 +657,7 @@ async function deliverOutboundPayloadsCore(
     },
   ) => {
     throwIfAborted(abortSignal);
-    if (!handler.chunker || textLimit === undefined) {
+    if (!effectiveChunker || textLimit === undefined) {
       results.push(await handler.sendText(text, overrides));
       return;
     }
@@ -619,7 +672,7 @@ async function deliverOutboundPayloadsCore(
         blockChunks.push(text);
       }
       for (const blockChunk of blockChunks) {
-        const chunks = handler.chunker(blockChunk, textLimit);
+        const chunks = effectiveChunker(blockChunk, textLimit);
         if (!chunks.length && blockChunk) {
           chunks.push(blockChunk);
         }
@@ -630,14 +683,32 @@ async function deliverOutboundPayloadsCore(
       }
       return;
     }
-    const chunks = handler.chunker(text, textLimit);
+    const chunks = effectiveChunker(text, textLimit);
     for (const chunk of chunks) {
       throwIfAborted(abortSignal);
       results.push(await handler.sendText(chunk, overrides));
     }
   };
-  const normalizedPayloads = normalizePayloadsForChannelDelivery(payloads, channel, handler);
-  const hookRunner = getGlobalHookRunner();
+  const normalizedPayloads = normalizePayloadsForChannelDelivery(payloads, handler);
+  // Resolve plugin hook runner for message_sending / message_sent hooks.
+  // getGlobalHookRunner() may return null during cold-start race conditions
+  // where delivery fires before plugins are fully loaded. Retry once after
+  // yielding to the event loop to allow pending plugin initialization to
+  // complete.
+  // See: https://github.com/openclaw/openclaw/issues/32621
+  let hookRunner = getGlobalHookRunner();
+  if (!hookRunner) {
+    // Yield to allow any pending plugin initialization to settle
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    hookRunner = getGlobalHookRunner();
+    if (!hookRunner) {
+      log.warn(
+        "deliverOutboundPayloadsCore: global hook runner is null after retry — " +
+          "plugin message_sending/message_sent hooks will be skipped",
+        { channel, to },
+      );
+    }
+  }
   const sessionKeyForInternalHooks = params.mirror?.sessionKey ?? params.session?.key;
   const mirrorIsGroup = params.mirror?.isGroup;
   const mirrorGroupId = params.mirror?.groupId;
@@ -777,7 +848,7 @@ async function deliverOutboundPayloadsCore(
       emitMessageSent({
         success: false,
         content: payloadSummary.text,
-        error: err instanceof Error ? err.message : String(err),
+        error: formatErrorMessage(err),
       });
       if (!params.bestEffort) {
         throw err;
@@ -786,11 +857,26 @@ async function deliverOutboundPayloadsCore(
     }
   }
   if (params.mirror && results.length > 0) {
+    // Channel adapters (e.g. Discord components) may attach richer transcript text
+    // via meta.transcriptText that includes interactive element labels (buttons,
+    // selects). When every result carries adapter text, use only the enriched text.
+    // For mixed batches (some results enriched, some plain), concatenate the adapter
+    // text with the original mirror text so neither portion is lost.
+    const adapterParts = results
+      .map((r) => (typeof r.meta?.transcriptText === "string" ? r.meta.transcriptText : ""))
+      .filter(Boolean);
+    const allEnriched = adapterParts.length > 0 && adapterParts.length === results.length;
+    const resolvedText = allEnriched
+      ? adapterParts.join("\n")
+      : adapterParts.length > 0
+        ? [params.mirror.text, ...adapterParts].filter(Boolean).join("\n")
+        : params.mirror.text;
     const mirrorText = resolveMirroredTranscriptText({
-      text: params.mirror.text,
+      text: resolvedText,
       mediaUrls: params.mirror.mediaUrls,
     });
     if (mirrorText) {
+      const { appendAssistantMessageToSessionTranscript } = await loadTranscriptRuntime();
       await appendAssistantMessageToSessionTranscript({
         agentId: params.mirror.agentId,
         sessionKey: params.mirror.sessionKey,

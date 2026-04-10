@@ -1,6 +1,10 @@
 import type { ChannelId } from "../channels/plugins/types.js";
 import { resolveAccountEntry } from "../routing/account-lookup.js";
 import { normalizeAccountId } from "../routing/session-key.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../shared/string-coerce.js";
 import type { OpenClawConfig } from "./config.js";
 import {
   parseToolsBySenderTypedKey,
@@ -13,6 +17,7 @@ export type GroupPolicyChannel = ChannelId;
 
 export type ChannelGroupConfig = {
   requireMention?: boolean;
+  ingest?: boolean;
   tools?: GroupToolPolicyConfig;
   toolsBySender?: GroupToolPolicyBySenderConfig;
 };
@@ -41,8 +46,10 @@ function resolveChannelGroupConfig(
   if (!caseInsensitive) {
     return undefined;
   }
-  const target = groupId.toLowerCase();
-  const matchedKey = Object.keys(groups).find((key) => key !== "*" && key.toLowerCase() === target);
+  const target = normalizeLowercaseStringOrEmpty(groupId);
+  const matchedKey = Object.keys(groups).find(
+    (key) => key !== "*" && normalizeLowercaseStringOrEmpty(key) === target,
+  );
   if (!matchedKey) {
     return undefined;
   }
@@ -85,7 +92,7 @@ function normalizeSenderKey(
     return "";
   }
   const withoutAt = options.stripLeadingAt && trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-  return withoutAt.toLowerCase();
+  return normalizeLowercaseStringOrEmpty(withoutAt);
 }
 
 function normalizeTypedSenderKey(value: string, type: SenderKeyType): string {
@@ -206,7 +213,7 @@ function resolveCompiledToolsBySenderPolicy(
 }
 
 function normalizeCandidate(value: string | null | undefined, type: SenderKeyType): string {
-  const trimmed = value?.trim();
+  const trimmed = normalizeOptionalString(value);
   if (!trimmed) {
     return "";
   }
@@ -214,7 +221,7 @@ function normalizeCandidate(value: string | null | undefined, type: SenderKeyTyp
 }
 
 function normalizeSenderIdCandidates(value: string | null | undefined): string[] {
-  const trimmed = value?.trim();
+  const trimmed = normalizeOptionalString(value);
   if (!trimmed) {
     return [];
   }
@@ -335,7 +342,11 @@ export function resolveChannelGroupPolicy(params: {
   const groups = resolveChannelGroups(cfg, channel, params.accountId);
   const groupPolicy = resolveChannelGroupPolicyMode(cfg, channel, params.accountId);
   const hasGroups = Boolean(groups && Object.keys(groups).length > 0);
-  const allowlistEnabled = groupPolicy === "allowlist" || hasGroups;
+  // When groupPolicy is explicitly "open", group entries are config overrides
+  // (e.g. requireMention), not an allowlist. Only enable allowlist behavior
+  // when groupPolicy is "allowlist" or when groups exist without an explicit
+  // "open" policy (backwards-compatible implicit allowlist).
+  const allowlistEnabled = groupPolicy === "allowlist" || (groupPolicy !== "open" && hasGroups);
   const normalizedId = params.groupId?.trim();
   const groupConfig = normalizedId
     ? resolveChannelGroupConfig(groups, normalizedId, params.groupIdCaseInsensitive)

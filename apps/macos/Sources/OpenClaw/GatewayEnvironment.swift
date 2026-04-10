@@ -90,7 +90,18 @@ enum GatewayEnvironment {
     }
 
     static func expectedGatewayVersionString() -> String? {
-        let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        self.expectedGatewayVersionString(
+            bundleVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+            bundleIdentifier: Bundle.main.bundleIdentifier)
+    }
+
+    static func expectedGatewayVersionString(bundleVersion: String?, bundleIdentifier: String?) -> String? {
+        if let bundleIdentifier,
+           bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(".debug")
+        {
+            return nil
+        }
+
         let trimmed = bundleVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (trimmed?.isEmpty == false) ? trimmed : nil
     }
@@ -298,6 +309,10 @@ enum GatewayEnvironment {
         }
         if normalized.lowercased().hasPrefix("openclaw ") {
             normalized = String(normalized.dropFirst("openclaw ".count))
+        }
+        // Strip trailing commit metadata, e.g. "2026.4.2 (d74a122)" → "2026.4.2"
+        if let parenRange = normalized.range(of: #"\s*\([0-9a-fA-F]+\)\s*$"#, options: .regularExpression) {
+            normalized = String(normalized[normalized.startIndex..<parenRange.lowerBound])
         }
         return normalized
     }

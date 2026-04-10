@@ -1,7 +1,12 @@
+import {
+  DEFAULT_AGENT_ID,
+  parseAgentSessionKey,
+} from "../../../../src/routing/session-key.js";
 import { resetToolStream } from "../app-tool-stream.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { formatConnectError } from "../connect-error.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { generateUUID } from "../uuid.ts";
 import {
@@ -10,6 +15,26 @@ import {
 } from "./scope-errors.ts";
 
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
+const chatHistoryRequestVersions = new WeakMap<object, number>();
+
+function beginChatHistoryRequest(state: ChatState): number {
+  const key = state as object;
+  const nextVersion = (chatHistoryRequestVersions.get(key) ?? 0) + 1;
+  chatHistoryRequestVersions.set(key, nextVersion);
+  return nextVersion;
+}
+
+function isLatestChatHistoryRequest(state: ChatState, version: number): boolean {
+  return chatHistoryRequestVersions.get(state as object) === version;
+}
+
+function shouldApplyChatHistoryResult(
+  state: ChatState,
+  version: number,
+  sessionKey: string,
+): boolean {
+  return isLatestChatHistoryRequest(state, version) && state.sessionKey === sessionKey;
+}
 
 function isSilentReplyStream(text: string): boolean {
   return SILENT_REPLY_PATTERN.test(text);
@@ -20,7 +45,7 @@ function isAssistantSilentReply(message: unknown): boolean {
     return false;
   }
   const entry = message as Record<string, unknown>;
-  const role = typeof entry.role === "string" ? entry.role.toLowerCase() : "";
+  const role = normalizeLowercaseStringOrEmpty(entry.role);
   if (role !== "assistant") {
     return false;
   }
@@ -72,18 +97,37 @@ export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
   }
+  const sessionKey = state.sessionKey;
+  const requestVersion = beginChatHistoryRequest(state);
   state.chatLoading = true;
   state.lastError = null;
   try {
     const res = await state.client.request<{ messages?: Array<unknown>; thinkingLevel?: string }>(
       "chat.history",
       {
-        sessionKey: state.sessionKey,
+        sessionKey,
         limit: 200,
       },
     );
+    if (!shouldApplyChatHistoryResult(state, requestVersion, sessionKey)) {
+      return;
+    }
     const messages = Array.isArray(res.messages) ? res.messages : [];
-    state.chatMessages = messages.filter((message) => !isAssistantSilentReply(message));
+    
+    const serverMessages = messages.filter((message) => !isAssistantSilentReply(message));
+    
+    const pendingMessages = state.chatMessages.filter(
+      (msg: any) => msg && msg.status === "pending"
+    );
+    
+    const serverMessageIds = new Set(serverMessages.map((m: any) => m.id).filter(Boolean));
+    const serverClientIds = new Set(serverMessages.map((m: any) => m.client_id || m.idempotencyKey).filter(Boolean));
+    
+    const stillPending = pendingMessages.filter(
+      (msg: any) => !serverClientIds.has(msg.client_id) && !serverMessageIds.has(msg.client_id)
+    );
+    
+    state.chatMessages = [...serverMessages, ...stillPending];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     // Clear all streaming state — history includes tool results and text
     // inline, so keeping streaming artifacts would cause duplicates.
@@ -91,6 +135,9 @@ export async function loadChatHistory(state: ChatState) {
     state.chatStream = null;
     state.chatStreamStartedAt = null;
   } catch (err) {
+    if (!shouldApplyChatHistoryResult(state, requestVersion, sessionKey)) {
+      return;
+    }
     if (isMissingOperatorReadScopeError(err)) {
       state.chatMessages = [];
       state.chatThinkingLevel = null;
@@ -99,7 +146,9 @@ export async function loadChatHistory(state: ChatState) {
       state.lastError = String(err);
     }
   } finally {
-    state.chatLoading = false;
+    if (isLatestChatHistoryRequest(state, requestVersion)) {
+      state.chatLoading = false;
+    }
   }
 }
 
@@ -128,7 +177,7 @@ function normalizeAssistantMessage(
   const candidate = message as Record<string, unknown>;
   const roleValue = candidate.role;
   if (typeof roleValue === "string") {
-    const role = options.roleCaseSensitive ? roleValue : roleValue.toLowerCase();
+    const role = options.roleCaseSensitive ? roleValue : normalizeLowercaseStringOrEmpty(roleValue);
     if (role !== "assistant") {
       return null;
     }
@@ -191,9 +240,14 @@ export async function sendChatMessage(
     }
   }
 
+  const runId = generateUUID();
+  state.chatRunId = runId;
+
   state.chatMessages = [
     ...state.chatMessages,
     {
+      client_id: runId,
+      status: "pending",
       role: "user",
       content: contentBlocks,
       timestamp: now,
@@ -202,8 +256,6 @@ export async function sendChatMessage(
 
   state.chatSending = true;
   state.lastError = null;
-  const runId = generateUUID();
-  state.chatRunId = runId;
   state.chatStream = "";
   state.chatStreamStartedAt = now;
 
@@ -217,7 +269,7 @@ export async function sendChatMessage(
           }
           return {
             type: "image",
-            mimeType: parsed.mimeType,
+            mimeType: att.mimeType || parsed.mimeType,
             content: parsed.content,
           };
         })
@@ -270,11 +322,63 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
   }
 }
 
+/**
+ * Check if two session keys match, supporting alias matching.
+ * For example, "main" matches "agent:main:main" when they refer to the same session.
+ * In multi-agent deployments, aliases only match canonical keys where agentId equals the alias
+ * (e.g., "main" matches "agent:main:main" but not "agent:secondary:main").
+ */
+function matchesSessionKey(current: string, incoming: string): boolean {
+  if (current === incoming) {
+    return true;
+  }
+  // Parse both keys to compare agent ID and rest components
+  const currentParsed = parseAgentSessionKey(current);
+  const incomingParsed = parseAgentSessionKey(incoming);
+  // If both are parsed (agent:... format), compare components
+  if (currentParsed && incomingParsed) {
+    return (
+      currentParsed.agentId === incomingParsed.agentId &&
+      currentParsed.rest === incomingParsed.rest
+    );
+  }
+  // Handle alias vs canonical format matching
+  // Case 1: current is alias (e.g., "main" or "webchat"), incoming is canonical (e.g., "agent:main:main")
+  if (!currentParsed && incomingParsed) {
+    // For alias matching, require:
+    // 1. The alias matches the canonical format's rest component
+    // 2. The canonical format's agentId equals DEFAULT_AGENT_ID (aliases map to the default agent)
+    // This prevents "main" from incorrectly matching "agent:secondary:main" in multi-agent deployments,
+    // and ensures aliases like "webchat" correctly match "agent:main:webchat" (not "agent:secondary:webchat").
+    const aliasLower = current.toLowerCase();
+    return (
+      incomingParsed.rest === aliasLower &&
+      incomingParsed.agentId === DEFAULT_AGENT_ID
+    );
+  }
+  // Case 2: current is canonical, incoming is alias
+  if (currentParsed && !incomingParsed) {
+    // For alias matching, require:
+    // 1. The alias matches the canonical format's rest component
+    // 2. The canonical format's agentId equals DEFAULT_AGENT_ID (aliases map to the default agent)
+    const aliasLower = incoming.toLowerCase();
+    return (
+      currentParsed.rest === aliasLower &&
+      currentParsed.agentId === DEFAULT_AGENT_ID
+    );
+  }
+  // Both are non-parsed (aliases like "main"), do exact match
+  return current === incoming;
+}
+
 export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (!payload) {
     return null;
   }
-  if (payload.sessionKey !== state.sessionKey) {
+  // Use flexible sessionKey matching to support alias variations (e.g., "main" vs "agent:main:main").
+  // This ensures real-time updates work even when the UI uses an alias while the server sends
+  // the canonical session key.
+  if (!matchesSessionKey(state.sessionKey, payload.sessionKey)) {
     return null;
   }
 
@@ -285,7 +389,13 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       const finalMessage = normalizeFinalAssistantMessage(payload.message);
       if (finalMessage && !isAssistantSilentReply(finalMessage)) {
         state.chatMessages = [...state.chatMessages, finalMessage];
-        return null;
+        // Clear pending run state so the UI exits the typing/processing
+        // indicator. Without this, the parent agent appears stuck in typing
+        // state after subagent completion even though the final response is
+        // already visible. See #57795.
+        state.chatRunId = null;
+        state.chatStream = null;
+        state.chatStreamStartedAt = null;
       }
       return "final";
     }
@@ -298,6 +408,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatStream = next;
     }
   } else if (payload.state === "final") {
+    state.chatMessages = state.chatMessages.map((msg: any) =>
+      msg.status === "pending" && msg.client_id === payload.runId
+        ? { ...msg, status: "confirmed" }
+        : msg
+    );
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];

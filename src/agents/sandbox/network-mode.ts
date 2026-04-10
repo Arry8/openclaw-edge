@@ -1,19 +1,22 @@
+import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
+
 export type NetworkModeBlockReason = "host" | "container_namespace_join";
 
 export function normalizeNetworkMode(network: string | undefined): string | undefined {
-  const normalized = network?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(network);
   return normalized || undefined;
 }
 
 export function getBlockedNetworkModeReason(params: {
   network: string | undefined;
   allowContainerNamespaceJoin?: boolean;
+  allowHostNetwork?: boolean;
 }): NetworkModeBlockReason | null {
   const normalized = normalizeNetworkMode(params.network);
   if (!normalized) {
     return null;
   }
-  if (normalized === "host") {
+  if (normalized === "host" && params.allowHostNetwork !== true) {
     return "host";
   }
   if (normalized.startsWith("container:") && params.allowContainerNamespaceJoin !== true) {

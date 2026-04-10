@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isAvatarDataUrl, isAvatarHttpUrl, looksLikeAvatarPath } from "../shared/avatar-policy.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import { DEFAULT_IDENTITY_FILENAME } from "./workspace.js";
 
 export type AgentIdentityFile = {
@@ -26,13 +28,42 @@ function normalizeIdentityValue(value: string): string {
     normalized = normalized.slice(1, -1).trim();
   }
   normalized = normalized.replace(/[\u2013\u2014]/g, "-");
-  normalized = normalized.replace(/\s+/g, " ").toLowerCase();
-  return normalized;
+  return normalizeLowercaseStringOrEmpty(normalized.replace(/\s+/g, " "));
 }
 
 function isIdentityPlaceholder(value: string): boolean {
   const normalized = normalizeIdentityValue(value);
   return IDENTITY_PLACEHOLDER_VALUES.has(normalized);
+}
+
+function extractAvatarValue(rawValue: string): string {
+  const value = rawValue.trim();
+  if (!value) {
+    return value;
+  }
+
+  const separatorPattern = /(?:\s+--\s*|\s+-\s+|\s*[\u2013\u2014]\s*)/g;
+  const candidates: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = separatorPattern.exec(value)) !== null) {
+    const candidate = value.slice(match.index + match[0].length).trim();
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    const candidate = candidates[index] ?? "";
+    if (
+      isAvatarHttpUrl(candidate) ||
+      isAvatarDataUrl(candidate) ||
+      looksLikeAvatarPath(candidate)
+    ) {
+      return candidate;
+    }
+  }
+  return value;
 }
 
 export function parseIdentityMarkdown(content: string): AgentIdentityFile {
@@ -44,11 +75,14 @@ export function parseIdentityMarkdown(content: string): AgentIdentityFile {
     if (colonIndex === -1) {
       continue;
     }
-    const label = cleaned.slice(0, colonIndex).replace(/[*_]/g, "").trim().toLowerCase();
-    const value = cleaned
+    const label = normalizeLowercaseStringOrEmpty(
+      cleaned.slice(0, colonIndex).replace(/[*_]/g, ""),
+    );
+    const rawValue = cleaned
       .slice(colonIndex + 1)
       .replace(/^[*_]+|[*_]+$/g, "")
       .trim();
+    const value = label === "avatar" ? extractAvatarValue(rawValue) : rawValue;
     if (!value) {
       continue;
     }

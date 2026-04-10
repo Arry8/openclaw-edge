@@ -1,40 +1,54 @@
 import fs from "fs";
 import path from "path";
 import { createAttachedChannelResultAdapter } from "openclaw/plugin-sdk/channel-send-result";
-import { chunkTextForOutbound, type ChannelOutboundAdapter } from "../runtime-api.js";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { resolveFeishuAccount } from "./accounts.js";
 import { createFeishuClient } from "./client.js";
 import { parseFeishuCommentTarget } from "./comment-target.js";
 import { replyComment } from "./drive.js";
 import { sendMediaFeishu } from "./media.js";
-import { getFeishuRuntime } from "./runtime.js";
+import { chunkTextForOutbound, type ChannelOutboundAdapter } from "./outbound-runtime-api.js";
 import { sendMarkdownCardFeishu, sendMessageFeishu, sendStructuredCardFeishu } from "./send.js";
 
 function normalizePossibleLocalImagePath(text: string | undefined): string | null {
   const raw = text?.trim();
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
 
   // Only auto-convert when the message is a pure path-like payload.
   // Avoid converting regular sentences that merely contain a path.
   const hasWhitespace = /\s/.test(raw);
-  if (hasWhitespace) return null;
+  if (hasWhitespace) {
+    return null;
+  }
 
   // Ignore links/data URLs; those should stay in normal mediaUrl/text paths.
-  if (/^(https?:\/\/|data:|file:\/\/)/i.test(raw)) return null;
+  if (/^(https?:\/\/|data:|file:\/\/)/i.test(raw)) {
+    return null;
+  }
 
-  const ext = path.extname(raw).toLowerCase();
+  const ext = normalizeLowercaseStringOrEmpty(path.extname(raw));
   const isImageExt = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".ico", ".tiff"].includes(
     ext,
   );
-  if (!isImageExt) return null;
+  if (!isImageExt) {
+    return null;
+  }
 
-  if (!path.isAbsolute(raw)) return null;
-  if (!fs.existsSync(raw)) return null;
+  if (!path.isAbsolute(raw)) {
+    return null;
+  }
+  if (!fs.existsSync(raw)) {
+    return null;
+  }
 
   // Fix race condition: wrap statSync in try-catch to handle file deletion
   // between existsSync and statSync
   try {
-    if (!fs.statSync(raw).isFile()) return null;
+    if (!fs.statSync(raw).isFile()) {
+      return null;
+    }
   } catch {
     // File may have been deleted or became inaccessible between checks
     return null;
@@ -60,6 +74,20 @@ function resolveReplyToMessageId(params: {
   }
   const trimmed = String(params.threadId).trim();
   return trimmed || undefined;
+}
+
+function shouldReplyInThread(params: {
+  replyToId?: string | null;
+  threadId?: string | number | null;
+}): boolean {
+  const explicitReplyToId = params.replyToId?.trim();
+  if (explicitReplyToId) {
+    return false;
+  }
+  if (params.threadId == null) {
+    return false;
+  }
+  return String(params.threadId).trim().length > 0;
 }
 
 async function sendCommentThreadReply(params: {
@@ -92,9 +120,10 @@ async function sendOutboundText(params: {
   to: string;
   text: string;
   replyToMessageId?: string;
+  replyInThread?: boolean;
   accountId?: string;
 }) {
-  const { cfg, to, text, accountId, replyToMessageId } = params;
+  const { cfg, to, text, accountId, replyToMessageId, replyInThread } = params;
   const commentResult = await sendCommentThreadReply({
     cfg,
     to,
@@ -109,10 +138,10 @@ async function sendOutboundText(params: {
   const renderMode = account.config?.renderMode ?? "auto";
 
   if (renderMode === "card" || (renderMode === "auto" && shouldUseCard(text))) {
-    return sendMarkdownCardFeishu({ cfg, to, text, accountId, replyToMessageId });
+    return sendMarkdownCardFeishu({ cfg, to, text, accountId, replyToMessageId, replyInThread });
   }
 
-  return sendMessageFeishu({ cfg, to, text, accountId, replyToMessageId });
+  return sendMessageFeishu({ cfg, to, text, accountId, replyToMessageId, replyInThread });
 }
 
 export const feishuOutbound: ChannelOutboundAdapter = {
@@ -133,6 +162,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
       identity,
     }) => {
       const replyToMessageId = resolveReplyToMessageId({ replyToId, threadId });
+      const replyInThread = shouldReplyInThread({ replyToId, threadId });
       // Scheme A compatibility shim:
       // when upstream accidentally returns a local image path as plain text,
       // auto-upload and send as Feishu image message instead of leaking path text.
@@ -160,6 +190,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
           text,
           accountId: accountId ?? undefined,
           replyToMessageId,
+          replyInThread,
         });
       }
 
@@ -180,7 +211,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
           to,
           text,
           replyToMessageId,
-          replyInThread: threadId != null && !replyToId,
+          replyInThread,
           accountId: accountId ?? undefined,
           header: header?.title ? header : undefined,
         });
@@ -191,6 +222,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
         text,
         accountId: accountId ?? undefined,
         replyToMessageId,
+        replyInThread,
       });
     },
     sendMedia: async ({
@@ -198,12 +230,14 @@ export const feishuOutbound: ChannelOutboundAdapter = {
       to,
       text,
       mediaUrl,
+      audioAsVoice,
       accountId,
       mediaLocalRoots,
       replyToId,
       threadId,
     }) => {
       const replyToMessageId = resolveReplyToMessageId({ replyToId, threadId });
+      const replyInThread = shouldReplyInThread({ replyToId, threadId });
       const commentTarget = parseFeishuCommentTarget(to);
       if (commentTarget) {
         const commentText = [text?.trim(), mediaUrl?.trim()].filter(Boolean).join("\n\n");
@@ -213,6 +247,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
           text: commentText || mediaUrl || text || "",
           accountId: accountId ?? undefined,
           replyToMessageId,
+          replyInThread,
         });
       }
 
@@ -224,6 +259,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
           text,
           accountId: accountId ?? undefined,
           replyToMessageId,
+          replyInThread,
         });
       }
 
@@ -234,9 +270,11 @@ export const feishuOutbound: ChannelOutboundAdapter = {
             cfg,
             to,
             mediaUrl,
+            audioAsVoice,
             accountId: accountId ?? undefined,
             mediaLocalRoots,
             replyToMessageId,
+            replyInThread,
           });
         } catch (err) {
           // Log the error for debugging
@@ -248,6 +286,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
             text: `📎 ${mediaUrl}`,
             accountId: accountId ?? undefined,
             replyToMessageId,
+            replyInThread,
           });
         }
       }
@@ -259,6 +298,7 @@ export const feishuOutbound: ChannelOutboundAdapter = {
         text: text ?? "",
         accountId: accountId ?? undefined,
         replyToMessageId,
+        replyInThread,
       });
     },
   }),

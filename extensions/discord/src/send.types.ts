@@ -22,19 +22,29 @@ export class DiscordSendError extends Error {
 
 export const DISCORD_MAX_EMOJI_BYTES = 256 * 1024;
 export const DISCORD_MAX_STICKER_BYTES = 512 * 1024;
+export const DISCORD_MAX_EVENT_COVER_BYTES = 8 * 1024 * 1024;
 
 export type DiscordSendResult = {
   messageId: string;
   channelId: string;
 };
 
+export type DiscordRuntimeAccountContext = {
+  cfg: OpenClawConfig;
+  accountId: string;
+};
+
 export type DiscordReactOpts = {
   cfg?: OpenClawConfig;
-  token?: string;
   accountId?: string;
+  token?: string;
   rest?: RequestClient;
   verbose?: boolean;
   retry?: RetryConfig;
+};
+
+export type DiscordReactionRuntimeContext = DiscordRuntimeAccountContext & {
+  rest: RequestClient;
 };
 
 export type DiscordReactionUser = {
@@ -158,6 +168,8 @@ export type DiscordChannelEdit = {
   locked?: boolean;
   autoArchiveDuration?: number;
   availableTags?: DiscordForumTag[];
+  /** Tag IDs to apply to a forum/media thread (Discord `applied_tags`). */
+  appliedTags?: string[];
 };
 
 export type DiscordChannelMove = {

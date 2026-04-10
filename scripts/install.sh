@@ -257,6 +257,8 @@ detect_os_or_die() {
         OS="macos"
     elif [[ "$OSTYPE" == "linux-gnu"* ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
         OS="linux"
+    elif [[ "$OSTYPE" == "linux"* ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+        OS="linux"
     fi
 
     if [[ "$OS" == "unknown" ]]; then
@@ -402,7 +404,7 @@ is_shell_function() {
 is_gum_raw_mode_failure() {
     local err_log="$1"
     [[ -s "$err_log" ]] || return 1
-    grep -Eiq 'setrawmode' "$err_log"
+    grep -Eiq 'setrawmode|inappropriate ioctl' "$err_log"
 }
 
 run_with_spinner() {
@@ -410,13 +412,20 @@ run_with_spinner() {
     shift
 
     if [[ -n "$GUM" ]] && gum_is_tty && ! is_shell_function "${1:-}"; then
-        local gum_err
+        local gum_err gum_out
         gum_err="$(mktempfile)"
-        if "$GUM" spin --spinner dot --title "$title" -- "$@" 2>"$gum_err"; then
-            return 0
+        gum_out="$(mktempfile)"
+        if "$GUM" spin --spinner dot --title "$title" -- "$@" >"$gum_out" 2>"$gum_err"; then
+            # Gum succeeded but may have leaked terminal errors to stdout
+            if is_gum_raw_mode_failure "$gum_out" || is_gum_raw_mode_failure "$gum_err"; then
+                GUM=""
+                GUM_STATUS="skipped"
+                GUM_REASON="gum raw mode unavailable"
+                ui_warn "Spinner unavailable in this terminal; continuing without spinner"
+            fi
         fi
         local gum_status=$?
-        if is_gum_raw_mode_failure "$gum_err"; then
+        if is_gum_raw_mode_failure "$gum_err" || is_gum_raw_mode_failure "$gum_out"; then
             GUM=""
             GUM_STATUS="skipped"
             GUM_REASON="gum raw mode unavailable"
@@ -615,6 +624,15 @@ install_build_tools_linux() {
         fi
         return 0
     fi
+
+    if command -v zypper &> /dev/null; then
+        if is_root; then
+            run_quiet_step "Installing build tools" zypper install -y gcc gcc-c++ make cmake python3
+        else
+            run_quiet_step "Installing build tools" sudo zypper install -y gcc gcc-c++ make cmake python3
+        fi
+        return 0
+    fi 
 
     ui_warn "Could not detect package manager for auto-installing build tools"
     return 1
@@ -912,6 +930,7 @@ HOLIDAY_CHRISTMAS="Christmas: Ho ho ho—Santa's little claw-sistant is here to 
 HOLIDAY_EID="Eid al-Fitr: Celebration mode: queues cleared, tasks completed, and good vibes committed to main with clean history."
 HOLIDAY_DIWALI="Diwali: Let the logs sparkle and the bugs flee—today we light up the terminal and ship with pride."
 HOLIDAY_EASTER="Easter: I found your missing environment variable—consider it a tiny CLI egg hunt with fewer jellybeans."
+HOLIDAY_APRIL_FOOLS="April Fools: Don't worry, this is a real install-the lobster would never lie to you. (Probably.)"
 HOLIDAY_HANUKKAH="Hanukkah: Eight nights, eight retries, zero shame—may your gateway stay lit and your deployments stay peaceful."
 HOLIDAY_HALLOWEEN="Halloween: Spooky season: beware haunted dependencies, cursed caches, and the ghost of node_modules past."
 HOLIDAY_THANKSGIVING="Thanksgiving: Grateful for stable ports, working DNS, and a bot that reads the logs so nobody has to."
@@ -926,6 +945,7 @@ append_holiday_taglines() {
     case "$month_day" in
         "01-01") TAGLINES+=("$HOLIDAY_NEW_YEAR") ;;
         "02-14") TAGLINES+=("$HOLIDAY_VALENTINES") ;;
+        "04-01") TAGLINES+=("$HOLIDAY_APRIL_FOOLS") ;;
         "10-31") TAGLINES+=("$HOLIDAY_HALLOWEEN") ;;
         "12-25") TAGLINES+=("$HOLIDAY_CHRISTMAS") ;;
     esac
@@ -1373,6 +1393,51 @@ ensure_default_node_active_shell() {
     return 1
 }
 
+# Detect multiple Node.js environments and warn users
+# This helps prevent confusion when multiple openclaw installations exist
+warn_multiple_node_environments() {
+    local envs_found=()
+    local active_node=""
+    active_node="$(command -v node 2>/dev/null || true)"
+
+    # Check for nvm (always count if installed, regardless of active node)
+    if [[ -n "${NVM_DIR:-}" ]] || [[ -d "$HOME/.nvm" ]]; then
+        envs_found+=("nvm (~/.nvm)")
+    fi
+
+    # Check for fnm (always count if installed)
+    if [[ -n "${FNM_DIR:-}" ]] || [[ -d "$HOME/.local/share/fnm" ]] || [[ -d "$HOME/.fnm" ]] || command -v fnm &>/dev/null; then
+        envs_found+=("fnm")
+    fi
+
+    # Check for volta (always count if installed)
+    if [[ -n "${VOLTA_HOME:-}" ]] || [[ -d "$HOME/.volta" ]] || command -v volta &>/dev/null; then
+        envs_found+=("volta (~/.volta)")
+    fi
+
+    # Check for Homebrew node (macOS) - always count if exists
+    if [[ -x "/opt/homebrew/bin/node" ]] || [[ -x "/usr/local/bin/node" ]]; then
+        envs_found+=("homebrew")
+    fi
+
+    # Check for system node - always count if exists
+    if [[ -x "/usr/bin/node" ]]; then
+        envs_found+=("system (/usr/bin/node)")
+    fi
+
+    # Warn if multiple environments detected
+    if [[ ${#envs_found[@]} -gt 1 ]]; then
+        ui_warn "Multiple Node.js environments detected: ${envs_found[*]}"
+        echo ""
+        echo -e "  ${INFO}This can cause confusion if openclaw is installed in different locations.${NC}"
+        echo -e "  ${INFO}Current active node: ${active_node:-none}${NC}"
+        echo ""
+        echo -e "  ${MUTED}Recommendation: Use one Node version manager consistently.${NC}"
+        echo -e "  ${MUTED}After installing, verify with: which openclaw${NC}"
+        echo ""
+    fi
+}
+
 check_node() {
     if command -v node &> /dev/null; then
         NODE_VERSION="$(node_major_version || true)"
@@ -1462,6 +1527,17 @@ install_node() {
                 run_quiet_step "Configuring NodeSource repository" sudo bash "$tmp"
                 run_quiet_step "Installing Node.js" sudo yum install -y -q nodejs
             fi
+        elif command -v zypper &> /dev/null; then
+            local tmp
+            tmp="$(mktempfile)"
+            download_file "https://rpm.nodesource.com/setup_22.x" "$tmp"
+            if is_root; then
+                run_quiet_step "Configuring NodeSource repository" bash "$tmp"
+                run_quiet_step "Installing Node.js" zypper install -y nodejs22
+            else
+                run_quiet_step "Configuring NodeSource repository" sudo bash "$tmp"
+                run_quiet_step "Installing Node.js" sudo zypper install -y nodejs22
+            fi
         else
             ui_error "Could not detect package manager"
             echo "Please install Node.js ${NODE_DEFAULT_MAJOR} manually (or Node ${NODE_MIN_VERSION}+ minimum): https://nodejs.org"
@@ -1550,6 +1626,12 @@ install_git() {
             else
                 run_quiet_step "Installing Git" sudo yum install -y -q git
             fi
+        elif command -v zypper &> /dev/null; then
+            if is_root; then
+                run_quiet_step "Installing Git" zypper install -y git
+            else
+                run_quiet_step "Installing Git" sudo zypper install -y git
+            fi
         else
             ui_error "Could not detect package manager for Git"
             exit 1
@@ -1574,7 +1656,7 @@ fix_npm_permissions() {
         return 0
     fi
 
-    ui_info "Configuring npm for user-local installs"
+    ui_warn "npm global prefix not writable; configuring ~/.npm-global as prefix (will be saved to ~/.npmrc)"
     mkdir -p "$HOME/.npm-global"
     npm config set prefix "$HOME/.npm-global"
 
@@ -1587,7 +1669,7 @@ fix_npm_permissions() {
     done
 
     export PATH="$HOME/.npm-global/bin:$PATH"
-    ui_success "npm configured for user installs"
+    ui_warn "Future npm global installs will use ~/.npm-global. Use 'npm i -g' (no sudo) to avoid prefix mismatch."
 }
 
 ensure_openclaw_bin_link() {
@@ -2016,15 +2098,23 @@ install_openclaw() {
         install_openclaw_npm "${install_spec}"
     fi
 
+    # Ensure bin link exists before checking resolve — npm may install the
+    # package without creating the bin symlink on some configurations.
+    ensure_openclaw_bin_link || true
+
     if [[ "${OPENCLAW_VERSION}" == "latest" && "${package_name}" == "openclaw" ]]; then
         if ! resolve_openclaw_bin &> /dev/null; then
             ui_warn "npm install openclaw@latest failed; retrying openclaw@next"
+            # Remove any bin symlink left by the earlier ensure_openclaw_bin_link
+            # so cleanup_npm_openclaw_paths + the @next install don't hit EEXIST.
+            local npm_bin_dir
+            npm_bin_dir="$(npm bin -g 2>/dev/null || true)"
+            [[ -n "$npm_bin_dir" && -L "${npm_bin_dir}/openclaw" ]] && rm -f "${npm_bin_dir}/openclaw"
             cleanup_npm_openclaw_paths
             install_openclaw_npm "openclaw@next"
+            ensure_openclaw_bin_link || true
         fi
     fi
-
-    ensure_openclaw_bin_link || true
 
     ui_success "OpenClaw installed"
 }
@@ -2314,15 +2404,33 @@ main() {
 
     ui_stage "Preparing environment"
 
+    # Warn about multiple Node environments
+    warn_multiple_node_environments
+
     # Step 1: Homebrew (macOS only)
     install_homebrew
 
     # Step 2: Node.js
+    # Source nvm if available so its managed Node appears on PATH.
+    # In a curl|bash context, .bashrc/.zshrc are not sourced, so nvm's
+    # PATH modifications are missing and the system Node is found instead.
+    if [[ -z "${NVM_DIR:-}" && -d "${HOME}/.nvm" ]]; then
+        export NVM_DIR="${HOME}/.nvm"
+    fi
+    if [[ -n "${NVM_DIR:-}" && -s "${NVM_DIR}/nvm.sh" ]]; then
+        . "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+    fi
+
     if ! check_node; then
         install_node
     fi
     if ! ensure_default_node_active_shell; then
         exit 1
+    fi
+
+    # Step 3: Git (required for all install methods)
+    if ! check_git; then
+        install_git
     fi
 
     ui_stage "Installing OpenClaw"
@@ -2350,15 +2458,10 @@ main() {
             ui_success "git wrapper removed"
         fi
 
-        # Step 3: Git (required for npm installs that may fetch from git or apply patches)
-        if ! check_git; then
-            install_git
-        fi
-
-        # Step 4: npm permissions (Linux)
+        # Step 3: npm permissions (Linux)
         fix_npm_permissions
 
-        # Step 5: OpenClaw
+        # Step 4: OpenClaw
         install_openclaw
     fi
 
@@ -2466,15 +2569,13 @@ main() {
                 return 0
             fi
             local -a doctor_args=()
-            if [[ "$NO_ONBOARD" == "1" ]]; then
-                if "$claw" doctor --help 2>/dev/null | grep -q -- "--non-interactive"; then
-                    doctor_args+=("--non-interactive")
-                fi
+            if [[ "$NO_ONBOARD" == "1" || "$NO_PROMPT" == "1" ]]; then
+                doctor_args+=("--non-interactive")
             fi
             ui_info "Running openclaw doctor"
             local doctor_ok=0
             if (( ${#doctor_args[@]} )); then
-                OPENCLAW_UPDATE_IN_PROGRESS=1 "$claw" doctor "${doctor_args[@]}" </dev/tty && doctor_ok=1
+                OPENCLAW_UPDATE_IN_PROGRESS=1 "$claw" doctor "${doctor_args[@]}" </dev/null && doctor_ok=1
             else
                 OPENCLAW_UPDATE_IN_PROGRESS=1 "$claw" doctor </dev/tty && doctor_ok=1
             fi

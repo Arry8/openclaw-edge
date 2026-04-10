@@ -1,11 +1,7 @@
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import { type AriaSnapshotNode, formatAriaSnapshot, type RawAXNode } from "./cdp.js";
-import {
-  assertBrowserNavigationAllowed,
-  assertBrowserNavigationRedirectChainAllowed,
-  assertBrowserNavigationResultAllowed,
-  withBrowserNavigationPolicy,
-} from "./navigation-guard.js";
+import { assertBrowserNavigationAllowed, withBrowserNavigationPolicy } from "./navigation-guard.js";
 import {
   buildRoleSnapshotFromAiSnapshot,
   buildRoleSnapshotFromAriaSnapshot,
@@ -14,9 +10,11 @@ import {
   type RoleRefMap,
 } from "./pw-role-snapshot.js";
 import {
+  assertPageNavigationCompletedSafely,
   ensurePageState,
   forceDisconnectPlaywrightForTarget,
   getPageForTargetId,
+  gotoPageWithNavigationGuard,
   storeRoleRefsForTarget,
   type WithSnapshotForAI,
 } from "./pw-session.js";
@@ -26,6 +24,7 @@ export async function snapshotAriaViaPlaywright(opts: {
   cdpUrl: string;
   targetId?: string;
   limit?: number;
+  ssrfPolicy?: SsrFPolicy;
 }): Promise<{ nodes: AriaSnapshotNode[] }> {
   const limit = Math.max(1, Math.min(2000, Math.floor(opts.limit ?? 500)));
   const page = await getPageForTargetId({
@@ -33,6 +32,15 @@ export async function snapshotAriaViaPlaywright(opts: {
     targetId: opts.targetId,
   });
   ensurePageState(page);
+  if (opts.ssrfPolicy) {
+    await assertPageNavigationCompletedSafely({
+      cdpUrl: opts.cdpUrl,
+      page,
+      response: null,
+      ssrfPolicy: opts.ssrfPolicy,
+      targetId: opts.targetId,
+    });
+  }
   const res = (await withPageScopedCdpClient({
     cdpUrl: opts.cdpUrl,
     page,
@@ -55,12 +63,22 @@ export async function snapshotAiViaPlaywright(opts: {
   targetId?: string;
   timeoutMs?: number;
   maxChars?: number;
+  ssrfPolicy?: SsrFPolicy;
 }): Promise<{ snapshot: string; truncated?: boolean; refs: RoleRefMap }> {
   const page = await getPageForTargetId({
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
   });
   ensurePageState(page);
+  if (opts.ssrfPolicy) {
+    await assertPageNavigationCompletedSafely({
+      cdpUrl: opts.cdpUrl,
+      page,
+      response: null,
+      ssrfPolicy: opts.ssrfPolicy,
+      targetId: opts.targetId,
+    });
+  }
 
   const maybe = page as unknown as WithSnapshotForAI;
   if (!maybe._snapshotForAI) {
@@ -91,7 +109,23 @@ export async function snapshotAiViaPlaywright(opts: {
     refs: built.refs,
     mode: "aria",
   });
-  return truncated ? { snapshot, truncated, refs: built.refs } : { snapshot, refs: built.refs };
+
+  // Remap e-prefixed refs (e1, e2, ...) to numeric refs (1, 2, ...) for user-facing output.
+  const numericRefs: RoleRefMap = {};
+  let numericSnapshot = snapshot;
+  for (const [key, value] of Object.entries(built.refs)) {
+    if (/^e\d+$/.test(key)) {
+      const num = key.slice(1);
+      numericRefs[num] = value;
+      numericSnapshot = numericSnapshot.replaceAll(`[ref=${key}]`, `[${num}]`);
+    } else {
+      numericRefs[key] = value;
+    }
+  }
+
+  return truncated
+    ? { snapshot: numericSnapshot, truncated, refs: numericRefs }
+    : { snapshot: numericSnapshot, refs: numericRefs };
 }
 
 export async function snapshotRoleViaPlaywright(opts: {
@@ -101,6 +135,7 @@ export async function snapshotRoleViaPlaywright(opts: {
   frameSelector?: string;
   refsMode?: "role" | "aria";
   options?: RoleSnapshotOptions;
+  ssrfPolicy?: SsrFPolicy;
 }): Promise<{
   snapshot: string;
   refs: Record<string, { role: string; name?: string; nth?: number }>;
@@ -111,9 +146,18 @@ export async function snapshotRoleViaPlaywright(opts: {
     targetId: opts.targetId,
   });
   ensurePageState(page);
+  if (opts.ssrfPolicy) {
+    await assertPageNavigationCompletedSafely({
+      cdpUrl: opts.cdpUrl,
+      page,
+      response: null,
+      ssrfPolicy: opts.ssrfPolicy,
+      targetId: opts.targetId,
+    });
+  }
 
   if (opts.refsMode === "aria") {
-    if (opts.selector?.trim() || opts.frameSelector?.trim()) {
+    if (normalizeOptionalString(opts.selector) || normalizeOptionalString(opts.frameSelector)) {
       throw new Error("refs=aria does not support selector/frame snapshots yet.");
     }
     const maybe = page as unknown as WithSnapshotForAI;
@@ -139,8 +183,8 @@ export async function snapshotRoleViaPlaywright(opts: {
     };
   }
 
-  const frameSelector = opts.frameSelector?.trim() || "";
-  const selector = opts.selector?.trim() || "";
+  const frameSelector = normalizeOptionalString(opts.frameSelector) ?? "";
+  const selector = normalizeOptionalString(opts.selector) ?? "";
   const locator = frameSelector
     ? selector
       ? page.frameLocator(frameSelector).locator(selector)
@@ -186,7 +230,7 @@ export async function navigateViaPlaywright(opts: {
     );
   };
 
-  const url = String(opts.url ?? "").trim();
+  const url = normalizeOptionalString(opts.url) ?? "";
   if (!url) {
     throw new Error("url is required");
   }
@@ -197,7 +241,15 @@ export async function navigateViaPlaywright(opts: {
   const timeout = Math.max(1000, Math.min(120_000, opts.timeoutMs ?? 20_000));
   let page = await getPageForTargetId(opts);
   ensurePageState(page);
-  const navigate = async () => await page.goto(url, { timeout });
+  const navigate = async () =>
+    await gotoPageWithNavigationGuard({
+      cdpUrl: opts.cdpUrl,
+      page,
+      url,
+      timeoutMs: timeout,
+      ssrfPolicy: opts.ssrfPolicy,
+      targetId: opts.targetId,
+    });
   let response;
   try {
     response = await navigate();
@@ -216,15 +268,14 @@ export async function navigateViaPlaywright(opts: {
     ensurePageState(page);
     response = await navigate();
   }
-  await assertBrowserNavigationRedirectChainAllowed({
-    request: response?.request(),
-    ...withBrowserNavigationPolicy(opts.ssrfPolicy),
+  await assertPageNavigationCompletedSafely({
+    cdpUrl: opts.cdpUrl,
+    page,
+    response,
+    ssrfPolicy: opts.ssrfPolicy,
+    targetId: opts.targetId,
   });
   const finalUrl = page.url();
-  await assertBrowserNavigationResultAllowed({
-    url: finalUrl,
-    ...withBrowserNavigationPolicy(opts.ssrfPolicy),
-  });
   return { url: finalUrl };
 }
 

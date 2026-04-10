@@ -10,6 +10,13 @@ export const DEFAULT_SANDBOX_WORKDIR = "/workspace";
 export const DEFAULT_SANDBOX_IDLE_HOURS = 24;
 export const DEFAULT_SANDBOX_MAX_AGE_DAYS = 7;
 
+/**
+ * Default PID limit for sandbox containers to prevent fork bomb attacks.
+ * A value of 1024 is reasonable for most agent workloads while preventing
+ * resource exhaustion attacks on the host system.
+ */
+export const DEFAULT_SANDBOX_PIDS_LIMIT = 1024;
+
 export const DEFAULT_TOOL_ALLOW = [
   "exec",
   "process",
@@ -18,6 +25,7 @@ export const DEFAULT_TOOL_ALLOW = [
   "edit",
   "apply_patch",
   "image",
+  "cron",
   "sessions_list",
   "sessions_history",
   "sessions_send",
@@ -28,18 +36,13 @@ export const DEFAULT_TOOL_ALLOW = [
 ] as const;
 
 // Provider docking: keep sandbox policy aligned with provider tool names.
-export const DEFAULT_TOOL_DENY = [
-  "browser",
-  "canvas",
-  "nodes",
-  "cron",
-  "gateway",
-  ...CHANNEL_IDS,
-] as const;
+// Note: cron is intentionally NOT denied — it uses callGatewayTool (WebSocket RPC)
+// and never executes inside the Docker sandbox container.
+export const DEFAULT_TOOL_DENY = ["browser", "canvas", "nodes", "gateway", ...CHANNEL_IDS] as const;
 
 export const DEFAULT_SANDBOX_BROWSER_IMAGE = "openclaw-sandbox-browser:bookworm-slim";
 export const DEFAULT_SANDBOX_COMMON_IMAGE = "openclaw-sandbox-common:bookworm-slim";
-export const SANDBOX_BROWSER_SECURITY_HASH_EPOCH = "2026-02-28-no-sandbox-env";
+export const SANDBOX_BROWSER_SECURITY_HASH_EPOCH = "2026-04-05-cdp-source-range";
 
 export const DEFAULT_SANDBOX_BROWSER_PREFIX = "openclaw-sbx-browser-";
 export const DEFAULT_SANDBOX_BROWSER_NETWORK = "openclaw-sandbox-browser";

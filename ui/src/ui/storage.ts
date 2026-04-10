@@ -23,6 +23,7 @@ type PersistedUiSettings = Omit<UiSettings, "token" | "sessionKey" | "lastActive
 import { isSupportedLocale } from "../i18n/index.ts";
 import { getSafeLocalStorage, getSafeSessionStorage } from "../local-storage.ts";
 import { inferBasePathFromPathname, normalizeBasePath } from "./navigation.ts";
+import { normalizeOptionalString } from "./string-coerce.ts";
 import { parseThemeSelection, type ThemeMode, type ThemeName } from "./theme.ts";
 
 export const BORDER_RADIUS_STOPS = [0, 25, 50, 75, 100] as const;
@@ -75,8 +76,7 @@ function deriveDefaultGatewayUrl(): { pageUrl: string; effectiveUrl: string } {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const configured =
     typeof window !== "undefined" &&
-    typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
-    window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
+    normalizeOptionalString(window.__OPENCLAW_CONTROL_UI_BASE_PATH__);
   const basePath = configured
     ? normalizeBasePath(configured)
     : inferBasePathFromPathname(location.pathname);
@@ -93,7 +93,7 @@ function getSessionStorage(): Storage | null {
 }
 
 function normalizeGatewayTokenScope(gatewayUrl: string): string {
-  const trimmed = gatewayUrl.trim();
+  const trimmed = normalizeOptionalString(gatewayUrl) ?? "";
   if (!trimmed) {
     return "default";
   }
@@ -103,9 +103,15 @@ function normalizeGatewayTokenScope(gatewayUrl: string): string {
         ? `${location.protocol}//${location.host}${location.pathname || "/"}`
         : undefined;
     const parsed = base ? new URL(trimmed, base) : new URL(trimmed);
+    const host = parsed.hostname.trim().toLowerCase();
+    const isLoopbackHost =
+      host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.startsWith("127.");
     const pathname =
       parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "") || parsed.pathname;
-    return `${parsed.protocol}//${parsed.host}${pathname}`;
+    const hostPort = isLoopbackHost
+      ? `127.0.0.1${parsed.port ? `:${parsed.port}` : ""}`
+      : parsed.host;
+    return `${parsed.protocol}//${hostPort}${pathname}`;
   } catch {
     return trimmed;
   }
@@ -122,27 +128,20 @@ function resolveScopedSessionSelection(
 ): ScopedSessionSelection {
   const scope = normalizeGatewayTokenScope(gatewayUrl);
   const scoped = parsed.sessionsByGateway?.[scope];
-  if (
-    scoped &&
-    typeof scoped.sessionKey === "string" &&
-    scoped.sessionKey.trim() &&
-    typeof scoped.lastActiveSessionKey === "string" &&
-    scoped.lastActiveSessionKey.trim()
-  ) {
+  const scopedSessionKey = normalizeOptionalString(scoped?.sessionKey);
+  const scopedLastActiveSessionKey = normalizeOptionalString(scoped?.lastActiveSessionKey);
+  if (scopedSessionKey && scopedLastActiveSessionKey) {
     return {
-      sessionKey: scoped.sessionKey.trim(),
-      lastActiveSessionKey: scoped.lastActiveSessionKey.trim(),
+      sessionKey: scopedSessionKey,
+      lastActiveSessionKey: scopedLastActiveSessionKey,
     };
   }
 
-  const legacySessionKey =
-    typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
-      ? parsed.sessionKey.trim()
-      : defaults.sessionKey;
+  const legacySessionKey = normalizeOptionalString(parsed.sessionKey) ?? defaults.sessionKey;
   const legacyLastActiveSessionKey =
-    typeof parsed.lastActiveSessionKey === "string" && parsed.lastActiveSessionKey.trim()
-      ? parsed.lastActiveSessionKey.trim()
-      : legacySessionKey || defaults.lastActiveSessionKey;
+    normalizeOptionalString(parsed.lastActiveSessionKey) ??
+    legacySessionKey ??
+    defaults.lastActiveSessionKey;
 
   return {
     sessionKey: legacySessionKey,
@@ -157,8 +156,8 @@ function loadSessionToken(gatewayUrl: string): string {
       return "";
     }
     storage.removeItem(LEGACY_TOKEN_SESSION_KEY);
-    const token = storage.getItem(tokenSessionKeyForGateway(gatewayUrl)) ?? "";
-    return token.trim();
+    const token = storage.getItem(tokenSessionKeyForGateway(gatewayUrl));
+    return normalizeOptionalString(token) ?? "";
   } catch {
     return "";
   }
@@ -172,7 +171,7 @@ function persistSessionToken(gatewayUrl: string, token: string) {
     }
     storage.removeItem(LEGACY_TOKEN_SESSION_KEY);
     const key = tokenSessionKeyForGateway(gatewayUrl);
-    const normalized = token.trim();
+    const normalized = normalizeOptionalString(token) ?? "";
     if (normalized) {
       storage.setItem(key, normalized);
       return;
@@ -215,10 +214,7 @@ export function loadSettings(): UiSettings {
       return defaults;
     }
     const parsed = JSON.parse(raw) as PersistedUiSettings;
-    const parsedGatewayUrl =
-      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-        ? parsed.gatewayUrl.trim()
-        : defaults.gatewayUrl;
+    const parsedGatewayUrl = normalizeOptionalString(parsed.gatewayUrl) ?? defaults.gatewayUrl;
     const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;
     const scopedSessionSelection = resolveScopedSessionSelection(gatewayUrl, parsed, defaults);
     const { theme, mode } = parseThemeSelection(
@@ -256,8 +252,14 @@ export function loadSettings(): UiSettings {
           ? parsed.navWidth
           : defaults.navWidth,
       navGroupsCollapsed:
-        typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
-          ? parsed.navGroupsCollapsed
+        typeof parsed.navGroupsCollapsed === "object" &&
+        parsed.navGroupsCollapsed !== null &&
+        !Array.isArray(parsed.navGroupsCollapsed)
+          ? Object.fromEntries(
+              Object.entries(parsed.navGroupsCollapsed).filter(
+                ([, value]) => typeof value === "boolean",
+              ),
+            )
           : defaults.navGroupsCollapsed,
       borderRadius:
         typeof parsed.borderRadius === "number" &&

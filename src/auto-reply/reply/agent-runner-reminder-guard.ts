@@ -1,4 +1,5 @@
 import { loadCronStore, resolveCronStorePath } from "../../cron/store.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { ReplyPayload } from "../types.js";
 
 export const UNSCHEDULED_REMINDER_NOTE =
@@ -10,11 +11,11 @@ const REMINDER_COMMITMENT_PATTERNS: RegExp[] = [
 ];
 
 export function hasUnbackedReminderCommitment(text: string): boolean {
-  const normalized = text.toLowerCase();
+  const normalized = normalizeLowercaseStringOrEmpty(text);
   if (!normalized.trim()) {
     return false;
   }
-  if (normalized.includes(UNSCHEDULED_REMINDER_NOTE.toLowerCase())) {
+  if (normalized.includes(normalizeLowercaseStringOrEmpty(UNSCHEDULED_REMINDER_NOTE))) {
     return false;
   }
   return REMINDER_COMMITMENT_PATTERNS.some((pattern) => pattern.test(text));
@@ -22,12 +23,14 @@ export function hasUnbackedReminderCommitment(text: string): boolean {
 
 /**
  * Returns true when the cron store has at least one enabled job that shares the
- * current session key. Used to suppress the "no reminder scheduled" guard note
- * when an existing cron (created in a prior turn) already covers the commitment.
+ * current session key or — for isolated cron jobs without a session key — the
+ * same agent id. Used to suppress the "no reminder scheduled" guard note when an
+ * existing cron (created in a prior turn) already covers the commitment.
  */
 export async function hasSessionRelatedCronJobs(params: {
   cronStorePath?: string;
   sessionKey?: string;
+  agentId?: string;
 }): Promise<boolean> {
   try {
     const storePath = resolveCronStorePath(params.cronStorePath);
@@ -35,10 +38,25 @@ export async function hasSessionRelatedCronJobs(params: {
     if (store.jobs.length === 0) {
       return false;
     }
-    if (params.sessionKey) {
-      return store.jobs.some((job) => job.enabled && job.sessionKey === params.sessionKey);
-    }
-    return false;
+    return store.jobs.some((job) => {
+      if (!job.enabled) {
+        return false;
+      }
+      // Session-bound job: match by sessionKey.
+      if (job.sessionKey && job.sessionKey === params.sessionKey) {
+        return true;
+      }
+      // Isolated job (sessionTarget=isolated, no sessionKey): match by agentId.
+      if (
+        job.sessionTarget === "isolated" &&
+        !job.sessionKey &&
+        params.agentId &&
+        job.agentId === params.agentId
+      ) {
+        return true;
+      }
+      return false;
+    });
   } catch {
     // If we cannot read the cron store, do not suppress the note.
     return false;
@@ -61,4 +79,24 @@ export function appendUnscheduledReminderNote(payloads: ReplyPayload[]): ReplyPa
       text: `${trimmed}\n\n${UNSCHEDULED_REMINDER_NOTE}`,
     };
   });
+}
+
+export function stripUnscheduledReminderNote(text: string): {
+  text: string;
+  didStrip: boolean;
+} {
+  if (!text.includes(UNSCHEDULED_REMINDER_NOTE)) {
+    return { text, didStrip: false };
+  }
+
+  const escaped = UNSCHEDULED_REMINDER_NOTE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\n\\n${escaped}$`);
+  const replaced = text.replace(pattern, "");
+  const didStrip = replaced !== text;
+  const stripped = replaced.trimEnd();
+
+  return {
+    text: stripped,
+    didStrip,
+  };
 }

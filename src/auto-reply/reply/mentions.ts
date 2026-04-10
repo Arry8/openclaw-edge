@@ -4,18 +4,23 @@ import type { ChannelId } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { compileConfigRegexes, type ConfigRegexRejectReason } from "../../security/config-regex.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import { escapeRegExp } from "../../utils.js";
 import type { MsgContext } from "../templating.js";
 
 function deriveMentionPatterns(identity?: { name?: string; emoji?: string }) {
   const patterns: string[] = [];
-  const name = identity?.name?.trim();
+  const name = normalizeOptionalString(identity?.name);
   if (name) {
     const parts = name.split(/\s+/).filter(Boolean).map(escapeRegExp);
     const re = parts.length ? parts.join(String.raw`\s+`) : escapeRegExp(name);
     patterns.push(String.raw`\b@?${re}\b`);
   }
-  const emoji = identity?.emoji?.trim();
+  const emoji = normalizeOptionalString(identity?.emoji);
   if (emoji) {
     patterns.push(escapeRegExp(emoji));
   }
@@ -118,17 +123,6 @@ function resolveMentionPatterns(cfg: OpenClawConfig | undefined, agentId?: strin
   return derived.length > 0 ? derived : [];
 }
 
-function resolveFallbackProviderMentionStripRegexes(providerId?: string | null): RegExp[] {
-  switch (providerId?.trim().toLowerCase()) {
-    case "discord":
-      return [/<@!?\d+>/gi];
-    case "slack":
-      return [/<@[^>\s]+>/gi];
-    default:
-      return [];
-  }
-}
-
 export function buildMentionRegexes(cfg: OpenClawConfig | undefined, agentId?: string): RegExp[] {
   const patterns = normalizeMentionPatterns(resolveMentionPatterns(cfg, agentId));
   return compileMentionPatternsCached({
@@ -140,7 +134,9 @@ export function buildMentionRegexes(cfg: OpenClawConfig | undefined, agentId?: s
 }
 
 export function normalizeMentionText(text: string): string {
-  return (text ?? "").replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, "").toLowerCase();
+  return normalizeLowercaseStringOrEmpty(
+    (text ?? "").replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, ""),
+  );
 }
 
 export function matchesMentionPatterns(text: string, mentionRegexes: RegExp[]): boolean {
@@ -194,7 +190,12 @@ export function stripStructuralPrefixes(text: string): string {
     ? text.slice(text.indexOf(CURRENT_MESSAGE_MARKER) + CURRENT_MESSAGE_MARKER.length).trimStart()
     : text;
 
-  return afterMarker
+  // Collect-mode batches prefix each queued message with
+  // "---" + "Queued #N" lines; strip them so commands like /stop
+  // remain detectable even after batching.
+  const withoutQueuedMarkers = afterMarker.replace(/(?:^|\n)---\s*\nQueued #[0-9]+\s*\n/g, "\n");
+
+  return withoutQueuedMarkers
     .replace(/\[[^\]]+\]\s*/g, "")
     .replace(/^[ \t]*[A-Za-z0-9+()\-_. ]+:\s*/gm, "")
     .replace(/\\n/g, " ")
@@ -211,7 +212,7 @@ export function stripMentions(
   let result = text;
   const providerId =
     (ctx.Provider ? normalizeChannelId(ctx.Provider) : null) ??
-    (ctx.Provider?.trim().toLowerCase() as ChannelId | undefined) ??
+    (normalizeOptionalLowercaseString(ctx.Provider) as ChannelId | undefined) ??
     null;
   const providerMentions = providerId ? getChannelPlugin(providerId)?.mentions : undefined;
   const configRegexes = compileMentionPatternsCached({
@@ -230,9 +231,7 @@ export function stripMentions(
       cache: mentionStripRegexCompileCache,
       warnRejected: false,
     });
-  const fallbackProviderRegexes =
-    providerRegexes.length > 0 ? [] : resolveFallbackProviderMentionStripRegexes(providerId);
-  for (const re of [...configRegexes, ...providerRegexes, ...fallbackProviderRegexes]) {
+  for (const re of [...configRegexes, ...providerRegexes]) {
     result = result.replace(re, " ");
   }
   if (providerMentions?.stripMentions) {

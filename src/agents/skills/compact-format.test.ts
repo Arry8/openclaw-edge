@@ -1,8 +1,9 @@
 import os from "node:os";
-import { formatSkillsForPrompt, type Skill } from "@mariozechner/pi-coding-agent";
+import { formatSkillsForPrompt as upstreamFormatSkillsForPrompt } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import { createCanonicalFixtureSkill } from "../skills.test-helpers.js";
+import { formatSkillsForPrompt, type Skill } from "./skill-contract.js";
 import type { SkillEntry } from "./types.js";
 import {
   formatSkillsCompact,
@@ -21,7 +22,15 @@ function makeSkill(name: string, desc = "A skill", filePath = `/skills/${name}/S
 }
 
 function makeEntry(skill: Skill): SkillEntry {
-  return { skill, frontmatter: {} };
+  return {
+    skill,
+    frontmatter: {},
+    exposure: {
+      includeInRuntimeRegistry: true,
+      includeInAvailableSkillsPrompt: true,
+      userInvocable: true,
+    },
+  };
 }
 
 function buildPrompt(
@@ -42,6 +51,21 @@ function buildPrompt(
 }
 
 describe("formatSkillsCompact", () => {
+  it("keeps the full-format XML output aligned with the upstream formatter for visible skills", () => {
+    const skills = [
+      makeSkill("weather", "Get weather <data> & forecasts"),
+      makeSkill("notes", "Summarize notes", "/tmp/notes/SKILL.md"),
+    ];
+    expect(formatSkillsForPrompt(skills)).toBe(upstreamFormatSkillsForPrompt(skills));
+  });
+
+  it("renders all passed skills in the full formatter without reapplying visibility policy", () => {
+    const hidden: Skill = { ...makeSkill("hidden"), disableModelInvocation: true };
+    const out = formatSkillsForPrompt([makeSkill("visible"), hidden]);
+    expect(out).toContain("visible");
+    expect(out).toContain("hidden");
+  });
+
   it("returns empty string for no skills", () => {
     expect(formatSkillsCompact([])).toBe("");
   });
@@ -54,11 +78,11 @@ describe("formatSkillsCompact", () => {
     expect(out).not.toContain("<description>");
   });
 
-  it("filters out disableModelInvocation skills", () => {
+  it("renders all passed skills without reapplying visibility policy", () => {
     const hidden: Skill = { ...makeSkill("hidden"), disableModelInvocation: true };
     const out = formatSkillsCompact([makeSkill("visible"), hidden]);
     expect(out).toContain("visible");
-    expect(out).not.toContain("hidden");
+    expect(out).toContain("hidden");
   });
 
   it("escapes XML special characters", () => {
@@ -76,6 +100,29 @@ describe("formatSkillsCompact", () => {
 });
 
 describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
+  it("respects explicit exposure metadata before compact formatting", () => {
+    const hidden = makeEntry({ ...makeSkill("hidden"), disableModelInvocation: true });
+    hidden.exposure = {
+      includeInRuntimeRegistry: true,
+      includeInAvailableSkillsPrompt: false,
+      userInvocable: true,
+    };
+
+    const prompt = buildWorkspaceSkillsPrompt("/fake", {
+      entries: [makeEntry(makeSkill("visible")), hidden],
+      config: {
+        skills: {
+          limits: {
+            maxSkillsPromptChars: 4_000,
+          },
+        },
+      } satisfies OpenClawConfig,
+    });
+
+    expect(prompt).toContain("visible");
+    expect(prompt).not.toContain("hidden");
+  });
+
   it("tier 1: uses full format when under budget", () => {
     const skills = [makeSkill("weather", "Get weather data")];
     const prompt = buildPrompt(skills, { maxChars: 50_000 });
@@ -106,7 +153,9 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
     const prompt = buildPrompt(skills, { maxChars: 2000 });
     expect(prompt).toContain("compact format, descriptions omitted");
     expect(prompt).not.toContain("<description>");
-    expect(prompt).toContain("skill-0");
+    // High-priority skills (tail) are preserved; low-priority (head) are dropped.
+    expect(prompt).toContain("skill-99");
+    expect(prompt).not.toContain("skill-0");
     const match = prompt.match(/included (\d+) of (\d+)/);
     expect(match).toBeTruthy();
     expect(Number(match![1])).toBeLessThan(Number(match![2]));
@@ -130,9 +179,9 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
   it("count truncation + compact: shows included X of Y with compact note", () => {
     // 30 skills but maxCount=10, and full format of 10 exceeds budget
     const skills = Array.from({ length: 30 }, (_, i) => makeSkill(`skill-${i}`, "A".repeat(200)));
-    const tenSkills = skills.slice(0, 10);
-    const fullLen = formatSkillsForPrompt(tenSkills).length;
-    const compactLen = formatSkillsCompact(tenSkills).length;
+    const keptSkills = skills.slice(skills.length - 10);
+    const fullLen = formatSkillsForPrompt(keptSkills).length;
+    const compactLen = formatSkillsCompact(keptSkills).length;
     const budget = compactLen + 200;
     // Verify precondition: full format of 10 skills exceeds budget
     expect(fullLen).toBeGreaterThan(budget);
@@ -159,6 +208,30 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
     expect(prompt).toContain("included 5 of 20");
     expect(prompt).not.toContain("compact");
     expect(prompt).toContain("<description>");
+    // Highest-priority skills (tail) are kept
+    expect(prompt).toContain("skill-19");
+    expect(prompt).not.toContain("skill-0");
+  });
+
+  it("truncation preserves high-priority (workspace) skills over low-priority (bundled)", () => {
+    const bundled = Array.from({ length: 10 }, (_, i) =>
+      makeSkill(`bundled-${i}`, "A bundled skill"),
+    );
+    const workspace = Array.from({ length: 3 }, (_, i) =>
+      makeSkill(`workspace-${i}`, "A workspace skill"),
+    );
+    // Simulate merged order: bundled (low priority) first, workspace (high priority) last
+    const all = [...bundled, ...workspace];
+    const prompt = buildPrompt(all, { maxChars: 50_000, maxCount: 5 });
+    expect(prompt).toContain("included 5 of 13");
+    // All 3 workspace skills must survive
+    expect(prompt).toContain("workspace-0");
+    expect(prompt).toContain("workspace-1");
+    expect(prompt).toContain("workspace-2");
+    // Only 2 bundled skills fit (highest-indexed = latest in bundled batch)
+    expect(prompt).toContain("bundled-9");
+    expect(prompt).toContain("bundled-8");
+    expect(prompt).not.toContain("bundled-0");
   });
 
   it("compact budget reserves space for the warning line", () => {

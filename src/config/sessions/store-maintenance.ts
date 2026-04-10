@@ -3,8 +3,10 @@ import path from "node:path";
 import { parseByteSize } from "../../cli/parse-bytes.js";
 import { parseDurationMs } from "../../cli/parse-duration.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { normalizeStringifiedOptionalString } from "../../shared/string-coerce.js";
 import { loadConfig } from "../config.js";
 import type { SessionMaintenanceConfig, SessionMaintenanceMode } from "../types.base.js";
+import { resolveSessionFilePath } from "./paths.js";
 import type { SessionEntry } from "./types.js";
 
 const log = createSubsystemLogger("sessions/store");
@@ -37,11 +39,12 @@ export type ResolvedSessionMaintenanceConfig = {
 
 function resolvePruneAfterMs(maintenance?: SessionMaintenanceConfig): number {
   const raw = maintenance?.pruneAfter ?? maintenance?.pruneDays;
-  if (raw === undefined || raw === null || raw === "") {
+  const normalized = normalizeStringifiedOptionalString(raw);
+  if (!normalized) {
     return DEFAULT_SESSION_PRUNE_AFTER_MS;
   }
   try {
-    return parseDurationMs(String(raw).trim(), { defaultUnit: "d" });
+    return parseDurationMs(normalized, { defaultUnit: "d" });
   } catch {
     return DEFAULT_SESSION_PRUNE_AFTER_MS;
   }
@@ -49,11 +52,12 @@ function resolvePruneAfterMs(maintenance?: SessionMaintenanceConfig): number {
 
 function resolveRotateBytes(maintenance?: SessionMaintenanceConfig): number {
   const raw = maintenance?.rotateBytes;
-  if (raw === undefined || raw === null || raw === "") {
+  const normalized = normalizeStringifiedOptionalString(raw);
+  if (!normalized) {
     return DEFAULT_SESSION_ROTATE_BYTES;
   }
   try {
-    return parseByteSize(String(raw).trim(), { defaultUnit: "b" });
+    return parseByteSize(normalized, { defaultUnit: "b" });
   } catch {
     return DEFAULT_SESSION_ROTATE_BYTES;
   }
@@ -67,11 +71,12 @@ function resolveResetArchiveRetentionMs(
   if (raw === false) {
     return null;
   }
-  if (raw === undefined || raw === null || raw === "") {
+  const normalized = normalizeStringifiedOptionalString(raw);
+  if (!normalized) {
     return pruneAfterMs;
   }
   try {
-    return parseDurationMs(String(raw).trim(), { defaultUnit: "d" });
+    return parseDurationMs(normalized, { defaultUnit: "d" });
   } catch {
     return pruneAfterMs;
   }
@@ -79,11 +84,12 @@ function resolveResetArchiveRetentionMs(
 
 function resolveMaxDiskBytes(maintenance?: SessionMaintenanceConfig): number | null {
   const raw = maintenance?.maxDiskBytes;
-  if (raw === undefined || raw === null || raw === "") {
+  const normalized = normalizeStringifiedOptionalString(raw);
+  if (!normalized) {
     return null;
   }
   try {
-    return parseByteSize(String(raw).trim(), { defaultUnit: "b" });
+    return parseByteSize(normalized, { defaultUnit: "b" });
   } catch {
     return null;
   }
@@ -112,11 +118,12 @@ function resolveHighWaterBytes(
     return null;
   }
   const raw = maintenance?.highWaterBytes;
-  if (raw === undefined || raw === null || raw === "") {
+  const normalized = normalizeStringifiedOptionalString(raw);
+  if (!normalized) {
     return computeDefault();
   }
   try {
-    const parsed = parseByteSize(String(raw).trim(), { defaultUnit: "b" });
+    const parsed = parseByteSize(normalized, { defaultUnit: "b" });
     return Math.min(parsed, maxDiskBytes);
   } catch {
     return computeDefault();
@@ -169,6 +176,75 @@ export function pruneStaleEntries(
   }
   if (pruned > 0 && opts.log !== false) {
     log.info("pruned stale session entries", { pruned, maxAgeMs });
+  }
+  return pruned;
+}
+
+/**
+ * Remove entries whose transcript file (sessionFile) no longer exists on disk.
+ * This handles the case where .jsonl files are deleted externally (e.g., by
+ * automation or disk cleanup) but the session index entry persists.
+ * Checks both the explicit `sessionFile` path and the derived fallback path
+ * from `resolveSessionFilePath` before declaring an entry orphaned.
+ * Mutates `store` in-place.
+ */
+export async function pruneOrphanedEntries(
+  store: Record<string, SessionEntry>,
+  storePath: string,
+  opts: { log?: boolean; onPruned?: (params: { key: string; entry: SessionEntry }) => void } = {},
+): Promise<number> {
+  const storeDir = path.dirname(storePath);
+  const ORPHAN_GRACE_MS = 5 * 60 * 1000;
+  const cutoff = Date.now() - ORPHAN_GRACE_MS;
+  const entries = Object.entries(store).filter(
+    ([, e]) => typeof e?.sessionFile === "string" && e.sessionFile && (e.updatedAt ?? 0) < cutoff,
+  );
+
+  const checks = await Promise.all(
+    entries.map(async ([key, entry]) => {
+      const primaryPath = path.resolve(storeDir, entry.sessionFile!);
+      try {
+        await fs.promises.access(primaryPath);
+        return null;
+      } catch (err: unknown) {
+        // Only try fallback for missing files, not permission errors.
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") {
+          return null;
+        }
+      }
+      try {
+        const fallbackPath = resolveSessionFilePath(
+          entry.sessionId ?? key,
+          { ...entry, sessionFile: undefined },
+          {
+            sessionsDir: storeDir,
+          },
+        );
+        if (fallbackPath !== primaryPath) {
+          await fs.promises.access(fallbackPath);
+          return null;
+        }
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") {
+          return null;
+        }
+      }
+      return key;
+    }),
+  );
+
+  let pruned = 0;
+  for (const key of checks) {
+    if (key) {
+      opts.onPruned?.({ key, entry: store[key] });
+      delete store[key];
+      pruned++;
+    }
+  }
+  if (pruned > 0 && opts.log !== false) {
+    log.info("pruned orphaned session entries (missing transcript files)", { pruned });
   }
   return pruned;
 }

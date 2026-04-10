@@ -7,6 +7,7 @@ import { CONFIG_PATH } from "../config/paths.js";
 import { isBlockedObjectKey } from "../config/prototype-keys.js";
 import { redactConfigObject } from "../config/redact-snapshot.js";
 import { readBestEffortRuntimeConfigSchema } from "../config/runtime-schema.js";
+import { buildConfigPathSuggestionHint } from "../config/suggest-path.js";
 import {
   coerceSecretRef,
   isValidEnvSecretRefId,
@@ -36,6 +37,7 @@ import {
   discoverConfigSecretTargets,
   resolveConfigSecretTargetByPath,
 } from "../secrets/target-registry.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
 import { shortenHomePath } from "../utils.js";
@@ -370,7 +372,7 @@ function pruneInactiveGatewayAuthCredentials(params: {
     return [];
   }
   const auth = authRaw as Record<string, unknown>;
-  const mode = typeof auth.mode === "string" ? auth.mode.trim() : "";
+  const mode = normalizeOptionalString(auth.mode) ?? "";
 
   const removedPaths: string[] = [];
   const remove = (key: "token" | "password") => {
@@ -1169,6 +1171,10 @@ export async function runConfigGet(opts: { path: string; json?: boolean; runtime
     const res = getAtPath(redacted, parsedPath);
     if (!res.found) {
       runtime.error(danger(`Config path not found: ${opts.path}`));
+      const hint = buildConfigPathSuggestionHint(opts.path);
+      if (hint) {
+        runtime.error(info(hint));
+      }
       runtime.exit(1);
       return;
     }
@@ -1203,6 +1209,10 @@ export async function runConfigUnset(opts: { path: string; runtime?: RuntimeEnv 
     const removed = unsetAtPath(next, parsedPath);
     if (!removed) {
       runtime.error(danger(`Config path not found: ${opts.path}`));
+      const hint = buildConfigPathSuggestionHint(opts.path);
+      if (hint) {
+        runtime.error(info(hint));
+      }
       runtime.exit(1);
       return;
     }

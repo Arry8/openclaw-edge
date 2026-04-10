@@ -24,6 +24,7 @@ const api = {
   sendDocument: vi.fn(),
   setWebhook: vi.fn(),
   deleteWebhook: vi.fn(),
+  getWebhookInfo: vi.fn(async () => ({ url: "" })),
   getUpdates: vi.fn(async () => []),
   config: {
     use: vi.fn(),
@@ -261,11 +262,11 @@ async function monitorWithAutoAbort(opts: Omit<MonitorTelegramOpts, "abortSignal
   });
 }
 
-vi.mock("openclaw/plugin-sdk/config-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/config-runtime")>();
+vi.mock("openclaw/plugin-sdk/config-runtime", async () => {
   return {
-    ...actual,
     loadConfig,
+    resolveAgentMaxConcurrent: (cfg: { agents?: { defaults?: { maxConcurrent?: number } } }) =>
+      cfg.agents?.defaults?.maxConcurrent ?? 1,
   };
 });
 
@@ -306,8 +307,10 @@ vi.mock("@grammyjs/runner", () => ({
   run: runSpy,
 }));
 
-vi.mock("openclaw/plugin-sdk/runtime-env", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/runtime-env")>();
+vi.mock("openclaw/plugin-sdk/runtime-env", async () => {
+  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/runtime-env")>(
+    "openclaw/plugin-sdk/runtime-env",
+  );
   return {
     ...actual,
     computeBackoff,
@@ -322,6 +325,8 @@ vi.mock("./webhook.js", () => ({
 
 vi.mock("./fetch.js", () => ({
   resolveTelegramTransport: resolveTelegramTransportSpy,
+  resolveTelegramApiBase: (apiRoot?: string) => apiRoot ?? "https://api.telegram.org",
+  resolveTelegramFetch: () => globalThis.fetch,
 }));
 
 vi.mock("./update-offset-store.js", () => ({
@@ -329,27 +334,10 @@ vi.mock("./update-offset-store.js", () => ({
   writeTelegramUpdateOffset: vi.fn(async () => undefined),
 }));
 
-vi.mock("openclaw/plugin-sdk/reply-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/reply-runtime")>();
-  return {
-    ...actual,
-    getReplyFromConfig: async (ctx: { Body?: string }) => ({
-      text: `echo:${ctx.Body}`,
-    }),
-  };
-});
-
-vi.mock("../../../src/auto-reply/reply.js", () => ({
-  getReplyFromConfig: async (ctx: { Body?: string }) => ({
-    text: `echo:${ctx.Body}`,
-  }),
-}));
-
 describe("monitorTelegramProvider (grammY)", () => {
   let consoleErrorSpy: { mockRestore: () => void } | undefined;
 
   beforeAll(async () => {
-    vi.resetModules();
     ({ monitorTelegramProvider } = await import("./monitor.js"));
   });
 
@@ -475,6 +463,7 @@ describe("monitorTelegramProvider (grammY)", () => {
     const abort = new AbortController();
     const cleanupError = makeRecoverableFetchError();
     api.deleteWebhook.mockReset();
+    api.getWebhookInfo.mockReset().mockResolvedValueOnce({ url: "https://example.test/hook" });
     api.deleteWebhook.mockRejectedValueOnce(cleanupError).mockResolvedValueOnce(true);
     mockRunOnceAndAbort(abort);
 
@@ -482,6 +471,25 @@ describe("monitorTelegramProvider (grammY)", () => {
 
     expect(api.deleteWebhook).toHaveBeenCalledTimes(2);
     expectRecoverableRetryState(1);
+  });
+
+  it("continues polling when deleteWebhook transiently fails but webhook is already absent", async () => {
+    const abort = new AbortController();
+    const cleanupError = makeRecoverableFetchError();
+    api.deleteWebhook.mockReset();
+    api.getWebhookInfo.mockReset().mockResolvedValueOnce({ url: "" });
+    api.deleteWebhook.mockRejectedValueOnce(cleanupError);
+    sleepWithAbort.mockImplementationOnce(async () => {
+      abort.abort();
+    });
+    mockRunOnceAndAbort(abort);
+
+    await monitorTelegramProvider({ token: "tok", abortSignal: abort.signal });
+
+    expect(api.deleteWebhook).toHaveBeenCalledTimes(1);
+    expect(api.getWebhookInfo).toHaveBeenCalledTimes(1);
+    expect(runSpy).toHaveBeenCalledTimes(1);
+    expect(sleepWithAbort).not.toHaveBeenCalled();
   });
 
   it("retries setup-time recoverable errors before starting polling", async () => {

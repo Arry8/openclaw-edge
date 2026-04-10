@@ -8,6 +8,7 @@ import {
   isToolResultContentType,
   resolveToolBlockArgs,
 } from "../../../../src/chat/tool-content.js";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type { NormalizedMessage, MessageContentItem } from "../types/chat-types.ts";
 
 /**
@@ -74,7 +75,7 @@ export function normalizeMessage(message: unknown): NormalizedMessage {
  * Normalize role for grouping purposes.
  */
 export function normalizeRoleForGrouping(role: string): string {
-  const lower = role.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(role);
   // Preserve original casing when it's already a core role.
   if (role === "user" || role === "User") {
     return role;
@@ -102,6 +103,31 @@ export function normalizeRoleForGrouping(role: string): string {
  */
 export function isToolResultMessage(message: unknown): boolean {
   const m = message as Record<string, unknown>;
-  const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+  const role = normalizeLowercaseStringOrEmpty(m.role);
   return role === "toolresult" || role === "tool_result";
+}
+
+// Pattern matching exec notification lines produced by session-system-events.
+// Format: "System: [timestamp] Exec completed ..." or
+//         "System (untrusted): [timestamp] Exec failed ..."
+const EXEC_NOTIFICATION_RE =
+  /^System(?:\s*\(untrusted\))?\s*:.*\bExec\s+(?:completed|failed|denied|timed\s+out|finished)\b/i;
+
+/**
+ * Check if a system message consists entirely of internal exec notifications.
+ * These are gateway-internal events formatted by session-system-events and
+ * should not be displayed in user-facing chat surfaces like WebChat.
+ */
+export function isInternalExecNotification(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+  if (role !== "system") {
+    return false;
+  }
+  const content = typeof m.content === "string" ? m.content : "";
+  const lines = content.split("\n").filter((line) => line.trim());
+  if (lines.length === 0) {
+    return false;
+  }
+  return lines.every((line) => EXEC_NOTIFICATION_RE.test(line.trim()));
 }

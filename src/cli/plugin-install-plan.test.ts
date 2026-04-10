@@ -25,14 +25,36 @@ describe("plugin install plan helpers", () => {
     expect(result?.warning).toContain('bare install spec "voice-call"');
   });
 
-  it("skips bundled pre-plan for scoped npm specs", () => {
-    const findBundledSource = vi.fn();
+  it("prefers bundled plugin for scoped npm specs", () => {
+    const findBundledSource = vi.fn().mockReturnValue({
+      pluginId: "voice-call",
+      localPath: "/tmp/extensions/voice-call",
+      npmSpec: "@openclaw/voice-call",
+    });
     const result = resolveBundledInstallPlanBeforeNpm({
       rawSpec: "@openclaw/voice-call",
       findBundledSource,
     });
 
-    expect(findBundledSource).not.toHaveBeenCalled();
+    expect(findBundledSource).toHaveBeenCalledWith({
+      kind: "npmSpec",
+      value: "@openclaw/voice-call",
+    });
+    expect(result?.bundledSource.pluginId).toBe("voice-call");
+    expect(result?.warning).toContain('npm install spec "@openclaw/voice-call"');
+  });
+
+  it("skips bundled pre-plan for non-matching scoped npm specs", () => {
+    const findBundledSource = vi.fn().mockReturnValue(undefined);
+    const result = resolveBundledInstallPlanBeforeNpm({
+      rawSpec: "@openclaw/not-found",
+      findBundledSource,
+    });
+
+    expect(findBundledSource).toHaveBeenCalledWith({
+      kind: "npmSpec",
+      value: "@openclaw/not-found",
+    });
     expect(result).toBeNull();
   });
 
@@ -104,6 +126,30 @@ describe("plugin install plan helpers", () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  it("resolves bundled plugin when catalog pluginId matches bare npmSpec despite scoped bundled npmSpec", () => {
+    const findBundledSource = vi
+      .fn()
+      .mockImplementation(({ kind }: { kind: "pluginId" | "npmSpec"; value: string }) => {
+        if (kind === "pluginId") {
+          return {
+            pluginId: "acpx",
+            localPath: "/tmp/extensions/acpx",
+            npmSpec: "@openclaw/acpx",
+          };
+        }
+        return undefined;
+      });
+
+    const result = resolveBundledInstallPlanForCatalogEntry({
+      pluginId: "acpx",
+      npmSpec: "acpx",
+      findBundledSource,
+    });
+
+    expect(result?.bundledSource.pluginId).toBe("acpx");
+    expect(result?.bundledSource.localPath).toBe("/tmp/extensions/acpx");
   });
 
   it("uses npm-spec bundled fallback only for package-not-found", () => {

@@ -4,25 +4,24 @@ import {
   clearMemoryEmbeddingProviders,
   registerMemoryEmbeddingProvider,
 } from "../plugins/memory-embedding-providers.js";
-import { resolveMemorySearchConfig } from "./memory-search.js";
+import { resolveMemorySearchConfig, resolveMemorySearchSyncConfig } from "./memory-search.js";
 
 const asConfig = (cfg: OpenClawConfig): OpenClawConfig => cfg;
 
-describe("memory search config", () => {
-  beforeEach(() => {
-    clearMemoryEmbeddingProviders();
-    registerMemoryEmbeddingProvider({
-      id: "openai",
-      defaultModel: "text-embedding-3-small",
-      transport: "remote",
-      create: async () => ({ provider: null }),
-    });
-    registerMemoryEmbeddingProvider({
-      id: "local",
-      defaultModel: "local-default",
-      transport: "local",
-      create: async () => ({ provider: null }),
-    });
+function registerBaseMemoryEmbeddingProviders(options?: { includeGemini?: boolean }): void {
+  registerMemoryEmbeddingProvider({
+    id: "openai",
+    defaultModel: "text-embedding-3-small",
+    transport: "remote",
+    create: async () => ({ provider: null }),
+  });
+  registerMemoryEmbeddingProvider({
+    id: "local",
+    defaultModel: "local-default",
+    transport: "local",
+    create: async () => ({ provider: null }),
+  });
+  if (options?.includeGemini !== false) {
     registerMemoryEmbeddingProvider({
       id: "gemini",
       defaultModel: "gemini-embedding-001",
@@ -34,24 +33,31 @@ describe("memory search config", () => {
           .replace(/^(gemini|google)\//, "") === "gemini-embedding-2-preview",
       create: async () => ({ provider: null }),
     });
-    registerMemoryEmbeddingProvider({
-      id: "voyage",
-      defaultModel: "voyage-4-large",
-      transport: "remote",
-      create: async () => ({ provider: null }),
-    });
-    registerMemoryEmbeddingProvider({
-      id: "mistral",
-      defaultModel: "mistral-embed",
-      transport: "remote",
-      create: async () => ({ provider: null }),
-    });
-    registerMemoryEmbeddingProvider({
-      id: "ollama",
-      defaultModel: "nomic-embed-text",
-      transport: "remote",
-      create: async () => ({ provider: null }),
-    });
+  }
+  registerMemoryEmbeddingProvider({
+    id: "voyage",
+    defaultModel: "voyage-4-large",
+    transport: "remote",
+    create: async () => ({ provider: null }),
+  });
+  registerMemoryEmbeddingProvider({
+    id: "mistral",
+    defaultModel: "mistral-embed",
+    transport: "remote",
+    create: async () => ({ provider: null }),
+  });
+  registerMemoryEmbeddingProvider({
+    id: "ollama",
+    defaultModel: "nomic-embed-text",
+    transport: "remote",
+    create: async () => ({ provider: null }),
+  });
+}
+
+describe("memory search config", () => {
+  beforeEach(() => {
+    clearMemoryEmbeddingProviders();
+    registerBaseMemoryEmbeddingProviders();
   });
 
   afterEach(() => {
@@ -115,11 +121,15 @@ describe("memory search config", () => {
   function expectMergedRemoteConfig(
     resolved: ReturnType<typeof resolveMemorySearchConfig>,
     apiKey: unknown,
+    extras?: { nonBatchConcurrency?: number },
   ) {
     expect(resolved?.remote).toEqual({
       baseUrl: "https://agent.example/v1",
       apiKey,
       headers: { "X-Default": "on" },
+      ...(typeof extras?.nonBatchConcurrency === "number"
+        ? { nonBatchConcurrency: extras.nonBatchConcurrency }
+        : {}),
       batch: {
         enabled: false,
         wait: true,
@@ -149,6 +159,25 @@ describe("memory search config", () => {
     expect(resolved).toBeNull();
   });
 
+  it("returns null sync config when disabled", () => {
+    const cfg = asConfig({
+      agents: {
+        defaults: {
+          memorySearch: { enabled: true },
+        },
+        list: [
+          {
+            id: "main",
+            default: true,
+            memorySearch: { enabled: false },
+          },
+        ],
+      },
+    });
+    const resolved = resolveMemorySearchSyncConfig(cfg, "main");
+    expect(resolved).toBeNull();
+  });
+
   it("defaults provider to auto when unspecified", () => {
     const cfg = asConfig({
       agents: {
@@ -162,6 +191,44 @@ describe("memory search config", () => {
     const resolved = resolveMemorySearchConfig(cfg, "main");
     expect(resolved?.provider).toBe("auto");
     expect(resolved?.fallback).toBe("none");
+  });
+
+  it("resolves sync config without consulting embedding providers", () => {
+    clearMemoryEmbeddingProviders();
+    const cfg = asConfig({
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "openai",
+            sync: {
+              onSessionStart: false,
+              onSearch: true,
+              watch: false,
+              watchDebounceMs: 25,
+              intervalMinutes: 3,
+              sessions: {
+                deltaBytes: 321,
+                deltaMessages: 7,
+                postCompactionForce: false,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(resolveMemorySearchSyncConfig(cfg, "main")).toEqual({
+      onSessionStart: false,
+      onSearch: true,
+      watch: false,
+      watchDebounceMs: 25,
+      intervalMinutes: 3,
+      sessions: {
+        deltaBytes: 321,
+        deltaMessages: 7,
+        postCompactionForce: false,
+      },
+    });
   });
 
   it("merges defaults and overrides", () => {
@@ -313,6 +380,29 @@ describe("memory search config", () => {
     );
   });
 
+  it("accepts Gemini multimodal memory even when the runtime registry has not registered Gemini yet", () => {
+    clearMemoryEmbeddingProviders();
+    registerBaseMemoryEmbeddingProviders({ includeGemini: false });
+    const cfg = asConfig({
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "gemini",
+            model: "gemini-embedding-2-preview",
+            multimodal: { enabled: true, modalities: ["image"] },
+          },
+        },
+      },
+    });
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+    expect(resolved?.provider).toBe("gemini");
+    expect(resolved?.multimodal).toEqual({
+      enabled: true,
+      modalities: ["image"],
+      maxFileBytes: 10 * 1024 * 1024,
+    });
+  });
+
   it("rejects multimodal memory when fallback is configured", () => {
     const cfg = asConfig({
       agents: {
@@ -404,6 +494,18 @@ describe("memory search config", () => {
       provider: "default",
       id: "OPENAI_API_KEY",
     });
+  });
+
+  it("merges remote non-batch concurrency from defaults with agent overrides", () => {
+    const cfg = configWithRemoteDefaults({
+      apiKey: "default-key", // pragma: allowlist secret
+      headers: { "X-Default": "on" },
+      nonBatchConcurrency: 1,
+    });
+
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+
+    expectMergedRemoteConfig(resolved, "default-key", { nonBatchConcurrency: 1 });
   });
 
   it("gates session sources behind experimental flag", () => {

@@ -1,4 +1,5 @@
 import { ConnectErrorDetailCodes } from "../../../../src/gateway/protocol/connect-error-details.js";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 
 const AUTH_REQUIRED_CODES = new Set<string>([
   ConnectErrorDetailCodes.AUTH_REQUIRED,
@@ -26,6 +27,35 @@ const INSECURE_CONTEXT_CODES = new Set<string>([
   ConnectErrorDetailCodes.DEVICE_IDENTITY_REQUIRED,
 ]);
 
+const DEVICE_AUTH_FAILURE_CODES = new Set<string>([
+  ConnectErrorDetailCodes.DEVICE_AUTH_INVALID,
+  ConnectErrorDetailCodes.DEVICE_AUTH_DEVICE_ID_MISMATCH,
+  ConnectErrorDetailCodes.DEVICE_AUTH_SIGNATURE_EXPIRED,
+  ConnectErrorDetailCodes.DEVICE_AUTH_NONCE_REQUIRED,
+  ConnectErrorDetailCodes.DEVICE_AUTH_NONCE_MISMATCH,
+  ConnectErrorDetailCodes.DEVICE_AUTH_SIGNATURE_INVALID,
+  ConnectErrorDetailCodes.DEVICE_AUTH_PUBLIC_KEY_INVALID,
+]);
+
+const LOGIN_REQUIRED_CODES = new Set<string>([
+  ...AUTH_FAILURE_CODES,
+  ...INSECURE_CONTEXT_CODES,
+  ...DEVICE_AUTH_FAILURE_CODES,
+  ConnectErrorDetailCodes.AUTH_BOOTSTRAP_TOKEN_INVALID,
+  ConnectErrorDetailCodes.PAIRING_REQUIRED,
+  ConnectErrorDetailCodes.CONTROL_UI_ORIGIN_NOT_ALLOWED,
+]);
+
+const HIGH_CONFIDENCE_LOGIN_ERROR_PATTERNS = [
+  /\bunauthorized\b/i,
+  /\bgateway auth failed\b/i,
+  /\bgateway token missing\b/i,
+  /\bpairing required\b/i,
+  /\btoo many failed authentication attempts\b/i,
+  /\borigin not allowed\b/i,
+  /\bdevice identity required\b/i,
+];
+
 type AuthHintKind = "required" | "failed";
 
 /** Whether the overview should show device-pairing guidance for this error. */
@@ -40,7 +70,7 @@ export function shouldShowPairingHint(
   if (lastErrorCode === ConnectErrorDetailCodes.PAIRING_REQUIRED) {
     return true;
   }
-  return lastError.toLowerCase().includes("pairing required");
+  return normalizeLowercaseStringOrEmpty(lastError).includes("pairing required");
 }
 
 /**
@@ -66,7 +96,7 @@ export function resolveAuthHintKind(params: {
     return AUTH_REQUIRED_CODES.has(params.lastErrorCode) ? "required" : "failed";
   }
 
-  const lower = params.lastError.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(params.lastError);
   if (!lower.includes("unauthorized")) {
     return null;
   }
@@ -84,6 +114,28 @@ export function shouldShowInsecureContextHint(
   if (lastErrorCode) {
     return INSECURE_CONTEXT_CODES.has(lastErrorCode);
   }
-  const lower = lastError.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(lastError);
   return lower.includes("secure context") || lower.includes("device identity required");
+}
+
+export function shouldRenderLoginGate(params: {
+  connected: boolean;
+  gatewayUrl: string;
+  lastError?: string | null;
+  lastErrorCode?: string | null;
+}): boolean {
+  if (params.connected) {
+    return false;
+  }
+  if (!params.gatewayUrl.trim()) {
+    return true;
+  }
+  if (params.lastErrorCode && LOGIN_REQUIRED_CODES.has(params.lastErrorCode)) {
+    return true;
+  }
+  if (!params.lastError) {
+    return false;
+  }
+  const lastError = params.lastError;
+  return HIGH_CONFIDENCE_LOGIN_ERROR_PATTERNS.some((pattern) => pattern.test(lastError));
 }

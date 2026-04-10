@@ -20,6 +20,7 @@ type GatewayPluginBootstrapLog = {
 
 type GatewayPluginBootstrapParams = {
   cfg: ReturnType<typeof loadConfig>;
+  activationSourceConfig?: ReturnType<typeof loadConfig>;
   workspaceDir: string;
   log: GatewayPluginBootstrapLog;
   coreGatewayHandlers: Record<string, GatewayRequestHandler>;
@@ -57,14 +58,77 @@ function logGatewayPluginDiagnostics(params: {
   }
 }
 
+/**
+ * Emit per-plugin load status and a consolidated startup summary.
+ *
+ * Addresses https://github.com/openclaw/openclaw/issues/55803 — plugin
+ * load/health status was previously invisible in logs unless an error occurred.
+ * This function logs every plugin's outcome (loaded, disabled, error) so
+ * operators can quickly verify which plugins are active after startup or
+ * a config reload.
+ */
+function logPluginLoadSummary(params: {
+  plugins: PluginRegistry["plugins"];
+  log: Pick<GatewayPluginBootstrapLog, "info" | "warn">;
+}) {
+  let loaded = 0;
+  let disabled = 0;
+  let errored = 0;
+
+  for (const plugin of params.plugins) {
+    const toolCount = plugin.toolNames.length;
+    const hookCount = plugin.hookCount;
+    const channelCount = plugin.channelIds.length;
+
+    // Build a compact capability summary for loaded plugins.
+    const capabilities: string[] = [];
+    if (toolCount > 0) {
+      capabilities.push(`${toolCount} tools`);
+    }
+    if (hookCount > 0) {
+      capabilities.push(`${hookCount} hooks`);
+    }
+    if (channelCount > 0) {
+      capabilities.push(`${channelCount} channels`);
+    }
+    if (plugin.providerIds.length > 0) {
+      capabilities.push(`${plugin.providerIds.length} providers`);
+    }
+
+    const capSuffix = capabilities.length > 0 ? ` (${capabilities.join(", ")})` : "";
+
+    if (plugin.status === "loaded") {
+      loaded++;
+      params.log.info(`[plugins] load: ${plugin.id} status=loaded enabled=true${capSuffix}`);
+    } else if (plugin.status === "disabled") {
+      disabled++;
+      params.log.info(`[plugins] load: ${plugin.id} status=disabled enabled=false`);
+    } else {
+      errored++;
+      params.log.warn(
+        `[plugins] load: ${plugin.id} status=error error="${plugin.error ?? "unknown"}"`,
+      );
+    }
+  }
+
+  // Consolidated summary line for quick health assessment.
+  params.log.info(
+    `[plugins] summary: ${params.plugins.length} total, ${loaded} loaded, ${disabled} disabled, ${errored} errored`,
+  );
+}
+
 export function prepareGatewayPluginLoad(params: GatewayPluginBootstrapParams) {
-  const resolvedConfig = applyPluginAutoEnable({
-    config: params.cfg,
+  const activationSourceConfig = params.activationSourceConfig ?? params.cfg;
+  const autoEnabled = applyPluginAutoEnable({
+    config: activationSourceConfig,
     env: process.env,
-  }).config;
+  });
+  const resolvedConfig = autoEnabled.config;
   installGatewayPluginRuntimeEnvironment(resolvedConfig);
   const loaded = loadGatewayPlugins({
     cfg: resolvedConfig,
+    activationSourceConfig,
+    autoEnabledReasons: autoEnabled.autoEnabledReasons,
     workspaceDir: params.workspaceDir,
     log: params.log,
     coreGatewayHandlers: params.coreGatewayHandlers,
@@ -80,13 +144,23 @@ export function prepareGatewayPluginLoad(params: GatewayPluginBootstrapParams) {
       log: params.log,
     });
   }
+  // Per-plugin load status and consolidated summary (see #55803).
+  if ((params.logDiagnostics ?? true) && loaded.pluginRegistry.plugins.length > 0) {
+    logPluginLoadSummary({
+      plugins: loaded.pluginRegistry.plugins,
+      log: params.log,
+    });
+  }
   return loaded;
 }
 
 export function loadGatewayStartupPlugins(
   params: Omit<GatewayPluginBootstrapParams, "beforePrimeRegistry">,
 ) {
-  return prepareGatewayPluginLoad(params);
+  return prepareGatewayPluginLoad({
+    ...params,
+    beforePrimeRegistry: pinActivePluginChannelRegistry,
+  });
 }
 
 export function reloadDeferredGatewayPlugins(

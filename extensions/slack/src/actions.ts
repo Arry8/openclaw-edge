@@ -79,6 +79,28 @@ async function resolveBotUserId(client: WebClient) {
   return auth.user_id;
 }
 
+function matchesSlackErrorCode(error: unknown, code: string) {
+  if (typeof error === "string") {
+    return error === code;
+  }
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    error?: unknown;
+    message?: unknown;
+    data?: { error?: unknown };
+  };
+  return (
+    candidate.data?.error === code ||
+    candidate.error === code ||
+    candidate.code === code ||
+    candidate.message === code
+  );
+}
+
 export async function reactSlackMessage(
   channelId: string,
   messageId: string,
@@ -86,11 +108,18 @@ export async function reactSlackMessage(
   opts: SlackActionClientOpts = {},
 ) {
   const client = await getClient(opts, "write");
-  await client.reactions.add({
-    channel: channelId,
-    timestamp: messageId,
-    name: normalizeEmoji(emoji),
-  });
+  try {
+    await client.reactions.add({
+      channel: channelId,
+      timestamp: messageId,
+      name: normalizeEmoji(emoji),
+    });
+  } catch (error) {
+    if (matchesSlackErrorCode(error, "already_reacted")) {
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function removeSlackReaction(

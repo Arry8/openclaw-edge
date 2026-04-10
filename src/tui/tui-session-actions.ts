@@ -1,14 +1,26 @@
 import type { TUI } from "@mariozechner/pi-tui";
+import { resolveSessionInfoModelSelection } from "../agents/model-selection-display.js";
 import type { SessionsPatchResult } from "../gateway/protocol/index.js";
 import {
   normalizeAgentId,
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import type { ChatLog } from "./components/chat-log.js";
 import type { GatewayAgentsList, GatewayChatClient } from "./gateway-chat.js";
 import { asString, extractTextFromMessage, isCommandMessage } from "./tui-formatters.js";
 import type { SessionInfo, TuiOptions, TuiStateAccess } from "./tui-types.js";
+
+const SESSIONS_YIELD_CONTEXT_MARKER =
+  "[Context: The previous turn ended intentionally via sessions_yield while waiting for a follow-up event.]";
+const BUSY_ACTIVITY_STATUSES = new Set([
+  "sending",
+  "waiting",
+  "streaming",
+  "running",
+  "awaiting follow-up",
+]);
 
 type SessionActionBtwPresenter = {
   clear: () => void;
@@ -70,7 +82,7 @@ export function createSessionActions(context: SessionActionContext) {
     state.sessionScope = result.scope ?? state.sessionScope;
     state.agents = result.agents.map((agent) => ({
       id: normalizeAgentId(agent.id),
-      name: agent.name?.trim() || undefined,
+      name: normalizeOptionalString(agent.name),
     }));
     agentNames.clear();
     for (const agent of state.agents) {
@@ -121,21 +133,14 @@ export function createSessionActions(context: SessionActionContext) {
   };
 
   const resolveModelSelection = (entry?: SessionInfoEntry) => {
-    if (entry?.modelProvider || entry?.model) {
-      return {
-        modelProvider: entry.modelProvider ?? state.sessionInfo.modelProvider,
-        model: entry.model ?? state.sessionInfo.model,
-      };
-    }
-    const overrideModel = entry?.modelOverride?.trim();
-    if (overrideModel) {
-      const overrideProvider = entry?.providerOverride?.trim() || state.sessionInfo.modelProvider;
-      return { modelProvider: overrideProvider, model: overrideModel };
-    }
-    return {
-      modelProvider: state.sessionInfo.modelProvider,
-      model: state.sessionInfo.model,
-    };
+    return resolveSessionInfoModelSelection({
+      currentProvider: state.sessionInfo.modelProvider,
+      currentModel: state.sessionInfo.model,
+      entryProvider: entry?.modelProvider,
+      entryModel: entry?.model,
+      overrideProvider: entry?.providerOverride,
+      overrideModel: entry?.modelOverride,
+    });
   };
 
   const applySessionInfo = (params: {
@@ -285,7 +290,30 @@ export function createSessionActions(context: SessionActionContext) {
     applySessionInfo({ entry, force: true });
   };
 
-  const loadHistory = async () => {
+  // Serialize loadHistory calls: if one is already in-flight, the next call
+  // queues itself and runs once the current one completes. This prevents
+  // concurrent clearAll() + rebuild cycles from racing and dropping messages.
+  let historyLoadInFlight = false;
+  let historyLoadQueued = false;
+
+  const loadHistory = async (): Promise<void> => {
+    if (historyLoadInFlight) {
+      historyLoadQueued = true;
+      return;
+    }
+    historyLoadInFlight = true;
+    try {
+      await loadHistoryOnce();
+    } finally {
+      historyLoadInFlight = false;
+      if (historyLoadQueued) {
+        historyLoadQueued = false;
+        void loadHistory();
+      }
+    }
+  };
+
+  const loadHistoryOnce = async () => {
     try {
       const history = await client.loadHistory({
         sessionKey: state.currentSessionKey,
@@ -303,6 +331,7 @@ export function createSessionActions(context: SessionActionContext) {
       state.sessionInfo.fastMode = record.fastMode ?? state.sessionInfo.fastMode;
       state.sessionInfo.verboseLevel = record.verboseLevel ?? state.sessionInfo.verboseLevel;
       const showTools = (state.sessionInfo.verboseLevel ?? "off") !== "off";
+      let lastAssistantText = "";
       chatLog.clearAll();
       btw.clear();
       chatLog.addSystem(`session ${state.currentSessionKey}`);
@@ -330,6 +359,7 @@ export function createSessionActions(context: SessionActionContext) {
             includeThinking: state.showThinking,
           });
           if (text) {
+            lastAssistantText = text;
             chatLog.finalizeAssistant(text);
           }
           continue;
@@ -355,13 +385,20 @@ export function createSessionActions(context: SessionActionContext) {
           );
         }
       }
+      if (lastAssistantText.includes(SESSIONS_YIELD_CONTEXT_MARKER)) {
+        if (!BUSY_ACTIVITY_STATUSES.has(state.activityStatus)) {
+          setActivityStatus("awaiting follow-up");
+        }
+      } else if (state.activityStatus === "awaiting follow-up") {
+        setActivityStatus("idle");
+      }
       state.historyLoaded = true;
     } catch (err) {
       chatLog.addSystem(`history failed: ${String(err)}`);
     }
     await refreshSessionInfo();
     tui.requestRender();
-  };
+  }; // end loadHistoryOnce
 
   const setSession = async (rawKey: string) => {
     const nextKey = resolveSessionKey(rawKey);

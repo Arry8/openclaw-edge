@@ -1,5 +1,14 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-id.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+  readStringValue,
+} from "../shared/string-coerce.js";
+import {
+  extractToolCallsFromAssistant,
+  extractToolResultId,
+  sanitizeToolCallId,
+} from "./tool-call-id.js";
 
 const TOOL_CALL_NAME_MAX_CHARS = 64;
 const TOOL_CALL_NAME_RE = /^[A-Za-z0-9_:.-]+$/;
@@ -19,7 +28,12 @@ function isRawToolCallBlock(block: unknown): block is RawToolCallBlock {
   const type = (block as { type?: unknown }).type;
   return (
     typeof type === "string" &&
-    (type === "toolCall" || type === "toolUse" || type === "functionCall")
+    (type === "toolCall" ||
+      type === "toolUse" ||
+      type === "functionCall" ||
+      type === "tool_call" ||
+      type === "tool_use" ||
+      type === "function_call")
   );
 }
 
@@ -38,6 +52,41 @@ function hasToolCallId(block: RawToolCallBlock): boolean {
   return hasNonEmptyStringField(block.id);
 }
 
+function normalizeToolCallId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function scoreToolCallInputValue(value: unknown): number {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? 3 : 1;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0 ? 3 : 1;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0 ? 3 : 1;
+  }
+  return 2;
+}
+
+function scoreToolCallBlockInput(block: RawToolCallBlock): number {
+  return Math.max(scoreToolCallInputValue(block.arguments), scoreToolCallInputValue(block.input));
+}
+
+function shouldPreferToolCallBlock(
+  existing: RawToolCallBlock,
+  candidate: RawToolCallBlock,
+): boolean {
+  return scoreToolCallBlockInput(candidate) > scoreToolCallBlockInput(existing);
+}
+
 function normalizeAllowedToolNames(allowedToolNames?: Iterable<string>): Set<string> | null {
   if (!allowedToolNames) {
     return null;
@@ -49,7 +98,7 @@ function normalizeAllowedToolNames(allowedToolNames?: Iterable<string>): Set<str
     }
     const trimmed = name.trim();
     if (trimmed) {
-      normalized.add(trimmed.toLowerCase());
+      normalized.add(normalizeLowercaseStringOrEmpty(trimmed));
     }
   }
   return normalized.size > 0 ? normalized : null;
@@ -69,7 +118,7 @@ function hasToolCallName(block: RawToolCallBlock, allowedToolNames: Set<string> 
   if (!allowedToolNames) {
     return true;
   }
-  return allowedToolNames.has(trimmed.toLowerCase());
+  return allowedToolNames.has(normalizeLowercaseStringOrEmpty(trimmed));
 }
 
 function redactSessionsSpawnAttachmentsArgs(value: unknown): unknown {
@@ -96,13 +145,13 @@ function redactSessionsSpawnAttachmentsArgs(value: unknown): unknown {
 }
 
 function sanitizeToolCallBlock(block: RawToolCallBlock): RawToolCallBlock {
-  const rawName = typeof block.name === "string" ? block.name : undefined;
+  const rawName = readStringValue(block.name);
   const trimmedName = rawName?.trim();
   const hasTrimmedName = typeof trimmedName === "string" && trimmedName.length > 0;
   const normalizedName = hasTrimmedName ? trimmedName : undefined;
   const nameChanged = hasTrimmedName && rawName !== trimmedName;
 
-  const isSessionsSpawn = normalizedName?.toLowerCase() === "sessions_spawn";
+  const isSessionsSpawn = normalizeLowercaseStringOrEmpty(normalizedName) === "sessions_spawn";
 
   if (!isSessionsSpawn) {
     if (!nameChanged) {
@@ -151,20 +200,12 @@ function makeMissingToolResult(params: {
   } as Extract<AgentMessage, { role: "toolResult" }>;
 }
 
-function trimNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
 function normalizeToolResultName(
   message: Extract<AgentMessage, { role: "toolResult" }>,
   fallbackName?: string,
 ): Extract<AgentMessage, { role: "toolResult" }> {
   const rawToolName = (message as { toolName?: unknown }).toolName;
-  const normalizedToolName = trimNonEmptyString(rawToolName);
+  const normalizedToolName = normalizeOptionalString(rawToolName);
   if (normalizedToolName) {
     if (rawToolName === normalizedToolName) {
       return message;
@@ -172,7 +213,7 @@ function normalizeToolResultName(
     return { ...message, toolName: normalizedToolName };
   }
 
-  const normalizedFallback = trimNonEmptyString(fallbackName);
+  const normalizedFallback = normalizeOptionalString(fallbackName);
   if (normalizedFallback) {
     return { ...message, toolName: normalizedFallback };
   }
@@ -245,6 +286,7 @@ export function repairToolCallInputs(
     const nextContent: typeof msg.content = [];
     let droppedInMessage = 0;
     let messageChanged = false;
+    const toolCallIndexById = new Map<string, number>();
 
     for (const block of msg.content) {
       if (
@@ -271,28 +313,64 @@ export function repairToolCallInputs(
             typeof (block as { name?: unknown }).name === "string"
               ? (block as { name: string }).name.trim()
               : undefined;
-          if (blockName?.toLowerCase() === "sessions_spawn") {
+          if (normalizeLowercaseStringOrEmpty(blockName) === "sessions_spawn") {
             const sanitized = sanitizeToolCallBlock(block);
             if (sanitized !== block) {
               changed = true;
               messageChanged = true;
             }
+            const toolCallId = normalizeToolCallId(sanitized.id);
+            if (toolCallId !== undefined) {
+              const existingIndex = toolCallIndexById.get(toolCallId);
+              if (existingIndex !== undefined) {
+                const existing = nextContent[existingIndex];
+                if (
+                  isRawToolCallBlock(existing) &&
+                  shouldPreferToolCallBlock(existing, sanitized)
+                ) {
+                  nextContent[existingIndex] = sanitized as (typeof nextContent)[number];
+                }
+                droppedToolCalls += 1;
+                droppedInMessage += 1;
+                changed = true;
+                messageChanged = true;
+                continue;
+              }
+              toolCallIndexById.set(toolCallId, nextContent.length);
+            }
             nextContent.push(sanitized as typeof block);
           } else {
+            let nextToolBlock = block;
             if (typeof (block as { name?: unknown }).name === "string") {
               const rawName = (block as { name: string }).name;
               const trimmedName = rawName.trim();
               if (rawName !== trimmedName && trimmedName) {
                 const renamed = { ...(block as object), name: trimmedName } as typeof block;
-                nextContent.push(renamed);
+                nextToolBlock = renamed;
                 changed = true;
                 messageChanged = true;
-              } else {
-                nextContent.push(block);
               }
-            } else {
-              nextContent.push(block);
             }
+            const toolCallId = normalizeToolCallId((nextToolBlock as RawToolCallBlock).id);
+            if (toolCallId !== undefined) {
+              const existingIndex = toolCallIndexById.get(toolCallId);
+              if (existingIndex !== undefined) {
+                const existing = nextContent[existingIndex];
+                if (
+                  isRawToolCallBlock(existing) &&
+                  shouldPreferToolCallBlock(existing, nextToolBlock as RawToolCallBlock)
+                ) {
+                  nextContent[existingIndex] = nextToolBlock;
+                }
+                droppedToolCalls += 1;
+                droppedInMessage += 1;
+                changed = true;
+                messageChanged = true;
+                continue;
+              }
+              toolCallIndexById.set(toolCallId, nextContent.length);
+            }
+            nextContent.push(nextToolBlock);
           }
           continue;
         }
@@ -413,6 +491,15 @@ export function repairToolUseResultPairing(
     }
 
     const toolCallIds = new Set(toolCalls.map((t) => t.id));
+    // Build a sanitized-ID → original-ID map so we can match tool results whose
+    // IDs were normalized by the provider serializer (e.g. Anthropic strips underscores).
+    const sanitizedToOriginalId = new Map<string, string>();
+    for (const t of toolCalls) {
+      const sanitized = sanitizeToolCallId(t.id);
+      if (sanitized !== t.id) {
+        sanitizedToOriginalId.set(sanitized, t.id);
+      }
+    }
     const toolCallNamesById = new Map(toolCalls.map((t) => [t.id, t.name] as const));
 
     const spanResultsById = new Map<string, Extract<AgentMessage, { role: "toolResult" }>>();
@@ -433,22 +520,30 @@ export function repairToolUseResultPairing(
 
       if (nextRole === "toolResult") {
         const toolResult = next as Extract<AgentMessage, { role: "toolResult" }>;
-        const id = extractToolResultId(toolResult);
-        if (id && toolCallIds.has(id)) {
-          if (seenToolResultIds.has(id)) {
+        const rawId = extractToolResultId(toolResult);
+        // Match against original IDs first; fall back to sanitized-ID lookup so
+        // tool results whose IDs were normalized by the provider serializer
+        // (e.g. Anthropic strips underscores) can still pair correctly.
+        const matchedOriginalId = rawId
+          ? toolCallIds.has(rawId)
+            ? rawId
+            : sanitizedToOriginalId.get(sanitizeToolCallId(rawId))
+          : undefined;
+        if (matchedOriginalId) {
+          if (seenToolResultIds.has(matchedOriginalId) || (rawId && seenToolResultIds.has(rawId))) {
             droppedDuplicateCount += 1;
             changed = true;
             continue;
           }
           const normalizedToolResult = normalizeToolResultName(
             toolResult,
-            toolCallNamesById.get(id),
+            toolCallNamesById.get(matchedOriginalId),
           );
           if (normalizedToolResult !== toolResult) {
             changed = true;
           }
-          if (!spanResultsById.has(id)) {
-            spanResultsById.set(id, normalizedToolResult);
+          if (!spanResultsById.has(matchedOriginalId)) {
+            spanResultsById.set(matchedOriginalId, normalizedToolResult);
           }
           continue;
         }

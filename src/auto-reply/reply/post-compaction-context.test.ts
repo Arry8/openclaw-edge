@@ -234,7 +234,7 @@ Never modify memory/YYYY-MM-DD.md destructively.
     expect(result).toContain("memory/2026-03-03.md");
     expect(result).not.toContain("memory/YYYY-MM-DD.md");
     expect(result).toContain(
-      "Current time: Tuesday, March 3rd, 2026 — 9:00 AM (America/New_York) / 2026-03-03 14:00 UTC",
+      "Current time: Tuesday, March 3rd, 2026 - 9:00 AM (America/New_York) / 2026-03-03 14:00 UTC",
     );
   });
 
@@ -347,6 +347,8 @@ Read WORKFLOW.md on startup.
       expect(result).not.toContain("Session Startup");
       // Must reference the actual configured section names
       expect(result).toContain("Boot Sequence");
+      expect(result).toContain("Use the configured AGENTS.md sections below (Boot Sequence) first");
+      expect(result).toContain("missing or truncated here, reread AGENTS.md");
     });
 
     it("uses default 'Session Startup' prose when default sections are active", async () => {
@@ -355,6 +357,8 @@ Read WORKFLOW.md on startup.
       const result = await readPostCompactionContext(tmpDir);
       expect(result).not.toBeNull();
       expect(result).toContain("Run your Session Startup sequence");
+      expect(result).toContain("using the AGENTS.md sections below first");
+      expect(result).toContain("missing or truncated here, reread AGENTS.md");
     });
 
     it("falls back to legacy sections when defaults are explicitly configured", async () => {

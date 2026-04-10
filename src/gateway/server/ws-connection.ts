@@ -4,12 +4,13 @@ import { resolveCanvasHostUrl } from "../../infra/canvas-host-url.js";
 import { removeRemoteNodeInfo } from "../../infra/skills-remote.js";
 import { upsertPresence } from "../../infra/system-presence.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { truncateUtf16Safe } from "../../utils.js";
 import { isWebchatClient } from "../../utils/message-channel.js";
 import type { AuthRateLimiter } from "../auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "../auth.js";
-import { getPreauthHandshakeTimeoutMsFromEnv } from "../handshake-timeouts.js";
 import { isLoopbackAddress } from "../net.js";
+import { getHandshakeTimeoutMs } from "../server-constants.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "../server-methods/types.js";
 import { formatError } from "../server-utils.js";
 import { logWs } from "../ws-log.js";
@@ -20,6 +21,7 @@ import {
   attachGatewayWsMessageHandler,
   type WsOriginCheckMetrics,
 } from "./ws-connection/message-handler.js";
+import { resolveSharedGatewaySessionGeneration } from "./ws-shared-generation.js";
 import type { GatewayWsClient } from "./ws-types.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -68,6 +70,8 @@ export type GatewayWsSharedHandlerParams = {
   canvasHostEnabled: boolean;
   canvasHostServerPort?: number;
   resolvedAuth: ResolvedGatewayAuth;
+  getResolvedAuth?: () => ResolvedGatewayAuth;
+  getRequiredSharedGatewaySessionGeneration?: () => string | undefined;
   /** Optional rate limiter for auth brute-force protection. */
   rateLimiter?: AuthRateLimiter;
   /** Browser-origin fallback limiter (loopback is never exempt). */
@@ -102,6 +106,9 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
     canvasHostEnabled,
     canvasHostServerPort,
     resolvedAuth,
+    getResolvedAuth = () => resolvedAuth,
+    getRequiredSharedGatewaySessionGeneration = () =>
+      resolveSharedGatewaySessionGeneration(getResolvedAuth()),
     rateLimiter,
     browserRateLimiter,
     gatewayMethods,
@@ -160,6 +167,11 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
     let lastFrameType: string | undefined;
     let lastFrameMethod: string | undefined;
     let lastFrameId: string | undefined;
+    const pingTimer = setInterval(() => {
+      try {
+        socket.ping();
+      } catch {}
+    }, 25_000);
 
     const setCloseCause = (cause: string, meta?: Record<string, unknown>) => {
       if (!closeCause) {
@@ -207,6 +219,7 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       }
       closed = true;
       clearTimeout(handshakeTimer);
+      clearInterval(pingTimer);
       releasePreauthBudget();
       if (client) {
         clients.delete(client);
@@ -225,8 +238,24 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
 
     const isNoisySwiftPmHelperClose = (userAgent: string | undefined, remote: string | undefined) =>
       Boolean(
-        userAgent?.toLowerCase().includes("swiftpm-testing-helper") && isLoopbackAddress(remote),
+        normalizeLowercaseStringOrEmpty(userAgent).includes("swiftpm-testing-helper") &&
+        isLoopbackAddress(remote),
       );
+
+    // Health probes connect from loopback, immediately stop after receiving the
+    // RPC response, and always close with code 1000. Logging these as WARN
+    // generates hundreds of false-positive entries per day and drowns out real
+    // connection errors.
+    const effectiveProbeHost =
+      !gatewayHost || gatewayHost === "0.0.0.0" || gatewayHost === "::" ? "127.0.0.1" : gatewayHost;
+    const isInternalProbeClose = (
+      remote: string | undefined,
+      origin: string | undefined,
+      closeCode: number,
+    ) =>
+      closeCode === 1000 &&
+      isLoopbackAddress(remote) &&
+      origin === `http://${effectiveProbeHost}:${port}`;
 
     socket.once("close", (code, reason) => {
       const durationMs = Date.now() - openedAt;
@@ -249,9 +278,11 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
         ...closeMeta,
       };
       if (!client) {
-        const logFn = isNoisySwiftPmHelperClose(requestUserAgent, remoteAddr)
-          ? logWsControl.debug
-          : logWsControl.warn;
+        const logFn =
+          isNoisySwiftPmHelperClose(requestUserAgent, remoteAddr) ||
+          isInternalProbeClose(remoteAddr, requestOrigin, code)
+            ? logWsControl.debug
+            : logWsControl.warn;
         logFn(
           `closed before connect conn=${connId} remote=${remoteAddr ?? "?"} fwd=${logForwardedFor || "n/a"} origin=${logOrigin || "n/a"} host=${logHost || "n/a"} ua=${logUserAgent || "n/a"} code=${code ?? "n/a"} reason=${logReason || "n/a"}`,
           closeContext,
@@ -289,7 +320,7 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       close();
     });
 
-    const handshakeTimeoutMs = getPreauthHandshakeTimeoutMsFromEnv();
+    const handshakeTimeoutMs = getHandshakeTimeoutMs();
     const handshakeTimer = setTimeout(() => {
       if (!client) {
         handshakeState = "failed";
@@ -313,7 +344,8 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       requestUserAgent,
       canvasHostUrl,
       connectNonce,
-      resolvedAuth,
+      getResolvedAuth,
+      getRequiredSharedGatewaySessionGeneration,
       rateLimiter,
       browserRateLimiter,
       gatewayMethods,

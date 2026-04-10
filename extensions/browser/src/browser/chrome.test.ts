@@ -6,11 +6,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
+import { SsrFBlockedError } from "../infra/net/ssrf.js";
 import {
+  clearStaleChromeSingletonLocks,
   decorateOpenClawProfile,
   ensureProfileCleanExit,
+  findChromeExecutableLinux,
   findChromeExecutableMac,
   findChromeExecutableWindows,
+  getChromeWebSocketUrl,
   isChromeCdpReady,
   isChromeReachable,
   resolveBrowserExecutableForPlatform,
@@ -266,6 +270,48 @@ describe("browser chrome helpers", () => {
     exists.mockRestore();
   });
 
+  it("finds Chromium at /usr/lib/chromium/chromium on Linux", () => {
+    const target = "/usr/lib/chromium/chromium";
+    const exists = mockExistsSync((p) => p === target);
+    const exe = findChromeExecutableLinux();
+    expect(exe?.kind).toBe("chromium");
+    expect(exe?.path).toBe(target);
+    exists.mockRestore();
+  });
+
+  it("finds Chromium at /usr/lib/chromium-browser/chromium-browser on Linux", () => {
+    const target = "/usr/lib/chromium-browser/chromium-browser";
+    const exists = mockExistsSync((p) => p === target);
+    const exe = findChromeExecutableLinux();
+    expect(exe?.kind).toBe("chromium");
+    expect(exe?.path).toBe(target);
+    exists.mockRestore();
+  });
+
+  it("finds Chrome at /opt/google/chrome/chrome on Linux", () => {
+    const target = "/opt/google/chrome/chrome";
+    const exists = mockExistsSync((p) => p === target);
+    const exe = findChromeExecutableLinux();
+    expect(exe?.kind).toBe("chrome");
+    expect(exe?.path).toBe(target);
+    exists.mockRestore();
+  });
+
+  it("finds Brave at /opt/brave.com/brave/brave-browser on Linux", () => {
+    const target = "/opt/brave.com/brave/brave-browser";
+    const exists = mockExistsSync((p) => p === target);
+    const exe = findChromeExecutableLinux();
+    expect(exe?.kind).toBe("brave");
+    expect(exe?.path).toBe(target);
+    exists.mockRestore();
+  });
+
+  it("returns null when no Chrome candidate exists on Linux", () => {
+    const exists = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    expect(findChromeExecutableLinux()).toBeNull();
+    exists.mockRestore();
+  });
+
   it("resolves Windows executables without LOCALAPPDATA", () => {
     vi.stubEnv("LOCALAPPDATA", "");
     vi.stubEnv("ProgramFiles", "C:\\Program Files");
@@ -328,6 +374,39 @@ describe("browser chrome helpers", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("blocks cross-host websocket pivots returned by /json/version in strict SSRF mode", async () => {
+    const server = createServer((req, res) => {
+      if (req.url === "/json/version") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            webSocketDebuggerUrl: "ws://169.254.169.254:9222/devtools/browser/pivot",
+          }),
+        );
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.once("error", reject);
+    });
+
+    try {
+      const addr = server.address() as AddressInfo;
+      await expect(
+        getChromeWebSocketUrl(`http://127.0.0.1:${addr.port}`, 50, {
+          dangerouslyAllowPrivateNetwork: false,
+          allowedHostnames: ["127.0.0.1"],
+        }),
+      ).rejects.toBeInstanceOf(SsrFBlockedError);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("reports cdpReady only when Browser.getVersion command succeeds", async () => {
     await withMockChromeCdpServer({
       wsPath: "/devtools/browser/health",
@@ -374,6 +453,34 @@ describe("browser chrome helpers", () => {
         await expect(isChromeCdpReady(baseUrl, 300, 150)).resolves.toBe(false);
       },
     });
+  });
+
+  it("clears stale singleton artifacts when the lock points at another host", async () => {
+    const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "openclaw-chrome-locks-"));
+    try {
+      await fsp.writeFile(path.join(userDataDir, "SingletonCookie"), "cookie");
+      await fsp.writeFile(path.join(userDataDir, "SingletonSocket"), "socket");
+      await fsp.symlink("remote-host-535", path.join(userDataDir, "SingletonLock"));
+
+      expect(clearStaleChromeSingletonLocks(userDataDir, "local-host")).toBe(true);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonLock"))).toBe(false);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonSocket"))).toBe(false);
+      expect(fs.existsSync(path.join(userDataDir, "SingletonCookie"))).toBe(false);
+    } finally {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps singleton artifacts when the lock points at the current host process", async () => {
+    const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "openclaw-chrome-locks-live-"));
+    try {
+      await fsp.symlink(`${os.hostname()}-${process.pid}`, path.join(userDataDir, "SingletonLock"));
+
+      expect(clearStaleChromeSingletonLocks(userDataDir, os.hostname())).toBe(false);
+      expect(fs.lstatSync(path.join(userDataDir, "SingletonLock")).isSymbolicLink()).toBe(true);
+    } finally {
+      await fsp.rm(userDataDir, { recursive: true, force: true });
+    }
   });
 
   it("probes WebSocket URLs via handshake instead of HTTP", async () => {

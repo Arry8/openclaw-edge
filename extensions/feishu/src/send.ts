@@ -1,12 +1,15 @@
 import { resolveMarkdownTableMode } from "openclaw/plugin-sdk/config-runtime";
-import { convertMarkdownTables } from "openclaw/plugin-sdk/text-runtime";
+import {
+  convertMarkdownTables,
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+} from "openclaw/plugin-sdk/text-runtime";
 import type { ClawdbotConfig } from "../runtime-api.js";
 import { resolveFeishuRuntimeAccount } from "./accounts.js";
 import { createFeishuClient } from "./client.js";
 import type { MentionTarget } from "./mention.js";
-import { buildMentionedMessage, buildMentionedCardContent } from "./mention.js";
+import { buildMentionedCardContent, buildMentionedMessage } from "./mention.js";
 import { parsePostContent } from "./post.js";
-import { getFeishuRuntime } from "./runtime.js";
 import { assertFeishuMessageApiSuccess, toFeishuSendResult } from "./send-result.js";
 import { resolveFeishuSendTarget } from "./send-target.js";
 import type { FeishuChatType, FeishuMessageInfo, FeishuSendResult } from "./types.js";
@@ -32,7 +35,7 @@ function shouldFallbackFromReplyTarget(response: { code?: number; msg?: string }
   if (response.code !== undefined && WITHDRAWN_REPLY_ERROR_CODES.has(response.code)) {
     return true;
   }
-  const msg = response.msg?.toLowerCase() ?? "";
+  const msg = normalizeLowercaseStringOrEmpty(response.msg);
   return msg.includes("withdrawn") || msg.includes("not found");
 }
 
@@ -176,9 +179,80 @@ async function sendReplyOrFallbackDirect(
   return toFeishuSendResult(response, params.directParams.receiveId);
 }
 
+/**
+ * Recursively extract plain_text content from CardKit json_card body elements.
+ */
+function extractJsonCardTexts(elements: unknown[]): string[] {
+  const texts: string[] = [];
+  for (const el of elements) {
+    if (!el || typeof el !== "object") continue;
+    const node = el as {
+      tag?: string;
+      property?: { content?: string };
+      elements?: unknown[];
+      columns?: unknown[];
+    };
+    if (node.tag === "plain_text" && typeof node.property?.content === "string") {
+      texts.push(node.property.content);
+    }
+    if (node.tag === "markdown" && typeof (node as { content?: string }).content === "string") {
+      texts.push((node as { content?: string }).content!);
+    }
+    // Recurse into nested structures (column_set columns, form elements, etc.)
+    if (Array.isArray(node.elements)) {
+      texts.push(...extractJsonCardTexts(node.elements));
+    }
+    if (Array.isArray(node.columns)) {
+      for (const col of node.columns) {
+        if (
+          col &&
+          typeof col === "object" &&
+          Array.isArray((col as { elements?: unknown[] }).elements)
+        ) {
+          texts.push(...extractJsonCardTexts((col as { elements: unknown[] }).elements));
+        }
+      }
+    }
+  }
+  return texts;
+}
+
 function parseInteractiveCardContent(parsed: unknown): string {
   if (!parsed || typeof parsed !== "object") {
     return "[Interactive Card]";
+  }
+
+  // CardKit streaming cards: the raw_card_content param returns a `json_card` field
+  // containing the full card structure as a JSON string.
+  const jsonCardStr = (parsed as { json_card?: unknown }).json_card;
+  if (typeof jsonCardStr === "string") {
+    try {
+      const jsonCard = JSON.parse(jsonCardStr) as {
+        config?: { summary?: { content?: string } };
+        body?: { elements?: unknown[] };
+        elements?: unknown[];
+      };
+      const parts: string[] = [];
+
+      // summary.content is the streaming card's summary (often the full reply text prefix)
+      if (typeof jsonCard.config?.summary?.content === "string") {
+        parts.push(jsonCard.config.summary.content);
+      }
+
+      // Also extract text from body elements (schema 2.0: body.elements)
+      if (Array.isArray(jsonCard.body?.elements)) {
+        parts.push(...extractJsonCardTexts(jsonCard.body!.elements));
+      }
+      // Schema 1.0: top-level elements
+      if (Array.isArray(jsonCard.elements)) {
+        parts.push(...extractJsonCardTexts(jsonCard.elements));
+      }
+
+      const result = parts.join("\n").trim();
+      if (result) return result;
+    } catch {
+      // Fall through to legacy element parsing
+    }
   }
 
   // Support both schema 1.0 (top-level `elements`) and 2.0 (`body.elements`).
@@ -186,7 +260,7 @@ function parseInteractiveCardContent(parsed: unknown): string {
   const elements = Array.isArray(candidate.elements)
     ? candidate.elements
     : Array.isArray(candidate.body?.elements)
-      ? candidate.body!.elements
+      ? candidate.body.elements
       : null;
   if (!elements) {
     return "[Interactive Card]";
@@ -272,6 +346,7 @@ function parseFeishuMessageItem(
     senderOpenId: item.sender?.id_type === "open_id" ? item.sender?.id : undefined,
     senderType: item.sender?.sender_type,
     content: parseFeishuMessageContent(rawContent, msgType),
+    rawContent,
     contentType: msgType,
     createTime: item.create_time ? parseInt(String(item.create_time), 10) : undefined,
     threadId: item.thread_id || undefined,
@@ -298,6 +373,9 @@ export async function getMessageFeishu(params: {
   try {
     const response = (await client.im.message.get({
       path: { message_id: messageId },
+      // Undocumented in the SDK types but supported by the API: when set, interactive
+      // messages return the full json_card structure instead of fallback screenshot content.
+      params: { card_msg_content_type: "raw_card_content" } as Record<string, string>,
     })) as FeishuGetMessageResponse;
 
     if (response.code !== 0) {
@@ -352,15 +430,18 @@ export async function listFeishuThreadMessages(params: {
 
   const client = createFeishuClient(account);
 
+  const listParams = {
+    container_id_type: "thread" as const,
+    container_id: threadId,
+    // Fetch newest messages first so long threads keep the most recent turns.
+    // Results are reversed below to restore chronological order.
+    sort_type: "ByCreateTimeDesc" as const,
+    page_size: Math.min(limit + 1, 50),
+    // See comment in getMessageFeishu – retrieve full card content.
+    card_msg_content_type: "raw_card_content",
+  };
   const response = (await client.im.message.list({
-    params: {
-      container_id_type: "thread",
-      container_id: threadId,
-      // Fetch newest messages first so long threads keep the most recent turns.
-      // Results are reversed below to restore chronological order.
-      sort_type: "ByCreateTimeDesc",
-      page_size: Math.min(limit + 1, 50),
-    },
+    params: listParams as typeof listParams & { card_msg_content_type?: string },
   })) as {
     code?: number;
     msg?: string;
@@ -385,8 +466,12 @@ export async function listFeishuThreadMessages(params: {
   const results: FeishuThreadMessageInfo[] = [];
 
   for (const item of items) {
-    if (currentMessageId && item.message_id === currentMessageId) continue;
-    if (rootMessageId && item.message_id === rootMessageId) continue;
+    if (currentMessageId && item.message_id === currentMessageId) {
+      continue;
+    }
+    if (rootMessageId && item.message_id === rootMessageId) {
+      continue;
+    }
 
     const parsed = parseFeishuMessageItem(item);
 
@@ -399,7 +484,9 @@ export async function listFeishuThreadMessages(params: {
       createTime: parsed.createTime,
     });
 
-    if (results.length >= limit) break;
+    if (results.length >= limit) {
+      break;
+    }
   }
 
   // Restore chronological order (oldest first) since we fetched newest-first.
@@ -587,7 +674,7 @@ export function buildMarkdownCard(text: string): Record<string, unknown> {
   return {
     schema: "2.0",
     config: {
-      wide_screen_mode: true,
+      width_mode: "fill",
     },
     body: {
       elements: [
@@ -609,7 +696,7 @@ export type CardHeaderConfig = {
 };
 
 export function resolveFeishuCardTemplate(template?: string): string | undefined {
-  const normalized = template?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(template);
   if (!normalized || !FEISHU_CARD_TEMPLATES.has(normalized)) {
     return undefined;
   }
@@ -634,7 +721,7 @@ export function buildStructuredCard(
   }
   const card: Record<string, unknown> = {
     schema: "2.0",
-    config: { wide_screen_mode: true },
+    config: { width_mode: "fill" },
     body: { elements },
   };
   if (options?.header) {
@@ -667,6 +754,11 @@ export async function sendStructuredCardFeishu(params: {
   if (mentions && mentions.length > 0) {
     cardText = buildMentionedCardContent(mentions, text);
   }
+  // TODO(#27717): When replyToMessageId is set, interactive cards cause older Feishu
+  // clients to show "请升级至最新版本客户端". This should fall back to post format via
+  // sendMessageFeishu (passing original `text` and `mentions`, not `cardText`) similar
+  // to sendMarkdownCardFeishu. Structured header/note would be lost in that path, so
+  // a proper solution needs to flatten the card content to markdown first.
   const card = buildStructuredCard(cardText, { header, note });
   return sendCardFeishu({ cfg, to, card, replyToMessageId, replyInThread, accountId });
 }
@@ -674,6 +766,9 @@ export async function sendStructuredCardFeishu(params: {
 /**
  * Send a message as a markdown card (interactive message).
  * This renders markdown properly in Feishu (code blocks, tables, bold/italic, etc.)
+ *
+ * When replying to a message, falls back to post format with md tag to avoid
+ * older clients showing "请升级至最新版本客户端" for interactive cards in reply context.
  */
 export async function sendMarkdownCardFeishu(params: {
   cfg: ClawdbotConfig;
@@ -688,9 +783,26 @@ export async function sendMarkdownCardFeishu(params: {
 }): Promise<FeishuSendResult> {
   const { cfg, to, text, replyToMessageId, replyInThread, mentions, accountId } = params;
   let cardText = text;
+
   if (mentions && mentions.length > 0) {
     cardText = buildMentionedCardContent(mentions, text);
   }
+
+  // When replying, use post format instead of interactive cards.
+  // Interactive cards in reply context cause older Feishu clients to show
+  // "请升级至最新版本客户端" instead of the actual content.
+  if (replyToMessageId) {
+    return sendMessageFeishu({
+      cfg,
+      to,
+      text,
+      replyToMessageId,
+      replyInThread,
+      mentions,
+      accountId,
+    });
+  }
+
   const card = buildMarkdownCard(cardText);
-  return sendCardFeishu({ cfg, to, card, replyToMessageId, replyInThread, accountId });
+  return sendCardFeishu({ cfg, to, card, replyInThread, accountId });
 }

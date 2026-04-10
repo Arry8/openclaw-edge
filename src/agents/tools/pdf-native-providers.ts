@@ -74,6 +74,7 @@ export async function anthropicAnalyzePdf(params: {
       max_tokens: params.maxTokens ?? 4096,
       messages: [{ role: "user", content }],
     }),
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!res.ok) {
@@ -150,14 +151,15 @@ export async function geminiAnalyzePdf(params: {
     /\/v1beta$/i,
     "",
   );
-  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(params.modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(params.modelId)}:generateContent`;
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents: [{ role: "user", parts }],
     }),
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!res.ok) {

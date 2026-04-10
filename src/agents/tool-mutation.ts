@@ -1,3 +1,9 @@
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+} from "../shared/string-coerce.js";
+import { asRecord } from "./tool-display-record.js";
+
 const MUTATING_TOOL_NAMES = new Set([
   "write",
   "edit",
@@ -56,28 +62,18 @@ export type ToolActionRef = {
   actionFingerprint?: string;
 };
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
-}
-
 function normalizeActionName(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
+  const normalized = normalizeOptionalLowercaseString(value)?.replace(/[\s-]+/g, "_");
   return normalized || undefined;
 }
 
 function normalizeFingerprintValue(value: unknown): string | undefined {
   if (typeof value === "string") {
     const normalized = value.trim();
-    return normalized ? normalized.toLowerCase() : undefined;
+    return normalized ? normalizeLowercaseStringOrEmpty(normalized) : undefined;
   }
   if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
-    return String(value).toLowerCase();
+    return normalizeLowercaseStringOrEmpty(String(value));
   }
   return undefined;
 }
@@ -100,7 +96,7 @@ function appendFingerprintAlias(
 }
 
 export function isLikelyMutatingToolName(toolName: string): boolean {
-  const normalized = toolName.trim().toLowerCase();
+  const normalized = normalizeLowercaseStringOrEmpty(toolName);
   if (!normalized) {
     return false;
   }
@@ -113,7 +109,7 @@ export function isLikelyMutatingToolName(toolName: string): boolean {
 }
 
 export function isMutatingToolCall(toolName: string, args: unknown): boolean {
-  const normalized = toolName.trim().toLowerCase();
+  const normalized = normalizeLowercaseStringOrEmpty(toolName);
   const record = asRecord(args);
   const action = normalizeActionName(record?.action);
 
@@ -137,7 +133,22 @@ export function isMutatingToolCall(toolName: string, args: unknown): boolean {
       return typeof record?.model === "string" && record.model.trim().length > 0;
     default: {
       if (normalized === "cron" || normalized === "gateway" || normalized === "canvas") {
-        return action == null || !READ_ONLY_ACTIONS.has(action);
+        if (action == null) {
+          return true;
+        }
+        if (READ_ONLY_ACTIONS.has(action)) {
+          return false;
+        }
+        // Gateway uses compound dotted action names (e.g. "config.schema.lookup")
+        // where the leaf verb indicates a read-only operation. Cron and canvas
+        // only use flat action enums, so skip the leaf check for them.
+        // "lookup" is gateway-specific and not in the shared READ_ONLY_ACTIONS
+        // set to keep cron/canvas fail-closed for unsupported actions.
+        if (normalized === "gateway") {
+          const leaf = action.split(".").pop();
+          return !leaf || !(READ_ONLY_ACTIONS.has(leaf) || leaf === "lookup");
+        }
+        return true;
       }
       if (normalized === "nodes") {
         return action == null || action !== "list";
@@ -161,7 +172,7 @@ export function buildToolActionFingerprint(
   if (!isMutatingToolCall(toolName, args)) {
     return undefined;
   }
-  const normalizedTool = toolName.trim().toLowerCase();
+  const normalizedTool = normalizeLowercaseStringOrEmpty(toolName);
   const record = asRecord(args);
   const action = normalizeActionName(record?.action);
   const parts = [`tool=${normalizedTool}`];
@@ -193,7 +204,7 @@ export function buildToolActionFingerprint(
     appendFingerprintAlias(parts, record, "jobid", ["jobId", "job_id"]) || hasStableTarget;
   hasStableTarget = appendFingerprintAlias(parts, record, "id", ["id"]) || hasStableTarget;
   hasStableTarget = appendFingerprintAlias(parts, record, "model", ["model"]) || hasStableTarget;
-  const normalizedMeta = meta?.trim().replace(/\s+/g, " ").toLowerCase();
+  const normalizedMeta = normalizeOptionalLowercaseString(meta?.trim().replace(/\s+/g, " "));
   // Meta text often carries volatile details (for example "N chars").
   // Prefer stable arg-derived keys for matching; only fall back to meta
   // when no stable target key is available.
@@ -213,6 +224,36 @@ export function buildToolMutationState(
     mutatingAction: actionFingerprint != null,
     actionFingerprint,
   };
+}
+
+/**
+ * Extract identity segments from a fingerprint, ignoring target-specific keys
+ * (path, to, jobid, etc.) so that "same operation, different target" compares equal.
+ * Keeps `tool=`, `action=`, and `meta=` (used by actionless tools like exec/bash
+ * to distinguish different commands).
+ */
+function extractToolActionPrefix(fingerprint: string): string {
+  return fingerprint
+    .split("|")
+    .filter(
+      (part) => part.startsWith("tool=") || part.startsWith("action=") || part.startsWith("meta="),
+    )
+    .join("|");
+}
+
+/**
+ * Check if two tool calls are the same tool+action type (ignoring target).
+ * Used to allow clearing errors when the same operation retries on a different target,
+ * while preventing unrelated actions on the same multi-action tool from clearing errors.
+ */
+export function isSameToolActionType(existing: ToolActionRef, next: ToolActionRef): boolean {
+  if (existing.actionFingerprint != null && next.actionFingerprint != null) {
+    return (
+      extractToolActionPrefix(existing.actionFingerprint) ===
+      extractToolActionPrefix(next.actionFingerprint)
+    );
+  }
+  return existing.toolName.trim().toLowerCase() === next.toolName.trim().toLowerCase();
 }
 
 export function isSameToolMutationAction(existing: ToolActionRef, next: ToolActionRef): boolean {

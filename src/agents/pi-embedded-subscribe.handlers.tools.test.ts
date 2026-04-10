@@ -17,14 +17,16 @@ function createTestContext(): {
   ctx: ToolHandlerContext;
   warn: ReturnType<typeof vi.fn>;
   onBlockReplyFlush: ReturnType<typeof vi.fn>;
+  onAgentEvent: ReturnType<typeof vi.fn>;
 } {
   const onBlockReplyFlush = vi.fn();
+  const onAgentEvent = vi.fn();
   const warn = vi.fn();
   const ctx: ToolHandlerContext = {
     params: {
       runId: "run-test",
       onBlockReplyFlush,
-      onAgentEvent: undefined,
+      onAgentEvent,
       onToolResult: undefined,
     },
     flushBlockReplyBuffer: vi.fn(),
@@ -37,11 +39,15 @@ function createTestContext(): {
       toolMetaById: new Map<string, ToolCallSummary>(),
       toolMetas: [],
       toolSummaryById: new Set<string>(),
+      itemActiveIds: new Set<string>(),
+      itemStartedCount: 0,
+      itemCompletedCount: 0,
       pendingMessagingTargets: new Map<string, MessagingToolSend>(),
       pendingMessagingTexts: new Map<string, string>(),
       pendingMessagingMediaUrls: new Map<string, string[]>(),
       pendingToolMediaUrls: [],
       pendingToolAudioAsVoice: false,
+      deterministicApprovalPromptPending: false,
       messagingToolSentTexts: [],
       messagingToolSentTextsNormalized: [],
       messagingToolSentMediaUrls: [],
@@ -56,7 +62,7 @@ function createTestContext(): {
     trimMessagingToolSent: vi.fn(),
   };
 
-  return { ctx, warn, onBlockReplyFlush };
+  return { ctx, warn, onBlockReplyFlush, onAgentEvent };
 }
 
 describe("handleToolExecutionStart read path checks", () => {
@@ -73,6 +79,36 @@ describe("handleToolExecutionStart read path checks", () => {
     await handleToolExecutionStart(ctx, evt);
 
     expect(onBlockReplyFlush).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when read tool uses file alias", async () => {
+    const { ctx, warn } = createTestContext();
+
+    const evt: ToolExecutionStartEvent = {
+      type: "tool_execution_start",
+      toolName: "read",
+      toolCallId: "tool-file-alias",
+      args: { file: "/tmp/example.txt" },
+    };
+
+    await handleToolExecutionStart(ctx, evt);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("does not warn when read tool uses filePath alias", async () => {
+    const { ctx, warn } = createTestContext();
+
+    const evt: ToolExecutionStartEvent = {
+      type: "tool_execution_start",
+      toolName: "read",
+      toolCallId: "tool-filePath-alias",
+      args: { filePath: "/tmp/example.txt" },
+    };
+
+    await handleToolExecutionStart(ctx, evt);
+
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -121,6 +157,9 @@ describe("handleToolExecutionStart read path checks", () => {
     await pending;
 
     expect(ctx.state.toolMetaById.has("tool-await-flush")).toBe(true);
+    expect(ctx.state.itemStartedCount).toBe(2);
+    expect(ctx.state.itemActiveIds.has("tool:tool-await-flush")).toBe(true);
+    expect(ctx.state.itemActiveIds.has("command:tool-await-flush")).toBe(true);
   });
 });
 
@@ -175,6 +214,8 @@ describe("handleToolExecutionEnd cron.add commitment tracking", () => {
     );
 
     expect(ctx.state.successfulCronAdds).toBe(0);
+    expect(ctx.state.itemCompletedCount).toBe(1);
+    expect(ctx.state.itemActiveIds.size).toBe(0);
   });
 });
 
@@ -238,6 +279,122 @@ describe("handleToolExecutionEnd mutating failure recovery", () => {
   });
 });
 
+describe("handleToolExecutionEnd timeout metadata", () => {
+  it("records timeout metadata for failed exec results", async () => {
+    const { ctx } = createTestContext();
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-timeout",
+        isError: true,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "Command timed out after 1800 seconds.",
+            },
+          ],
+          details: {
+            status: "failed",
+            timedOut: true,
+            exitCode: null,
+            durationMs: 1_800_000,
+            aggregated: "",
+          },
+        },
+      } as never,
+    );
+
+    expect(ctx.state.lastToolError).toMatchObject({
+      toolName: "exec",
+      timedOut: true,
+    });
+  });
+});
+
+describe("handleToolExecutionEnd cron.add via exec tracking", () => {
+  it("increments successfulCronAdds when exec runs openclaw cron add", async () => {
+    const { ctx } = createTestContext();
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "tool-exec-cron-1",
+        args: { command: "openclaw cron add --at '2026-03-24T09:00:00Z' --text 'Ping Markus'" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-cron-1",
+        isError: false,
+        result: "Job abc123 created",
+      } as never,
+    );
+
+    expect(ctx.state.successfulCronAdds).toBe(1);
+  });
+
+  it("does not increment successfulCronAdds for unrelated exec commands", async () => {
+    const { ctx } = createTestContext();
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "tool-exec-other-1",
+        args: { command: "ls -la" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-other-1",
+        isError: false,
+        result: "total 42",
+      } as never,
+    );
+
+    expect(ctx.state.successfulCronAdds).toBe(0);
+  });
+
+  it("does not increment successfulCronAdds when exec cron add fails", async () => {
+    const { ctx } = createTestContext();
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "tool-exec-cron-2",
+        args: { command: "openclaw cron add --at '2026-03-24T09:00:00Z'" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-cron-2",
+        isError: true,
+        result: "Error: gateway not running",
+      } as never,
+    );
+
+    expect(ctx.state.successfulCronAdds).toBe(0);
+  });
+});
+
 describe("handleToolExecutionEnd exec approval prompts", () => {
   it("emits a deterministic approval payload and marks assistant output suppressed", async () => {
     const { ctx } = createTestContext();
@@ -270,15 +427,63 @@ describe("handleToolExecutionEnd exec approval prompts", () => {
       expect.objectContaining({
         text: expect.stringContaining("```txt\n/approve 12345678 allow-once\n```"),
         channelData: {
-          execApproval: {
+          execApproval: expect.objectContaining({
             approvalId: "12345678-1234-1234-1234-123456789012",
             approvalSlug: "12345678",
+            approvalKind: "exec",
             allowedDecisions: ["allow-once", "allow-always", "deny"],
-          },
+          }),
         },
+        interactive: expect.objectContaining({
+          blocks: expect.any(Array),
+        }),
       }),
     );
     expect(ctx.state.deterministicApprovalPromptSent).toBe(true);
+  });
+
+  it("preserves filtered approval decisions from tool details", async () => {
+    const { ctx } = createTestContext();
+    const onToolResult = vi.fn();
+    ctx.params.onToolResult = onToolResult;
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-approval-ask-always",
+        isError: false,
+        result: {
+          details: {
+            status: "approval-pending",
+            approvalId: "12345678-1234-1234-1234-123456789012",
+            approvalSlug: "12345678",
+            expiresAtMs: 1_800_000_000_000,
+            allowedDecisions: ["allow-once", "deny"],
+            host: "gateway",
+            command: "npm view diver name version description",
+          },
+        },
+      } as never,
+    );
+
+    expect(onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.not.stringContaining("allow-always"),
+        channelData: {
+          execApproval: expect.objectContaining({
+            approvalId: "12345678-1234-1234-1234-123456789012",
+            approvalSlug: "12345678",
+            approvalKind: "exec",
+            allowedDecisions: ["allow-once", "deny"],
+          }),
+        },
+        interactive: expect.objectContaining({
+          blocks: expect.any(Array),
+        }),
+      }),
+    );
   });
 
   it("emits a deterministic unavailable payload when the initiating surface cannot approve", async () => {
@@ -297,7 +502,9 @@ describe("handleToolExecutionEnd exec approval prompts", () => {
           details: {
             status: "approval-unavailable",
             reason: "initiating-platform-disabled",
+            channel: "discord",
             channelLabel: "Discord",
+            accountId: "work",
           },
         },
       } as never,
@@ -305,7 +512,7 @@ describe("handleToolExecutionEnd exec approval prompts", () => {
 
     expect(onToolResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining("chat exec approvals are not enabled on Discord"),
+        text: expect.stringContaining("native chat exec approvals are not configured on Discord"),
       }),
     );
     expect(onToolResult).toHaveBeenCalledWith(
@@ -390,6 +597,320 @@ describe("handleToolExecutionEnd exec approval prompts", () => {
     );
 
     expect(ctx.state.deterministicApprovalPromptSent).toBe(false);
+  });
+
+  it("emits approval + blocked command item events when exec needs approval", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "tool-exec-approval-events",
+        args: { command: "npm test" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-approval-events",
+        isError: false,
+        result: {
+          details: {
+            status: "approval-pending",
+            approvalId: "12345678-1234-1234-1234-123456789012",
+            approvalSlug: "12345678",
+            host: "gateway",
+            command: "npm test",
+          },
+        },
+      } as never,
+    );
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "approval",
+        data: expect.objectContaining({
+          phase: "requested",
+          status: "pending",
+          itemId: "command:tool-exec-approval-events",
+          approvalId: "12345678-1234-1234-1234-123456789012",
+          approvalSlug: "12345678",
+        }),
+      }),
+    );
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "item",
+        data: expect.objectContaining({
+          itemId: "command:tool-exec-approval-events",
+          phase: "end",
+          status: "blocked",
+          summary: "Awaiting approval before command can run.",
+        }),
+      }),
+    );
+  });
+});
+
+describe("handleToolExecutionEnd derived tool events", () => {
+  it("emits command output events for exec results", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "tool-exec-output",
+        args: { command: "ls" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-output",
+        isError: false,
+        result: {
+          details: {
+            status: "completed",
+            aggregated: "README.md",
+            exitCode: 0,
+            durationMs: 10,
+            cwd: "/tmp/work",
+          },
+        },
+      } as never,
+    );
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "command_output",
+        data: expect.objectContaining({
+          itemId: "command:tool-exec-output",
+          phase: "end",
+          output: "README.md",
+          exitCode: 0,
+          cwd: "/tmp/work",
+        }),
+      }),
+    );
+  });
+
+  it("emits patch summary events for apply_patch results", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "apply_patch",
+        toolCallId: "tool-patch-summary",
+        args: { patch: "*** Begin Patch" },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "apply_patch",
+        toolCallId: "tool-patch-summary",
+        isError: false,
+        result: {
+          details: {
+            summary: {
+              added: ["a.ts"],
+              modified: ["b.ts"],
+              deleted: ["c.ts"],
+            },
+          },
+        },
+      } as never,
+    );
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "patch",
+        data: expect.objectContaining({
+          itemId: "patch:tool-patch-summary",
+          added: ["a.ts"],
+          modified: ["b.ts"],
+          deleted: ["c.ts"],
+          summary: "1 added, 1 modified, 1 deleted",
+        }),
+      }),
+    );
+  });
+});
+
+describe("handleToolExecutionEnd lastToolError clearing", () => {
+  it("clears lastToolError when same tool type succeeds with a different mutating target", async () => {
+    const { ctx } = createTestContext();
+
+    // 1. write /path/a fails
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "write",
+      toolCallId: "tool-w1",
+      args: { path: "/path/a", content: "hello" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "write",
+      toolCallId: "tool-w1",
+      isError: true,
+      result: "Error: permission denied",
+    } as never);
+
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("write");
+
+    // 2. write /path/b succeeds (different target, same tool, also mutating)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "write",
+      toolCallId: "tool-w2",
+      args: { path: "/path/b", content: "hello" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "write",
+      toolCallId: "tool-w2",
+      isError: false,
+      result: { ok: true },
+    } as never);
+
+    expect(ctx.state.lastToolError).toBeUndefined();
+  });
+
+  it("does not clear lastToolError when a different tool type succeeds", async () => {
+    const { ctx } = createTestContext();
+
+    // 1. write fails
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "write",
+      toolCallId: "tool-w1",
+      args: { path: "/path/a", content: "hello" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "write",
+      toolCallId: "tool-w1",
+      isError: true,
+      result: "Error: permission denied",
+    } as never);
+
+    expect(ctx.state.lastToolError).toBeDefined();
+
+    // 2. exec succeeds (different tool type)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "exec",
+      toolCallId: "tool-e1",
+      args: { command: "echo hi" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "exec",
+      toolCallId: "tool-e1",
+      isError: false,
+      result: { ok: true },
+    } as never);
+
+    // lastToolError should still be set (different tool type)
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("write");
+  });
+
+  it("does not clear lastToolError when same tool succeeds with a different mutating action", async () => {
+    const { ctx } = createTestContext();
+
+    // 1. cron add fails (mutating)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "cron",
+      toolCallId: "tool-c1",
+      args: { action: "add", job: { name: "reminder" } },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "cron",
+      toolCallId: "tool-c1",
+      isError: true,
+      result: "Error: cron add failed",
+    } as never);
+
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("cron");
+
+    // 2. cron remove succeeds (different mutating action, same tool)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "cron",
+      toolCallId: "tool-c2",
+      args: { action: "remove", jobId: "job-123" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "cron",
+      toolCallId: "tool-c2",
+      isError: false,
+      result: { ok: true },
+    } as never);
+
+    // lastToolError should remain — different action on same tool must not clear
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("cron");
+  });
+
+  it("does not clear lastToolError when same tool type succeeds with a read-only action", async () => {
+    const { ctx } = createTestContext();
+
+    // 1. cron add fails (mutating)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "cron",
+      toolCallId: "tool-c1",
+      args: { action: "add", job: { name: "reminder" } },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "cron",
+      toolCallId: "tool-c1",
+      isError: true,
+      result: "Error: cron add failed",
+    } as never);
+
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("cron");
+
+    // 2. cron list succeeds (read-only, same tool type)
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "cron",
+      toolCallId: "tool-c2",
+      args: { action: "list" },
+    } as never);
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "cron",
+      toolCallId: "tool-c2",
+      isError: false,
+      result: { jobs: [] },
+    } as never);
+
+    // lastToolError should remain — read-only success must not clear mutating failure
+    expect(ctx.state.lastToolError).toBeDefined();
+    expect(ctx.state.lastToolError?.toolName).toBe("cron");
   });
 });
 

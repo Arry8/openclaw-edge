@@ -61,17 +61,23 @@ function createChatHeaderState(
   overrides: {
     model?: string | null;
     modelProvider?: string | null;
+    thinkingLevel?: string | null;
     models?: ModelCatalogEntry[];
     omitSessionFromList?: boolean;
   } = {},
 ): { state: AppViewState; request: ReturnType<typeof vi.fn> } {
   let currentModel = overrides.model ?? null;
   let currentModelProvider = overrides.modelProvider ?? (currentModel ? "openai" : null);
+  let currentThinkingLevel = overrides.thinkingLevel ?? null;
   const omitSessionFromList = overrides.omitSessionFromList ?? false;
   const catalog = overrides.models ?? createModelCatalog(...DEFAULT_CHAT_MODEL_CATALOG);
   const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
     if (method === "sessions.patch") {
       const nextModel = (params.model as string | null | undefined) ?? null;
+      const nextThinkingLevel = params.thinkingLevel as string | null | undefined;
+      if ("thinkingLevel" in params) {
+        currentThinkingLevel = nextThinkingLevel ?? null;
+      }
       if (!nextModel) {
         currentModel = null;
         currentModelProvider = null;
@@ -97,11 +103,15 @@ function createChatHeaderState(
       return { messages: [], thinkingLevel: null };
     }
     if (method === "sessions.list") {
-      return createSessionsListResult({
+      const result = createSessionsListResult({
         model: currentModel,
         modelProvider: currentModelProvider,
         omitSessionFromList,
       });
+      if (result.sessions[0]) {
+        result.sessions[0].thinkingLevel = currentThinkingLevel ?? undefined;
+      }
+      return result;
     }
     if (method === "models.list") {
       return { models: catalog };
@@ -119,11 +129,17 @@ function createChatHeaderState(
     sessionKey: "main",
     connected: true,
     sessionsHideCron: true,
-    sessionsResult: createSessionsListResult({
-      model: currentModel,
-      modelProvider: currentModelProvider,
-      omitSessionFromList,
-    }),
+    sessionsResult: (() => {
+      const result = createSessionsListResult({
+        model: currentModel,
+        modelProvider: currentModelProvider,
+        omitSessionFromList,
+      });
+      if (result.sessions[0]) {
+        result.sessions[0].thinkingLevel = currentThinkingLevel ?? undefined;
+      }
+      return result;
+    })(),
     chatModelOverrides: {},
     chatModelCatalog: catalog,
     chatModelsLoading: false,
@@ -250,6 +266,7 @@ function createOverviewProps(overrides: Partial<OverviewProps> = {}): OverviewPr
     cronEnabled: null,
     cronNext: null,
     lastChannelsRefresh: null,
+    warnQueryToken: false,
     usageResult: null,
     sessionsResult: null,
     skillsReport: null,
@@ -393,6 +410,124 @@ describe("chat view", () => {
     expect(container.textContent).not.toContain("190k / 200k");
   });
 
+  it("caps rendered history by message count", () => {
+    const messages = Array.from({ length: 205 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `message-${index}`,
+      timestamp: index + 1,
+    }));
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          messages,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Showing last 200 messages (5 older messages hidden).");
+  });
+
+  it("caps rendered history by total render char budget", () => {
+    const large = "x".repeat(100_000);
+    const messages = Array.from({ length: 6 }, (_, index) => ({
+      role: index % 2 === 0 ? "assistant" : "user",
+      content: `${large}-${index}`,
+      timestamp: index + 1,
+    }));
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          messages,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Showing last 2 messages (4 older messages hidden).");
+  });
+
+  it("counts tool_result content field toward the char budget", () => {
+    const largeContent = "x".repeat(150_000);
+    const messages: unknown[] = [];
+    for (let i = 0; i < 4; i++) {
+      messages.push({ role: "user", content: "run the tool", timestamp: i * 3 + 1 });
+      messages.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: `tool-${i}`, content: largeContent }],
+        timestamp: i * 3 + 2,
+      });
+      messages.push({ role: "assistant", content: "ok", timestamp: i * 3 + 3 });
+    }
+    const container = document.createElement("div");
+    render(renderChat(createProps({ messages })), container);
+
+    expect(container.textContent).toContain("hidden");
+  });
+
+  it("excludes hidden tool messages from the history budget when showToolCalls is false", () => {
+    const messages: unknown[] = [];
+    for (let i = 0; i < 10; i++) {
+      messages.push({
+        role: "user",
+        content: "short question",
+        timestamp: i * 3 + 1,
+      });
+      messages.push({
+        role: "assistant",
+        content: [{ type: "tool_use", id: `tool-${i}`, name: "get_data", input: {} }],
+        timestamp: i * 3 + 2,
+      });
+      messages.push({
+        role: "toolresult",
+        content: "x".repeat(50_000),
+        timestamp: i * 3 + 3,
+      });
+    }
+    const container = document.createElement("div");
+    render(renderChat(createProps({ messages, showToolCalls: false })), container);
+
+    expect(container.textContent).not.toContain("hidden");
+  });
+
+  it("history notice counts only visible messages when tool calls are hidden", () => {
+    const messages: unknown[] = [];
+    for (let i = 0; i < 210; i++) {
+      messages.push({ role: "user", content: `msg ${i}`, timestamp: i * 2 + 1 });
+      messages.push({ role: "toolresult", content: "tool output", timestamp: i * 2 + 2 });
+    }
+    const container = document.createElement("div");
+    render(renderChat(createProps({ messages, showToolCalls: false })), container);
+    const text = container.textContent ?? "";
+    expect(text).toContain("older messages hidden");
+    expect(text).not.toContain("Showing last 400");
+    const match = text.match(/Showing last (\d+) messages/);
+    expect(match).toBeTruthy();
+    const visibleCount = Number(match![1]);
+    expect(visibleCount).toBeLessThanOrEqual(200);
+  });
+
+  it("caps the raw walk when most history items are hidden tool messages", () => {
+    const messages: unknown[] = [];
+    for (let i = 0; i < 1000; i++) {
+      messages.push({
+        role: "toolresult",
+        content: "tool output",
+        timestamp: i + 1,
+      });
+    }
+    messages.push({ role: "user", content: "hello", timestamp: 1001 });
+    messages.push({ role: "assistant", content: "hi", timestamp: 1002 });
+    const container = document.createElement("div");
+    render(renderChat(createProps({ messages, showToolCalls: false })), container);
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("hidden");
+    expect(text).not.toContain("1000 older messages hidden");
+  });
+
   it("uses the assistant avatar URL for the welcome state when the identity avatar is only initials", () => {
     const container = document.createElement("div");
     render(
@@ -519,7 +654,8 @@ describe("chat view", () => {
       renderChat(
         createProps({
           compactionStatus: {
-            active: true,
+            phase: "active",
+            runId: "run-1",
             startedAt: Date.now(),
             completedAt: null,
           },
@@ -533,6 +669,27 @@ describe("chat view", () => {
     expect(indicator?.textContent).toContain("Compacting context...");
   });
 
+  it("renders retry-pending compaction indicator as a badge", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          compactionStatus: {
+            phase: "retrying",
+            runId: "run-1",
+            startedAt: Date.now(),
+            completedAt: null,
+          },
+        }),
+      ),
+      container,
+    );
+
+    const indicator = container.querySelector(".compaction-indicator--active");
+    expect(indicator).not.toBeNull();
+    expect(indicator?.textContent).toContain("Retrying after compaction...");
+  });
+
   it("renders completion indicator shortly after compaction", () => {
     const container = document.createElement("div");
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
@@ -540,7 +697,8 @@ describe("chat view", () => {
       renderChat(
         createProps({
           compactionStatus: {
-            active: false,
+            phase: "complete",
+            runId: "run-1",
             startedAt: 900,
             completedAt: 900,
           },
@@ -562,7 +720,8 @@ describe("chat view", () => {
       renderChat(
         createProps({
           compactionStatus: {
-            active: false,
+            phase: "complete",
+            runId: "run-1",
             startedAt: 0,
             completedAt: 0,
           },
@@ -582,9 +741,9 @@ describe("chat view", () => {
       renderChat(
         createProps({
           fallbackStatus: {
-            selected: "fireworks/minimax-m2p5",
+            selected: "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
             active: "deepinfra/moonshotai/Kimi-K2.5",
-            attempts: ["fireworks/minimax-m2p5: rate limit"],
+            attempts: ["fireworks/accounts/fireworks/routers/kimi-k2p5-turbo: rate limit"],
             occurredAt: 900,
           },
         }),
@@ -605,7 +764,7 @@ describe("chat view", () => {
       renderChat(
         createProps({
           fallbackStatus: {
-            selected: "fireworks/minimax-m2p5",
+            selected: "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
             active: "deepinfra/moonshotai/Kimi-K2.5",
             attempts: [],
             occurredAt: 0,
@@ -627,8 +786,8 @@ describe("chat view", () => {
         createProps({
           fallbackStatus: {
             phase: "cleared",
-            selected: "fireworks/minimax-m2p5",
-            active: "fireworks/minimax-m2p5",
+            selected: "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
+            active: "fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
             previous: "deepinfra/moonshotai/Kimi-K2.5",
             attempts: [],
             occurredAt: 900,
@@ -640,7 +799,9 @@ describe("chat view", () => {
 
     const indicator = container.querySelector(".compaction-indicator--fallback-cleared");
     expect(indicator).not.toBeNull();
-    expect(indicator?.textContent).toContain("Fallback cleared: fireworks/minimax-m2p5");
+    expect(indicator?.textContent).toContain(
+      "Fallback cleared: fireworks/accounts/fireworks/routers/kimi-k2p5-turbo",
+    );
     nowSpy.mockRestore();
   });
 
@@ -662,6 +823,27 @@ describe("chat view", () => {
     expect(stopButton).not.toBeUndefined();
     stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("New session");
+  });
+
+  it("shows a stop button when aborting is available without an active stream", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          canAbort: true,
+          sending: false,
+          stream: null,
+          onAbort: vi.fn(),
+        }),
+      ),
+      container,
+    );
+
+    const stopButton = container.querySelector<HTMLButtonElement>('button[title="Stop"]');
+    const sendButton = container.querySelector<HTMLButtonElement>('button[title="Send"]');
+    expect(stopButton).not.toBeNull();
+    expect(sendButton).toBeNull();
     expect(container.textContent).not.toContain("New session");
   });
 
@@ -893,6 +1075,72 @@ describe("chat view", () => {
     expect(state.sessionsResult?.sessions[0]?.model).toBe("gpt-5-mini");
     expect(state.sessionsResult?.sessions[0]?.modelProvider).toBe("openai");
     vi.unstubAllGlobals();
+  });
+
+  it("shows the default thinking level in the chat header picker", async () => {
+    const { state } = createChatHeaderState({
+      model: "gpt-5",
+      modelProvider: "openai",
+    });
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const thinkingSelect = container.querySelector<HTMLSelectElement>(
+      'select[data-chat-thinking-select="true"]',
+    );
+    expect(thinkingSelect).not.toBeNull();
+    expect(thinkingSelect?.value).toBe("");
+    expect(thinkingSelect?.options[0]?.textContent?.trim()).toBe("Default (off)");
+  });
+
+  it("patches the current session thinking level from the chat header picker", async () => {
+    const { state, request } = createChatHeaderState({
+      model: "gpt-5",
+      modelProvider: "openai",
+    });
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const thinkingSelect = container.querySelector<HTMLSelectElement>(
+      'select[data-chat-thinking-select="true"]',
+    );
+    expect(thinkingSelect).not.toBeNull();
+
+    thinkingSelect!.value = "off";
+    thinkingSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushTasks();
+
+    expect(request).toHaveBeenCalledWith("sessions.patch", {
+      key: "main",
+      thinkingLevel: "off",
+    });
+    expect(state.sessionsResult?.sessions[0]?.thinkingLevel).toBe("off");
+  });
+
+  it("clears the session thinking override back to the default thinking level", async () => {
+    const { state, request } = createChatHeaderState({
+      model: "gpt-5",
+      modelProvider: "openai",
+      thinkingLevel: "high",
+    });
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    const thinkingSelect = container.querySelector<HTMLSelectElement>(
+      'select[data-chat-thinking-select="true"]',
+    );
+    expect(thinkingSelect).not.toBeNull();
+    expect(thinkingSelect?.value).toBe("high");
+
+    thinkingSelect!.value = "";
+    thinkingSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushTasks();
+
+    expect(request).toHaveBeenCalledWith("sessions.patch", {
+      key: "main",
+      thinkingLevel: null,
+    });
+    expect(state.sessionsResult?.sessions[0]?.thinkingLevel).toBeUndefined();
   });
 
   it("reloads effective tools after a chat-header model switch for the active tools panel", async () => {

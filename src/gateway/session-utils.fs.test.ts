@@ -537,6 +537,195 @@ describe("readSessionMessages", () => {
   );
 });
 
+describe("readSessionMessages — reset archive fallback", () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  registerTempSessionStore("openclaw-session-reset-fallback-test-", (nextTmpDir, nextStorePath) => {
+    tmpDir = nextTmpDir;
+    storePath = nextStorePath;
+  });
+
+  afterEach(() => {
+    // Clean up any archive files written during each test.
+    for (const f of fs.readdirSync(tmpDir)) {
+      if (f.includes(".reset.")) {
+        fs.rmSync(path.join(tmpDir, f));
+      }
+    }
+  });
+
+  test("returns messages from the most recent reset archive when primary file is missing", () => {
+    const sessionId = "aa000000-0000-4000-8000-000000000001";
+    const archivePath = path.join(tmpDir, `${sessionId}.jsonl.reset.2026-03-12T04-00-00.000Z`);
+    const lines = [
+      JSON.stringify({ type: "session", version: 1, id: sessionId }),
+      JSON.stringify({ message: { role: "user", content: "archived message" } }),
+    ];
+    fs.writeFileSync(archivePath, lines.join("\n"), "utf-8");
+
+    const out = readSessionMessages(sessionId, storePath);
+    expect(out).toHaveLength(1);
+    expect((out[0] as { role: string; content: string }).content).toBe("archived message");
+  });
+
+  test("prefers primary transcript over reset archive when both exist", () => {
+    const sessionId = "aa000000-0000-4000-8000-000000000002";
+    const primaryPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const archivePath = path.join(tmpDir, `${sessionId}.jsonl.reset.2026-03-12T04-00-00.000Z`);
+
+    fs.writeFileSync(
+      primaryPath,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "current message" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      archivePath,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "archived message" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const out = readSessionMessages(sessionId, storePath);
+    expect(out).toHaveLength(1);
+    expect((out[0] as { role: string; content: string }).content).toBe("current message");
+
+    fs.rmSync(primaryPath);
+  });
+
+  test("picks the latest archive when multiple reset archives exist", () => {
+    const sessionId = "aa000000-0000-4000-8000-000000000003";
+    const older = path.join(tmpDir, `${sessionId}.jsonl.reset.2026-03-11T04-00-00.000Z`);
+    const newer = path.join(tmpDir, `${sessionId}.jsonl.reset.2026-03-12T04-00-00.000Z`);
+
+    fs.writeFileSync(
+      older,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "older archive" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      newer,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "newer archive" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const out = readSessionMessages(sessionId, storePath);
+    expect(out).toHaveLength(1);
+    expect((out[0] as { role: string; content: string }).content).toBe("newer archive");
+  });
+
+  test("returns empty array when neither primary nor archive exists", () => {
+    const sessionId = "aa000000-0000-4000-8000-000000000004";
+    const out = readSessionMessages(sessionId, storePath);
+    expect(out).toHaveLength(0);
+  });
+
+  test("finds reset archive in legacy ~/.openclaw/sessions dir when not in store dir", () => {
+    const sessionId = "aa000000-0000-4000-8000-000000000005";
+    // Simulate a legacy-layout archive: home dir is remapped to tmpDir so the
+    // legacy path becomes <tmpDir>/.openclaw/sessions.
+    const legacyDir = path.join(tmpDir, ".openclaw", "sessions");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const archivePath = path.join(legacyDir, `${sessionId}.jsonl.reset.2026-03-12T04-00-00.000Z`);
+    fs.writeFileSync(
+      archivePath,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "legacy archived message" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    // Point HOME at tmpDir so resolveRequiredHomeDir resolves the fake legacy path.
+    const origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+    try {
+      const out = readSessionMessages(sessionId, storePath);
+      expect(out).toHaveLength(1);
+      expect((out[0] as { role: string; content: string }).content).toBe("legacy archived message");
+    } finally {
+      process.env.HOME = origHome;
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+    }
+  });
+
+  test("finds reset archive for non-canonical sessionFile transcript name", () => {
+    // When a session uses a topic-scoped sessionFile (e.g. <sessionId>-topic-<id>.jsonl),
+    // the reset archive is named after that file, not the plain <sessionId>.jsonl.
+    // findLatestResetArchive must match archives for all candidate basenames.
+    //
+    // Use fs.realpathSync to resolve /tmp → /private/tmp on macOS so that
+    // resolvePathWithinSessionsDir's symlink-aware relative-path check keeps the
+    // candidate instead of treating it as outside the sessions directory.
+    const sessionId = "aa000000-0000-4000-8000-000000000006";
+    const realTmpDir = fs.realpathSync(tmpDir);
+    const realStorePath = path.join(realTmpDir, "sessions.json");
+    const topicSessionFile = path.join(realTmpDir, `${sessionId}-topic-42.jsonl`);
+    const archivePath = `${topicSessionFile}.reset.2026-03-12T04-00-00.000Z`;
+    fs.writeFileSync(
+      archivePath,
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId }),
+        JSON.stringify({ message: { role: "user", content: "topic-name archived message" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+
+    try {
+      // Primary file absent; sessionFile candidate has non-canonical basename.
+      const out = readSessionMessages(sessionId, realStorePath, topicSessionFile);
+      expect(out).toHaveLength(1);
+      expect((out[0] as { role: string; content: string }).content).toBe(
+        "topic-name archived message",
+      );
+    } finally {
+      fs.rmSync(archivePath, { force: true });
+    }
+  });
+
+  test("does not return archive belonging to a stale (different) session", () => {
+    // resolveSessionTranscriptCandidates includes a stale sessionFile (a path whose
+    // embedded session ID differs from the requested one) for compatibility.
+    // The reset-archive fallback must not pick up archives for that stale basename,
+    // or it would return another session's messages.
+    const sessionId = "aa000000-0000-4000-8000-000000000007";
+    const staleSessionId = "bb000000-0000-4000-8000-000000000008";
+    const realTmpDir = fs.realpathSync(tmpDir);
+    const realStorePath = path.join(realTmpDir, "sessions.json");
+    // Stale sessionFile: belongs to a different session.
+    const staleSessionFile = path.join(realTmpDir, `${staleSessionId}.jsonl`);
+    // Only a reset archive for the stale file exists — no archive for sessionId.
+    const staleArchivePath = `${staleSessionFile}.reset.2026-03-12T04-00-00.000Z`;
+    fs.writeFileSync(
+      staleArchivePath,
+      [
+        JSON.stringify({ type: "session", version: 1, id: staleSessionId }),
+        JSON.stringify({ message: { role: "user", content: "stale session message" } }),
+      ].join("\n"),
+      "utf-8",
+    );
+    try {
+      // Pass the stale sessionFile so it appears as a candidate.
+      const out = readSessionMessages(sessionId, realStorePath, staleSessionFile);
+      // Must not return the stale session's archive content.
+      expect(out).toHaveLength(0);
+    } finally {
+      fs.rmSync(staleArchivePath, { force: true });
+    }
+  });
+});
+
 describe("readSessionPreviewItemsFromTranscript", () => {
   let tmpDir: string;
   let storePath: string;
@@ -627,6 +816,56 @@ describe("readSessionPreviewItemsFromTranscript", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.text).toBe("A  B");
+  });
+
+  test("prefers final_answer text for assistant preview items", () => {
+    const sessionId = "preview-final-answer";
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "thinking like caveman",
+              textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+            },
+            {
+              type: "text",
+              text: "Actual final answer",
+              textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+            },
+          ],
+        },
+      }),
+    ];
+    writeTranscriptLines(sessionId, lines);
+    const result = readPreview(sessionId, 1, 120);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.text).toBe("Actual final answer");
+  });
+
+  test("hides commentary-only assistant preview items", () => {
+    const sessionId = "preview-commentary-only";
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "thinking like caveman",
+              textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+            },
+          ],
+        },
+      }),
+    ];
+    writeTranscriptLines(sessionId, lines);
+    const result = readPreview(sessionId, 1, 120);
+
+    expect(result).toHaveLength(0);
   });
 });
 
@@ -777,6 +1016,37 @@ describe("readLatestSessionUsageFromTranscript", () => {
     ]);
 
     expect(readLatestSessionUsageFromTranscript(sessionId, storePath)).toBeNull();
+  });
+
+  test("returns null when the transcript session header belongs to a different sessionId (stale transcript after reset)", () => {
+    // Simulate the post-reset bug: the old session's transcript file is still
+    // discoverable on disk, but its header carries the old sessionId. The new
+    // session should not inherit usage figures from the previous session.
+    const oldSessionId = "usage-old-session";
+    const newSessionId = "usage-new-session";
+    // Write the transcript under the OLD session's file name so it can be
+    // picked up as a stale candidate when queried with the new sessionId.
+    writeTranscript(tmpDir, oldSessionId, [
+      { type: "session", version: 1, id: oldSessionId },
+      {
+        message: {
+          role: "assistant",
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          usage: { input: 138_000, output: 5_000, cost: { total: 1.23 } },
+        },
+      },
+    ]);
+
+    // Query with the new sessionId but pass the old file as sessionFile so it
+    // lands in the stale-candidate path inside resolveSessionTranscriptCandidates.
+    const oldSessionFile = `${oldSessionId}.jsonl`;
+    const result = readLatestSessionUsageFromTranscript(
+      newSessionId,
+      storePath,
+      oldSessionFile,
+    );
+    expect(result).toBeNull();
   });
 });
 

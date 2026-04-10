@@ -3,6 +3,37 @@ import Foundation
 import OpenClawKit
 
 final class ContactsService: ContactsServicing {
+    private final class PermissionRequestBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Bool, Never>?
+        private var hasResumed = false
+
+        @discardableResult
+        func install(_ continuation: CheckedContinuation<Bool, Never>) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if hasResumed {
+                continuation.resume(returning: false)
+                return false
+            }
+            self.continuation = continuation
+            return true
+        }
+
+        func resume(_ value: Bool) {
+            lock.lock()
+            guard !hasResumed else {
+                lock.unlock()
+                return
+            }
+            hasResumed = true
+            let continuation = self.continuation
+            self.continuation = nil
+            lock.unlock()
+            continuation?.resume(returning: value)
+        }
+    }
+
     private static var payloadKeys: [CNKeyDescriptor] {
         [
             CNContactIdentifierKey as CNKeyDescriptor,
@@ -103,13 +134,27 @@ final class ContactsService: ContactsServicing {
         case .authorized, .limited:
             return true
         case .notDetermined:
-            // Don’t prompt during node.invoke; the caller should instruct the user to grant permission.
-            // Prompts block the invoke and lead to timeouts in headless flows.
-            return false
+            return await requestAccess(store: store)
         case .restricted, .denied:
             return false
         @unknown default:
             return false
+        }
+    }
+
+    private static func requestAccess(store: CNContactStore) async -> Bool {
+        let box = PermissionRequestBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard box.install(continuation) else {
+                    return
+                }
+                store.requestAccess(for: .contacts) { granted, _ in
+                    box.resume(granted)
+                }
+            }
+        } onCancel: {
+            box.resume(false)
         }
     }
 

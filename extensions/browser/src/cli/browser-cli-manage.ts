@@ -7,6 +7,7 @@ import {
   info,
   redactCdpUrl,
   shortenHomePath,
+  type BrowserDoctorReport,
   type BrowserCreateProfileResult,
   type BrowserDeleteProfileResult,
   type BrowserResetProfileResult,
@@ -64,6 +65,23 @@ async function fetchBrowserStatus(
   );
 }
 
+async function fetchBrowserDoctor(
+  parent: BrowserParentOpts,
+  profile?: string,
+): Promise<BrowserDoctorReport> {
+  return await callBrowserRequest<BrowserDoctorReport>(
+    parent,
+    {
+      method: "GET",
+      path: "/doctor",
+      query: resolveProfileQuery(profile),
+    },
+    {
+      timeoutMs: BROWSER_MANAGE_REQUEST_TIMEOUT_MS,
+    },
+  );
+}
+
 async function runBrowserToggle(
   parent: BrowserParentOpts,
   params: { profile?: string; path: string },
@@ -83,7 +101,7 @@ async function runBrowserToggle(
 
 function runBrowserCommand(action: () => Promise<void>) {
   return runCommandWithRuntime(defaultRuntime, action, (err) => {
-    defaultRuntime.error(danger(String(err as unknown)));
+    defaultRuntime.error(danger(String(err)));
     defaultRuntime.exit(1);
   });
 }
@@ -135,6 +153,38 @@ export function registerBrowserManageCommands(
   browser: Command,
   parentOpts: (cmd: Command) => BrowserParentOpts,
 ) {
+  browser
+    .command("doctor")
+    .description("Diagnose browser control and launch readiness")
+    .action(async (_opts, cmd) => {
+      const parent = parentOpts(cmd);
+      await runBrowserCommand(async () => {
+        const report = await fetchBrowserDoctor(parent, parent?.browserProfile);
+        if (printJsonResult(parent, report)) {
+          return;
+        }
+        const icon = (status: BrowserDoctorReport["checks"][number]["status"]) =>
+          status === "pass"
+            ? "PASS"
+            : status === "warn"
+              ? "WARN"
+              : status === "fail"
+                ? "FAIL"
+                : "INFO";
+        defaultRuntime.log(
+          [
+            `profile: ${report.profile}`,
+            `transport: ${report.transport}`,
+            `ok: ${report.ok}`,
+            ...report.checks.flatMap((check) => [
+              `${icon(check.status)} ${check.label}: ${check.summary}`,
+              ...(check.fixHint ? [`  fix: ${check.fixHint}`] : []),
+            ]),
+          ].join("\n"),
+        );
+      });
+    });
+
   browser
     .command("status")
     .description("Show browser status")

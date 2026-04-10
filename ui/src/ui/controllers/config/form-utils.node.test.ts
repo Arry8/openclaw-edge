@@ -287,7 +287,7 @@ describe("coerceFormValues", () => {
     expect(coerceFormValues(undefined, topLevelSchema)).toBeUndefined();
   });
 
-  it("handles anyOf schemas with number variant", () => {
+  it("preserves string values when anyOf also allows strings", () => {
     const schema: JsonSchema = {
       type: "object",
       properties: {
@@ -298,8 +298,24 @@ describe("coerceFormValues", () => {
     };
     const form = { timeout: "30" };
     const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
-    expect(typeof coerced.timeout).toBe("number");
-    expect(coerced.timeout).toBe(30);
+    expect(coerced.timeout).toBe("30");
+  });
+
+  it("preserves large Discord-style ids for string-or-number unions", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        ids: {
+          type: "array",
+          items: {
+            anyOf: [{ type: "string" }, { type: "number" }],
+          },
+        },
+      },
+    };
+    const form = { ids: ["1234567890123456789"] };
+    const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
+    expect(coerced.ids).toEqual(["1234567890123456789"]);
   });
 
   it("handles integer schema type", () => {
@@ -477,7 +493,21 @@ describe("coerceFormValues", () => {
     expect(values).toEqual([1, 3]);
   });
 
-  it("coerces boolean in anyOf union", () => {
+  it("coerces boolean in anyOf union when string is not allowed", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        flag: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+      },
+    };
+    const form = { flag: "true" };
+    const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
+    expect(coerced.flag).toBe(true);
+  });
+
+  it("preserves string values in boolean-or-string union", () => {
     const schema: JsonSchema = {
       type: "object",
       properties: {
@@ -488,6 +518,95 @@ describe("coerceFormValues", () => {
     };
     const form = { flag: "true" };
     const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
-    expect(coerced.flag).toBe(true);
+    expect(coerced.flag).toBe("true");
+  });
+
+  it("prefers matching anyOf object variant before coercing nested fields", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        settings: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                kind: { type: "string", const: "numeric" },
+                retries: { type: "number" },
+              },
+            },
+            {
+              type: "object",
+              properties: {
+                kind: { type: "string", const: "named" },
+                retries: { type: "string" },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const form = { settings: { kind: "named", retries: "03" } };
+    const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
+    const settings = coerced.settings as Record<string, unknown>;
+    expect(settings.retries).toBe("03");
+  });
+
+  it("prefers matching oneOf object variant before coercing nested fields", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        settings: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                mode: { type: "string", const: "numeric" },
+                retries: { type: "number" },
+              },
+            },
+            {
+              type: "object",
+              properties: {
+                mode: { type: "string", const: "named" },
+                retries: { type: "string" },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const form = { settings: { mode: "named", retries: "03" } };
+    const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
+    const settings = coerced.settings as Record<string, unknown>;
+    expect(settings.retries).toBe("03");
+  });
+
+  it("does not let unconstrained object variants outrank matching const variants", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        settings: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                retries: { type: "number" },
+              },
+            },
+            {
+              type: "object",
+              properties: {
+                kind: { type: "string", const: "named" },
+                retries: { type: "string" },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const form = { settings: { kind: "named", retries: "03" } };
+    const coerced = coerceFormValues(form, schema) as Record<string, unknown>;
+    const settings = coerced.settings as Record<string, unknown>;
+    expect(settings.retries).toBe("03");
   });
 });

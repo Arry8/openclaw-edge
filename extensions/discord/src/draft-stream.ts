@@ -1,6 +1,7 @@
 import type { RequestClient } from "@buape/carbon";
 import { Routes } from "discord-api-types/v10";
 import { createFinalizableDraftLifecycle } from "openclaw/plugin-sdk/channel-lifecycle";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 
 /** Discord messages cap at 2000 characters. */
 const DISCORD_STREAM_MAX_CHARS = 2000;
@@ -52,9 +53,20 @@ export function createDiscordDraftStream(params: {
     }
     if (trimmed.length > maxChars) {
       // Discord messages cap at 2000 chars.
-      // Stop streaming once we exceed the cap to avoid repeated API failures.
+      // Truncate with user-visible warning instead of silently stopping.
+      const truncationWarning =
+        "\n\n⚠️ [Content truncated — text exceeded platform limits. Use /verbose off for full content.]";
+      const truncatedText =
+        trimmed.slice(0, maxChars - truncationWarning.length) + truncationWarning;
+
+      params.warn?.(
+        `discord stream preview truncated (${trimmed.length} > ${maxChars} chars). Consider disabling verbose mode for long outputs.`,
+      );
+
+      // Send the truncated content
+      await sendOrEditStreamMessage(truncatedText);
+
       streamState.stopped = true;
-      params.warn?.(`discord stream preview stopped (text length ${trimmed.length} > ${maxChars})`);
       return false;
     }
     if (trimmed === lastSentText) {
@@ -98,9 +110,7 @@ export function createDiscordDraftStream(params: {
       return true;
     } catch (err) {
       streamState.stopped = true;
-      params.warn?.(
-        `discord stream preview failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      params.warn?.(`discord stream preview failed: ${formatErrorMessage(err)}`);
       return false;
     }
   };

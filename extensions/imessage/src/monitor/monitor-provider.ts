@@ -6,7 +6,6 @@ import {
 } from "openclaw/plugin-sdk/channel-inbound";
 import { createChannelPairingChallengeIssuer } from "openclaw/plugin-sdk/channel-pairing";
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
-import { waitForTransportReady } from "openclaw/plugin-sdk/channel-runtime";
 import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
 import {
   resolveOpenProviderRuntimeGroupPolicy,
@@ -20,12 +19,8 @@ import {
 } from "openclaw/plugin-sdk/conversation-runtime";
 import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
 import { normalizeScpRemoteHost } from "openclaw/plugin-sdk/host-runtime";
-import {
-  isInboundPathAllowed,
-  resolveIMessageAttachmentRoots,
-  resolveIMessageRemoteAttachmentRoots,
-} from "openclaw/plugin-sdk/media-runtime";
-import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
+import { waitForTransportReady } from "openclaw/plugin-sdk/infra-runtime";
+import { isInboundPathAllowed, kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import {
   clearHistoryEntriesIfEnabled,
   DEFAULT_GROUP_HISTORY_LIMIT,
@@ -34,20 +29,27 @@ import {
 import { resolveTextChunkLimit } from "openclaw/plugin-sdk/reply-runtime";
 import { dispatchInboundMessage } from "openclaw/plugin-sdk/reply-runtime";
 import { createReplyDispatcher } from "openclaw/plugin-sdk/reply-runtime";
+import { createReplyDispatcherWithTyping } from "openclaw/plugin-sdk/reply-runtime";
 import { danger, logVerbose, shouldLogVerbose, warn } from "openclaw/plugin-sdk/runtime-env";
 import { resolvePinnedMainDmOwnerFromAllowlist } from "openclaw/plugin-sdk/security-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-runtime";
 import { resolveIMessageAccount } from "../accounts.js";
 import { createIMessageRpcClient } from "../client.js";
 import { DEFAULT_IMESSAGE_PROBE_TIMEOUT_MS } from "../constants.js";
+import {
+  resolveIMessageAttachmentRoots,
+  resolveIMessageRemoteAttachmentRoots,
+} from "../media-contract.js";
 import { probeIMessage } from "../probe.js";
 import { sendMessageIMessage } from "../send.js";
 import { normalizeIMessageHandle } from "../targets.js";
+import { resolveIMessageTypingTarget, sendIMessageTyping } from "../typing.js";
 import { attachIMessageMonitorAbortHandler } from "./abort-handler.js";
 import { deliverReplies } from "./deliver.js";
 import { createSentMessageCache } from "./echo-cache.js";
 import {
   buildIMessageInboundContext,
+  isIMessageTapback,
   resolveIMessageInboundDecision,
 } from "./inbound-processing.js";
 import { createLoopRateLimiter } from "./loop-rate-limiter.js";
@@ -188,14 +190,37 @@ export async function monitorIMessageProvider(opts: MonitorIMessageOpts = {}): P
         await handleMessageNow(last.message);
         return;
       }
-      const combinedText = entries
-        .map((entry) => entry.message.text ?? "")
+
+      const textEntries = entries.filter((entry) => {
+        const text = (entry.message.text ?? "").trim();
+        return text && !isIMessageTapback(entry.message, text);
+      });
+
+      if (textEntries.length === 0) {
+        await handleMessageNow(last.message);
+        return;
+      }
+
+      if (textEntries.length === 1) {
+        await handleMessageNow(textEntries[0].message);
+        return;
+      }
+
+      const lastTextEntry = textEntries.at(-1);
+      if (!lastTextEntry) {
+        return;
+      }
+
+      const combinedText = textEntries
+        .map((entry) => entry.message.text?.trim() ?? "")
         .filter(Boolean)
         .join("\n");
       const syntheticMessage: IMessagePayload = {
-        ...last.message,
+        ...lastTextEntry.message,
         text: combinedText,
         attachments: null,
+        is_tapback: false,
+        associated_message_type: undefined,
       };
       await handleMessageNow(syntheticMessage);
     },
@@ -401,9 +426,41 @@ export async function monitorIMessageProvider(opts: MonitorIMessageOpts = {}): P
       accountId: decision.route.accountId,
     });
 
-    const dispatcher = createReplyDispatcher({
+    const typingTarget = resolveIMessageTypingTarget({
+      chatId: decision.chatId,
+      chatIdentifier: decision.chatIdentifier,
+      chatGuid: decision.chatGuid,
+      to: decision.sender,
+    });
+    const cliPath = accountInfo.config.cliPath?.trim() || "imsg";
+    const dbPath = accountInfo.config.dbPath?.trim();
+    const sendTyping = (active: boolean) => {
+      if (!typingTarget) {
+        return;
+      }
+      sendIMessageTyping(typingTarget, {
+        cliPath,
+        dbPath: dbPath || undefined,
+        runtime,
+        active,
+      }).catch((err) => {
+        runtime.error?.(`[imessage] typing ${active ? "start" : "stop"} failed: ${String(err)}`);
+      });
+    };
+
+    let streamingActive = false;
+    const {
+      dispatcher,
+      replyOptions: typingReplyOptions,
+      markRunComplete,
+    } = createReplyDispatcherWithTyping({
       ...replyPipeline,
       humanDelay: resolveHumanDelayConfig(cfg, decision.route.agentId),
+      onReplyStart: async () => {
+        streamingActive = true;
+        sendTyping(true);
+        await replyPipeline.typingCallbacks?.onReplyStart();
+      },
       deliver: async (payload) => {
         const target = ctxPayload.To;
         if (!target) {
@@ -426,18 +483,28 @@ export async function monitorIMessageProvider(opts: MonitorIMessageOpts = {}): P
       },
     });
 
-    const { queuedFinal } = await dispatchInboundMessage({
-      ctx: ctxPayload,
-      cfg,
-      dispatcher,
-      replyOptions: {
-        disableBlockStreaming:
-          typeof accountInfo.config.blockStreaming === "boolean"
-            ? !accountInfo.config.blockStreaming
-            : undefined,
-        onModelSelected,
-      },
-    });
+    let queuedFinal: boolean;
+    try {
+      ({ queuedFinal } = await dispatchInboundMessage({
+        ctx: ctxPayload,
+        cfg,
+        dispatcher,
+        replyOptions: {
+          ...typingReplyOptions,
+          disableBlockStreaming:
+            typeof accountInfo.config.blockStreaming === "boolean"
+              ? !accountInfo.config.blockStreaming
+              : undefined,
+          onModelSelected,
+        },
+      }));
+    } finally {
+      markRunComplete();
+      if (streamingActive) {
+        streamingActive = false;
+        sendTyping(false);
+      }
+    }
 
     if (!queuedFinal) {
       if (decision.isGroup && decision.historyKey) {

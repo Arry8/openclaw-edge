@@ -5,6 +5,7 @@ import {
   resolveLinuxSystemCaBundle,
 } from "../bootstrap/node-extra-ca-certs.js";
 import { resolveNodeStartupTlsEnvironment } from "../bootstrap/node-startup-env.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { VERSION } from "../version.js";
 import {
   GATEWAY_SERVICE_KIND,
@@ -44,6 +45,7 @@ type SharedServiceEnvironmentFields = {
 };
 
 const SERVICE_PROXY_ENV_KEYS = [
+  "NODE_USE_ENV_PROXY",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
@@ -105,6 +107,35 @@ function addCommonEnvConfiguredBinDirs(
   addNonEmptyDir(dirs, appendSubdir(env?.ASDF_DATA_DIR, "shims"));
 }
 
+/**
+ * Add Nix Home Manager bin directories.
+ * Works across all Unix platforms (macOS, Linux, BSD, etc.).
+ *
+ * Nix profiles can be in multiple locations:
+ * - ~/.nix-profile/bin (default single-user profile)
+ * - NIX_PROFILES env var (space-separated list of profile paths for multi-profile setups)
+ */
+function addNixProfileBinDirs(
+  dirs: string[],
+  home: string,
+  env: Record<string, string | undefined> | undefined,
+): void {
+  // Default single-user Nix profile
+  dirs.push(`${home}/.nix-profile/bin`);
+
+  // Multi-profile support: NIX_PROFILES is a space-separated list of profile paths
+  // Example: "/nix/var/nix/profiles/default /home/user/.nix-profile"
+  const nixProfiles = env?.NIX_PROFILES?.trim();
+  if (nixProfiles) {
+    const profiles = nixProfiles.split(/\s+/);
+    for (const profile of profiles) {
+      if (profile) {
+        addNonEmptyDir(dirs, `${profile}/bin`);
+      }
+    }
+  }
+}
+
 function resolveSystemPathDirs(platform: NodeJS.Platform): string[] {
   if (platform === "darwin") {
     return ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
@@ -147,6 +178,9 @@ export function resolveDarwinUserBinDirs(
   // Common user bin directories
   addCommonUserBinDirs(dirs, home);
 
+  // Nix Home Manager (cross-platform)
+  addNixProfileBinDirs(dirs, home, env);
+
   // Node version managers - macOS specific paths
   // nvm: no stable default path, depends on user's shell configuration
   // fnm: macOS default is ~/Library/Application Support/fnm, not ~/.fnm
@@ -155,6 +189,10 @@ export function resolveDarwinUserBinDirs(
   // pnpm: macOS default is ~/Library/pnpm, not ~/.local/share/pnpm
   dirs.push(`${home}/Library/pnpm`); // pnpm default
   dirs.push(`${home}/.local/share/pnpm`); // pnpm XDG fallback
+
+  // Container runtimes (Docker Desktop, OrbStack)
+  dirs.push(`${home}/.docker/bin`); // Docker Desktop
+  dirs.push(`${home}/.orbstack/bin`); // OrbStack
 
   return dirs;
 }
@@ -180,6 +218,9 @@ export function resolveLinuxUserBinDirs(
 
   // Common user bin directories
   addCommonUserBinDirs(dirs, home);
+
+  // Nix Home Manager (cross-platform)
+  addNixProfileBinDirs(dirs, home, env);
 
   // Node version managers
   dirs.push(`${home}/.nvm/current/bin`); // nvm with current symlink
@@ -278,6 +319,10 @@ export function buildServiceEnvironment(params: {
     OPENCLAW_WINDOWS_TASK_NAME: resolveGatewayWindowsTaskName(profile),
     OPENCLAW_SERVICE_MARKER: GATEWAY_SERVICE_MARKER,
     OPENCLAW_SERVICE_KIND: GATEWAY_SERVICE_KIND,
+    // Set OPENCLAW_VERSION to ensure runtime version takes precedence over
+    // OPENCLAW_SERVICE_VERSION from any existing service scripts.
+    // This fixes version display issues after npm global updates.
+    OPENCLAW_VERSION: VERSION,
     OPENCLAW_SERVICE_VERSION: VERSION,
   };
 }
@@ -296,7 +341,7 @@ export function buildNodeServiceEnvironment(params: {
     extraPathDirs,
     params.execPath,
   );
-  const gatewayToken = env.OPENCLAW_GATEWAY_TOKEN?.trim() || undefined;
+  const gatewayToken = normalizeOptionalString(env.OPENCLAW_GATEWAY_TOKEN);
   return {
     ...buildCommonServiceEnvironment(env, sharedEnv),
     OPENCLAW_GATEWAY_TOKEN: gatewayToken,
@@ -307,6 +352,10 @@ export function buildNodeServiceEnvironment(params: {
     OPENCLAW_LOG_PREFIX: "node",
     OPENCLAW_SERVICE_MARKER: NODE_SERVICE_MARKER,
     OPENCLAW_SERVICE_KIND: NODE_SERVICE_KIND,
+    // Set OPENCLAW_VERSION to ensure runtime version takes precedence over
+    // OPENCLAW_SERVICE_VERSION from any existing service scripts.
+    // This fixes version display issues after npm global updates.
+    OPENCLAW_VERSION: VERSION,
     OPENCLAW_SERVICE_VERSION: VERSION,
   };
 }

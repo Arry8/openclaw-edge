@@ -1,3 +1,7 @@
+// IHttpServerAdapter is re-exported via the public barrel (`export * from './http'`)
+// but tsgo cannot resolve the chain. Use the dist subpath directly (type-only import).
+import type { IHttpServerAdapter } from "@microsoft/teams.apps/dist/http/index.js";
+import { formatUnknownError } from "./errors.js";
 import type { MSTeamsAdapter } from "./messenger.js";
 import type { MSTeamsCredentials } from "./token.js";
 import { buildUserAgent } from "./user-agent.js";
@@ -27,6 +31,8 @@ export type MSTeamsTokenProvider = {
 type MSTeamsBotIdentity = {
   id?: string;
   name?: string;
+  /** Present on inbound activities as `recipient.aadObjectId`; include on outbound for Connector validation. */
+  aadObjectId?: string;
 };
 
 type MSTeamsSendContext = {
@@ -54,65 +60,22 @@ export async function loadMSTeamsSdk(): Promise<MSTeamsTeamsSdk> {
 }
 
 /**
- * Create a lightweight no-op HTTP plugin stub that satisfies the Teams SDK's
- * plugin discovery by name ("http") but does NOT spin up an Express server.
- *
- * The default HttpPlugin in @microsoft/teams.apps registers an Express
- * middleware with the pattern `/api*`.  When the host application (OpenClaw)
- * uses Express 5 — which depends on path-to-regexp v8 — that pattern is
- * invalid and throws:
- *
- *   Missing parameter name at index 5: /api*
+ * Create a no-op HTTP server adapter that satisfies the Teams SDK's
+ * IHttpServerAdapter interface without spinning up an Express server.
  *
  * OpenClaw manages its own Express server for the Teams webhook endpoint, so
- * the SDK's built-in HTTP server is unnecessary.  Passing this stub prevents
- * the SDK from creating the default HttpPlugin and avoids the crash.
+ * the SDK's built-in HTTP server is unnecessary.  Passing this adapter via the
+ * `httpServerAdapter` option prevents the SDK from creating the default
+ * HttpPlugin (which uses the deprecated `plugins` array and registers an
+ * Express middleware with the pattern `/api*` — invalid in Express 5).
  *
  * See: https://github.com/openclaw/openclaw/issues/55161
+ * See: https://github.com/openclaw/openclaw/issues/60732
  */
-async function createNoOpHttpPlugin(): Promise<unknown> {
-  // Lazy-import reflect-metadata (required by the Teams SDK decorator system)
-  // and the decorator key constants so we can tag the stub class correctly.
-  //
-  // FRAGILE: these are internal SDK paths (not public API).  If
-  // @microsoft/teams.apps changes its dist layout, these imports will break.
-  // Pin the SDK version and re-verify after any upgrade.
-  await import("reflect-metadata");
-  const { PLUGIN_METADATA_KEY } =
-    await import("@microsoft/teams.apps/dist/types/plugin/decorators/plugin.js");
-  const { PLUGIN_DEPENDENCIES_METADATA_KEY } =
-    await import("@microsoft/teams.apps/dist/types/plugin/decorators/dependency.js");
-  const { PLUGIN_EVENTS_METADATA_KEY } =
-    await import("@microsoft/teams.apps/dist/types/plugin/decorators/event.js");
-
-  class NoOpHttpPlugin {
-    onInit() {}
-    async onStart() {}
-    onStop() {}
-    asServer() {
-      return {
-        onRequest: undefined as unknown,
-        initialize: async () => {},
-        start: async () => {},
-        stop: async () => {},
-      } as {
-        onRequest: unknown;
-        initialize: (opts?: unknown) => Promise<void>;
-        start: (port?: number | string) => Promise<void>;
-        stop: () => Promise<void>;
-      };
-    }
-  }
-
-  Reflect.defineMetadata(
-    PLUGIN_METADATA_KEY,
-    { name: "http", version: "0.0.0", description: "no-op stub (express 5 compat)" },
-    NoOpHttpPlugin,
-  );
-  Reflect.defineMetadata(PLUGIN_DEPENDENCIES_METADATA_KEY, [], NoOpHttpPlugin);
-  Reflect.defineMetadata(PLUGIN_EVENTS_METADATA_KEY, [], NoOpHttpPlugin);
-
-  return new NoOpHttpPlugin();
+function createNoOpHttpServerAdapter(): IHttpServerAdapter {
+  return {
+    registerRoute() {},
+  };
 }
 
 /**
@@ -126,15 +89,11 @@ export async function createMSTeamsApp(
   creds: MSTeamsCredentials,
   sdk: MSTeamsTeamsSdk,
 ): Promise<MSTeamsApp> {
-  const noOpHttp = await createNoOpHttpPlugin();
-  // Use type assertion: the SDK's AppOptions generic narrows `plugins` to
-  // Array<TPlugin>, but our no-op stub satisfies the runtime contract without
-  // matching the decorator-heavy IPlugin type at compile time.
   return new sdk.App({
     clientId: creds.appId,
     clientSecret: creds.appPassword,
     tenantId: creds.tenantId,
-    plugins: [noOpHttp],
+    httpServerAdapter: createNoOpHttpServerAdapter(),
   } as ConstructorParameters<MSTeamsTeamsSdk["App"]>[0]);
 }
 
@@ -189,6 +148,8 @@ function createSendContext(params: {
   serviceUrl?: string;
   conversationId?: string;
   conversationType?: string;
+  /** Teams tenant for this conversation (`activity.conversation.tenantId`); required by Connector for many outbound sends. */
+  conversationTenantId?: string;
   bot?: MSTeamsBotIdentity;
   replyToActivityId?: string;
   getToken: () => Promise<string | undefined>;
@@ -209,22 +170,35 @@ function createSendContext(params: {
         return { id: "unknown" };
       }
 
+      const conversationPayload: Record<string, unknown> = {
+        id: params.conversationId,
+        conversationType: params.conversationType ?? "personal",
+      };
+      if (params.conversationTenantId) {
+        conversationPayload.tenantId = params.conversationTenantId;
+      }
+
+      const fromPayload =
+        params.bot?.id != null && params.bot.id !== ""
+          ? {
+              id: params.bot.id,
+              name: params.bot.name ?? "",
+              ...(params.bot.aadObjectId ? { aadObjectId: params.bot.aadObjectId } : {}),
+              role: "bot",
+            }
+          : undefined;
+
       return await apiClient.conversations.activities(params.conversationId).create({
         type: "message",
         ...msg,
-        from: params.bot?.id
-          ? { id: params.bot.id, name: params.bot.name ?? "", role: "bot" }
-          : undefined,
-        conversation: {
-          id: params.conversationId,
-          conversationType: params.conversationType ?? "personal",
-        },
+        from: fromPayload,
+        conversation: conversationPayload,
         ...(params.replyToActivityId && !msg.replyToId
           ? { replyToId: params.replyToActivityId }
           : {}),
       } as Parameters<
         typeof apiClient.conversations.activities extends (id: string) => {
-          create: (a: infer T) => unknown;
+          create: (a: infer _T) => unknown;
         }
           ? never
           : never
@@ -277,12 +251,17 @@ function createProcessContext(params: {
     | undefined;
   const conversationType = (params.activity?.conversation as Record<string, unknown>)
     ?.conversationType as string | undefined;
+  const conversationTenantId = (params.activity?.conversation as Record<string, unknown>)
+    ?.tenantId as string | undefined;
   const replyToActivityId = params.activity?.id as string | undefined;
   const bot: MSTeamsBotIdentity | undefined =
     params.activity?.recipient && typeof params.activity.recipient === "object"
       ? {
           id: (params.activity.recipient as Record<string, unknown>).id as string | undefined,
           name: (params.activity.recipient as Record<string, unknown>).name as string | undefined,
+          aadObjectId: (params.activity.recipient as Record<string, unknown>).aadObjectId as
+            | string
+            | undefined,
         }
       : undefined;
   const sendContext = createSendContext({
@@ -290,6 +269,7 @@ function createProcessContext(params: {
     serviceUrl,
     conversationId,
     conversationType,
+    conversationTenantId,
     bot,
     replyToActivityId,
     getToken: params.getToken,
@@ -390,7 +370,7 @@ async function deleteActivityViaRest(params: {
  * Build a CloudAdapter-compatible adapter using the Teams SDK REST client.
  *
  * This replaces the previous CloudAdapter from @microsoft/agents-hosting.
- * For incoming requests: the App's HttpPlugin handles JWT validation.
+ * For incoming requests: the App's HTTP server handles JWT validation.
  * For proactive sends: uses the Bot Framework REST API via
  * @microsoft/teams.api Client.
  */
@@ -412,6 +392,7 @@ export function createMSTeamsAdapter(app: MSTeamsApp, sdk: MSTeamsTeamsSdk): MST
         serviceUrl,
         conversationId,
         conversationType: reference.conversation?.conversationType,
+        conversationTenantId: reference.conversation?.tenantId,
         bot: reference.agent ?? undefined,
         getToken: createBotTokenGetter(app),
       });
@@ -449,12 +430,12 @@ export function createMSTeamsAdapter(app: MSTeamsApp, sdk: MSTeamsTeamsSdk): MST
         }
       } catch (err) {
         if (!isInvoke) {
-          response.status(500).send({ error: String(err) });
+          response.status(500).send({ error: formatUnknownError(err) });
         }
       }
     },
 
-    async updateActivity(_context, activity) {
+    async updateActivity(_context, _activity) {
       // No-op: updateActivity is handled via REST in streaming-message.ts
     },
 

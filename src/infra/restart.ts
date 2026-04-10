@@ -6,6 +6,10 @@ import {
   resolveGatewayLaunchAgentLabel,
   resolveGatewaySystemdServiceName,
 } from "../daemon/constants.js";
+import {
+  isCurrentProcessLaunchdServiceLabel,
+  scheduleDetachedLaunchdRestartHandoff,
+} from "../daemon/launchd-restart-handoff.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { cleanStaleGatewayProcessesSync, findGatewayPidsOnPortSync } from "./restart-stale-pids.js";
 import { relaunchGatewayScheduledTask } from "./windows-task-restart.js";
@@ -17,7 +21,22 @@ export type RestartAttempt = {
   tried?: string[];
 };
 
-const SPAWN_TIMEOUT_MS = 2000;
+const DEFAULT_SPAWN_TIMEOUT_MS = 15_000;
+
+function parseSpawnTimeoutMsFromEnv(): number {
+  const raw = process.env.OPENCLAW_RESTART_SPAWN_TIMEOUT_MS;
+  if (!raw) {
+    return DEFAULT_SPAWN_TIMEOUT_MS;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    return DEFAULT_SPAWN_TIMEOUT_MS;
+  }
+  // Clamp: avoid too-small timeouts (flaky) and too-large timeouts (hangy).
+  return Math.min(60_000, Math.max(1_000, Math.floor(n)));
+}
+
+const SPAWN_TIMEOUT_MS = parseSpawnTimeoutMsFromEnv();
 const SIGUSR1_AUTH_GRACE_MS = 5000;
 const DEFAULT_DEFERRAL_POLL_MS = 500;
 // Default to 5 minutes to avoid aborting in-flight subagent LLM calls.
@@ -40,6 +59,7 @@ let lastRestartEmittedAt = 0;
 let pendingRestartTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingRestartDueAt = 0;
 let pendingRestartReason: string | undefined;
+const activeDeferralPolls = new Set<ReturnType<typeof setInterval>>();
 
 function hasUnconsumedRestartSignal(): boolean {
   return emittedRestartToken > consumedRestartToken;
@@ -52,6 +72,13 @@ function clearPendingScheduledRestart(): void {
   pendingRestartTimer = null;
   pendingRestartDueAt = 0;
   pendingRestartReason = undefined;
+}
+
+function clearActiveDeferralPolls(): void {
+  for (const poll of activeDeferralPolls) {
+    clearInterval(poll);
+  }
+  activeDeferralPolls.clear();
 }
 
 export type RestartAuditInfo = {
@@ -109,14 +136,26 @@ export function setPreRestartDeferralCheck(fn: () => number): void {
  * Both scheduleGatewaySigusr1Restart and the config watcher should use this
  * to ensure only one restart fires.
  */
-export function emitGatewayRestart(): boolean {
+export function emitGatewayRestart(reason?: string): boolean {
   if (hasUnconsumedRestartSignal()) {
+    clearActiveDeferralPolls();
     clearPendingScheduledRestart();
     return false;
   }
+  clearActiveDeferralPolls();
   clearPendingScheduledRestart();
   const cycleToken = ++restartCycleToken;
   emittedRestartToken = cycleToken;
+
+  // Log restart reason diagnostics when reason is missing
+  if (!reason || reason.trim() === "") {
+    const stack = new Error().stack;
+    restartLog.warn(
+      `emitGatewayRestart called with missing reason; stack trace:
+${stack}`,
+    );
+  }
+
   authorizeGatewaySigusr1Restart();
   try {
     if (process.listenerCount("SIGUSR1") > 0) {
@@ -124,6 +163,8 @@ export function emitGatewayRestart(): boolean {
     } else {
       process.kill(process.pid, "SIGUSR1");
     }
+    const reasonStr = reason?.trim() ? reason.trim().slice(0, 200) : "none";
+    restartLog.info(`restart emitted (reason=${reasonStr})`);
   } catch {
     // Roll back the cycle marker so future restart requests can still proceed.
     emittedRestartToken = consumedRestartToken;
@@ -197,6 +238,7 @@ export type RestartDeferralHooks = {
  */
 export function deferGatewayRestartUntilIdle(opts: {
   getPendingCount: () => number;
+  reason?: string;
   hooks?: RestartDeferralHooks;
   pollMs?: number;
   maxWaitMs?: number;
@@ -211,12 +253,12 @@ export function deferGatewayRestartUntilIdle(opts: {
     pending = opts.getPendingCount();
   } catch (err) {
     opts.hooks?.onCheckError?.(err);
-    emitGatewayRestart();
+    emitGatewayRestart(opts.reason);
     return;
   }
   if (pending <= 0) {
     opts.hooks?.onReady?.();
-    emitGatewayRestart();
+    emitGatewayRestart(opts.reason);
     return;
   }
 
@@ -228,23 +270,27 @@ export function deferGatewayRestartUntilIdle(opts: {
       current = opts.getPendingCount();
     } catch (err) {
       clearInterval(poll);
+      activeDeferralPolls.delete(poll);
       opts.hooks?.onCheckError?.(err);
-      emitGatewayRestart();
+      emitGatewayRestart(opts.reason);
       return;
     }
     if (current <= 0) {
       clearInterval(poll);
+      activeDeferralPolls.delete(poll);
       opts.hooks?.onReady?.();
-      emitGatewayRestart();
+      emitGatewayRestart(opts.reason);
       return;
     }
     const elapsedMs = Date.now() - startedAt;
     if (elapsedMs >= maxWaitMs) {
       clearInterval(poll);
+      activeDeferralPolls.delete(poll);
       opts.hooks?.onTimeout?.(current, elapsedMs);
-      emitGatewayRestart();
+      emitGatewayRestart(opts.reason);
     }
   }, pollMs);
+  activeDeferralPolls.add(poll);
 }
 
 function formatSpawnDetail(result: {
@@ -345,6 +391,30 @@ export function triggerOpenClawRestart(): RestartAttempt {
   const label =
     process.env.OPENCLAW_LAUNCHD_LABEL ||
     resolveGatewayLaunchAgentLabel(process.env.OPENCLAW_PROFILE);
+
+  // When the current process IS the launchd-managed gateway, a synchronous
+  // `launchctl kickstart -k` would bootout (kill) the caller before the restart
+  // completes, leaving the service unloaded. Use a detached handoff script that
+  // outlives this process, waits for it to exit, then performs the kickstart.
+  // This matches the pattern already used by restartLaunchAgent() in launchd.ts.
+  if (isCurrentProcessLaunchdServiceLabel(label)) {
+    const handoff = scheduleDetachedLaunchdRestartHandoff({
+      env: process.env,
+      mode: "kickstart",
+    });
+    tried.push("scheduleDetachedLaunchdRestartHandoff(mode=kickstart)");
+    if (handoff.ok) {
+      return { ok: true, method: "launchctl", tried };
+    }
+    return {
+      ok: false,
+      method: "launchctl",
+      detail: handoff.detail ?? "detached restart handoff failed",
+      tried,
+    };
+  }
+
+  // Not running inside the managed service — safe to use synchronous kickstart.
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   const domain = uid !== undefined ? `gui/${uid}` : "gui/501";
   const target = `${domain}/${label}`;
@@ -358,8 +428,18 @@ export function triggerOpenClawRestart(): RestartAttempt {
     return { ok: true, method: "launchctl", tried };
   }
 
-  // kickstart fails when the service was previously booted out (deregistered from launchd).
-  // Fall back to bootstrap (re-register from plist) + kickstart.
+  const kickstartCode = (res.error as NodeJS.ErrnoException | undefined)?.code;
+  if (kickstartCode === "ETIMEDOUT") {
+    return {
+      ok: false,
+      method: "launchctl",
+      detail: `launchctl kickstart timed out after ${SPAWN_TIMEOUT_MS}ms`,
+      tried,
+    };
+  }
+
+  // kickstart can fail when the service was previously booted out (deregistered from launchd)
+  // or otherwise not registered. Fall back to bootstrap (re-register from plist) + kickstart.
   // Use env HOME to match how launchd.ts resolves the plist install path.
   const home = process.env.HOME?.trim() || os.homedir();
   const plistPath = path.join(home, "Library", "LaunchAgents", `${label}.plist`);
@@ -370,13 +450,19 @@ export function triggerOpenClawRestart(): RestartAttempt {
     timeout: SPAWN_TIMEOUT_MS,
   });
   if (boot.error || (boot.status !== 0 && boot.status !== null)) {
+    const bootCode = (boot.error as NodeJS.ErrnoException | undefined)?.code;
+    const detail =
+      bootCode === "ETIMEDOUT"
+        ? `launchctl bootstrap timed out after ${SPAWN_TIMEOUT_MS}ms`
+        : formatSpawnDetail(boot);
     return {
       ok: false,
       method: "launchctl",
-      detail: formatSpawnDetail(boot),
+      detail,
       tried,
     };
   }
+
   const retryArgs = ["kickstart", "-k", target];
   tried.push(`launchctl ${retryArgs.join(" ")}`);
   const retry = spawnSync("launchctl", retryArgs, {
@@ -386,10 +472,17 @@ export function triggerOpenClawRestart(): RestartAttempt {
   if (!retry.error && retry.status === 0) {
     return { ok: true, method: "launchctl", tried };
   }
+
+  const retryCode = (retry.error as NodeJS.ErrnoException | undefined)?.code;
+  const detail =
+    retryCode === "ETIMEDOUT"
+      ? `launchctl kickstart timed out after ${SPAWN_TIMEOUT_MS}ms`
+      : formatSpawnDetail(retry);
+
   return {
     ok: false,
     method: "launchctl",
-    detail: formatSpawnDetail(retry),
+    detail: detail,
     tried,
   };
 }
@@ -474,12 +567,13 @@ export function scheduleGatewaySigusr1Restart(opts?: {
       pendingRestartReason = undefined;
       const pendingCheck = preRestartCheck;
       if (!pendingCheck) {
-        emitGatewayRestart();
+        emitGatewayRestart(reason);
         return;
       }
       const cfg = getRuntimeConfig();
       deferGatewayRestartUntilIdle({
         getPendingCount: pendingCheck,
+        reason,
         maxWaitMs: cfg.gateway?.reload?.deferralTimeoutMs,
       });
     },
@@ -507,6 +601,7 @@ export const __testing = {
     emittedRestartToken = 0;
     consumedRestartToken = 0;
     lastRestartEmittedAt = 0;
+    clearActiveDeferralPolls();
     clearPendingScheduledRestart();
   },
 };

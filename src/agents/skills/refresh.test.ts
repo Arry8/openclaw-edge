@@ -7,10 +7,20 @@ const watchMock = vi.fn(() => ({
   close: vi.fn(async () => undefined),
 }));
 
+const pluginSkillDirsMock = vi.hoisted(() => ({
+  resolvePluginSkillDirs: vi.fn((): string[] => []),
+  resolvePluginSkillWatchDirs: vi.fn((): string[] => []),
+}));
+
 let refreshModule: typeof import("./refresh.js");
 
 vi.mock("chokidar", () => ({
   default: { watch: watchMock },
+}));
+
+vi.mock("./plugin-skills.js", () => ({
+  resolvePluginSkillDirs: pluginSkillDirsMock.resolvePluginSkillDirs,
+  resolvePluginSkillWatchDirs: pluginSkillDirsMock.resolvePluginSkillWatchDirs,
 }));
 
 describe("ensureSkillsWatcher", () => {
@@ -20,6 +30,10 @@ describe("ensureSkillsWatcher", () => {
 
   beforeEach(() => {
     watchMock.mockClear();
+    pluginSkillDirsMock.resolvePluginSkillDirs.mockReset();
+    pluginSkillDirsMock.resolvePluginSkillWatchDirs.mockReset();
+    pluginSkillDirsMock.resolvePluginSkillDirs.mockReturnValue([]);
+    pluginSkillDirsMock.resolvePluginSkillWatchDirs.mockReturnValue([]);
   });
 
   afterEach(async () => {
@@ -80,5 +94,34 @@ describe("ensureSkillsWatcher", () => {
     // Should NOT ignore normal skill files
     expect(ignored.some((re) => re.test("/tmp/.hidden/skills/index.md"))).toBe(false);
     expect(ignored.some((re) => re.test("/tmp/workspace/skills/my-skill/SKILL.md"))).toBe(false);
+  });
+
+  it("watches plugin skills via watch roots so dist-runtime overlays are not dropped", async () => {
+    pluginSkillDirsMock.resolvePluginSkillDirs.mockReturnValue([
+      "/tmp/openclaw/dist/extensions/helper/skills",
+    ]);
+    pluginSkillDirsMock.resolvePluginSkillWatchDirs.mockReturnValue([
+      "/tmp/openclaw/dist-runtime/extensions/helper/skills",
+    ]);
+
+    refreshModule.ensureSkillsWatcher({ workspaceDir: "/tmp/workspace" });
+
+    expect(watchMock).toHaveBeenCalledTimes(1);
+    const firstCall = watchMock.mock.calls as unknown as Array<[string[], { ignored?: unknown }]>;
+    const targets = firstCall[0]?.[0] ?? [];
+    const posix = (p: string) => p.replaceAll("\\", "/");
+
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        posix("/tmp/openclaw/dist-runtime/extensions/helper/skills/SKILL.md"),
+        posix("/tmp/openclaw/dist-runtime/extensions/helper/skills/*/SKILL.md"),
+      ]),
+    );
+    expect(targets).not.toEqual(
+      expect.arrayContaining([
+        posix("/tmp/openclaw/dist/extensions/helper/skills/SKILL.md"),
+        posix("/tmp/openclaw/dist/extensions/helper/skills/*/SKILL.md"),
+      ]),
+    );
   });
 });

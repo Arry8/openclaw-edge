@@ -35,6 +35,10 @@ export type DiagnosticUsageEvent = DiagnosticBaseEvent & {
   };
   costUsd?: number;
   durationMs?: number;
+  /** Optional: input text for observability (e.g. Langfuse evaluators). Only populated when diagnostics.includeContent is enabled. */
+  inputText?: string;
+  /** Optional: output text for observability (e.g. Langfuse evaluators). Only populated when diagnostics.includeContent is enabled. */
+  outputText?: string;
 };
 
 export type DiagnosticWebhookReceivedEvent = DiagnosticBaseEvent & {
@@ -141,7 +145,12 @@ export type DiagnosticToolLoopEvent = DiagnosticBaseEvent & {
   toolName: string;
   level: "warning" | "critical";
   action: "warn" | "block";
-  detector: "generic_repeat" | "known_poll_no_progress" | "global_circuit_breaker" | "ping_pong";
+  detector:
+    | "generic_repeat"
+    | "known_poll_no_progress"
+    | "global_circuit_breaker"
+    | "ping_pong"
+    | "unknown_tool_repeat";
   count: number;
   message: string;
   pairedToolName?: string;

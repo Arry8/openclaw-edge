@@ -1,5 +1,6 @@
 import { stripLeadingInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { formatRawAssistantErrorForUi } from "../shared/assistant-error-format.js";
+import { extractAssistantVisibleText } from "../shared/chat-message-content.js";
 import { stripAnsi } from "../terminal/ansi.js";
 import { formatTokenCount } from "../utils/usage-format.js";
 
@@ -271,6 +272,15 @@ export function extractContentFromMessage(message: unknown): string {
   }
   const { record, content } = resolved;
 
+  if (record.role === "assistant") {
+    if (typeof content === "string") {
+      return sanitizeRenderableText(content).trim();
+    }
+    if (Array.isArray(content)) {
+      return extractAssistantRenderableContent(record);
+    }
+  }
+
   if (typeof content === "string") {
     return sanitizeRenderableText(content).trim();
   }
@@ -282,6 +292,14 @@ export function extractContentFromMessage(message: unknown): string {
   });
   if (parts.length > 0) {
     return parts.join("\n").trim();
+  }
+  return formatAssistantErrorFromRecord(record);
+}
+
+function extractAssistantRenderableContent(record: Record<string, unknown>): string {
+  const visible = sanitizeRenderableText(extractAssistantVisibleText(record) ?? "").trim();
+  if (visible) {
+    return visible;
   }
   return formatAssistantErrorFromRecord(record);
 }
@@ -323,9 +341,16 @@ export function extractTextFromMessage(
   if (!record) {
     return "";
   }
+  if (record.role === "assistant") {
+    return composeThinkingAndContent({
+      thinkingText: extractThinkingFromMessage(record),
+      contentText: extractAssistantRenderableContent(record),
+      showThinking: opts?.includeThinking ?? false,
+    });
+  }
   const text = extractTextBlocks(record.content, opts);
   if (text) {
-    if (record.role === "user") {
+    if (record.role === "user" || record.command === true) {
       return stripLeadingInboundMetadata(text);
     }
     return text;
@@ -349,13 +374,18 @@ export function formatTokens(total?: number | null, context?: number | null) {
   if (total == null && context == null) {
     return "tokens ?";
   }
-  const totalLabel = total == null ? "?" : formatTokenCount(total);
+  // When we know the context window but total tokens are missing, treat usage
+  // as 0 so the UI shows "0/ctx" instead of "?/ctx". This matches the
+  // gateway's session_status output and is less confusing than an unknown
+  // placeholder.
+  const effectiveTotal = total == null && context != null ? 0 : total;
+  const totalLabel = effectiveTotal == null ? "?" : formatTokenCount(effectiveTotal);
   if (context == null) {
     return `tokens ${totalLabel}`;
   }
   const pct =
-    typeof total === "number" && context > 0
-      ? Math.min(999, Math.round((total / context) * 100))
+    typeof effectiveTotal === "number" && context > 0
+      ? Math.min(999, Math.round((effectiveTotal / context) * 100))
       : null;
   return `tokens ${totalLabel}/${formatTokenCount(context)}${pct !== null ? ` (${pct}%)` : ""}`;
 }

@@ -4,9 +4,11 @@
  */
 
 import crypto from "node:crypto";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import type { SessionEntry } from "../api.js";
 import type { VoiceCallConfig } from "./config.js";
 import type { CoreAgentDeps, CoreConfig } from "./core-bridge.js";
+import { resolveVoiceResponseModel } from "./response-model.js";
 
 export type VoiceResponseParams = {
   /** Voice call config */
@@ -94,7 +96,7 @@ function tryParseSpokenJson(text: string): string | null {
 }
 
 function isLikelyMetaReasoningParagraph(paragraph: string): boolean {
-  const lower = paragraph.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(paragraph);
   if (!lower) {
     return false;
   }
@@ -186,7 +188,32 @@ export async function generateVoiceResponse(
   // Build voice-specific session key based on phone number
   const normalizedPhone = from.replace(/\D/g, "");
   const sessionKey = `voice:${normalizedPhone}`;
-  const agentId = "main";
+
+  // Resolve agent from config bindings (voice-call channel) or default agent.
+  // Distinguish two cases:
+  //   - No voice-call binding configured -> keep "main" (current behavior)
+  //   - Binding configured but without an explicit agentId -> fall back to default agent
+  let agentId = "main";
+  const rawCfg = coreConfig as Record<string, unknown>;
+  const bindings = rawCfg.bindings as
+    | Array<{ agentId?: string; match?: { channel?: string } }>
+    | undefined;
+  const agentsList = (rawCfg.agents as Record<string, unknown>)?.list as
+    | Array<{ id: string; default?: boolean }>
+    | undefined;
+  if (bindings) {
+    const voiceBinding = bindings.find((b) => b.match?.channel === "voice-call");
+    if (voiceBinding) {
+      if (voiceBinding.agentId) {
+        agentId = voiceBinding.agentId;
+      } else if (agentsList) {
+        const defaultAgent = agentsList.find((a) => a.default === true);
+        if (defaultAgent) {
+          agentId = defaultAgent.id;
+        }
+      }
+    }
+  }
 
   // Resolve paths
   const storePath = agentRuntime.session.resolveStorePath(cfg.session?.store, { agentId });
@@ -216,12 +243,14 @@ export async function generateVoiceResponse(
   });
 
   // Resolve model from config
-  const modelRef =
-    voiceConfig.responseModel || `${agentRuntime.defaults.provider}/${agentRuntime.defaults.model}`;
-  const slashIndex = modelRef.indexOf("/");
-  const provider =
-    slashIndex === -1 ? agentRuntime.defaults.provider : modelRef.slice(0, slashIndex);
-  const model = slashIndex === -1 ? modelRef : modelRef.slice(slashIndex + 1);
+  const { provider, model } = resolveVoiceResponseModel({ voiceConfig, agentRuntime });
+
+  // Pin the session to the voice responseModel to prevent LiveSessionModelSwitchError
+  if (voiceConfig.responseModel && sessionEntry) {
+    (sessionEntry as Record<string, unknown>).providerOverride = provider;
+    (sessionEntry as Record<string, unknown>).modelOverride = model;
+    await agentRuntime.session.saveSessionStore(storePath, sessionStore);
+  }
 
   // Resolve thinking level
   const thinkLevel = agentRuntime.resolveThinkingDefault({ cfg, provider, model });

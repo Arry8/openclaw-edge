@@ -5,6 +5,8 @@ import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { resolveGatewayStartupPluginIds } from "../plugins/channel-plugin-ids.js";
 import { normalizePluginsConfig } from "../plugins/config-state.js";
 import { loadOpenClawPlugins } from "../plugins/loader.js";
+import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
+import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
@@ -235,13 +237,40 @@ function createSyntheticOperatorClient(params?: {
   };
 }
 
+function getClientScopes(client: GatewayRequestOptions["client"]): string[] {
+  return Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
+}
+
 function hasAdminScope(client: GatewayRequestOptions["client"]): boolean {
-  const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
-  return scopes.includes(ADMIN_SCOPE);
+  return getClientScopes(client).includes(ADMIN_SCOPE);
+}
+
+function hasWriteScope(client: GatewayRequestOptions["client"]): boolean {
+  const scopes = getClientScopes(client);
+  return scopes.includes(WRITE_SCOPE) || scopes.includes(ADMIN_SCOPE);
 }
 
 function canClientUseModelOverride(client: GatewayRequestOptions["client"]): boolean {
   return hasAdminScope(client) || client?.internal?.allowModelOverride === true;
+}
+
+function requireDetachedRequesterSessionKey(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error("requesterSessionKey is required for native detached subagent spawns.");
+  }
+  return trimmed;
+}
+
+type NativeSubagentSpawnModule = Pick<
+  typeof import("../agents/subagent-spawn.js"),
+  "spawnSubagentDirect"
+>;
+let nativeSubagentSpawnModulePromise: Promise<NativeSubagentSpawnModule> | null = null;
+
+async function loadNativeSubagentSpawnModule(): Promise<NativeSubagentSpawnModule> {
+  nativeSubagentSpawnModulePromise ??= import("../agents/subagent-spawn.js");
+  return await nativeSubagentSpawnModulePromise;
 }
 
 async function dispatchGatewayMethod<T>(
@@ -346,6 +375,70 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
       }
       return { runId };
     },
+    async spawnDetached(params) {
+      const scope = getPluginRuntimeGatewayRequestScope();
+      const overrideRequested = Boolean(params.model);
+      const requestScopeClient = scope?.client ?? null;
+      const hasRequestScopeClient = Boolean(requestScopeClient);
+      if (hasRequestScopeClient && !hasWriteScope(requestScopeClient)) {
+        throw new Error(
+          "native detached subagent spawn requires operator.write scope for the active request.",
+        );
+      }
+      let allowOverride = hasRequestScopeClient && canClientUseModelOverride(requestScopeClient);
+      if (overrideRequested && !allowOverride && !hasRequestScopeClient) {
+        const fallbackAuth = authorizeFallbackModelOverride({
+          pluginId: scope?.pluginId,
+          model: params.model,
+        });
+        if (!fallbackAuth.allowed) {
+          throw new Error(fallbackAuth.reason);
+        }
+        allowOverride = true;
+      }
+      if (overrideRequested && !allowOverride) {
+        throw new Error("model override is not authorized for this plugin native subagent spawn.");
+      }
+
+      // This path calls the native spawner directly instead of dispatchGatewayMethod(),
+      // so there is no synthetic gateway client that needs allowSyntheticModelOverride.
+      const { spawnSubagentDirect } = await loadNativeSubagentSpawnModule();
+      const spawnResult = await spawnSubagentDirect(
+        {
+          task: params.task,
+          ...(params.label && { label: params.label }),
+          ...(params.agentId && { agentId: params.agentId }),
+          ...(allowOverride && params.model && { model: params.model }),
+          ...(params.thinking && { thinking: params.thinking }),
+          ...(params.runTimeoutSeconds != null && { runTimeoutSeconds: params.runTimeoutSeconds }),
+        },
+        {
+          agentSessionKey: requireDetachedRequesterSessionKey(params.requesterSessionKey),
+          agentChannel: params.requesterOrigin?.channel,
+          agentAccountId: params.requesterOrigin?.accountId,
+          agentTo: params.requesterOrigin?.to,
+          agentThreadId: params.requesterOrigin?.threadId,
+        },
+      );
+
+      if (spawnResult.status !== "accepted") {
+        throw new Error(
+          spawnResult.error ??
+            `Native detached subagent spawn failed with status: ${spawnResult.status}.`,
+        );
+      }
+      if (typeof spawnResult.runId !== "string" || !spawnResult.runId) {
+        throw new Error("Native detached subagent spawn returned an invalid runId.");
+      }
+      if (typeof spawnResult.childSessionKey !== "string" || !spawnResult.childSessionKey) {
+        throw new Error("Native detached subagent spawn returned an invalid childSessionKey.");
+      }
+
+      return {
+        runId: spawnResult.runId,
+        childSessionKey: spawnResult.childSessionKey,
+      };
+    },
     async waitForRun(params) {
       const payload = await dispatchGatewayMethod<{ status?: string; error?: string }>(
         "agent.wait",
@@ -380,6 +473,8 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
 
 export function loadGatewayPlugins(params: {
   cfg: ReturnType<typeof loadConfig>;
+  activationSourceConfig?: ReturnType<typeof loadConfig>;
+  autoEnabledReasons?: Readonly<Record<string, string[]>>;
   workspaceDir: string;
   log: {
     info: (msg: string) => void;
@@ -392,19 +487,52 @@ export function loadGatewayPlugins(params: {
   pluginIds?: string[];
   preferSetupRuntimeForChannelPlugins?: boolean;
 }) {
-  const resolvedConfig = applyPluginAutoEnable({
-    config: params.cfg,
-    env: process.env,
-  }).config;
+  const activationAutoEnabled =
+    params.activationSourceConfig !== undefined
+      ? applyPluginAutoEnable({
+          config: params.activationSourceConfig,
+          env: process.env,
+        })
+      : undefined;
+  const autoEnabled =
+    params.activationSourceConfig !== undefined
+      ? {
+          config: params.cfg,
+          changes: activationAutoEnabled?.changes ?? [],
+          autoEnabledReasons:
+            params.autoEnabledReasons ?? activationAutoEnabled?.autoEnabledReasons ?? {},
+        }
+      : params.autoEnabledReasons !== undefined
+        ? {
+            config: params.cfg,
+            changes: [],
+            autoEnabledReasons: params.autoEnabledReasons,
+          }
+        : applyPluginAutoEnable({
+            config: params.cfg,
+            env: process.env,
+          });
+  const resolvedConfig = autoEnabled.config;
   const pluginIds =
     params.pluginIds ??
     resolveGatewayStartupPluginIds({
       config: resolvedConfig,
+      activationSourceConfig: params.activationSourceConfig,
       workspaceDir: params.workspaceDir,
       env: process.env,
     });
+  if (pluginIds.length === 0) {
+    const pluginRegistry = createEmptyPluginRegistry();
+    setActivePluginRegistry(pluginRegistry, undefined, "gateway-bindable", params.workspaceDir);
+    return {
+      pluginRegistry,
+      gatewayMethods: [...params.baseMethods],
+    };
+  }
   const pluginRegistry = loadOpenClawPlugins({
     config: resolvedConfig,
+    activationSourceConfig: params.activationSourceConfig ?? params.cfg,
+    autoEnabledReasons: autoEnabled.autoEnabledReasons,
     workspaceDir: params.workspaceDir,
     onlyPluginIds: pluginIds,
     logger: {

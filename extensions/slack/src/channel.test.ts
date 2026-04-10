@@ -7,10 +7,29 @@ import * as probeModule from "./probe.js";
 import type { OpenClawConfig } from "./runtime-api.js";
 import { clearSlackRuntime, setSlackRuntime } from "./runtime.js";
 
-const handleSlackActionMock = vi.fn();
+const { handleSlackActionMock } = vi.hoisted(() => ({
+  handleSlackActionMock: vi.fn(),
+}));
+const { sendMessageSlackMock } = vi.hoisted(() => ({
+  sendMessageSlackMock: vi.fn(),
+}));
+
+vi.mock("./action-runtime.js", async () => {
+  const actual = await vi.importActual<typeof import("./action-runtime.js")>("./action-runtime.js");
+  return {
+    ...actual,
+    handleSlackAction: handleSlackActionMock,
+  };
+});
+
+vi.mock("./send.runtime.js", () => ({
+  sendMessageSlack: sendMessageSlackMock,
+}));
 
 beforeEach(async () => {
   handleSlackActionMock.mockReset();
+  sendMessageSlackMock.mockReset();
+  sendMessageSlackMock.mockResolvedValue({ messageId: "msg-1", channelId: "D123" });
   setSlackRuntime({
     channel: {
       slack: {
@@ -97,6 +116,112 @@ describe("slackPlugin actions", () => {
         blocks: expect.any(Object),
       },
     });
+  });
+
+  it("honors the selected Slack account during message tool discovery", () => {
+    const cfg: OpenClawConfig = {
+      channels: {
+        slack: {
+          botToken: "xoxb-root",
+          appToken: "xapp-root",
+          actions: {
+            reactions: false,
+            messages: false,
+            pins: false,
+            memberInfo: false,
+            emojiList: false,
+          },
+          capabilities: {
+            interactiveReplies: false,
+          },
+          accounts: {
+            default: {
+              botToken: "xoxb-default",
+              appToken: "xapp-default",
+              actions: {
+                reactions: false,
+                messages: false,
+                pins: false,
+                memberInfo: false,
+                emojiList: false,
+              },
+              capabilities: {
+                interactiveReplies: false,
+              },
+            },
+            work: {
+              botToken: "xoxb-work",
+              appToken: "xapp-work",
+              actions: {
+                reactions: true,
+                messages: true,
+                pins: false,
+                memberInfo: false,
+                emojiList: false,
+              },
+              capabilities: {
+                interactiveReplies: true,
+              },
+            },
+          },
+        },
+      },
+    };
+
+    expect(slackPlugin.actions?.describeMessageTool?.({ cfg, accountId: "default" })).toMatchObject(
+      {
+        actions: ["send"],
+        capabilities: ["blocks"],
+      },
+    );
+    expect(slackPlugin.actions?.describeMessageTool?.({ cfg, accountId: "work" })).toMatchObject({
+      actions: [
+        "send",
+        "react",
+        "reactions",
+        "read",
+        "edit",
+        "delete",
+        "download-file",
+        "upload-file",
+      ],
+      capabilities: expect.arrayContaining(["blocks", "interactive"]),
+    });
+  });
+
+  it("uses configured defaultAccount for pairing approval notifications", async () => {
+    const cfg = {
+      channels: {
+        slack: {
+          defaultAccount: "work",
+          accounts: {
+            work: {
+              botToken: "xoxb-work",
+            },
+          },
+        },
+      },
+    } as OpenClawConfig;
+    setSlackRuntime({
+      config: {
+        loadConfig: () => cfg,
+      },
+    } as never);
+
+    const notify = slackPlugin.pairing?.notifyApproval;
+    if (!notify) {
+      throw new Error("slack pairing notify unavailable");
+    }
+
+    await notify({
+      cfg,
+      id: "U12345678",
+    });
+
+    expect(sendMessageSlackMock).toHaveBeenCalledWith(
+      "user:U12345678",
+      expect.stringContaining("approved"),
+    );
   });
 
   it("keeps blocks optional in the message tool schema", () => {
@@ -505,9 +630,15 @@ describe("slackPlugin agentPrompt", () => {
       },
     });
 
-    expect(hints).toEqual([
+    expect(hints).toContain(
       "- Slack interactive replies are disabled. If needed, ask to set `channels.slack.capabilities.interactiveReplies=true` (or the same under `channels.slack.accounts.<account>.capabilities`).",
-    ]);
+    );
+    expect(hints).toContain(
+      "Use standard Markdown formatting (e.g., **bold**, *italic*, ~~strikethrough~~, `code`).",
+    );
+    expect(hints).toContain(
+      "In particular, do not use single *asterisks* for bold; use double **asterisks**.",
+    );
   });
 
   it("shows Slack interactive reply directives when enabled", () => {
@@ -531,6 +662,9 @@ describe("slackPlugin agentPrompt", () => {
     );
     expect(hints).toContain(
       "- Slack selects: use `[[slack_select: Placeholder | Label:value, Other:other]]` to add a static select menu that routes the chosen value back as a Slack interaction system event.",
+    );
+    expect(hints).toContain(
+      "Use standard Markdown formatting (e.g., **bold**, *italic*, ~~strikethrough~~, `code`).",
     );
   });
 });

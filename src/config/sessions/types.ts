@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { ChannelId } from "../../channels/plugins/types.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import type { DeliveryContext } from "../../utils/delivery-context.js";
 import type { TtsAutoMode } from "../types.tts.js";
 
 export type SessionScope = "per-sender" | "global";
 
-export type SessionChannelId = ChannelId | "webchat";
+export type SessionChannelId = ChannelId;
 
 export type SessionChatType = ChatType;
 
@@ -18,6 +19,8 @@ export type SessionOrigin = {
   chatType?: SessionChatType;
   from?: string;
   to?: string;
+  nativeChannelId?: string;
+  nativeDirectUserId?: string;
   accountId?: string;
   threadId?: string | number;
 };
@@ -68,8 +71,36 @@ export type AcpSessionRuntimeOptions = {
 export type CliSessionBinding = {
   sessionId: string;
   authProfileId?: string;
+  authEpoch?: string;
   extraSystemPromptHash?: string;
   mcpConfigHash?: string;
+};
+
+export type SessionCompactionCheckpointReason =
+  | "manual"
+  | "auto-threshold"
+  | "overflow-retry"
+  | "timeout-retry";
+
+export type SessionCompactionTranscriptReference = {
+  sessionId: string;
+  sessionFile?: string;
+  leafId?: string;
+  entryId?: string;
+};
+
+export type SessionCompactionCheckpoint = {
+  checkpointId: string;
+  sessionKey: string;
+  sessionId: string;
+  createdAt: number;
+  reason: SessionCompactionCheckpointReason;
+  tokensBefore?: number;
+  tokensAfter?: number;
+  summary?: string;
+  firstKeptEntryId?: string;
+  preCompaction: SessionCompactionTranscriptReference;
+  postCompaction: SessionCompactionTranscriptReference;
 };
 
 export type SessionEntry = {
@@ -80,6 +111,8 @@ export type SessionEntry = {
   lastHeartbeatText?: string;
   /** Timestamp (ms) when lastHeartbeatText was delivered. */
   lastHeartbeatSentAt?: number;
+  /** Heartbeat task state (task name -> last run timestamp ms). */
+  heartbeatTaskState?: Record<string, number>;
   sessionId: string;
   updatedAt: number;
   sessionFile?: string;
@@ -132,6 +165,14 @@ export type SessionEntry = {
   authProfileOverride?: string;
   authProfileOverrideSource?: "auto" | "user";
   authProfileOverrideCompactionCount?: number;
+  /**
+   * Set on explicit user-driven session model changes (for example `/model`
+   * and `sessions.patch`) during an active run. The embedded runner checks
+   * this flag to decide whether to throw `LiveSessionModelSwitchError`.
+   * System-initiated fallbacks (rate-limit retry rotation) never set this
+   * flag, so they are never mistaken for user-initiated switches.
+   */
+  liveModelSwitchPending?: boolean;
   groupActivation?: "mention" | "always";
   groupActivationNeedsSystemIntro?: boolean;
   sendPolicy?: "allow" | "deny";
@@ -161,6 +202,13 @@ export type SessionEntry = {
   modelProvider?: string;
   model?: string;
   /**
+   * True when the session's runtime model was selected by the fallback chain
+   * rather than being the configured primary. Used to prevent fallback models
+   * from being persisted back to agent config and to ensure the primary model
+   * is retried on subsequent requests.
+   */
+  modelIsFromFallback?: boolean;
+  /**
    * Last selected/runtime model pair for which a fallback notice was emitted.
    * Used to avoid repeating the same fallback notice every turn.
    */
@@ -169,6 +217,7 @@ export type SessionEntry = {
   fallbackNoticeReason?: string;
   contextTokens?: number;
   compactionCount?: number;
+  compactionCheckpoints?: SessionCompactionCheckpoint[];
   memoryFlushAt?: number;
   memoryFlushCompactionCount?: number;
   memoryFlushContextHash?: string;
@@ -193,14 +242,9 @@ export type SessionEntry = {
   acp?: SessionAcpMeta;
 };
 
-function normalizeRuntimeField(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 export function normalizeSessionRuntimeModelFields(entry: SessionEntry): SessionEntry {
-  const normalizedModel = normalizeRuntimeField(entry.model);
-  const normalizedProvider = normalizeRuntimeField(entry.modelProvider);
+  const normalizedModel = normalizeOptionalString(entry.model);
+  const normalizedProvider = normalizeOptionalString(entry.modelProvider);
   let next = entry;
 
   if (!normalizedModel) {
@@ -240,7 +284,7 @@ export function normalizeSessionRuntimeModelFields(entry: SessionEntry): Session
 
 export function setSessionRuntimeModel(
   entry: SessionEntry,
-  runtime: { provider: string; model: string },
+  runtime: { provider: string; model: string; isFromFallback?: boolean },
 ): boolean {
   const provider = runtime.provider.trim();
   const model = runtime.model.trim();
@@ -249,6 +293,7 @@ export function setSessionRuntimeModel(
   }
   entry.modelProvider = provider;
   entry.model = model;
+  entry.modelIsFromFallback = runtime.isFromFallback ?? false;
   return true;
 }
 
@@ -285,8 +330,8 @@ export function mergeSessionEntryWithPolicy(
   // Guard against stale provider carry-over when callers patch runtime model
   // without also patching runtime provider.
   if (Object.hasOwn(patch, "model") && !Object.hasOwn(patch, "modelProvider")) {
-    const patchedModel = normalizeRuntimeField(patch.model);
-    const existingModel = normalizeRuntimeField(existing.model);
+    const patchedModel = normalizeOptionalString(patch.model);
+    const existingModel = normalizeOptionalString(existing.model);
     if (patchedModel && patchedModel !== existingModel) {
       delete next.modelProvider;
     }
@@ -341,6 +386,11 @@ export type SessionSkillSnapshot = {
   skills: Array<{ name: string; primaryEnv?: string; requiredEnv?: string[] }>;
   /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
   skillFilter?: string[];
+  /**
+   * Runtime eligibility fingerprint used for cache invalidation when skill
+   * availability changes without a SKILL.md file watch event.
+   */
+  eligibilitySignature?: string;
   resolvedSkills?: Skill[];
   version?: number;
 };

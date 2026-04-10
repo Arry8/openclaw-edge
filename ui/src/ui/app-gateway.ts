@@ -43,6 +43,7 @@ import {
 import { GatewayBrowserClient } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
+import { normalizeOptionalString } from "./string-coerce.ts";
 import type {
   AgentsListResult,
   PresenceEntry,
@@ -54,6 +55,8 @@ import type {
 function isGenericBrowserFetchFailure(message: string): boolean {
   return /^(?:typeerror:\s*)?(?:fetch failed|failed to fetch)$/i.test(message.trim());
 }
+
+const EVENT_LOG_MAX = 250;
 
 type GatewayHost = {
   settings: UiSettings;
@@ -111,7 +114,7 @@ export function resolveControlUiClientVersion(params: {
   serverVersion: string | null;
   pageUrl?: string;
 }): string | undefined {
-  const serverVersion = params.serverVersion?.trim();
+  const serverVersion = normalizeOptionalString(params.serverVersion);
   if (!serverVersion) {
     return undefined;
   }
@@ -137,16 +140,16 @@ function normalizeSessionKeyForDefaults(
   value: string | undefined,
   defaults: SessionDefaultsSnapshot,
 ): string {
-  const raw = (value ?? "").trim();
-  const mainSessionKey = defaults.mainSessionKey?.trim();
+  const raw = normalizeOptionalString(value) ?? "";
+  const mainSessionKey = normalizeOptionalString(defaults.mainSessionKey);
   if (!mainSessionKey) {
     return raw;
   }
   if (!raw) {
     return mainSessionKey;
   }
-  const mainKey = defaults.mainKey?.trim() || "main";
-  const defaultAgentId = defaults.defaultAgentId?.trim();
+  const mainKey = normalizeOptionalString(defaults.mainKey) ?? "main";
+  const defaultAgentId = normalizeOptionalString(defaults.defaultAgentId);
   const isAlias =
     raw === "main" ||
     raw === mainKey ||
@@ -158,6 +161,27 @@ function normalizeSessionKeyForDefaults(
 function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnapshot) {
   if (!defaults?.mainSessionKey) {
     return;
+  }
+
+  // Detect if user has already selected a specific session (not an alias like "main").
+  // If normalization doesn't change the value, it's a user-selected session.
+  const normalizedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
+  const isUserSelectedSession = normalizedSessionKey === host.sessionKey;
+
+  if (isUserSelectedSession) {
+    // User has selected a specific session; preserve their choice
+    // Only normalize lastActiveSessionKey, don't override current sessionKey
+    const resolvedLastActiveSessionKey = normalizeSessionKeyForDefaults(
+      host.settings.lastActiveSessionKey,
+      defaults,
+    );
+    if (resolvedLastActiveSessionKey !== host.settings.lastActiveSessionKey) {
+      applySettings(host as unknown as Parameters<typeof applySettings>[0], {
+        ...host.settings,
+        lastActiveSessionKey: resolvedLastActiveSessionKey,
+      });
+    }
+    return; // Keep user's session selection
   }
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
   const resolvedSettingsSessionKey = normalizeSessionKeyForDefaults(
@@ -204,7 +228,9 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
     );
     shutdownHost.resumeChatQueueAfterReconnect = true;
   } else {
-    host.execApprovalQueue = [];
+    // Preserve any still-live approvals that were already staged in UI state.
+    // Initial connect can happen after a soft reload while an approval is pending.
+    host.execApprovalQueue = pruneExecApprovalQueue(host.execApprovalQueue);
   }
   host.execApprovalError = null;
 
@@ -215,8 +241,8 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
   });
   const client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
-    token: host.settings.token.trim() ? host.settings.token : undefined,
-    password: host.password.trim() ? host.password : undefined,
+    token: normalizeOptionalString(host.settings.token) ? host.settings.token : undefined,
+    password: normalizeOptionalString(host.password) ? host.password : undefined,
     clientName: "openclaw-control-ui",
     clientVersion,
     mode: "webchat",
@@ -359,22 +385,36 @@ function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | u
 }
 
 function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
-  host.eventLogBuffer = [
-    { ts: Date.now(), event: evt.event, payload: evt.payload },
-    ...host.eventLogBuffer,
-  ].slice(0, 250);
+  host.eventLogBuffer.unshift({ ts: Date.now(), event: evt.event, payload: evt.payload });
+  if (host.eventLogBuffer.length > EVENT_LOG_MAX) {
+    host.eventLogBuffer.length = EVENT_LOG_MAX;
+  }
   if (host.tab === "debug" || host.tab === "overview") {
-    host.eventLog = host.eventLogBuffer;
+    host.eventLog = [...host.eventLogBuffer];
   }
 
   if (evt.event === "agent") {
     if (host.onboarding) {
       return;
     }
+    const payload = evt.payload as AgentEventPayload | undefined;
     handleAgentEvent(
       host as unknown as Parameters<typeof handleAgentEvent>[0],
-      evt.payload as AgentEventPayload | undefined,
+      payload,
     );
+    // Some non-UI clients (for example /v1/responses callers) finish runs without
+    // going through the local chat controller, so refresh the current transcript
+    // when the active session receives a lifecycle completion event.
+    if (
+      payload?.sessionKey === host.sessionKey &&
+      payload.runId !== host.chatRunId &&
+      payload.stream === "lifecycle"
+    ) {
+      const phase = typeof payload.data?.phase === "string" ? payload.data.phase : "";
+      if (phase === "end" || phase === "error") {
+        void loadChatHistory(host as unknown as OpenClawApp);
+      }
+    }
     return;
   }
 
@@ -395,10 +435,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   if (evt.event === "shutdown") {
     const payload = evt.payload as { reason?: unknown; restartExpectedMs?: unknown } | undefined;
-    const reason =
-      payload && typeof payload.reason === "string" && payload.reason.trim()
-        ? payload.reason.trim()
-        : "gateway stopping";
+    const reason = normalizeOptionalString(payload?.reason) ?? "gateway stopping";
     const shutdownMessage =
       typeof payload?.restartExpectedMs === "number"
         ? `Restarting: ${reason}`

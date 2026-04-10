@@ -1,4 +1,4 @@
-const DEFAULT_GOOGLE_API_HOST = "generativelanguage.googleapis.com";
+import { resolveProviderEndpoint } from "../agents/provider-attribution.js";
 
 export const DEFAULT_GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -6,21 +6,26 @@ function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function isCanonicalGoogleApiOriginShorthand(value: string): boolean {
+  return /^https:\/\/generativelanguage\.googleapis\.com\/?$/i.test(value);
+}
+
 export function normalizeGoogleApiBaseUrl(baseUrl?: string): string {
   const raw = trimTrailingSlashes(baseUrl?.trim() || DEFAULT_GOOGLE_API_BASE_URL);
   try {
     const url = new URL(raw);
-    url.hash = "";
-    url.search = "";
-    if (
-      url.hostname.toLowerCase() === DEFAULT_GOOGLE_API_HOST &&
-      trimTrailingSlashes(url.pathname || "") === ""
-    ) {
-      url.pathname = "/v1beta";
+    const isGoogleEndpoint =
+      resolveProviderEndpoint(url.toString()).endpointClass === "google-generative-ai";
+    if (isGoogleEndpoint) {
+      url.hash = "";
+      url.search = "";
+      if (trimTrailingSlashes(url.pathname || "") === "") {
+        url.pathname = "/v1beta";
+      }
     }
     return trimTrailingSlashes(url.toString());
   } catch {
-    if (/^https:\/\/generativelanguage\.googleapis\.com\/?$/i.test(raw)) {
+    if (isCanonicalGoogleApiOriginShorthand(raw)) {
       return DEFAULT_GOOGLE_API_BASE_URL;
     }
     return raw;

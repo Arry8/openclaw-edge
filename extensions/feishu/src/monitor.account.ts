@@ -13,6 +13,7 @@ import { handleFeishuCardAction, type FeishuCardActionEvent } from "./card-actio
 import { maybeHandleFeishuQuickActionMenu } from "./card-ux-launcher.js";
 import { createEventDispatcher } from "./client.js";
 import { handleFeishuCommentEvent } from "./comment-handler.js";
+import { isRecord, readString } from "./comment-shared.js";
 import {
   hasProcessedFeishuMessage,
   recordProcessedFeishuMessage,
@@ -20,6 +21,7 @@ import {
   tryBeginFeishuMessageProcessing,
   warmupDedupFromDisk,
 } from "./dedup.js";
+import { resolveFeishuDispatchQueueKey } from "./dispatch-queue-key.js";
 import { isMentionForwardRequest } from "./mention.js";
 import { applyBotIdentityState, startBotIdentityRecovery } from "./monitor.bot-identity.js";
 import { parseFeishuDriveCommentNoticeEventPayload } from "./monitor.comment.js";
@@ -170,14 +172,6 @@ type FeishuBotMenuEvent = {
   };
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
 function readStringOrNumber(value: unknown): string | number | undefined {
   return typeof value === "string" || typeof value === "number" ? value : undefined;
 }
@@ -285,6 +279,7 @@ function parseFeishuCardActionEventPayload(value: unknown): FeishuCardActionEven
       union_id: unionId,
     },
     token,
+    message_id: readString(value.message_id),
     action: {
       value: actionValue,
       tag,
@@ -418,6 +413,15 @@ function registerEventHandlers(
   };
   const dispatchFeishuMessage = async (event: FeishuMessageEvent) => {
     const chatId = event.message.chat_id?.trim() || "unknown";
+    const parsed = parseFeishuMessageEvent(
+      event,
+      botOpenIds.get(accountId),
+      botNames.get(accountId),
+    );
+    const queueKey = resolveFeishuDispatchQueueKey({
+      chatId,
+      messageText: parsed.content,
+    });
     const task = () =>
       handleFeishuMessage({
         cfg,
@@ -429,7 +433,7 @@ function registerEventHandlers(
         accountId,
         processingClaimHeld: true,
       });
-    await enqueue(chatId, task);
+    await enqueue(queueKey, task);
   };
   const resolveSenderDebounceId = (event: FeishuMessageEvent): string | undefined => {
     const senderId =
@@ -487,7 +491,10 @@ function registerEventHandlers(
       if (!text) {
         return false;
       }
-      return !core.channel.text.hasControlCommand(text, cfg);
+      // Strip <at> mention tags before command detection so group messages like
+      // "@Bot /help" are not incorrectly buffered by the debouncer.
+      const stripped = text.replace(/<at user_id="[^"]*">[^<]*<\/at>/g, "").trim();
+      return !core.channel.text.hasControlCommand(stripped, cfg);
     },
     onFlush: async (entries) => {
       const last = entries.at(-1);

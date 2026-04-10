@@ -1,3 +1,7 @@
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "openclaw/plugin-sdk/text-runtime";
 import type { ResolvedIrcAccount } from "./accounts.js";
 import { normalizeIrcAllowlist, resolveIrcAllowlistMatch } from "./normalize.js";
 import {
@@ -50,6 +54,13 @@ function resolveIrcEffectiveAllowlists(params: {
     groupAllowFromFallbackToAllowFrom: false,
   });
   return { effectiveAllowFrom, effectiveGroupAllowFrom };
+}
+
+function resolveIrcDisableBlockStreaming(account: ResolvedIrcAccount): boolean {
+  // IRC delivery is line-oriented and some providers only surface the last
+  // streamed text block. Keep full final replies by default unless IRC
+  // block streaming is explicitly opted in on the account.
+  return account.config.blockStreaming !== true;
 }
 
 async function deliverIrcReply(params: {
@@ -208,7 +219,7 @@ export async function handleIrcInbound(params: {
       if (!dmAllowed) {
         if (dmPolicy === "pairing") {
           await pairing.issueChallenge({
-            senderId: senderDisplay.toLowerCase(),
+            senderId: normalizeLowercaseStringOrEmpty(senderDisplay),
             senderIdLine: `Your IRC id: ${senderDisplay}`,
             meta: { name: message.senderNick || undefined },
             sendPairingReply: async (text) => {
@@ -299,7 +310,7 @@ export async function handleIrcInbound(params: {
     body: rawBody,
   });
 
-  const groupSystemPrompt = groupMatch.groupConfig?.systemPrompt?.trim() || undefined;
+  const groupSystemPrompt = normalizeOptionalString(groupMatch.groupConfig?.systemPrompt);
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
@@ -350,14 +361,12 @@ export async function handleIrcInbound(params: {
     },
     replyOptions: {
       skillFilter: groupMatch.groupConfig?.skills,
-      disableBlockStreaming:
-        typeof account.config.blockStreaming === "boolean"
-          ? !account.config.blockStreaming
-          : undefined,
+      disableBlockStreaming: resolveIrcDisableBlockStreaming(account),
     },
   });
 }
 
 export const __testing = {
   resolveIrcEffectiveAllowlists,
+  resolveIrcDisableBlockStreaming,
 };

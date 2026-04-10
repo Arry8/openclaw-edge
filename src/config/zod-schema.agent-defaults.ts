@@ -21,6 +21,9 @@ export const AgentDefaultsSchema = z
     model: AgentModelSchema.optional(),
     imageModel: AgentModelSchema.optional(),
     imageGenerationModel: AgentModelSchema.optional(),
+    videoGenerationModel: AgentModelSchema.optional(),
+    musicGenerationModel: AgentModelSchema.optional(),
+    mediaGenerationAutoProviderFallback: z.boolean().optional(),
     pdfModel: AgentModelSchema.optional(),
     pdfMaxBytesMb: z.number().positive().optional(),
     pdfMaxPages: z.number().int().positive().optional(),
@@ -39,10 +42,16 @@ export const AgentDefaultsSchema = z
       )
       .optional(),
     workspace: z.string().optional(),
+    skills: z.array(z.string()).optional(),
     repoRoot: z.string().optional(),
+    systemPromptOverride: z.string().optional(),
     skipBootstrap: z.boolean().optional(),
+    skipOptionalBootstrapFiles: z.array(z.string()).optional(),
+    contextInjection: z.union([z.literal("always"), z.literal("continuation-skip")]).optional(),
     bootstrapMaxChars: z.number().int().positive().optional(),
     bootstrapTotalMaxChars: z.number().int().positive().optional(),
+    bootstrapContinuationMaxChars: z.number().int().positive().optional(),
+    bootstrapContinuationTotalMaxChars: z.number().int().positive().optional(),
     bootstrapPromptTruncationWarning: z
       .union([z.literal("off"), z.literal("once"), z.literal("always")])
       .optional(),
@@ -77,6 +86,15 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        fileBlocks: z
+          .object({
+            enabled: z.boolean().optional(),
+            maxChars: z.number().int().nonnegative().optional(),
+            headChars: z.number().int().nonnegative().optional(),
+            tailChars: z.number().int().nonnegative().optional(),
+          })
+          .strict()
+          .optional(),
         hardClear: z
           .object({
             enabled: z.boolean().optional(),
@@ -103,6 +121,7 @@ export const AgentDefaultsSchema = z
     compaction: z
       .object({
         mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
+        provider: z.string().optional(),
         reserveTokens: z.number().int().nonnegative().optional(),
         keepRecentTokens: z.number().int().positive().optional(),
         reserveTokensFloor: z.number().int().nonnegative().optional(),
@@ -141,6 +160,7 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        notifyUser: z.boolean().optional(),
       })
       .strict()
       .optional(),
@@ -176,11 +196,13 @@ export const AgentDefaultsSchema = z
     mediaMaxMb: z.number().positive().optional(),
     imageMaxDimensionPx: z.number().int().positive().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),
+    typingTtlSeconds: z.number().int().positive().optional(),
     typingMode: TypingModeSchema.optional(),
     heartbeat: HeartbeatSchema,
     maxConcurrent: z.number().int().positive().optional(),
     subagents: z
       .object({
+        allowAgents: z.array(z.string()).optional(),
         maxConcurrent: z.number().int().positive().optional(),
         maxSpawnDepth: z
           .number()

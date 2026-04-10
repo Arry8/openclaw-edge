@@ -3,6 +3,12 @@ name: security-triage
 description: Triage GitHub security advisories for OpenClaw with high-confidence close/keep decisions, exact tag and commit verification, trust-model checks, optional hardening notes, and a final reply ready to post and copy to clipboard.
 ---
 
+```bash
+# preamble: check for openclaw updates (reads cached state, no network call)
+_UPD=$(openclaw update hint 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+```
+
 # Security Triage
 
 Use when reviewing OpenClaw security advisories, drafts, or GHSA reports.
@@ -55,6 +61,8 @@ Check in this order:
    - Was it fixed before release?
 3. Exploit path
    - Does the report show a real boundary bypass, not just prompt injection, local same-user control, or helper-level semantics?
+   - If data only moves between trusted workspace-memory files called out in `SECURITY.md`, do not treat "injection markers" alone as a security bug.
+   - In that case, frame sanitization as optional hardening only if it preserves expected memory workflows.
 4. Functional tradeoff
    - If a hardening change would reduce intended user functionality, call that out before proposing it.
    - Prefer fixes that preserve user workflows over deny-by-default regressions unless the boundary demands it.
@@ -104,5 +112,6 @@ gh search prs --repo openclaw/openclaw --match title,body,comments -- "<terms>"
 - “fixed on main, unreleased” is usually not a close.
 - “needs attacker-controlled trusted local state first” is usually out of scope.
 - “same-host same-user process can already read/write local state” is usually out of scope.
+- “trusted workspace memory promotes/reindexes trusted workspace memory” is usually out of scope unless it crosses a documented boundary.
 - “helper function behaves differently than documented config semantics” is usually invalid.
 - If only the severity is wrong but the bug is real, keep it open and narrow the impact in the reply.

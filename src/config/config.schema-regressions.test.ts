@@ -51,6 +51,20 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it('accepts memorySearch provider "bedrock"', () => {
+    const res = validateConfigObject({
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "bedrock",
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
   it("accepts memorySearch.qmd.extraCollections", () => {
     const res = validateConfigObject({
       agents: {
@@ -114,6 +128,23 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it("accepts BlueBubbles enrichGroupParticipantsFromContacts at channel and account scope", () => {
+    const res = validateConfigObject({
+      channels: {
+        bluebubbles: {
+          enrichGroupParticipantsFromContacts: true,
+          accounts: {
+            work: {
+              enrichGroupParticipantsFromContacts: false,
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
   it("rejects unsafe iMessage remoteHost", () => {
     const res = validateConfigObject({
       channels: {
@@ -161,10 +192,44 @@ describe("config schema regressions", () => {
         defaults: {
           pdfModel: {
             primary: "anthropic/claude-opus-4-6",
-            fallbacks: ["openai/gpt-5-mini"],
+            fallbacks: ["openai/gpt-5.4-mini"],
           },
           pdfMaxBytesMb: 12,
           pdfMaxPages: 25,
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts legacy anthropic tool payload compat overrides", () => {
+    const res = validateConfigObject({
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: "https://openrouter.ai/api/v1",
+            apiKey: "env:OPENROUTER_API_KEY",
+            models: [
+              {
+                id: "openrouter/test-model",
+                name: "OpenRouter Test Model",
+                reasoning: true,
+                input: ["text"],
+                cost: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
+                contextWindow: 200000,
+                maxTokens: 64000,
+                compat: {
+                  requiresOpenAiAnthropicToolPayload: true,
+                },
+              },
+            ],
+          },
         },
       },
     });
@@ -176,7 +241,7 @@ describe("config schema regressions", () => {
     const res = validateConfigObject({
       agents: {
         defaults: {
-          pdfModel: { primary: "openai/gpt-5-mini" },
+          pdfModel: { primary: "openai/gpt-5.4-mini" },
           pdfMaxBytesMb: 0,
           pdfMaxPages: 0,
         },
@@ -208,6 +273,22 @@ describe("config schema regressions", () => {
     const res = validateConfigObject({
       browser: {
         extraArgs: ["--proxy-server=http://127.0.0.1:7890"],
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts agents.defaults.sandbox.browser.evaluateEnabled", () => {
+    const res = validateConfigObject({
+      agents: {
+        defaults: {
+          sandbox: {
+            browser: {
+              evaluateEnabled: false,
+            },
+          },
+        },
       },
     });
 
@@ -257,6 +338,24 @@ describe("config schema regressions", () => {
         wideArea: {
           enabled: true,
           domain: "openclaw.internal",
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts agentId in telegram topic config (#50574)", () => {
+    const res = validateConfigObject({
+      channels: {
+        telegram: {
+          groups: {
+            "-1003806191278": {
+              topics: {
+                "214": { agentId: "test" },
+              },
+            },
+          },
         },
       },
     });

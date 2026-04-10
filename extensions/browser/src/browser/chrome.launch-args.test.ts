@@ -15,6 +15,7 @@ describe("browser chrome launch args", () => {
         evaluateEnabled: false,
         remoteCdpTimeoutMs: 1500,
         remoteCdpHandshakeTimeoutMs: 3000,
+        actionTimeoutMs: 20000,
         extraArgs: [],
         color: "#FF4500",
         headless: false,
@@ -35,6 +36,8 @@ describe("browser chrome launch args", () => {
         color: "#FF4500",
         driver: "openclaw",
         attachOnly: false,
+        headless: undefined,
+        executablePath: undefined,
       },
       userDataDir: "/tmp/openclaw-test-user-data",
     });

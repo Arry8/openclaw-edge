@@ -9,6 +9,7 @@ import {
   readFileWithinRoot,
   writeFileWithinRoot,
 } from "../infra/fs-safe.js";
+import { expandHomePrefix } from "../infra/home-dir.js";
 import { trySafeFileURLToPath } from "../infra/local-file-access.js";
 import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
@@ -16,27 +17,26 @@ import type { ImageSanitizationLimits } from "./image-sanitization.js";
 import { toRelativeWorkspacePath } from "./path-policy.js";
 import { wrapEditToolWithRecovery } from "./pi-tools.host-edit.js";
 import {
-  CLAUDE_PARAM_GROUPS,
+  REQUIRED_PARAM_GROUPS,
   assertRequiredParams,
-  normalizeToolParams,
-  patchToolSchemaForClaudeCompatibility,
-  wrapToolParamNormalization,
+  getToolParamsRecord,
+  wrapToolParamValidation,
 } from "./pi-tools.params.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import { sanitizeForPromptLiteral, wrapUntrustedPromptDataBlock } from "./sanitize-for-prompt.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
 
 export {
-  CLAUDE_PARAM_GROUPS,
+  REQUIRED_PARAM_GROUPS,
   assertRequiredParams,
-  normalizeToolParams,
-  patchToolSchemaForClaudeCompatibility,
-  wrapToolParamNormalization,
+  getToolParamsRecord,
+  wrapToolParamValidation,
 } from "./pi-tools.params.js";
 
 // NOTE(steipete): Upstream read now does file-magic MIME detection; we keep the wrapper
-// to normalize payloads and sanitize oversized images before they hit providers.
+// to sanitize oversized images before they hit providers.
 type ToolContentBlock = AgentToolResult<unknown>["content"][number];
 type ImageContentBlock = Extract<ToolContentBlock, { type: "image" }>;
 type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
@@ -47,9 +47,105 @@ const ADAPTIVE_READ_CONTEXT_SHARE = 0.2;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const MAX_ADAPTIVE_READ_PAGES = 8;
 
+/**
+ * Path segment that identifies user-sent inbound media files staged into the sandbox.
+ * Files under this directory are untrusted external content and must be wrapped
+ * with prompt-injection guards before being returned to the LLM.
+ */
+const INBOUND_MEDIA_PATH_SEGMENT = "media/inbound";
+
+/**
+ * Returns true if the given file path is inside the inbound media staging directory.
+ * These files originate from external senders (WhatsApp, Telegram, Slack, etc.)
+ * and must be treated as untrusted data.
+ *
+ * The path is POSIX-normalised before the check so that non-canonical forms
+ * such as `media//inbound/file.txt` or `./media/inbound/file.txt` are
+ * correctly classified as inbound (see #11207 P1 review).
+ *
+ * @param containerWorkdir - Optional configured container working directory
+ *   (e.g. "/work"). When provided, `file://` URLs whose pathname starts with
+ *   this directory are resolved in addition to the default "/workspace" prefix.
+ *   This ensures that non-default containerWorkdir configurations are handled
+ *   correctly (see #11207 P1 review — generalize file URL inbound detection).
+ */
+export function isInboundMediaPath(filePath: string, containerWorkdir?: string): boolean {
+  // Strip path aliases that the read pipeline resolves to workspace paths
+  // before the inbound check so that alias forms like
+  //   @/workspace/media/inbound/payload.txt
+  //   file:///workspace/media/inbound/payload.txt
+  // are classified identically to their canonical equivalents.
+  // This mirrors the alias-stripping done in sandbox-paths.ts
+  // (normalizeAtPrefix / mapContainerWorkspaceFileUrl).
+  let candidate = filePath;
+  // Strip leading "@" prefix (e.g. @/workspace/... → /workspace/...)
+  if (candidate.startsWith("@")) {
+    candidate = candidate.slice(1);
+  }
+  // Strip file:// URL scheme for sandbox container paths.
+  // Accept both the default "/workspace" prefix and the configured
+  // containerWorkdir (if provided) so that non-default workdir setups like
+  // "/work" are handled correctly.  Arbitrary file:// URLs pointing outside
+  // a known container root are not reclassified.
+  if (/^file:\/\//i.test(candidate)) {
+    try {
+      const parsed = new URL(candidate);
+      const pathname = decodeURIComponent(parsed.pathname).replace(/\\/g, "/");
+      // Build the set of accepted container roots: always include /workspace;
+      // also include the caller-supplied containerWorkdir when it is a
+      // non-empty absolute POSIX path.
+      const containerRoots = ["/workspace"];
+      if (containerWorkdir) {
+        const normalizedWorkdir = containerWorkdir.replace(/\\/g, "/").replace(/\/+$/, "");
+        if (normalizedWorkdir.startsWith("/") && normalizedWorkdir !== "/workspace") {
+          containerRoots.push(normalizedWorkdir);
+        }
+      }
+      for (const root of containerRoots) {
+        if (pathname === root || pathname.startsWith(`${root}/`)) {
+          candidate = pathname;
+          break;
+        }
+      }
+    } catch {
+      // Malformed URL — fall through with the original string.
+    }
+  }
+  // Normalise: convert backslashes, then collapse redundant separators /
+  // and resolve . / .. segments so that equivalent paths are treated
+  // identically regardless of how the caller constructed the string.
+  // Case-fold after normalisation so that mixed-case paths like
+  // MEDIA/INBOUND/file.txt are correctly classified on case-insensitive
+  // filesystems (macOS, Windows) where they resolve to the same file.
+  const posix = candidate.replace(/\\/g, "/");
+  const normalized = path.posix.normalize(posix).toLowerCase();
+  // Relative path: media/inbound is the first directory segment.
+  if (
+    normalized.startsWith(`${INBOUND_MEDIA_PATH_SEGMENT}/`) ||
+    normalized === INBOUND_MEDIA_PATH_SEGMENT
+  ) {
+    return true;
+  }
+  // Absolute path (POSIX or Windows drive): the staging directory may sit
+  // at any depth below the filesystem root / drive root, i.e.
+  //   /workspace/media/inbound/...              (true)
+  //   C:/workspace/media/inbound/...            (true)
+  //   /Users/alice/openclaw/media/inbound/...   (true - multi-segment host path)
+  //   C:/Users/alice/openclaw/media/inbound/... (true - multi-segment Windows path)
+  //   /workspace/media/inbound                  (false - exact dir, no file)
+  // We require at least one path segment before media/inbound and a trailing
+  // slash (i.e. the path must point to a file inside the directory, not the
+  // directory itself).
+  return new RegExp(`^(?:[A-Za-z]:)?/(?:[^/]+/)+${INBOUND_MEDIA_PATH_SEGMENT}/`).test(normalized);
+}
+
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  /** Optional configured container working directory (e.g. "/work"). Passed to
+   * `isInboundMediaPath` so that file:// URLs using a non-default workdir are
+   * correctly classified as inbound. */
+  containerWorkdir?: string;
 };
 
 type ReadTruncationDetails = {
@@ -205,6 +301,21 @@ function stripReadTruncationContentDetails(
   };
 }
 
+const OFFSET_BEYOND_EOF_RE = /^Offset \d+ is beyond end of file \((\d+) lines total\)\.?$/;
+
+function parseOffsetBeyondEofTotalLines(err: unknown): number | null {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (typeof message !== "string") {
+    return null;
+  }
+  const match = OFFSET_BEYOND_EOF_RE.exec(message);
+  if (!match) {
+    return null;
+  }
+  const parsed = parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function executeReadWithAdaptivePaging(params: {
   base: AnyAgentTool;
   toolCallId: string;
@@ -216,7 +327,16 @@ async function executeReadWithAdaptivePaging(params: {
   const hasExplicitLimit =
     typeof userLimit === "number" && Number.isFinite(userLimit) && userLimit > 0;
   if (hasExplicitLimit) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
+    try {
+      return await params.base.execute(params.toolCallId, params.args, params.signal);
+    } catch (err) {
+      const totalLines = parseOffsetBeyondEofTotalLines(err);
+      if (totalLines === null || totalLines === 0) {
+        throw err;
+      }
+      const clampedArgs = { ...params.args, offset: totalLines };
+      return await params.base.execute(params.toolCallId, clampedArgs, params.signal);
+    }
   }
 
   const offsetRaw = params.args.offset;
@@ -232,7 +352,23 @@ async function executeReadWithAdaptivePaging(params: {
 
   for (let page = 0; page < MAX_ADAPTIVE_READ_PAGES; page += 1) {
     const pageArgs = { ...params.args, offset: nextOffset };
-    const pageResult = await params.base.execute(params.toolCallId, pageArgs, params.signal);
+    let pageResult: AgentToolResult<unknown>;
+    try {
+      pageResult = await params.base.execute(params.toolCallId, pageArgs, params.signal);
+    } catch (err) {
+      const totalLines = parseOffsetBeyondEofTotalLines(err);
+      if (totalLines === null || totalLines === 0) {
+        throw err;
+      }
+      if (page === 0) {
+        // User-supplied offset was beyond EOF: clamp to last line and retry once.
+        const clampedArgs = { ...params.args, offset: totalLines };
+        pageResult = await params.base.execute(params.toolCallId, clampedArgs, params.signal);
+      } else {
+        // Mid-pagination hit EOF: return everything aggregated so far.
+        return withToolResultText(firstResult!, aggregatedText);
+      }
+    }
     firstResult ??= pageResult;
 
     const rawText = getToolResultText(pageResult);
@@ -396,6 +532,13 @@ function mapContainerPathToWorkspaceRoot(params: {
   return path.resolve(params.root, ...relative.split("/").filter(Boolean));
 }
 
+/**
+ * Matches a Windows drive letter at the start of a path (e.g. `C:\`, `D:/`).
+ * On POSIX hosts, `path.isAbsolute` does not recognize Windows drive letters,
+ * so this regex serves as a cross-platform fallback.
+ */
+const WIN_DRIVE_LETTER_RE = /^[A-Za-z]:[/\\]/;
+
 export function resolveToolPathAgainstWorkspaceRoot(params: {
   filePath: string;
   root: string;
@@ -403,6 +546,11 @@ export function resolveToolPathAgainstWorkspaceRoot(params: {
 }): string {
   const mapped = mapContainerPathToWorkspaceRoot(params);
   const candidate = mapped.startsWith("@") ? mapped.slice(1) : mapped;
+  if (WIN_DRIVE_LETTER_RE.test(candidate)) {
+    // On POSIX, path.resolve would prepend cwd to a Windows drive-letter path.
+    // Return the candidate unchanged — it is already absolute on the remote OS.
+    return candidate;
+  }
   return path.isAbsolute(candidate)
     ? path.resolve(candidate)
     : path.resolve(params.root, candidate || ".");
@@ -509,16 +657,13 @@ export function wrapToolMemoryFlushAppendOnlyWrite(
     ...tool,
     description: `${tool.description} During memory flush, this tool may only append to ${options.relativePath}.`,
     execute: async (toolCallId, args, signal, onUpdate) => {
-      const normalized = normalizeToolParams(args);
-      const record =
-        normalized ??
-        (args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
-      assertRequiredParams(record, CLAUDE_PARAM_GROUPS.write, tool.name);
+      const record = getToolParamsRecord(args);
+      assertRequiredParams(record, REQUIRED_PARAM_GROUPS.write, tool.name);
       const filePath =
         typeof record?.path === "string" && record.path.trim() ? record.path : undefined;
       const content = typeof record?.content === "string" ? record.content : undefined;
       if (!filePath || content === undefined) {
-        return tool.execute(toolCallId, normalized ?? args, signal, onUpdate);
+        return tool.execute(toolCallId, args, signal, onUpdate);
       }
 
       const resolvedPath = resolveToolPathAgainstWorkspaceRoot({
@@ -561,10 +706,7 @@ export function wrapToolWorkspaceRootGuardWithOptions(
   return {
     ...tool,
     execute: async (toolCallId, args, signal, onUpdate) => {
-      const normalized = normalizeToolParams(args);
-      const record =
-        normalized ??
-        (args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
+      const record = getToolParamsRecord(args);
       const filePath = record?.path;
       if (typeof filePath === "string" && filePath.trim()) {
         const sandboxPath = mapContainerPathToWorkspaceRoot({
@@ -574,7 +716,7 @@ export function wrapToolWorkspaceRootGuardWithOptions(
         });
         await assertSandboxPath({ filePath: sandboxPath, cwd: root, root });
       }
-      return tool.execute(toolCallId, normalized ?? args, signal, onUpdate);
+      return tool.execute(toolCallId, args, signal, onUpdate);
     },
   };
 }
@@ -584,6 +726,10 @@ type SandboxToolParams = {
   bridge: SandboxFsBridge;
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  /** Optional configured container working directory (e.g. "/work"). Forwarded
+   * to `createOpenClawReadTool` so that `isInboundMediaPath` can correctly
+   * classify file:// URLs that use a non-default workdir. */
+  containerWorkdir?: string;
 };
 
 export function createSandboxedReadTool(params: SandboxToolParams) {
@@ -593,6 +739,7 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
   return createOpenClawReadTool(base, {
     modelContextWindowTokens: params.modelContextWindowTokens,
     imageSanitization: params.imageSanitization,
+    containerWorkdir: params.containerWorkdir,
   });
 }
 
@@ -600,7 +747,7 @@ export function createSandboxedWriteTool(params: SandboxToolParams) {
   const base = createWriteTool(params.root, {
     operations: createSandboxWriteOperations(params),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
+  return wrapToolParamValidation(base, REQUIRED_PARAM_GROUPS.write);
 }
 
 export function createSandboxedEditTool(params: SandboxToolParams) {
@@ -612,14 +759,14 @@ export function createSandboxedEditTool(params: SandboxToolParams) {
     readFile: async (absolutePath: string) =>
       (await params.bridge.readFile({ filePath: absolutePath, cwd: params.root })).toString("utf8"),
   });
-  return wrapToolParamNormalization(withRecovery, CLAUDE_PARAM_GROUPS.edit);
+  return wrapToolParamValidation(withRecovery, REQUIRED_PARAM_GROUPS.edit);
 }
 
 export function createHostWorkspaceWriteTool(root: string, options?: { workspaceOnly?: boolean }) {
   const base = createWriteTool(root, {
     operations: createHostWriteOperations(root, options),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
+  return wrapToolParamValidation(base, REQUIRED_PARAM_GROUPS.write);
 }
 
 export function createHostWorkspaceEditTool(root: string, options?: { workspaceOnly?: boolean }) {
@@ -630,38 +777,72 @@ export function createHostWorkspaceEditTool(root: string, options?: { workspaceO
     root,
     readFile: (absolutePath: string) => fs.readFile(absolutePath, "utf-8"),
   });
-  return wrapToolParamNormalization(withRecovery, CLAUDE_PARAM_GROUPS.edit);
+  return wrapToolParamValidation(withRecovery, REQUIRED_PARAM_GROUPS.edit);
 }
 
 export function createOpenClawReadTool(
   base: AnyAgentTool,
   options?: OpenClawReadToolOptions,
 ): AnyAgentTool {
-  const patched = patchToolSchemaForClaudeCompatibility(base);
   return {
-    ...patched,
+    ...base,
     execute: async (toolCallId, params, signal) => {
-      const normalized = normalizeToolParams(params);
-      const record =
-        normalized ??
-        (params && typeof params === "object" ? (params as Record<string, unknown>) : undefined);
-      assertRequiredParams(record, CLAUDE_PARAM_GROUPS.read, base.name);
+      const record = getToolParamsRecord(params);
+      assertRequiredParams(record, REQUIRED_PARAM_GROUPS.read, base.name);
       const result = await executeReadWithAdaptivePaging({
         base,
         toolCallId,
-        args: (normalized ?? params ?? {}) as Record<string, unknown>,
+        args: record ?? {},
         signal,
         maxBytes: resolveAdaptiveReadMaxBytes(options),
       });
-      const filePath = typeof record?.path === "string" ? String(record.path) : "<unknown>";
+      const filePath = typeof record?.path === "string" ? record.path : "<unknown>";
       const strippedDetailsResult = stripReadTruncationContentDetails(result);
       const normalizedResult = await normalizeReadImageResult(strippedDetailsResult, filePath);
-      return sanitizeToolResultImages(
+      const sanitizedResult = await sanitizeToolResultImages(
         normalizedResult,
         `read:${filePath}`,
         options?.imageSanitization,
       );
+      // Wrap inbound media file content to prevent prompt injection.
+      // Files staged under media/inbound/ originate from external senders and
+      // must be treated as untrusted data, not as agent instructions.
+      if (isInboundMediaPath(filePath, options?.containerWorkdir)) {
+        return wrapInboundFileResult(sanitizedResult, filePath);
+      }
+      return sanitizedResult;
     },
+  };
+}
+
+/**
+ * Wraps the text content of a tool result with untrusted-data markers to
+ * prevent prompt injection from inbound media files.
+ */
+function wrapInboundFileResult(
+  result: AgentToolResult<unknown>,
+  filePath: string,
+): AgentToolResult<unknown> {
+  const content = Array.isArray(result.content) ? result.content : [];
+  const wrappedContent = content.map((block) => {
+    if (
+      block &&
+      typeof block === "object" &&
+      (block as { type?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string"
+    ) {
+      const text = (block as { text: string }).text;
+      const wrapped = wrapUntrustedPromptDataBlock({
+        label: `File: ${sanitizeForPromptLiteral(filePath)}`,
+        text,
+      });
+      return { ...(block as object), text: wrapped || text };
+    }
+    return block;
+  });
+  return {
+    ...result,
+    content: wrappedContent as unknown as AgentToolResult<unknown>["content"],
   };
 }
 
@@ -710,7 +891,7 @@ function createSandboxEditOperations(params: SandboxToolParams) {
 }
 
 async function writeHostFile(absolutePath: string, content: string) {
-  const resolved = path.resolve(absolutePath);
+  const resolved = path.resolve(expandHomePrefix(absolutePath));
   await fs.mkdir(path.dirname(resolved), { recursive: true });
   await fs.writeFile(resolved, content, "utf-8");
 }
@@ -722,7 +903,7 @@ function createHostWriteOperations(root: string, options?: { workspaceOnly?: boo
     // When workspaceOnly is false, allow writes anywhere on the host
     return {
       mkdir: async (dir: string) => {
-        const resolved = path.resolve(dir);
+        const resolved = path.resolve(expandHomePrefix(dir));
         await fs.mkdir(resolved, { recursive: true });
       },
       writeFile: writeHostFile,
@@ -756,12 +937,12 @@ function createHostEditOperations(root: string, options?: { workspaceOnly?: bool
     // When workspaceOnly is false, allow edits anywhere on the host
     return {
       readFile: async (absolutePath: string) => {
-        const resolved = path.resolve(absolutePath);
+        const resolved = path.resolve(expandHomePrefix(absolutePath));
         return await fs.readFile(resolved);
       },
       writeFile: writeHostFile,
       access: async (absolutePath: string) => {
-        const resolved = path.resolve(absolutePath);
+        const resolved = path.resolve(expandHomePrefix(absolutePath));
         await fs.access(resolved);
       },
     } as const;

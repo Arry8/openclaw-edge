@@ -11,13 +11,19 @@ import {
   normalizeModelRef,
   normalizeProviderId,
   resolveModelRefFromString,
+  resolvePersistedOverrideModelRef,
   resolveReasoningDefault,
   resolveThinkingDefault,
 } from "../../agents/model-selection.js";
 import { resolveSessionParentSessionKey } from "../../channels/plugins/session-conversation.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
+import { logDebug } from "../../logger.js";
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../../shared/string-coerce.js";
 import type { ThinkLevel } from "./directives.js";
 
 export type ModelDirectiveSelection = {
@@ -40,6 +46,23 @@ type ModelSelectionState = {
   resolveDefaultReasoningLevel: () => Promise<"on" | "off">;
   needsModelCatalog: boolean;
 };
+
+export function createFastTestModelSelectionState(params: {
+  agentCfg: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]> | undefined;
+  provider: string;
+  model: string;
+}): ModelSelectionState {
+  return {
+    provider: params.provider,
+    model: params.model,
+    allowedModelKeys: new Set<string>(),
+    allowedModelCatalog: [],
+    resetModelOverride: false,
+    resolveDefaultThinkingLevel: async () => params.agentCfg?.thinkingDefault as ThinkLevel,
+    resolveDefaultReasoningLevel: async () => "off",
+    needsModelCatalog: false,
+  };
+}
 
 function shouldLogModelSelectionTiming(): boolean {
   return process.env.OPENCLAW_DEBUG_INGRESS_TIMING === "1";
@@ -126,23 +149,11 @@ export type StoredModelOverride = {
   source: "session" | "parent";
 };
 
-function resolveModelOverrideFromEntry(entry?: SessionEntry): {
-  provider?: string;
-  model: string;
-} | null {
-  const model = entry?.modelOverride?.trim();
-  if (!model) {
-    return null;
-  }
-  const provider = entry?.providerOverride?.trim() || undefined;
-  return { provider, model };
-}
-
 function resolveParentSessionKeyCandidate(params: {
   sessionKey?: string;
   parentSessionKey?: string;
 }): string | null {
-  const explicit = params.parentSessionKey?.trim();
+  const explicit = normalizeOptionalString(params.parentSessionKey);
   if (explicit && explicit !== params.sessionKey) {
     return explicit;
   }
@@ -158,8 +169,13 @@ export function resolveStoredModelOverride(params: {
   sessionStore?: Record<string, SessionEntry>;
   sessionKey?: string;
   parentSessionKey?: string;
+  defaultProvider: string;
 }): StoredModelOverride | null {
-  const direct = resolveModelOverrideFromEntry(params.sessionEntry);
+  const direct = resolvePersistedOverrideModelRef({
+    defaultProvider: params.defaultProvider,
+    overrideProvider: params.sessionEntry?.providerOverride,
+    overrideModel: params.sessionEntry?.modelOverride,
+  });
   if (direct) {
     return { ...direct, source: "session" };
   }
@@ -171,7 +187,11 @@ export function resolveStoredModelOverride(params: {
     return null;
   }
   const parentEntry = params.sessionStore[parentKey];
-  const parentOverride = resolveModelOverrideFromEntry(parentEntry);
+  const parentOverride = resolvePersistedOverrideModelRef({
+    defaultProvider: params.defaultProvider,
+    overrideProvider: parentEntry?.providerOverride,
+    overrideModel: parentEntry?.modelOverride,
+  });
   if (!parentOverride) {
     return null;
   }
@@ -195,9 +215,9 @@ function scoreFuzzyMatch(params: {
 } {
   const provider = normalizeProviderId(params.provider);
   const model = params.model;
-  const fragment = params.fragment.trim().toLowerCase();
-  const providerLower = provider.toLowerCase();
-  const modelLower = model.toLowerCase();
+  const fragment = normalizeLowercaseStringOrEmpty(params.fragment);
+  const providerLower = normalizeLowercaseStringOrEmpty(provider);
+  const modelLower = normalizeLowercaseStringOrEmpty(model);
   const haystack = `${providerLower}/${modelLower}`;
   const key = modelKey(provider, model);
 
@@ -243,7 +263,7 @@ function scoreFuzzyMatch(params: {
 
   const aliases = params.aliasIndex.byKey.get(key) ?? [];
   for (const alias of aliases) {
-    score += scoreFragment(alias.toLowerCase(), {
+    score += scoreFragment(normalizeLowercaseStringOrEmpty(alias), {
       exact: 140,
       starts: 90,
       includes: 60,
@@ -310,9 +330,12 @@ export async function createModelSelectionState(params: {
       return;
     }
     const suffix = extra ? ` ${extra}` : "";
-    console.log(
-      `[model-selection] session=${params.sessionKey ?? "(no-session)"} stage=${stage} elapsedMs=${Date.now() - startMs}${suffix}`,
-    );
+    const msg = `[model-selection] session=${params.sessionKey ?? "(no-session)"} stage=${stage} elapsedMs=${Date.now() - startMs}${suffix}`;
+    // Write to file logger (level-filtered) for structured log collection.
+    logDebug(msg);
+    // Also emit to console unconditionally: this env-var gate is an explicit
+    // opt-in debug flag, so operators expect visible stdout output.
+    console.log(msg);
   };
   const {
     cfg,
@@ -330,13 +353,6 @@ export async function createModelSelectionState(params: {
   let model = params.model;
 
   const hasAllowlist = agentCfg?.models && Object.keys(agentCfg.models).length > 0;
-  const initialStoredOverride = resolveStoredModelOverride({
-    sessionEntry,
-    sessionStore,
-    sessionKey,
-    parentSessionKey,
-  });
-  const hasStoredOverride = Boolean(initialStoredOverride);
   const configuredModelCatalog = buildConfiguredModelCatalog({ cfg });
   const needsModelCatalog = params.hasModelDirective;
 
@@ -345,6 +361,11 @@ export async function createModelSelectionState(params: {
   let modelCatalog: ModelCatalog | null = null;
   let resetModelOverride = false;
   const agentEntry = params.agentId ? resolveAgentConfig(cfg, params.agentId) : undefined;
+  const directStoredOverride = resolvePersistedOverrideModelRef({
+    defaultProvider,
+    overrideProvider: sessionEntry?.providerOverride,
+    overrideModel: sessionEntry?.modelOverride,
+  });
 
   if (needsModelCatalog) {
     modelCatalog = await (await loadModelCatalogRuntime()).loadModelCatalog({ config: cfg });
@@ -380,29 +401,28 @@ export async function createModelSelectionState(params: {
     logStage("configured-catalog-ready", `entries=${configuredModelCatalog.length}`);
   }
 
-  if (sessionEntry && sessionStore && sessionKey && hasStoredOverride) {
-    const overrideProvider = sessionEntry.providerOverride?.trim() || defaultProvider;
-    const overrideModel = sessionEntry.modelOverride?.trim();
-    if (overrideModel) {
-      const normalizedOverride = normalizeModelRef(overrideProvider, overrideModel);
-      const key = modelKey(normalizedOverride.provider, normalizedOverride.model);
-      if (allowedModelKeys.size > 0 && !allowedModelKeys.has(key)) {
-        const { updated } = applyModelOverrideToSessionEntry({
-          entry: sessionEntry,
-          selection: { provider: defaultProvider, model: defaultModel, isDefault: true },
-        });
-        if (updated) {
-          sessionStore[sessionKey] = sessionEntry;
-          if (storePath) {
-            await (
-              await loadSessionStoreRuntime()
-            ).updateSessionStore(storePath, (store) => {
-              store[sessionKey] = sessionEntry;
-            });
-          }
+  if (sessionEntry && sessionStore && sessionKey && directStoredOverride) {
+    const normalizedOverride = normalizeModelRef(
+      directStoredOverride.provider,
+      directStoredOverride.model,
+    );
+    const key = modelKey(normalizedOverride.provider, normalizedOverride.model);
+    if (allowedModelKeys.size > 0 && !allowedModelKeys.has(key)) {
+      const { updated } = applyModelOverrideToSessionEntry({
+        entry: sessionEntry,
+        selection: { provider: defaultProvider, model: defaultModel, isDefault: true },
+      });
+      if (updated) {
+        sessionStore[sessionKey] = sessionEntry;
+        if (storePath) {
+          await (
+            await loadSessionStoreRuntime()
+          ).updateSessionStore(storePath, (store) => {
+            store[sessionKey] = sessionEntry;
+          });
         }
-        resetModelOverride = updated;
       }
+      resetModelOverride = updated;
     }
   }
 
@@ -411,6 +431,7 @@ export async function createModelSelectionState(params: {
     sessionStore,
     sessionKey,
     parentSessionKey,
+    defaultProvider,
   });
   // Skip stored session model override only when an explicit heartbeat.model
   // was resolved. Heartbeat runs without heartbeat.model should still inherit
@@ -508,7 +529,7 @@ export function resolveModelDirectiveSelection(params: {
   const { raw, defaultProvider, defaultModel, aliasIndex, allowedModelKeys } = params;
 
   const rawTrimmed = raw.trim();
-  const rawLower = rawTrimmed.toLowerCase();
+  const rawLower = normalizeLowercaseStringOrEmpty(rawTrimmed);
 
   const pickAliasForKey = (provider: string, model: string): string | undefined =>
     aliasIndex.byKey.get(modelKey(provider, model))?.[0];
@@ -527,7 +548,7 @@ export function resolveModelDirectiveSelection(params: {
     provider?: string;
     fragment: string;
   }): { selection?: ModelDirectiveSelection; error?: string } => {
-    const fragment = params.fragment.trim().toLowerCase();
+    const fragment = normalizeLowercaseStringOrEmpty(params.fragment);
     if (!fragment) {
       return {};
     }

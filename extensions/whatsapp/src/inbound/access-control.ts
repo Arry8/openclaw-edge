@@ -1,7 +1,6 @@
 import { createChannelPairingChallengeIssuer } from "openclaw/plugin-sdk/channel-pairing";
 import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
 import {
-  resolveOpenProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "openclaw/plugin-sdk/config-runtime";
@@ -11,8 +10,9 @@ import {
   readStoreAllowFromForDmPolicy,
   resolveDmGroupAccessWithLists,
 } from "openclaw/plugin-sdk/security-runtime";
-import { isSelfChatMode, normalizeE164 } from "openclaw/plugin-sdk/text-runtime";
 import { resolveWhatsAppAccount } from "../accounts.js";
+import { resolveWhatsAppRuntimeGroupPolicy } from "../runtime-group-policy.js";
+import { isSelfChatMode, normalizeE164 } from "../text-runtime.js";
 
 export type InboundAccessControlResult = {
   allowed: boolean;
@@ -22,21 +22,6 @@ export type InboundAccessControlResult = {
 };
 
 const PAIRING_REPLY_HISTORY_GRACE_MS = 30_000;
-
-function resolveWhatsAppRuntimeGroupPolicy(params: {
-  providerConfigPresent: boolean;
-  groupPolicy?: "open" | "allowlist" | "disabled";
-  defaultGroupPolicy?: "open" | "allowlist" | "disabled";
-}): {
-  groupPolicy: "open" | "allowlist" | "disabled";
-  providerMissingFallbackApplied: boolean;
-} {
-  return resolveOpenProviderRuntimeGroupPolicy({
-    providerConfigPresent: params.providerConfigPresent,
-    groupPolicy: params.groupPolicy,
-    defaultGroupPolicy: params.defaultGroupPolicy,
-  });
-}
 
 export async function checkInboundAccessControl(params: {
   accountId: string;
@@ -49,6 +34,11 @@ export async function checkInboundAccessControl(params: {
   messageTimestampMs?: number;
   connectedAtMs?: number;
   pairingGraceMs?: number;
+  /** True when processing a Baileys "append" upsert (history/offline catch-up).
+   *  Pairing challenges must never fire for append messages — they are replays,
+   *  not real-time inbound DMs. Without this guard, reconnect loops cause
+   *  unsolicited pairing codes to be sent to contacts (#56448). */
+  isAppend?: boolean;
   sock: {
     sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
   };
@@ -79,9 +69,13 @@ export async function checkInboundAccessControl(params: {
       ? params.pairingGraceMs
       : PAIRING_REPLY_HISTORY_GRACE_MS;
   const suppressPairingReply =
-    typeof params.connectedAtMs === "number" &&
+    // Suppress for append (history/offline) messages — these are replays from
+    // Baileys, not real-time DMs. Sending pairing codes for replayed messages
+    // during reconnect cycles sends unsolicited messages to contacts (#56448).
+    params.isAppend === true ||
+    (typeof params.connectedAtMs === "number" &&
     typeof params.messageTimestampMs === "number" &&
-    params.messageTimestampMs < params.connectedAtMs - pairingGraceMs;
+    params.messageTimestampMs < params.connectedAtMs - pairingGraceMs);
 
   // Group policy filtering:
   // - "open": groups bypass allowFrom, only mention-gating applies
@@ -149,13 +143,11 @@ export async function checkInboundAccessControl(params: {
   // DM access control (secure defaults): "pairing" (default) / "allowlist" / "open" / "disabled".
   if (!params.group) {
     if (params.isFromMe && !isSamePhone) {
-      logVerbose("Skipping outbound DM (fromMe); no pairing reply needed.");
-      return {
-        allowed: false,
-        shouldMarkRead: false,
-        isSelfChat,
-        resolvedAccountId: account.accountId,
-      };
+      // Allow outbound DMs to reach the agent so it can see both sides of the
+      // conversation.  The allowlist / pairing checks below still control which
+      // contacts are monitored — this only removes the blanket block on the
+      // owner's own messages.
+      logVerbose("Including outbound DM (fromMe); passthrough to agent.");
     }
     if (access.decision === "block" && access.reason === "dmPolicy=disabled") {
       logVerbose("Blocked dm (dmPolicy: disabled)");
@@ -166,7 +158,7 @@ export async function checkInboundAccessControl(params: {
         resolvedAccountId: account.accountId,
       };
     }
-    if (access.decision === "pairing" && !isSamePhone) {
+    if (access.decision === "pairing" && !isSamePhone && !params.isFromMe) {
       const candidate = params.from;
       if (suppressPairingReply) {
         logVerbose(`Skipping pairing reply for historical DM from ${candidate}.`);
@@ -204,7 +196,7 @@ export async function checkInboundAccessControl(params: {
         resolvedAccountId: account.accountId,
       };
     }
-    if (access.decision !== "allow") {
+    if (access.decision !== "allow" && !params.isFromMe) {
       logVerbose(`Blocked unauthorized sender ${params.from} (dmPolicy=${dmPolicy})`);
       return {
         allowed: false,

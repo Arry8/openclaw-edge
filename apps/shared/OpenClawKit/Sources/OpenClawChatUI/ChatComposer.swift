@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct OpenClawChatComposer: View {
-    private static let menuThinkingLevels = ["off", "low", "medium", "high"]
+    private static let menuThinkingLevels = ["off", "low", "medium", "high", "adaptive"]
 
     @Bindable var viewModel: OpenClawChatViewModel
     let style: OpenClawChatView.Style
@@ -34,6 +34,7 @@ struct OpenClawChatComposer: View {
                     }
                     self.thinkingPicker
                     Spacer()
+                    self.talkToggle
                     self.refreshButton
                     self.attachmentPicker
                 }
@@ -99,6 +100,7 @@ struct OpenClawChatComposer: View {
             Text("Low").tag("low")
             Text("Medium").tag("medium")
             Text("High").tag("high")
+            Text("Adaptive").tag("adaptive")
             if !Self.menuThinkingLevels.contains(self.viewModel.thinkingLevel) {
                 Text(self.viewModel.thinkingLevel.capitalized).tag(self.viewModel.thinkingLevel)
             }
@@ -145,6 +147,8 @@ struct OpenClawChatComposer: View {
         .pickerStyle(.menu)
         .controlSize(.small)
         .frame(maxWidth: 160, alignment: .leading)
+        .lineLimit(1)
+        .truncationMode(.tail)
         .help("Session")
     }
 
@@ -334,6 +338,21 @@ struct OpenClawChatComposer: View {
                 .background(Circle().fill(Color.accentColor))
                 .disabled(!self.viewModel.canSend)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var talkToggle: some View {
+        if self.viewModel.showsTalkToggle {
+            Button {
+                self.viewModel.toggleTalk()
+            } label: {
+                Image(systemName: self.viewModel.talkEnabled ? "waveform.circle.fill" : "waveform.circle")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(self.viewModel.talkEnabled ? .accentColor : nil)
+            .help(self.viewModel.talkEnabled ? "Stop Talk Mode" : "Talk Mode")
         }
     }
 

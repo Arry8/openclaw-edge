@@ -1,3 +1,4 @@
+import { getChannelPlugin } from "../channels/plugins/index.js";
 import type { ChannelId } from "../channels/plugins/types.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
@@ -114,6 +115,11 @@ export function startChannelHealthMonitor(deps: ChannelHealthMonitorDeps): Chann
         if (!accounts) {
           continue;
         }
+        // Skip channels that have been removed from the current config to avoid
+        // emitting system events (restarts) for stale runtime state.
+        if (!channelManager.isChannelConfigured(channelId as ChannelId)) {
+          continue;
+        }
         for (const [accountId, status] of Object.entries(accounts)) {
           if (!status) {
             continue;
@@ -129,6 +135,7 @@ export function startChannelHealthMonitor(deps: ChannelHealthMonitorDeps): Chann
             now,
             staleEventThresholdMs: timing.staleEventThresholdMs,
             channelConnectGraceMs: timing.channelConnectGraceMs,
+            skipStaleSocketCheck: getChannelPlugin(channelId)?.status?.skipStaleSocketHealthCheck,
           };
           const health = evaluateChannelHealth(status, healthPolicy);
           if (health.healthy) {
@@ -184,6 +191,7 @@ export function startChannelHealthMonitor(deps: ChannelHealthMonitorDeps): Chann
       clearInterval(timer);
       timer = null;
     }
+    abortSignal?.removeEventListener("abort", stop);
   }
 
   if (abortSignal?.aborted) {

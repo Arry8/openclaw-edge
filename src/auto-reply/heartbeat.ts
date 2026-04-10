@@ -1,5 +1,13 @@
+import { parseDurationMs } from "../cli/parse-duration.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { escapeRegExp } from "../utils.js";
 import { HEARTBEAT_TOKEN } from "./tokens.js";
+
+export type HeartbeatTask = {
+  name: string;
+  interval: string;
+  prompt: string;
+};
 
 // Default heartbeat prompt (used when config.agents.defaults.heartbeat.prompt is unset).
 // Keep it tight and avoid encouraging the model to invent/rehash "open loops" from prior chat context.
@@ -7,6 +15,23 @@ export const HEARTBEAT_PROMPT =
   "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.";
 export const DEFAULT_HEARTBEAT_EVERY = "30m";
 export const DEFAULT_HEARTBEAT_ACK_MAX_CHARS = 300;
+
+function isHeartbeatScaffoldLine(trimmed: string): boolean {
+  if (!trimmed) {
+    return true;
+  }
+  // Skip markdown header lines (# followed by space or EOL, ## etc)
+  // This intentionally does NOT skip lines like "#TODO" or "#hashtag" which might be content
+  // (Those aren't valid markdown headers - ATX headers require space after #)
+  if (/^#+(\s|$)/.test(trimmed)) {
+    return true;
+  }
+  // Skip empty markdown list items like "- [ ]" or "* [ ]" or just "- "
+  if (/^[-*+]\s*(\[[\sXx]?\]\s*)?$/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
 
 /**
  * Check if HEARTBEAT.md content is "effectively empty" - meaning it has no actionable tasks.
@@ -29,31 +54,40 @@ export function isHeartbeatContentEffectivelyEmpty(content: string | undefined |
   }
 
   const lines = content.split("\n");
+  let inMarkdownFence = false;
   for (const line of lines) {
     const trimmed = line.trim();
-    // Skip empty lines
-    if (!trimmed) {
+
+    if (/^```(?:markdown|md)?$/i.test(trimmed)) {
+      inMarkdownFence = !inMarkdownFence;
       continue;
     }
-    // Skip markdown header lines (# followed by space or EOL, ## etc)
-    // This intentionally does NOT skip lines like "#TODO" or "#hashtag" which might be content
-    // (Those aren't valid markdown headers - ATX headers require space after #)
-    if (/^#+(\s|$)/.test(trimmed)) {
+
+    if (isHeartbeatScaffoldLine(trimmed)) {
+      // Treat scaffold-only lines as comments even inside ```markdown fences.
+      // The shipped HEARTBEAT scaffold uses fenced markdown with #-prefixed guidance,
+      // and that wrapper must stay effectively empty for backward compatibility.
       continue;
     }
-    // Skip empty markdown list items like "- [ ]" or "* [ ]" or just "- "
-    if (/^[-*+]\s*(\[[\sXx]?\]\s*)?$/.test(trimmed)) {
-      continue;
+
+    if (inMarkdownFence) {
+      return false;
     }
+
     // Found a non-empty, non-comment line - there's actionable content
     return false;
   }
+
+  if (inMarkdownFence) {
+    return false;
+  }
+
   // All lines were either empty or comments
   return true;
 }
 
 export function resolveHeartbeatPrompt(raw?: string): string {
-  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  const trimmed = normalizeOptionalString(raw) ?? "";
   return trimmed || HEARTBEAT_PROMPT;
 }
 
@@ -163,9 +197,129 @@ export function stripHeartbeatToken(
   const rest = picked.text.trim();
   if (mode === "heartbeat") {
     if (rest.length <= maxAckChars) {
-      return { shouldSkip: true, text: "", didStrip: true };
+      // When the remaining text after stripping HEARTBEAT_OK is short,
+      // check whether it looks like a substantive response rather than a
+      // brief status ack.  A steered user message may produce a combined
+      // "HEARTBEAT_OK. <actual answer>" reply where the answer portion is
+      // under maxAckChars but should still be delivered.
+      //
+      // Heuristic: if the text contains sentence-ending punctuation followed
+      // by more content (multi-sentence), or starts with common response
+      // patterns, treat it as a real response and do NOT skip.
+      const hasMultipleSentences = /[.!?]\s+\S/.test(rest);
+      const hasSubstantiveContent = rest.length > 0 && hasMultipleSentences;
+      if (!hasSubstantiveContent) {
+        return { shouldSkip: true, text: "", didStrip: true };
+      }
     }
   }
 
   return { shouldSkip: false, text: rest, didStrip: true };
+}
+
+/**
+ * Parse heartbeat tasks from HEARTBEAT.md content.
+ * Supports YAML-like task definitions:
+ *
+ * tasks:
+ *   - name: email-check
+ *     interval: 30m
+ *     prompt: "Check for urgent unread emails"
+ */
+export function parseHeartbeatTasks(content: string): HeartbeatTask[] {
+  const tasks: HeartbeatTask[] = [];
+  const lines = content.split("\n");
+  let inTasksBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Detect tasks block start
+    if (trimmed === "tasks:") {
+      inTasksBlock = true;
+      continue;
+    }
+
+    if (!inTasksBlock) {
+      continue;
+    }
+
+    // End of tasks block (either empty line or new top-level content)
+    // Don't exit for task fields (interval:, prompt:, - name:)
+    const isTaskField =
+      trimmed.startsWith("interval:") ||
+      trimmed.startsWith("prompt:") ||
+      trimmed.startsWith("- name:");
+    if (
+      !isTaskField &&
+      !trimmed.startsWith(" ") &&
+      !trimmed.startsWith("\t") &&
+      trimmed &&
+      !trimmed.startsWith("-")
+    ) {
+      inTasksBlock = false;
+      continue;
+    }
+
+    // Parse task entry
+    if (trimmed.startsWith("- name:")) {
+      const name = trimmed
+        .replace("- name:", "")
+        .trim()
+        .replace(/^["']|["']$/g, "");
+      let interval = "";
+      let prompt = "";
+
+      // Look ahead for interval and prompt
+      for (let j = i + 1; j < lines.length; j++) {
+        const nextLine = lines[j];
+        const nextTrimmed = nextLine.trim();
+
+        // End of this task
+        if (nextTrimmed.startsWith("- name:")) {
+          break;
+        }
+
+        // Check for task fields BEFORE checking for end of block
+        if (nextTrimmed.startsWith("interval:")) {
+          interval = nextTrimmed
+            .replace("interval:", "")
+            .trim()
+            .replace(/^["']|["']$/g, "");
+        } else if (nextTrimmed.startsWith("prompt:")) {
+          prompt = nextTrimmed
+            .replace("prompt:", "")
+            .trim()
+            .replace(/^["']|["']$/g, "");
+        } else if (!nextTrimmed.startsWith(" ") && !nextTrimmed.startsWith("\t") && nextTrimmed) {
+          // End of tasks block
+          inTasksBlock = false;
+          break;
+        }
+      }
+
+      if (name && interval && prompt) {
+        tasks.push({ name, interval, prompt });
+      }
+    }
+  }
+
+  return tasks;
+}
+
+/**
+ * Check if a task is due based on its interval and last run time.
+ */
+export function isTaskDue(lastRunMs: number | undefined, interval: string, nowMs: number): boolean {
+  if (lastRunMs === undefined) {
+    return true; // Never run, always due
+  }
+
+  try {
+    const intervalMs = parseDurationMs(interval, { defaultUnit: "m" });
+    return nowMs - lastRunMs >= intervalMs;
+  } catch {
+    return false;
+  }
 }

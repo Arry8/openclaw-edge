@@ -27,6 +27,11 @@ chromium-browser is already the newest version (2:1snap1-0ubuntu2).
 
 This is NOT a real browser - it's just a wrapper.
 
+Other common Linux launch failures:
+
+- `The profile appears to be in use by another Chromium process` usually means stale `Singleton*` lock files were left behind in `~/.openclaw/browser/<profile>/user-data`.
+- `Missing X server or $DISPLAY` means OpenClaw is trying to launch a visible browser on a host without a desktop session. Use `browser.headless: true`, start `Xvfb`, or run OpenClaw in a real desktop session.
+
 ### Solution 1: Install Google Chrome (Recommended)
 
 Install the official Google Chrome `.deb` package, which is not sandboxed by snap:
@@ -135,4 +140,11 @@ Fix options:
 Notes:
 
 - `user` is host-only. For Linux servers, containers, or remote hosts, prefer CDP profiles.
+- `user` / other `existing-session` profiles keep the current Chrome MCP limits:
+  ref-driven actions, one-file upload hooks, no dialog timeout overrides, no
+  `wait --load networkidle`, and no `responsebody`, PDF export, download
+  interception, or batch actions.
 - Local `openclaw` profiles auto-assign `cdpPort`/`cdpUrl`; only set those for remote CDP.
+- Remote CDP profiles accept `http://`, `https://`, `ws://`, and `wss://`.
+  Use HTTP(S) for `/json/version` discovery, or WS(S) when your browser
+  service gives you a direct DevTools socket URL.

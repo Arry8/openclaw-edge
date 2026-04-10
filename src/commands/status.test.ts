@@ -1,5 +1,6 @@
 import type { Mock } from "vitest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { GatewaySecretRefUnavailableError } from "../gateway/credentials.js";
 import type { PluginCompatibilityNotice } from "../plugins/status.js";
 import { createCompatibilityNotice } from "../plugins/status.test-helpers.js";
 import { captureEnv } from "../test-utils/env.js";
@@ -281,13 +282,15 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("../channels/config-presence.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../channels/config-presence.js")>();
-  return {
-    ...actual,
-    hasPotentialConfiguredChannels: mocks.hasPotentialConfiguredChannels,
-  };
-});
+vi.mock("../channels/config-presence.js", () => ({
+  hasPotentialConfiguredChannels: mocks.hasPotentialConfiguredChannels,
+  hasMeaningfulChannelConfig: (entry: unknown) =>
+    Boolean(
+      entry && typeof entry === "object" && Object.keys(entry as Record<string, unknown>).length,
+    ),
+  listPotentialConfiguredChannelIds: (cfg: { channels?: Record<string, unknown> }) =>
+    Object.keys(cfg.channels ?? {}).filter((key) => key !== "defaults" && key !== "modelByChannel"),
+}));
 
 vi.mock("../plugins/memory-runtime.js", () => ({
   getActiveMemorySearchManager: vi.fn(async ({ agentId }: { agentId: string }) => ({
@@ -328,28 +331,17 @@ vi.mock("../config/sessions/paths.js", () => ({
 vi.mock("../config/sessions/store-read.js", () => ({
   readSessionStoreReadOnly: mocks.loadSessionStore,
 }));
-vi.mock("../config/sessions/types.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../config/sessions/types.js")>();
-  return {
-    ...actual,
-    resolveFreshSessionTotalTokens: vi.fn(
-      (entry?: { totalTokens?: number; totalTokensFresh?: boolean }) =>
-        typeof entry?.totalTokens === "number" && entry?.totalTokensFresh !== false
-          ? entry.totalTokens
-          : undefined,
-    ),
-  };
-});
-vi.mock("../channels/config-presence.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../channels/config-presence.js")>();
-  return {
-    ...actual,
-    hasPotentialConfiguredChannels: mocks.hasPotentialConfiguredChannels,
-  };
-});
+vi.mock("../config/sessions/types.js", () => ({
+  resolveFreshSessionTotalTokens: vi.fn(
+    (entry?: { totalTokens?: number; totalTokensFresh?: boolean }) =>
+      typeof entry?.totalTokens === "number" && entry?.totalTokensFresh !== false
+        ? entry.totalTokens
+        : undefined,
+  ),
+}));
 vi.mock("../channels/plugins/index.js", () => ({
-  listChannelPlugins: () =>
-    [
+  listChannelPlugins: () => {
+    const plugins = [
       {
         id: "whatsapp",
         meta: {
@@ -360,6 +352,7 @@ vi.mock("../channels/plugins/index.js", () => ({
           blurb: "mock",
         },
         config: {
+          hasPersistentAuth: () => true,
           listAccountIds: () => ["default"],
           resolveAccount: () => ({}),
         },
@@ -381,9 +374,46 @@ vi.mock("../channels/plugins/index.js", () => ({
           docsPath: "/platforms/mac",
         }),
       },
-    ] as unknown,
+    ] as const;
+    return plugins as unknown;
+  },
+  getChannelPlugin: (channelId: string) =>
+    [
+      {
+        id: "whatsapp",
+        meta: {
+          id: "whatsapp",
+          label: "WhatsApp",
+          selectionLabel: "WhatsApp",
+          docsPath: "/platforms/whatsapp",
+          blurb: "mock",
+        },
+        config: {
+          hasPersistentAuth: () => true,
+          listAccountIds: () => ["default"],
+          resolveAccount: () => ({}),
+        },
+        status: {
+          buildChannelSummary: async () => ({ linked: true, authAgeMs: 5000 }),
+        },
+      },
+      {
+        ...createErrorChannelPlugin({
+          id: "signal",
+          label: "Signal",
+          docsPath: "/platforms/signal",
+        }),
+      },
+      {
+        ...createErrorChannelPlugin({
+          id: "imessage",
+          label: "iMessage",
+          docsPath: "/platforms/mac",
+        }),
+      },
+    ].find((plugin) => plugin.id === channelId) as unknown,
 }));
-vi.mock("../plugins/runtime/runtime-whatsapp-boundary.js", () => ({
+vi.mock("../plugins/runtime/runtime-web-channel-plugin.js", () => ({
   webAuthExists: mocks.webAuthExists,
   getWebAuthAgeMs: mocks.getWebAuthAgeMs,
   readWebSelfId: mocks.readWebSelfId,
@@ -392,26 +422,36 @@ vi.mock("../plugins/runtime/runtime-whatsapp-boundary.js", () => ({
 vi.mock("../gateway/probe.js", () => ({
   probeGateway: mocks.probeGateway,
 }));
-vi.mock("../gateway/call.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../gateway/call.js")>();
-  return { ...actual, callGateway: mocks.callGateway };
-});
-vi.mock("../gateway/agent-list.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../gateway/agent-list.js")>();
-  return {
-    ...actual,
-    listGatewayAgentsBasic: mocks.listGatewayAgentsBasic,
-  };
-});
-
-vi.mock("../gateway/session-utils.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../gateway/session-utils.js")>();
-  return {
-    ...actual,
-  };
-});
+vi.mock("../gateway/call.js", () => ({
+  callGateway: mocks.callGateway,
+  buildGatewayConnectionDetails: vi.fn(() => ({
+    message: "Gateway mode: local\nGateway target: ws://127.0.0.1:18789",
+  })),
+  resolveGatewayCredentialsWithSecretInputs: vi.fn(
+    async (params: {
+      config?: {
+        gateway?: {
+          auth?: {
+            token?: unknown;
+          };
+        };
+      };
+    }) => {
+      const token = params.config?.gateway?.auth?.token;
+      if (token && typeof token === "object" && "source" in token) {
+        throw new GatewaySecretRefUnavailableError("gateway.auth.token");
+      }
+      const envToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+      return envToken ? { token: envToken } : {};
+    },
+  ),
+}));
+vi.mock("../gateway/agent-list.js", () => ({
+  listGatewayAgentsBasic: mocks.listGatewayAgentsBasic,
+}));
 vi.mock("../infra/openclaw-root.js", () => ({
   resolveOpenClawPackageRoot: vi.fn().mockResolvedValue("/tmp/openclaw"),
+  resolveOpenClawPackageRootSync: vi.fn(() => "/tmp/openclaw"),
 }));
 vi.mock("../infra/os-summary.js", () => ({
   resolveOsSummary: () => ({
@@ -446,21 +486,14 @@ vi.mock("../infra/update-check.js", () => ({
   formatGitInstallLabel: vi.fn(() => "main · @ deadbeef"),
   compareSemverStrings: vi.fn(() => 0),
 }));
-vi.mock("../config/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../config/config.js")>();
-  return {
-    ...actual,
-    loadConfig: mocks.loadConfig,
-    readBestEffortConfig: vi.fn(async () => mocks.loadConfig()),
-  };
-});
-vi.mock("../daemon/service.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../daemon/service.js")>();
-  return {
-    ...actual,
-    resolveGatewayService: mocks.resolveGatewayService,
-  };
-});
+vi.mock("../config/config.js", () => ({
+  loadConfig: mocks.loadConfig,
+  readBestEffortConfig: vi.fn(async () => mocks.loadConfig()),
+  resolveGatewayPort: vi.fn(() => 18789),
+}));
+vi.mock("../daemon/service.js", () => ({
+  resolveGatewayService: mocks.resolveGatewayService,
+}));
 vi.mock("../daemon/node-service.js", () => ({
   resolveNodeService: mocks.resolveNodeService,
 }));
@@ -493,6 +526,72 @@ const runtime = {
 };
 
 const runtimeLogMock = runtime.log as Mock<(...args: unknown[]) => void>;
+
+vi.mock("../channels/chat-meta.js", () => {
+  const mockChatChannels = [
+    "telegram",
+    "whatsapp",
+    "discord",
+    "irc",
+    "googlechat",
+    "slack",
+    "signal",
+    "imessage",
+    "line",
+  ] as const;
+  const entries = mockChatChannels.map((id) => ({
+    id,
+    label: id,
+    selectionLabel: id,
+    docsPath: `/channels/${id}`,
+    blurb: "mock",
+  }));
+  const byId = Object.fromEntries(entries.map((entry) => [entry.id, entry]));
+  return {
+    CHAT_CHANNEL_ALIASES: {},
+    listChatChannels: () => entries,
+    listChatChannelAliases: () => [],
+    getChatChannelMeta: (id: (typeof mockChatChannels)[number]) => byId[id],
+    normalizeChatChannelId: (raw?: string | null) => {
+      const value = raw?.trim().toLowerCase();
+      return mockChatChannels.includes(value as (typeof mockChatChannels)[number])
+        ? (value as (typeof mockChatChannels)[number])
+        : null;
+    },
+  };
+});
+vi.mock("./status.daemon.js", () => ({
+  getDaemonStatusSummary: vi.fn(async () => {
+    const service = mocks.resolveGatewayService();
+    const loaded = await service.isLoaded();
+    const runtime = await service.readRuntime();
+    const command = await service.readCommand();
+    return {
+      label: service.label,
+      installed: Boolean(command) || runtime?.status === "running",
+      loaded,
+      managedByOpenClaw: Boolean(command),
+      externallyManaged: !command && runtime?.status === "running",
+      loadedText: loaded ? service.loadedText : service.notLoadedText,
+      runtimeShort: runtime?.pid ? `pid ${runtime.pid}` : null,
+    };
+  }),
+  getNodeDaemonStatusSummary: vi.fn(async () => {
+    const service = mocks.resolveNodeService();
+    const loaded = await service.isLoaded();
+    const runtime = await service.readRuntime();
+    const command = await service.readCommand();
+    return {
+      label: service.label,
+      installed: Boolean(command) || runtime?.status === "running",
+      loaded,
+      managedByOpenClaw: Boolean(command),
+      externallyManaged: !command && runtime?.status === "running",
+      loadedText: loaded ? service.loadedText : service.notLoadedText,
+      runtimeShort: runtime?.pid ? `pid ${runtime.pid}` : null,
+    };
+  }),
+}));
 
 describe("statusCommand", () => {
   afterEach(() => {
@@ -622,8 +721,7 @@ describe("statusCommand", () => {
     expect(payload.sessions.recent[0].totalTokensFresh).toBe(true);
     expect(payload.sessions.recent[0].remainingTokens).toBe(5000);
     expect(payload.sessions.recent[0].flags).toContain("verbose:on");
-    expect(payload.securityAudit.summary.critical).toBe(1);
-    expect(payload.securityAudit.summary.warn).toBe(1);
+    expect(payload.securityAudit).toBeUndefined();
     expect(payload.gatewayService.label).toBe("LaunchAgent");
     expect(payload.nodeService.label).toBe("LaunchAgent");
     expect(payload.pluginCompatibility).toEqual({
@@ -637,6 +735,17 @@ describe("statusCommand", () => {
         byStatus: expect.objectContaining({ queued: 0, running: 0 }),
       }),
     );
+    expect(mocks.runSecurityAudit).not.toHaveBeenCalled();
+  });
+
+  it("includes security audit in JSON when all is requested", async () => {
+    mocks.hasPotentialConfiguredChannels.mockReturnValue(false);
+
+    await statusCommand({ json: true, all: true }, runtime as never);
+
+    const payload = JSON.parse(String(runtimeLogMock.mock.calls[0]?.[0]));
+    expect(payload.securityAudit.summary.critical).toBe(1);
+    expect(payload.securityAudit.summary.warn).toBe(1);
     expect(mocks.runSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         includeFilesystem: true,
@@ -704,6 +813,13 @@ describe("statusCommand", () => {
           line.includes("openclaw --profile isolated status --all"),
       ),
     ).toBe(true);
+  });
+
+  it("shows explicit cache details in verbose session output", async () => {
+    const logs = await runStatusAndGetLogs({ verbose: true });
+    expect(logs.some((line) => line.includes("Cache"))).toBe(true);
+    expect(logs.some((line) => line.includes("40% hit"))).toBe(true);
+    expect(logs.some((line) => line.includes("read 2.0k"))).toBe(true);
   });
 
   it("shows a maintenance hint when task audit errors are present", async () => {
@@ -1016,5 +1132,185 @@ describe("statusCommand", () => {
     if (originalLoadSessionStore) {
       mocks.loadSessionStore.mockImplementation(originalLoadSessionStore);
     }
+  });
+});
+
+// --- Session grouping tests (PR #16831) ---
+
+import { classifySessionType, groupSessions } from "./status.summary.js";
+import type { SessionStatus } from "./status.types.js";
+
+// Helper to create mock sessions for testing
+const createMockSession = (
+  key: string,
+  sessionType: "main" | "cronJob" | "cronRun" | "other",
+): SessionStatus => ({
+  key,
+  sessionType,
+  kind: "direct",
+  updatedAt: Date.now(),
+  age: 0,
+  totalTokens: 0,
+  totalTokensFresh: false,
+  remainingTokens: null,
+  percentUsed: null,
+  model: null,
+  contextTokens: null,
+  flags: [],
+});
+
+describe("Session Type Classification", () => {
+  describe("main sessions", () => {
+    it("classifies agent:main:main as main", () => {
+      expect(classifySessionType("agent:main:main", "direct")).toBe("main");
+    });
+
+    it("classifies simple direct sessions as main", () => {
+      expect(classifySessionType("agent:main:direct", "direct")).toBe("main");
+      expect(classifySessionType("agent:worker:session123", "direct")).toBe("main");
+      expect(classifySessionType("agent:custom:simple", "direct")).toBe("main");
+    });
+
+    it("classifies per-peer direct sessions as main", () => {
+      expect(classifySessionType("agent:main:direct:peer123", "direct")).toBe("main");
+      expect(classifySessionType("agent:main:direct:user456", "direct")).toBe("main");
+    });
+
+    it("classifies channel-specific direct sessions as main", () => {
+      expect(classifySessionType("agent:main:line:direct:peer123", "direct")).toBe("main");
+    });
+  });
+
+  describe("cron job definitions", () => {
+    it("classifies agent:main:cron:abc123 as cronJob", () => {
+      expect(classifySessionType("agent:main:cron:abc123", "direct")).toBe("cronJob");
+    });
+
+    it("classifies cron with UUID as cronJob", () => {
+      expect(
+        classifySessionType("agent:main:cron:4dbb2a6a-c68c-4a8d-9a4a-796f8ec32945", "direct"),
+      ).toBe("cronJob");
+    });
+  });
+
+  describe("cron run history", () => {
+    it("classifies agent:main:cron:abc123:run:def456 as cronRun", () => {
+      expect(classifySessionType("agent:main:cron:abc123:run:def456", "direct")).toBe("cronRun");
+    });
+
+    it("uses canonical isCronRunSessionKey for detection", () => {
+      expect(
+        classifySessionType(
+          "agent:main:cron:4dbb2a6a-c68c-4a8d-9a4a-796f8ec32945:run:c8d4f669-e70f-474a-b3ca-c418f600b899",
+          "direct",
+        ),
+      ).toBe("cronRun");
+    });
+  });
+
+  describe("other sessions", () => {
+    it("classifies group sessions as other", () => {
+      expect(classifySessionType("agent:main:group:discord", "group")).toBe("other");
+      expect(classifySessionType("agent:main:group:telegram", "group")).toBe("other");
+    });
+
+    it("classifies channel sessions as other", () => {
+      expect(classifySessionType("agent:main:channel:slack", "group")).toBe("other");
+    });
+
+    it("classifies subagent sessions as other", () => {
+      expect(classifySessionType("agent:main:subagent:task1", "direct")).toBe("other");
+    });
+
+    it("classifies acp sessions as other", () => {
+      expect(classifySessionType("agent:main:acp:session1", "direct")).toBe("other");
+    });
+
+    it("classifies non-agent keys as other", () => {
+      expect(classifySessionType("global")).toBe("other");
+      expect(classifySessionType("unknown")).toBe("other");
+      expect(classifySessionType("")).toBe("other");
+      expect(classifySessionType("invalid")).toBe("other");
+    });
+  });
+});
+
+describe("Session Grouping", () => {
+  it("groups sessions by type correctly", () => {
+    const sessions: SessionStatus[] = [
+      createMockSession("agent:main:main", "main"),
+      createMockSession("agent:main:direct:peer1", "main"),
+      createMockSession("agent:main:cron:job1", "cronJob"),
+      createMockSession("agent:main:cron:job1:run:1", "cronRun"),
+      createMockSession("agent:main:group:discord", "other"),
+    ];
+
+    const grouped = groupSessions(sessions);
+
+    expect(grouped.active.count).toBe(2);
+    expect(grouped.active.sessions).toHaveLength(2);
+    expect(grouped.cronJobs.count).toBe(1);
+    expect(grouped.cronRuns.count).toBe(1);
+    expect(grouped.other.count).toBe(1);
+  });
+
+  it("does not collapse cron runs when count <= 20", () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      createMockSession(`agent:main:cron:job:run:${i}`, "cronRun"),
+    );
+
+    const grouped = groupSessions(sessions);
+
+    expect(grouped.cronRuns.collapsed).toBe(false);
+    expect(grouped.cronRuns.count).toBe(20);
+    expect(grouped.cronRuns.sessions).toHaveLength(20);
+  });
+
+  it("collapses cron runs when count > 20", () => {
+    const sessions = Array.from({ length: 50 }, (_, i) =>
+      createMockSession(`agent:main:cron:job:run:${i}`, "cronRun"),
+    );
+
+    const grouped = groupSessions(sessions);
+
+    expect(grouped.cronRuns.collapsed).toBe(true);
+    expect(grouped.cronRuns.count).toBe(50);
+    expect(grouped.cronRuns.sessions).toHaveLength(5);
+  });
+
+  it("never collapses active or cronJobs groups", () => {
+    const sessions = [
+      ...Array.from({ length: 100 }, (_, i) => createMockSession(`agent:main:main${i}`, "main")),
+      ...Array.from({ length: 50 }, (_, i) =>
+        createMockSession(`agent:main:cron:job${i}`, "cronJob"),
+      ),
+    ];
+
+    const grouped = groupSessions(sessions);
+
+    expect(grouped.active.collapsed).toBe(false);
+    expect(grouped.active.count).toBe(100);
+    expect(grouped.active.sessions).toHaveLength(100);
+    expect(grouped.cronJobs.collapsed).toBe(false);
+    expect(grouped.cronJobs.count).toBe(50);
+    expect(grouped.cronJobs.sessions).toHaveLength(50);
+  });
+
+  it("handles empty sessions", () => {
+    const grouped = groupSessions([]);
+
+    expect(grouped.active.count).toBe(0);
+    expect(grouped.cronJobs.count).toBe(0);
+    expect(grouped.cronRuns.count).toBe(0);
+    expect(grouped.other.count).toBe(0);
+  });
+
+  it("preserves correct labels", () => {
+    const grouped = groupSessions([]);
+
+    expect(grouped.active.label).toBe("Active");
+    expect(grouped.cronJobs.label).toBe("Cron Jobs");
+    expect(grouped.cronRuns.label).toBe("Recent Runs");
+    expect(grouped.other.label).toBe("Other");
   });
 });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { parseBooleanValue } from "./boolean.js";
-import { isReasoningTagProvider } from "./provider-utils.js";
 import { splitShellArgs } from "./shell-argv.js";
 
 describe("parseBooleanValue", () => {
@@ -35,55 +34,39 @@ describe("parseBooleanValue", () => {
     ).toBe(true);
   });
 
+  it("handles case-insensitive custom truthy/falsy lists", () => {
+    expect(
+      parseBooleanValue("yes", {
+        truthy: ["YES"],
+      }),
+    ).toBe(true);
+    expect(
+      parseBooleanValue("NO", {
+        falsy: ["no"],
+      }),
+    ).toBe(false);
+  });
+
+  it("handles non-string entries in custom truthy/falsy lists gracefully", () => {
+    expect(
+      parseBooleanValue("true", {
+        // @ts-expect-error - testing runtime robustness for untyped inputs
+        truthy: [1, "TRUE", null],
+      }),
+    ).toBe(true);
+  });
+
   it("returns undefined for unsupported values", () => {
     expect(parseBooleanValue("")).toBeUndefined();
     expect(parseBooleanValue("maybe")).toBeUndefined();
     expect(parseBooleanValue(1)).toBeUndefined();
   });
-});
 
-describe("isReasoningTagProvider", () => {
-  it.each([
-    {
-      name: "returns false for ollama - native reasoning field, no tags needed (#2279)",
-      value: "ollama",
-      expected: false,
-    },
-    {
-      name: "returns false for case-insensitive ollama",
-      value: "Ollama",
-      expected: false,
-    },
-    {
-      name: "returns true for google (gemini-api-key auth provider)",
-      value: "google",
-      expected: true,
-    },
-    {
-      name: "returns true for Google (case-insensitive)",
-      value: "Google",
-      expected: true,
-    },
-    { name: "returns true for google-gemini-cli", value: "google-gemini-cli", expected: true },
-    {
-      name: "returns true for google-generative-ai",
-      value: "google-generative-ai",
-      expected: true,
-    },
-    { name: "returns true for minimax", value: "minimax", expected: true },
-    { name: "returns true for minimax-cn", value: "minimax-cn", expected: true },
-    { name: "returns false for null", value: null, expected: false },
-    { name: "returns false for undefined", value: undefined, expected: false },
-    { name: "returns false for empty", value: "", expected: false },
-    { name: "returns false for anthropic", value: "anthropic", expected: false },
-    { name: "returns false for openai", value: "openai", expected: false },
-    { name: "returns false for openrouter", value: "openrouter", expected: false },
-  ] satisfies Array<{
-    name: string;
-    value: string | null | undefined;
-    expected: boolean;
-  }>)("$name", ({ value, expected }) => {
-    expect(isReasoningTagProvider(value)).toBe(expected);
+  it("handles malformed truthy/falsy options without crashing", () => {
+    // @ts-expect-error - testing malformed input
+    expect(parseBooleanValue("yes", { truthy: "YES" })).toBeUndefined();
+    // @ts-expect-error - testing malformed input
+    expect(parseBooleanValue("no", { falsy: { not: "an array" } })).toBeUndefined();
   });
 });
 

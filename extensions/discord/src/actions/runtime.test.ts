@@ -1,6 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { DiscordActionConfig } from "openclaw/plugin-sdk/config-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearPresences, setPresence } from "../monitor/presence-cache.js";
 import { discordGuildActionRuntime, handleDiscordGuildAction } from "./runtime.guild.js";
 import { handleDiscordAction } from "./runtime.js";
 import {
@@ -88,6 +89,7 @@ const moderationEnabled = (key: keyof DiscordActionConfig) => key === "moderatio
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearPresences();
   Object.assign(
     discordMessagingActionRuntime,
     originalDiscordMessagingActionRuntime,
@@ -129,6 +131,36 @@ describe("handleDiscordMessagingAction", () => {
       return;
     }
     expect(reactMessageDiscord).toHaveBeenCalledWith("C1", "M1", "✅", {});
+  });
+
+  it("uses configured defaultAccount when cfg is provided and accountId is omitted", async () => {
+    await handleDiscordMessagingAction(
+      "react",
+      {
+        channelId: "C1",
+        messageId: "M1",
+        emoji: "✅",
+      },
+      enableAllActions,
+      undefined,
+      {
+        channels: {
+          discord: {
+            defaultAccount: "work",
+            accounts: {
+              work: { token: "token-work" },
+            },
+          },
+        },
+      } as OpenClawConfig,
+    );
+
+    expect(reactMessageDiscord).toHaveBeenCalledWith(
+      "C1",
+      "M1",
+      "✅",
+      expect.objectContaining({ accountId: "work" }),
+    );
   });
 
   it("removes reactions on empty emoji", async () => {
@@ -457,6 +489,52 @@ describe("handleDiscordMessagingAction", () => {
   });
 });
 
+describe("handleDiscordGuildAction", () => {
+  it("uses configured defaultAccount for omitted memberInfo presence lookup", async () => {
+    setPresence("work", "U1", {
+      user: { id: "U1" },
+      guild_id: "G1",
+      status: "online",
+      activities: [],
+      client_status: {},
+    } as never);
+
+    discordGuildActionRuntime.fetchMemberInfoDiscord = vi.fn(async () => ({
+      user: { id: "U1" },
+    })) as never;
+
+    const result = await handleDiscordGuildAction(
+      "memberInfo",
+      {
+        guildId: "G1",
+        userId: "U1",
+      },
+      enableAllActions,
+      {
+        channels: {
+          discord: {
+            defaultAccount: "work",
+            accounts: {
+              work: { token: "token-work" },
+            },
+          },
+        },
+      } as OpenClawConfig,
+    );
+
+    expect(discordGuildActionRuntime.fetchMemberInfoDiscord).toHaveBeenCalledWith("G1", "U1", {
+      accountId: "work",
+    });
+    expect(result.details).toEqual(
+      expect.objectContaining({
+        ok: true,
+        status: "online",
+        activities: [],
+      }),
+    );
+  });
+});
+
 const channelsEnabled = (key: keyof DiscordActionConfig) => key === "channels";
 const channelsDisabled = () => false;
 
@@ -576,6 +654,23 @@ describe("handleDiscordGuildAction - channel management", () => {
       locked: undefined,
       autoArchiveDuration: undefined,
     });
+  });
+
+  it("forwards appliedTags to channelEdit", async () => {
+    await handleDiscordGuildAction(
+      "channelEdit",
+      {
+        channelId: "C1",
+        appliedTags: ["tag1", "tag2"],
+      },
+      channelsEnabled,
+    );
+    expect(editChannelDiscord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: "C1",
+        appliedTags: ["tag1", "tag2"],
+      }),
+    );
   });
 
   it("deletes a channel", async () => {

@@ -3,10 +3,13 @@ package ai.openclaw.app
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import ai.openclaw.app.chat.ChatMessage
 import ai.openclaw.app.chat.ChatPendingToolCall
-import ai.openclaw.app.chat.ChatSessionEntry
+import ai.openclaw.android.gateway.ChatSessionEntry
+import ai.openclaw.app.gateway.GatewayConnectAuth
+import ai.openclaw.app.gateway.GatewayTrustPrompt
 import ai.openclaw.app.chat.OutgoingAttachment
 import ai.openclaw.app.gateway.GatewayEndpoint
 import ai.openclaw.app.node.CameraCaptureManager
@@ -22,11 +25,22 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(
+  app: Application,
+  private val savedStateHandle: SavedStateHandle,
+) : AndroidViewModel(app) {
   private val nodeApp = app as NodeApp
   private val prefs = nodeApp.prefs
   private val runtimeRef = MutableStateFlow<NodeRuntime?>(null)
   private var foreground = true
+  private val _requestedHomeDestination =
+    MutableStateFlow(savedStateHandle.get<String>(requestedHomeDestinationStateKey)?.let(::decodeHomeDestination))
+  val requestedHomeDestination: StateFlow<HomeDestination?> = _requestedHomeDestination
+  private val _chatDraft = MutableStateFlow(savedStateHandle.get<String>(chatDraftStateKey))
+  val chatDraft: StateFlow<String?> = _chatDraft
+  private val _pendingAssistantAutoSend =
+    MutableStateFlow(savedStateHandle.get<String>(pendingAssistantAutoSendStateKey))
+  val pendingAssistantAutoSend: StateFlow<String?> = _pendingAssistantAutoSend
 
   private fun ensureRuntime(): NodeRuntime {
     runtimeRef.value?.let { return it }
@@ -73,7 +87,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   val statusText: StateFlow<String> = runtimeState(initial = "Offline") { it.statusText }
   val serverName: StateFlow<String?> = runtimeState(initial = null) { it.serverName }
   val remoteAddress: StateFlow<String?> = runtimeState(initial = null) { it.remoteAddress }
-  val pendingGatewayTrust: StateFlow<NodeRuntime.GatewayTrustPrompt?> = runtimeState(initial = null) { it.pendingGatewayTrust }
+  val pendingGatewayTrust: StateFlow<GatewayTrustPrompt?> = runtimeState(initial = null) { it.pendingGatewayTrust }
   val seamColorArgb: StateFlow<Long> = runtimeState(initial = 0xFF0EA5E9) { it.seamColorArgb }
   val mainSessionKey: StateFlow<String> = runtimeState(initial = "main") { it.mainSessionKey }
 
@@ -246,6 +260,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     ensureRuntime().setVoiceScreenActive(active)
   }
 
+  fun handleAssistantLaunch(request: AssistantLaunchRequest) {
+    setRequestedHomeDestination(HomeDestination.Chat)
+    if (request.autoSend) {
+      setPendingAssistantAutoSend(request.prompt)
+      setChatDraft(null)
+      return
+    }
+    setPendingAssistantAutoSend(null)
+    setChatDraft(request.prompt)
+  }
+
+  fun clearRequestedHomeDestination() {
+    setRequestedHomeDestination(null)
+  }
+
+  fun clearChatDraft() {
+    setChatDraft(null)
+  }
+
+  fun clearPendingAssistantAutoSend() {
+    setPendingAssistantAutoSend(null)
+  }
+
+  private fun setRequestedHomeDestination(value: HomeDestination?) {
+    _requestedHomeDestination.value = value
+    savedStateHandle[requestedHomeDestinationStateKey] = value?.name
+  }
+
+  private fun setChatDraft(value: String?) {
+    _chatDraft.value = value
+    savedStateHandle[chatDraftStateKey] = value
+  }
+
+  private fun setPendingAssistantAutoSend(value: String?) {
+    _pendingAssistantAutoSend.value = value
+    savedStateHandle[pendingAssistantAutoSendStateKey] = value
+  }
+
   fun setMicEnabled(enabled: Boolean) {
     ensureRuntime().setMicEnabled(enabled)
   }
@@ -270,7 +322,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   ) {
     ensureRuntime().connect(
       endpoint,
-      NodeRuntime.GatewayConnectAuth(
+      GatewayConnectAuth(
         token = token,
         bootstrapToken = bootstrapToken,
         password = password,
@@ -336,5 +388,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun sendChat(message: String, thinking: String, attachments: List<OutgoingAttachment>) {
     ensureRuntime().sendChat(message = message, thinking = thinking, attachments = attachments)
+  }
+
+  suspend fun sendChatAwaitAcceptance(
+    message: String,
+    thinking: String,
+    attachments: List<OutgoingAttachment>,
+  ): Boolean {
+    return ensureRuntime().sendChatAwaitAcceptance(
+      message = message,
+      thinking = thinking,
+      attachments = attachments,
+    )
+  }
+
+  private companion object {
+    const val requestedHomeDestinationStateKey = "requestedHomeDestination"
+    const val chatDraftStateKey = "chatDraft"
+    const val pendingAssistantAutoSendStateKey = "pendingAssistantAutoSend"
+
+    fun decodeHomeDestination(value: String): HomeDestination? {
+      return enumValues<HomeDestination>().firstOrNull { it.name == value }
+    }
   }
 }

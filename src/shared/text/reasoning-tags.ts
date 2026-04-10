@@ -2,9 +2,10 @@ import { findCodeRegions, isInsideCode } from "./code-regions.js";
 export type ReasoningTagMode = "strict" | "preserve";
 export type ReasoningTagTrim = "none" | "start" | "both";
 
-const QUICK_TAG_RE = /<\s*\/?\s*(?:think(?:ing)?|thought|antthinking|final)\b/i;
+const QUICK_TAG_RE = /<\s*\/?\s*(?:(?:antml:)?(?:think(?:ing)?|thought)|antthinking|final)\b/i;
 const FINAL_TAG_RE = /<\s*\/?\s*final\b[^<>]*>/gi;
-const THINKING_TAG_RE = /<\s*(\/?)\s*(?:think(?:ing)?|thought|antthinking)\b[^<>]*>/gi;
+const THINKING_TAG_RE =
+  /<\s*(\/?)\s*(?:(?:antml:)?(?:think(?:ing)?|thought)|antthinking)\b[^<>]*>/gi;
 
 function applyTrim(value: string, mode: ReasoningTagTrim): string {
   if (mode === "none") {
@@ -21,6 +22,10 @@ export function stripReasoningTagsFromText(
   options?: {
     mode?: ReasoningTagMode;
     trim?: ReasoningTagTrim;
+    /** When true, an unclosed `<think>` after non-empty content is treated as
+     *  literal text rather than a reasoning block start. Use for final/complete
+     *  text; leave false for streaming partials where an unclosed tag is normal. */
+    finalText?: boolean;
   },
 ): string {
   if (!text) {
@@ -32,6 +37,7 @@ export function stripReasoningTagsFromText(
 
   const mode = options?.mode ?? "strict";
   const trimMode = options?.trim ?? "both";
+  const finalText = options?.finalText ?? false;
 
   let cleaned = text;
   if (FINAL_TAG_RE.test(cleaned)) {
@@ -63,6 +69,9 @@ export function stripReasoningTagsFromText(
   let result = "";
   let lastIndex = 0;
   let inThinking = false;
+  // Track position of the last unclosed opening tag so we can restore it when
+  // the tag is a literal mention in final text (no closing tag follows).
+  let unclosedOpenTagStart = -1;
 
   for (const match of cleaned.matchAll(THINKING_TAG_RE)) {
     const idx = match.index ?? 0;
@@ -76,9 +85,11 @@ export function stripReasoningTagsFromText(
       result += cleaned.slice(lastIndex, idx);
       if (!isClose) {
         inThinking = true;
+        unclosedOpenTagStart = idx;
       }
     } else if (isClose) {
       inThinking = false;
+      unclosedOpenTagStart = -1;
     }
 
     lastIndex = idx + match[0].length;
@@ -86,6 +97,29 @@ export function stripReasoningTagsFromText(
 
   if (!inThinking || mode === "preserve") {
     result += cleaned.slice(lastIndex);
+  } else if (finalText && result.trim().length > 0 && unclosedOpenTagStart >= 0) {
+    // In final text: an unclosed <think> that appears after meaningful content
+    // is a literal mention, not a reasoning block. Restore the tag and trailing text.
+    result += cleaned.slice(unclosedOpenTagStart);
+  }
+
+  // Handle bare "thought\n" duplication (Gemini 3.0 Flash, no XML tags)
+  if (mode === "strict" && /\bthought\b/i.test(result)) {
+    const lowerResult = result.toLowerCase();
+    const thoughtMatch = lowerResult.match(/\bthought\b\s*\n/i);
+    if (thoughtMatch) {
+      const thoughtIdx = thoughtMatch.index!;
+      const prefix = result.slice(0, thoughtIdx).trimEnd();
+      const thoughtLen = thoughtMatch[0].length;
+      const suffixStart = thoughtIdx + thoughtLen;
+      const suffix = result.slice(suffixStart).trimStart();
+      // Normalize: strip trailing non-alphanum/ws from prefix, leading ws from suffix
+      const normPrefix = prefix.replace(/[\\s\\W]*$/g, '');
+      const normSuffix = suffix.replace(/^\\s+/, '');
+      if (normPrefix === normSuffix && prefix.trim()) {
+        result = prefix;
+      }
+    }
   }
 
   return applyTrim(result, trimMode);

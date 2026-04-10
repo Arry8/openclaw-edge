@@ -2,59 +2,62 @@ import crypto from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { normalizeAgentId, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { SESSION_LABEL_MAX_LENGTH } from "../../sessions/session-label.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
   type GatewayMessageChannel,
   INTERNAL_MESSAGE_CHANNEL,
 } from "../../utils/message-channel.js";
 import { AGENT_LANE_NESTED } from "../lanes.js";
+import {
+  readLatestAssistantReplySnapshot,
+  waitForAgentRunAndReadUpdatedAssistantReply,
+} from "../run-wait.js";
+import {
+  describeSessionsSendTool,
+  SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
+} from "../tool-description-presets.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam } from "./common.js";
 import {
   createSessionVisibilityGuard,
   createAgentToAgentPolicy,
-  extractAssistantText,
   resolveEffectiveSessionToolsVisibility,
   resolveSessionReference,
   resolveSessionToolContext,
   resolveVisibleSessionReference,
-  stripToolMessages,
 } from "./sessions-helpers.js";
 import { buildAgentToAgentMessageContext, resolvePingPongTurns } from "./sessions-send-helpers.js";
 import { runSessionsSendA2AFlow } from "./sessions-send-tool.a2a.js";
 
 const SessionsSendToolSchema = Type.Object({
-  sessionKey: Type.Optional(Type.String()),
-  label: Type.Optional(Type.String({ minLength: 1, maxLength: SESSION_LABEL_MAX_LENGTH })),
-  agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  sessionKey: Type.Optional(
+    Type.String({
+      description: "Exact target session key. Preferred when known. Do not also provide label.",
+    }),
+  ),
+  label: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: SESSION_LABEL_MAX_LENGTH,
+      description: "Visible session label to resolve when sessionKey is not available. Do not provide alongside sessionKey.",
+    }),
+  ),
+  agentId: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 64,
+      description: "Optional agent id hint for label-based resolution.",
+    }),
+  ),
   message: Type.String(),
   timeoutSeconds: Type.Optional(Type.Number({ minimum: 0 })),
 });
 
 type GatewayCaller = typeof callGateway;
 const SESSIONS_SEND_REPLY_HISTORY_LIMIT = 50;
-
-function resolveLatestAssistantReplySnapshot(messages: unknown[]): {
-  text?: string;
-  fingerprint?: string;
-} {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    const text = extractAssistantText(message);
-    if (!text) {
-      continue;
-    }
-    let fingerprint: string | undefined;
-    try {
-      fingerprint = JSON.stringify(message);
-    } catch {
-      fingerprint = text;
-    }
-    return { text, fingerprint };
-  }
-  return {};
-}
 
 async function startAgentRun(params: {
   callGateway: GatewayCaller;
@@ -97,8 +100,8 @@ export function createSessionsSendTool(opts?: {
   return {
     label: "Session Send",
     name: "sessions_send",
-    description:
-      "Send a message into another session. Use sessionKey or label to identify the target.",
+    displaySummary: SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
+    description: describeSessionsSendTool(),
     parameters: SessionsSendToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
@@ -114,8 +117,8 @@ export function createSessionsSendTool(opts?: {
       });
 
       const sessionKeyParam = readStringParam(params, "sessionKey");
-      const labelParam = readStringParam(params, "label")?.trim() || undefined;
-      const labelAgentIdParam = readStringParam(params, "agentId")?.trim() || undefined;
+      const labelParam = normalizeOptionalString(readStringParam(params, "label"));
+      const labelAgentIdParam = normalizeOptionalString(readStringParam(params, "agentId"));
       if (sessionKeyParam && labelParam) {
         return jsonResult({
           runId: crypto.randomUUID(),
@@ -125,21 +128,18 @@ export function createSessionsSendTool(opts?: {
       }
 
       let sessionKey = sessionKeyParam;
+      let isCrossAgent = false;
       if (!sessionKey && labelParam) {
         const requesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey);
         const requestedAgentId = labelAgentIdParam
           ? normalizeAgentId(labelAgentIdParam)
           : undefined;
 
-        if (restrictToSpawned && requestedAgentId && requestedAgentId !== requesterAgentId) {
-          return jsonResult({
-            runId: crypto.randomUUID(),
-            status: "forbidden",
-            error: "Sandboxed sessions_send label lookup is limited to this agent",
-          });
-        }
-
-        if (requesterAgentId && requestedAgentId && requestedAgentId !== requesterAgentId) {
+        // For cross-agent sends, check a2aPolicy first (applies to both sandboxed and non-sandboxed)
+        isCrossAgent = Boolean(
+          requesterAgentId && requestedAgentId && requestedAgentId !== requesterAgentId,
+        );
+        if (isCrossAgent && requesterAgentId && requestedAgentId) {
           if (!a2aPolicy.enabled) {
             return jsonResult({
               runId: crypto.randomUUID(),
@@ -157,10 +157,16 @@ export function createSessionsSendTool(opts?: {
           }
         }
 
+        // For sandboxed agents, cross-agent messaging is allowed if a2aPolicy permits it (checked above).
+        // For same-agent sends, restrictToSpawned still limits lookup to sessions spawned by this agent.
+        // The original "Sandboxed sessions_send label lookup is limited to this agent" check has been
+        // replaced by the a2aPolicy check to allow properly configured cross-agent messaging.
+
         const resolveParams: Record<string, unknown> = {
           label: labelParam,
           ...(requestedAgentId ? { agentId: requestedAgentId } : {}),
-          ...(restrictToSpawned ? { spawnedBy: effectiveRequesterKey } : {}),
+          // For cross-agent a2a messaging, don't filter by spawnedBy so target agent's sessions are visible
+          ...(restrictToSpawned && !isCrossAgent ? { spawnedBy: effectiveRequesterKey } : {}),
         };
         let resolvedKey = "";
         try {
@@ -169,9 +175,9 @@ export function createSessionsSendTool(opts?: {
             params: resolveParams,
             timeoutMs: 10_000,
           });
-          resolvedKey = typeof resolved?.key === "string" ? resolved.key.trim() : "";
+          resolvedKey = normalizeOptionalString(resolved?.key) ?? "";
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = formatErrorMessage(err);
           if (restrictToSpawned) {
             return jsonResult({
               runId: crypto.randomUUID(),
@@ -215,7 +221,7 @@ export function createSessionsSendTool(opts?: {
         alias,
         mainKey,
         requesterInternalKey: effectiveRequesterKey,
-        restrictToSpawned,
+        restrictToSpawned: restrictToSpawned && !isCrossAgent,
       });
       if (!resolvedSession.ok) {
         return jsonResult({
@@ -227,7 +233,7 @@ export function createSessionsSendTool(opts?: {
       const visibleSession = await resolveVisibleSessionReference({
         resolvedSession,
         requesterSessionKey: effectiveRequesterKey,
-        restrictToSpawned,
+        restrictToSpawned: restrictToSpawned && !isCrossAgent,
         visibilitySessionKey: sessionKey,
       });
       if (!visibleSession.ok) {
@@ -264,6 +270,19 @@ export function createSessionsSendTool(opts?: {
           sessionKey: displayKey,
         });
       }
+
+      // Capture the pre-run assistant snapshot before starting the nested run.
+      // Fast in-process test doubles and short-circuit agent paths can finish
+      // before we reach the post-run read, which would otherwise make the new
+      // reply look like the baseline and hide it from the caller.
+      const baselineReply =
+        timeoutSeconds === 0
+          ? undefined
+          : await readLatestAssistantReplySnapshot({
+              sessionKey: resolvedKey,
+              limit: SESSIONS_SEND_REPLY_HISTORY_LIMIT,
+              callGateway: gatewayCall,
+            });
 
       const agentMessageContext = buildAgentToAgentMessageContext({
         requesterSessionKey: opts?.agentSessionKey,
@@ -333,67 +352,32 @@ export function createSessionsSendTool(opts?: {
         return start.result;
       }
       runId = start.runId;
-
-      const historyBefore = await gatewayCall<{ messages: Array<unknown> }>({
-        method: "chat.history",
-        params: { sessionKey: resolvedKey, limit: SESSIONS_SEND_REPLY_HISTORY_LIMIT },
+      const result = await waitForAgentRunAndReadUpdatedAssistantReply({
+        runId,
+        sessionKey: resolvedKey,
+        timeoutMs,
+        limit: SESSIONS_SEND_REPLY_HISTORY_LIMIT,
+        baseline: baselineReply,
+        callGateway: gatewayCall,
       });
-      const baselineReply = resolveLatestAssistantReplySnapshot(
-        stripToolMessages(Array.isArray(historyBefore?.messages) ? historyBefore.messages : []),
-      );
 
-      let waitStatus: string | undefined;
-      let waitError: string | undefined;
-      try {
-        const wait = await gatewayCall<{ status?: string; error?: string }>({
-          method: "agent.wait",
-          params: {
-            runId,
-            timeoutMs,
-          },
-          timeoutMs: timeoutMs + 2000,
-        });
-        waitStatus = typeof wait?.status === "string" ? wait.status : undefined;
-        waitError = typeof wait?.error === "string" ? wait.error : undefined;
-      } catch (err) {
-        const messageText =
-          err instanceof Error ? err.message : typeof err === "string" ? err : "error";
-        return jsonResult({
-          runId,
-          status: messageText.includes("gateway timeout") ? "timeout" : "error",
-          error: messageText,
-          sessionKey: displayKey,
-        });
-      }
-
-      if (waitStatus === "timeout") {
+      if (result.status === "timeout") {
         return jsonResult({
           runId,
           status: "timeout",
-          error: waitError,
+          error: result.error,
           sessionKey: displayKey,
         });
       }
-      if (waitStatus === "error") {
+      if (result.status === "error") {
         return jsonResult({
           runId,
           status: "error",
-          error: waitError ?? "agent error",
+          error: result.error ?? "agent error",
           sessionKey: displayKey,
         });
       }
-
-      const history = await gatewayCall<{ messages: Array<unknown> }>({
-        method: "chat.history",
-        params: { sessionKey: resolvedKey, limit: SESSIONS_SEND_REPLY_HISTORY_LIMIT },
-      });
-      const latestReply = resolveLatestAssistantReplySnapshot(
-        stripToolMessages(Array.isArray(history?.messages) ? history.messages : []),
-      );
-      const reply =
-        latestReply.text && latestReply.fingerprint !== baselineReply.fingerprint
-          ? latestReply.text
-          : undefined;
+      const reply = result.replyText;
       startA2AFlow(reply ?? undefined);
 
       return jsonResult({

@@ -8,7 +8,14 @@ import {
 } from "./session-transcript-repair.js";
 import { castAgentMessage, castAgentMessages } from "./test-helpers/agent-message-fixtures.js";
 
-const TOOL_CALL_BLOCK_TYPES = new Set(["toolCall", "toolUse", "functionCall"]);
+const TOOL_CALL_BLOCK_TYPES = new Set([
+  "toolCall",
+  "toolUse",
+  "functionCall",
+  "tool_call",
+  "tool_use",
+  "function_call",
+]);
 
 function getAssistantToolCallBlocks(messages: AgentMessage[]) {
   const assistant = messages[0] as Extract<AgentMessage, { role: "assistant" }> | undefined;
@@ -263,6 +270,39 @@ describe("sanitizeToolUseResultPairing", () => {
     expect(result.messages[1]?.role).toBe("user");
     expect(result.added).toHaveLength(0);
   });
+
+  it("pairs tool results whose IDs were sanitized (underscores stripped) by the provider serializer (#52604)", () => {
+    // MiniMax generates IDs like "call_function_0mtm97w4iryj_1" which the Anthropic
+    // serializer sanitizes to "callfunction0mtm97w4iryj1". The repair function must
+    // match these sanitized IDs back to the original tool call IDs.
+    const input = castAgentMessages([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_function_0mtm97w4iryj_1",
+            name: "read",
+            arguments: { path: "/tmp/test" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "callfunction0mtm97w4iryj1",
+        toolName: "read",
+        content: [{ type: "text", text: "file content" }],
+        isError: false,
+      },
+    ]);
+
+    const result = repairToolUseResultPairing(input);
+
+    expect(result.added).toHaveLength(0);
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]?.role).toBe("assistant");
+    expect(result.messages[1]?.role).toBe("toolResult");
+  });
 });
 
 describe("sanitizeToolCallInputs", () => {
@@ -298,6 +338,43 @@ describe("sanitizeToolCallInputs", () => {
     ]);
 
     const out = sanitizeToolCallInputs(input);
+    expect(out.map((m) => m.role)).toEqual(["user"]);
+  });
+
+  it("recognizes snake_case tool call block types (tool_use, tool_call, function_call)", () => {
+    const input = castAgentMessages([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "read", input: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: "read",
+        content: [{ type: "text", text: "ok" }],
+        isError: false,
+      },
+    ]);
+
+    const out = sanitizeToolCallInputs(input);
+    // Both messages should be preserved (tool_use is recognized)
+    expect(out).toHaveLength(2);
+    expect(out[0]?.role).toBe("assistant");
+    const blocks = getAssistantToolCallBlocks(out);
+    expect(blocks).toHaveLength(1);
+  });
+
+  it("drops snake_case tool_use blocks missing input", () => {
+    const input = castAgentMessages([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "read" }],
+      },
+      { role: "user", content: "hello" },
+    ]);
+
+    const out = sanitizeToolCallInputs(input);
+    // The broken tool_use block should be dropped
     expect(out.map((m) => m.role)).toEqual(["user"]);
   });
 
@@ -417,6 +494,56 @@ describe("sanitizeToolCallInputs", () => {
       .map((toolCall) => (toolCall as { name?: unknown }).name)
       .filter((name): name is string => typeof name === "string");
     expect(names).toEqual(expectedNames);
+  });
+
+  it("dedupes duplicate tool calls by id and keeps the first non-empty arguments", () => {
+    const input = castAgentMessages([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "before" },
+          { type: "toolCall", id: "call_exec_1", name: "exec", arguments: { command: "pwd" } },
+          { type: "toolCall", id: "call_exec_1", name: "exec", arguments: {} },
+          { type: "text", text: "after" },
+        ],
+      },
+    ]);
+
+    const out = sanitizeToolCallInputs(input);
+    const assistant = out[0] as Extract<AgentMessage, { role: "assistant" }>;
+    const toolCalls = getAssistantToolCallBlocks(out) as Array<Record<string, unknown>>;
+    const types = Array.isArray(assistant.content)
+      ? assistant.content.map((block) => (block as { type?: unknown }).type)
+      : [];
+
+    expect(types).toEqual(["text", "toolCall", "text"]);
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]?.id).toBe("call_exec_1");
+    expect(toolCalls[0]?.arguments).toEqual({ command: "pwd" });
+  });
+
+  it("dedupes duplicate tool calls by id and prefers a later richer payload", () => {
+    const input = castAgentMessages([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_exec_2", name: "exec", arguments: {} },
+          {
+            type: "toolCall",
+            id: "call_exec_2",
+            name: "exec",
+            arguments: { command: "ls -la" },
+          },
+        ],
+      },
+    ]);
+
+    const out = sanitizeToolCallInputs(input);
+    const toolCalls = getAssistantToolCallBlocks(out) as Array<Record<string, unknown>>;
+
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]?.id).toBe("call_exec_2");
+    expect(toolCalls[0]?.arguments).toEqual({ command: "ls -la" });
   });
 
   it("preserves toolUse input shape for sessions_spawn when no attachments are present", () => {

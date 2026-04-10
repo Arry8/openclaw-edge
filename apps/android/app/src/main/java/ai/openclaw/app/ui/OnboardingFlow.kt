@@ -229,7 +229,7 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
   var manualTls by rememberSaveable { mutableStateOf(false) }
   var gatewayError by rememberSaveable { mutableStateOf<String?>(null) }
   var attemptedConnect by rememberSaveable { mutableStateOf(false) }
-  val canFinishOnboarding = canFinishOnboarding(isConnected = isConnected, isNodeConnected = isNodeConnected)
+  val canFinishOnboarding = canFinishOnboarding(isNodeConnected = isNodeConnected)
 
   val lifecycleOwner = LocalLifecycleOwner.current
   val qrScannerOptions =
@@ -566,12 +566,16 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     if (contents.isEmpty()) {
                       return@addOnSuccessListener
                     }
-                    val scannedSetupCode = resolveScannedSetupCode(contents)
-                    if (scannedSetupCode == null) {
-                      gatewayError = "QR code did not contain a valid setup code."
+                    val scannedSetupCode = resolveScannedSetupCodeResult(contents)
+                    if (scannedSetupCode.setupCode == null) {
+                      gatewayError =
+                        gatewayEndpointValidationMessage(
+                          scannedSetupCode.error ?: GatewayEndpointValidationError.INVALID_URL,
+                          GatewayEndpointInputSource.QR_SCAN,
+                        )
                       return@addOnSuccessListener
                     }
-                    setupCode = scannedSetupCode
+                    setupCode = scannedSetupCode.setupCode
                     gatewayInputMode = GatewayInputMode.SetupCode
                     gatewayError = null
                     attemptedConnect = false
@@ -799,9 +803,13 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                     gatewayError = "Scan QR code first, or use Advanced setup."
                     return@Button
                   }
-                  val parsedGateway = parseGatewayEndpoint(parsedSetup.url)
-                  if (parsedGateway == null) {
-                    gatewayError = "Setup code has invalid gateway URL."
+                  val parsedGateway = parseGatewayEndpointResult(parsedSetup.url)
+                  if (parsedGateway.config == null) {
+                    gatewayError =
+                      gatewayEndpointValidationMessage(
+                        parsedGateway.error ?: GatewayEndpointValidationError.INVALID_URL,
+                        GatewayEndpointInputSource.SETUP_CODE,
+                      )
                     return@Button
                   }
                   gatewayUrl = parsedSetup.url
@@ -819,12 +827,16 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                   }
                 } else {
                   val manualUrl = composeGatewayManualUrl(manualHost, manualPort, manualTls)
-                  val parsedGateway = manualUrl?.let(::parseGatewayEndpoint)
-                  if (parsedGateway == null) {
-                    gatewayError = "Manual endpoint is invalid."
+                  val parsedGateway = manualUrl?.let(::parseGatewayEndpointResult)
+                  if (parsedGateway?.config == null) {
+                    gatewayError =
+                      gatewayEndpointValidationMessage(
+                        parsedGateway?.error ?: GatewayEndpointValidationError.INVALID_URL,
+                        GatewayEndpointInputSource.MANUAL,
+                      )
                     return@Button
                   }
-                  gatewayUrl = parsedGateway.displayUrl
+                  gatewayUrl = parsedGateway.config.displayUrl
                   viewModel.setGatewayBootstrapToken("")
                 }
                 step = OnboardingStep.Permissions
@@ -863,19 +875,23 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
             } else {
               Button(
                 onClick = {
-                  val parsed = parseGatewayEndpoint(gatewayUrl)
-                  if (parsed == null) {
+                  val parsed = parseGatewayEndpointResult(gatewayUrl)
+                  if (parsed.config == null) {
                     step = OnboardingStep.Gateway
-                    gatewayError = "Invalid gateway URL."
+                    gatewayError =
+                      gatewayEndpointValidationMessage(
+                        parsed.error ?: GatewayEndpointValidationError.INVALID_URL,
+                        GatewayEndpointInputSource.MANUAL,
+                      )
                     return@Button
                   }
                   val token = persistedGatewayToken.trim()
                   val password = gatewayPassword.trim()
                   attemptedConnect = true
                   viewModel.setManualEnabled(true)
-                  viewModel.setManualHost(parsed.host)
-                  viewModel.setManualPort(parsed.port)
-                  viewModel.setManualTls(parsed.tls)
+                  viewModel.setManualHost(parsed.config.host)
+                  viewModel.setManualPort(parsed.config.port)
+                  viewModel.setManualTls(parsed.config.tls)
                   if (gatewayInputMode == GatewayInputMode.Manual) {
                     viewModel.setGatewayBootstrapToken("")
                   }
@@ -886,7 +902,7 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                   }
                   viewModel.setGatewayPassword(password)
                   viewModel.connect(
-                    GatewayEndpoint.manual(host = parsed.host, port = parsed.port),
+                    GatewayEndpoint.manual(host = parsed.config.host, port = parsed.config.port),
                     token = token.ifEmpty { null },
                     bootstrapToken =
                       if (gatewayInputMode == GatewayInputMode.SetupCode) {
@@ -911,8 +927,10 @@ fun OnboardingFlow(viewModel: MainViewModel, modifier: Modifier = Modifier) {
   }
 }
 
-internal fun canFinishOnboarding(isConnected: Boolean, isNodeConnected: Boolean): Boolean {
-  return isConnected && isNodeConnected
+internal fun canFinishOnboarding(isNodeConnected: Boolean): Boolean {
+  // Operator connectivity can legitimately lag or be offline after pairing.
+  // Finishing onboarding only needs to prove this device node reached the gateway.
+  return isNodeConnected
 }
 
 @Composable
@@ -1040,7 +1058,7 @@ private fun GatewayStep(
 
   StepShell(title = "Gateway Connection") {
     Text(
-      "Run `openclaw qr` on your gateway host, then scan the code with this device.",
+      "Run `openclaw qr` on your gateway host, then scan the code with this device. For Tailscale or public hosts, use wss:// or Tailscale Serve.",
       style = onboardingCalloutStyle,
       color = onboardingTextSecondary,
     )
@@ -1072,7 +1090,7 @@ private fun GatewayStep(
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text("Advanced setup", style = onboardingHeadlineStyle, color = onboardingText)
-          Text("Paste setup code or enter host/port manually.", style = onboardingCaption1Style, color = onboardingTextSecondary)
+          Text("Paste setup code or enter host/port manually. Private LAN ws:// is supported; Tailscale/public hosts need wss://.", style = onboardingCaption1Style, color = onboardingTextSecondary)
         }
         Icon(
           imageVector = if (advancedOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -1153,7 +1171,11 @@ private fun GatewayStep(
           ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text("Use TLS", style = onboardingHeadlineStyle, color = onboardingText)
-              Text("Switch to secure websocket (`wss`).", style = onboardingCalloutStyle.copy(lineHeight = 18.sp), color = onboardingTextSecondary)
+              Text(
+                "Turn this on for Tailscale or public hosts. Private LAN ws:// remains supported.",
+                style = onboardingCalloutStyle.copy(lineHeight = 18.sp),
+                color = onboardingTextSecondary,
+              )
             }
             Switch(
               checked = manualTls,
@@ -1472,8 +1494,8 @@ private fun PermissionsStep(
     if (smsAvailable) {
       InlineDivider()
       PermissionToggleRow(
-        title = "SMS",
-        subtitle = "Send and search text messages via the gateway",
+        title = "SMS / MMS",
+        subtitle = "Send, search, and read SMS & MMS messages via the gateway",
         checked = enableSms,
         granted =
           isPermissionGranted(context, Manifest.permission.SEND_SMS) ||

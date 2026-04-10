@@ -1,3 +1,4 @@
+import type { Command } from "commander";
 import { vi } from "vitest";
 import * as parentCoreApiModule from "../core-api.js";
 import * as browserCliSharedModule from "./browser-cli-shared.js";
@@ -28,7 +29,25 @@ const browserManageMocks = vi.hoisted(() => ({
           headless: true,
           attachOnly: false,
         }
-      : {},
+      : req.path === "/doctor"
+        ? {
+            ok: true,
+            profile: "openclaw",
+            transport: "cdp",
+            status: {
+              enabled: true,
+              running: true,
+              pid: 1,
+              cdpPort: 18800,
+              chosenBrowser: "chrome",
+              userDataDir: "/tmp/openclaw",
+              color: "blue",
+              headless: true,
+              attachOnly: false,
+            },
+            checks: [],
+          }
+        : {},
   ),
 }));
 
@@ -56,7 +75,7 @@ vi.spyOn(cliCoreApiModule.defaultRuntime, "exit").mockImplementation(browserCliR
 
 const { registerBrowserManageCommands } = await import("./browser-cli-manage.js");
 
-export function createBrowserManageProgram(params?: { withParentTimeout?: boolean }) {
+export function createBrowserManageProgram(params?: { withParentTimeout?: boolean }): Command {
   const { program, browser, parentOpts } = createBrowserProgram();
   if (params?.withParentTimeout) {
     browser.option("--timeout <ms>", "Timeout in ms", "30000");

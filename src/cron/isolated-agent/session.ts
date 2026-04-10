@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import { clearBootstrapSnapshotOnSessionRollover } from "../../agents/bootstrap-cache.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import { resolveStorePath } from "../../config/sessions/paths.js";
 import {
   evaluateSessionFreshness,
-  loadSessionStore,
   resolveSessionResetPolicy,
-  resolveStorePath,
-  type SessionEntry,
-} from "../../config/sessions.js";
+} from "../../config/sessions/reset.js";
+import { loadSessionStore } from "../../config/sessions/store.js";
+import type { SessionEntry } from "../../config/sessions/types.js";
 
 export function resolveCronSession(params: {
   cfg: OpenClawConfig;
@@ -15,12 +15,18 @@ export function resolveCronSession(params: {
   nowMs: number;
   agentId: string;
   forceNew?: boolean;
+  payloadModel?: string;
+  isCronOwnedSession?: boolean;
 }) {
   const sessionCfg = params.cfg.session;
   const storePath = resolveStorePath(sessionCfg?.store, {
     agentId: params.agentId,
   });
-  const store = loadSessionStore(storePath);
+  // Skip cache: cron sessions must always read fresh data so that /model overrides
+  // and other session-store writes (e.g. from concurrent agents) are visible
+  // immediately. Stale mtime-based cache hits can mask store updates that happen
+  // within the same millisecond on fast machines.
+  const store = loadSessionStore(storePath, { skipCache: true });
   const entry = store[params.sessionKey];
 
   // Check if we can reuse an existing session
@@ -67,6 +73,9 @@ export function resolveCronSession(params: {
   const sessionEntry: SessionEntry = {
     // Preserve existing per-session overrides even when rolling to a new sessionId.
     ...entry,
+    ...(isNewSession && {
+      sessionFile: undefined,
+    }),
     // Always update these core fields
     sessionId,
     updatedAt: params.nowMs,
@@ -83,7 +92,43 @@ export function resolveCronSession(params: {
       lastAccountId: undefined,
       lastThreadId: undefined,
       deliveryContext: undefined,
+      sessionFile: undefined,
     }),
+    // When an isolated cron session specifies its own payload model, clear
+    // model-selection overrides inherited from prior sessions.  Without
+    // this, stale providerOverride / modelOverride copied via the spread
+    // above forces the cron run to retry against a rate-limited provider
+    // before the payload model's fallback chain kicks in.
+    //
+    // The guard requires all three conditions:
+    //   - forceNew: scoped to isolated sessions so that shared session
+    //     targets — which persist back to the interactive session entry —
+    //     never lose user-set overrides.
+    //   - payloadModel: only clear when the cron job specifies its own
+    //     model (backward compatibility).
+    //   - isCronOwnedSession: derived from the deliveryContract — true
+    //     only for cron-scheduler-dispatched jobs (deliveryContract
+    //     "cron-owned" / undefined), false for hook-dispatched jobs
+    //     (deliveryContract "shared").  This explicit ownership signal
+    //     avoids the fragility of session-key prefix matching: hook
+    //     dispatchers can use configurable session keys that happen to
+    //     start with "cron:", which would misclassify a shared hook run
+    //     as cron-owned and silently clear user-set /model state.
+    //
+    // Note: authProfileOverride and its companion fields are intentionally
+    // NOT cleared here — resolveSessionAuthProfileOverride() uses the
+    // previous value to rotate across profiles via pickNextAvailable(),
+    // and clearing it would regress round-robin failover for isolated
+    // cron jobs (which always create new sessions).
+    ...(params.forceNew &&
+      params.payloadModel &&
+      params.isCronOwnedSession && {
+        providerOverride: undefined,
+        modelOverride: undefined,
+        fallbackNoticeActiveModel: undefined,
+        fallbackNoticeSelectedModel: undefined,
+        fallbackNoticeReason: undefined,
+      }),
   };
   return { storePath, store, sessionEntry, systemSent, isNewSession };
 }

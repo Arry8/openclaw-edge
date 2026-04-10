@@ -5,12 +5,22 @@ const providerRuntimeMocks = vi.hoisted(() => ({
   resolveProviderModernModelRef: vi.fn(),
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
-  resolveProviderModernModelRef: providerRuntimeMocks.resolveProviderModernModelRef,
-}));
+vi.mock("../plugins/provider-runtime.js", async () => {
+  const actual = await vi.importActual<typeof import("../plugins/provider-runtime.js")>(
+    "../plugins/provider-runtime.js",
+  );
+  return {
+    ...actual,
+    resolveProviderModernModelRef: providerRuntimeMocks.resolveProviderModernModelRef,
+  };
+});
 
 import { normalizeModelCompat } from "../plugins/provider-model-compat.js";
-import { isHighSignalLiveModelRef, isModernModelRef } from "./live-model-filter.js";
+import {
+  isHighSignalLiveModelRef,
+  isModernModelRef,
+  selectHighSignalLiveItems,
+} from "./live-model-filter.js";
 
 const baseModel = (): Model<Api> =>
   ({
@@ -155,6 +165,45 @@ describe("normalizeModelCompat", () => {
       provider: "custom-qwen",
       baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     });
+  });
+
+  it("keeps supportsUsageInStreaming on for native Qwen endpoints", () => {
+    const model = {
+      ...baseModel(),
+      provider: "qwen",
+      baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    };
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsDeveloperRole(normalized)).toBe(false);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+    expect(supportsStrictMode(normalized)).toBe(false);
+  });
+
+  it("keeps supportsUsageInStreaming on for DashScope-compatible endpoints regardless of provider id", () => {
+    const model = {
+      ...baseModel(),
+      provider: "custom-qwen",
+      baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    };
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsDeveloperRole(normalized)).toBe(false);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+    expect(supportsStrictMode(normalized)).toBe(false);
+  });
+
+  it("keeps supportsUsageInStreaming on for Moonshot-native endpoints regardless of provider id", () => {
+    const model = {
+      ...baseModel(),
+      provider: "custom-kimi",
+      baseUrl: "https://api.moonshot.ai/v1",
+    };
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsDeveloperRole(normalized)).toBe(false);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+    expect(supportsStrictMode(normalized)).toBe(false);
   });
 
   it("leaves native api.openai.com model untouched", () => {
@@ -338,6 +387,81 @@ describe("normalizeModelCompat", () => {
   });
 });
 
+describe("normalizeModelCompat — vLLM and SGLang providers", () => {
+  function makeVllmModel(baseUrl: string): Model<Api> {
+    return {
+      id: "Qwen3.5-27B",
+      name: "Qwen3.5-27B",
+      api: "openai-completions",
+      provider: "vllm",
+      baseUrl,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 32768,
+      maxTokens: 4096,
+    } as Model<Api>;
+  }
+
+  function makeSglangModel(baseUrl: string): Model<Api> {
+    return {
+      ...makeVllmModel(baseUrl),
+      provider: "sglang",
+    } as Model<Api>;
+  }
+
+  it("defaults supportsUsageInStreaming to true for vLLM self-hosted endpoints", () => {
+    const model = makeVllmModel("http://192.168.88.35:9090/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+  });
+
+  it("defaults supportsUsageInStreaming to true for vLLM localhost endpoints", () => {
+    const model = makeVllmModel("http://127.0.0.1:8000/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+  });
+
+  it("defaults supportsUsageInStreaming to true for SGLang self-hosted endpoints", () => {
+    const model = makeSglangModel("http://192.168.1.10:30000/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+  });
+
+  it("still forces supportsDeveloperRole off for vLLM endpoints", () => {
+    const model = makeVllmModel("http://192.168.88.35:9090/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsDeveloperRole(normalized)).toBe(false);
+  });
+
+  it("still forces supportsStrictMode off for vLLM endpoints", () => {
+    const model = makeVllmModel("http://192.168.88.35:9090/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(supportsStrictMode(normalized)).toBe(false);
+  });
+
+  it("respects explicit supportsUsageInStreaming false override for vLLM", () => {
+    const model = makeVllmModel("http://192.168.88.35:9090/v1");
+    (model as { compat?: unknown }).compat = { supportsUsageInStreaming: false };
+    const normalized = normalizeModelCompat(model);
+    expect(supportsUsageInStreaming(normalized)).toBe(false);
+  });
+
+  it("does not mutate caller model reference for vLLM", () => {
+    const model = makeVllmModel("http://192.168.88.35:9090/v1");
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(normalized).not.toBe(model);
+    expect(supportsUsageInStreaming(model)).toBeUndefined();
+    expect(supportsUsageInStreaming(normalized)).toBe(true);
+  });
+});
+
 describe("isModernModelRef", () => {
   it("uses provider runtime hooks before fallback heuristics", () => {
     providerRuntimeMocks.resolveProviderModernModelRef.mockReturnValue(false);
@@ -350,7 +474,7 @@ describe("isModernModelRef", () => {
       provider === "openai" &&
       ["gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano"].includes(context.modelId)
         ? true
-        : provider === "openai-codex" && context.modelId === "gpt-5.4"
+        : provider === "openai-codex" && ["gpt-5.4", "gpt-5.4-mini"].includes(context.modelId)
           ? true
           : provider === "opencode" && ["claude-opus-4-6", "gemini-3-pro"].includes(context.modelId)
             ? true
@@ -364,6 +488,7 @@ describe("isModernModelRef", () => {
     expect(isModernModelRef({ provider: "openai", id: "gpt-5.4-mini" })).toBe(true);
     expect(isModernModelRef({ provider: "openai", id: "gpt-5.4-nano" })).toBe(true);
     expect(isModernModelRef({ provider: "openai-codex", id: "gpt-5.4" })).toBe(true);
+    expect(isModernModelRef({ provider: "openai-codex", id: "gpt-5.4-mini" })).toBe(true);
     expect(isModernModelRef({ provider: "opencode", id: "claude-opus-4-6" })).toBe(true);
     expect(isModernModelRef({ provider: "opencode", id: "gemini-3-pro" })).toBe(true);
     expect(isModernModelRef({ provider: "opencode-go", id: "kimi-k2.5" })).toBe(true);
@@ -411,5 +536,45 @@ describe("isHighSignalLiveModelRef", () => {
     expect(
       isHighSignalLiveModelRef({ provider: "opencode", id: "claude-3-5-haiku-20241022" }),
     ).toBe(false);
+  });
+
+  it("drops Gemini families older than major version 3 from the default live matrix", () => {
+    providerRuntimeMocks.resolveProviderModernModelRef.mockReturnValue(true);
+
+    expect(isHighSignalLiveModelRef({ provider: "google", id: "gemini-2.5-flash-lite" })).toBe(
+      false,
+    );
+    expect(isHighSignalLiveModelRef({ provider: "openrouter", id: "google/gemini-2.5-pro" })).toBe(
+      false,
+    );
+    expect(isHighSignalLiveModelRef({ provider: "google", id: "gemini-3-flash-preview" })).toBe(
+      true,
+    );
+  });
+});
+
+describe("selectHighSignalLiveItems", () => {
+  it("prefers curated Google replacements before fallback provider spread", () => {
+    const items = [
+      { provider: "anthropic", id: "claude-opus-4-6" },
+      { provider: "google", id: "gemini-3.1-pro-preview" },
+      { provider: "google", id: "gemini-3-flash-preview" },
+      { provider: "openai", id: "gpt-5.2" },
+      { provider: "opencode", id: "big-pickle" },
+    ];
+
+    expect(
+      selectHighSignalLiveItems(
+        items,
+        4,
+        (item) => item,
+        (item) => item.provider,
+      ),
+    ).toEqual([
+      { provider: "anthropic", id: "claude-opus-4-6" },
+      { provider: "google", id: "gemini-3.1-pro-preview" },
+      { provider: "google", id: "gemini-3-flash-preview" },
+      { provider: "openai", id: "gpt-5.2" },
+    ]);
   });
 });

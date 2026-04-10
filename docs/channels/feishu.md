@@ -110,6 +110,7 @@ On **Permissions**, click **Batch import** and paste:
       "cardkit:card:read",
       "cardkit:card:write",
       "contact:user.employee_id:readonly",
+      "contact:user.base:readonly",
       "corehr:file:download",
       "event:ip_list",
       "im:chat.access_event.bot_p2p_chat:read",
@@ -127,6 +128,9 @@ On **Permissions**, click **Batch import** and paste:
 ```
 
 ![Configure permissions](/images/feishu-step4-permissions.png)
+
+> Tip: keep at least one contact-read scope enabled (for example `contact:user.base:readonly`).
+> Without a contact-read scope, Feishu may return an Access denied error during sender resolution/pairing.
 
 ### 5. Enable bot capability
 
@@ -257,6 +261,44 @@ Set them at top level or per account:
           appSecret: "xxx",
           typingIndicator: true,
           resolveSenderNames: false,
+        },
+      },
+    },
+  },
+}
+```
+
+### Typing indicator emoji
+
+By default, the typing indicator reaction uses the `Typing` (keyboard) emoji. You can customize it per-account so each agent expresses its own personality while processing messages.
+
+The emoji is resolved with the same priority chain used by other channels:
+
+1. **Account-level** `channels.feishu.accounts.<id>.ackReaction`
+2. **Channel-level** `channels.feishu.ackReaction`
+3. **Global** `messages.ackReaction`
+4. **Agent identity** `agents[].identity.emoji`
+5. Built-in default: `Typing`
+
+The value must be a valid [Feishu emoji type name](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/emojis-introduce) (e.g. `"SMILE"`, `"Thumbsup"`, `"Thinking"`).
+
+```json5
+{
+  channels: {
+    feishu: {
+      // Channel-wide default
+      ackReaction: "Thinking",
+      accounts: {
+        kim: {
+          appId: "cli_aaa",
+          appSecret: "${KIM_APP_SECRET}",
+          // Per-account override — Kim uses a different emoji
+          ackReaction: "Celebrate",
+        },
+        klaasje: {
+          appId: "cli_bbb",
+          appSecret: "${KLAASJE_APP_SECRET}",
+          // Klaasje falls back to channel default ("Thinking")
         },
       },
     },
@@ -656,8 +698,22 @@ Use `bindings` to route Feishu DMs or groups to different agents.
 Routing fields:
 
 - `match.channel`: `"feishu"`
+- `match.accountId`: optional Feishu account scope. **Important:** if omitted, the binding matches the default account only. Use `"*"` to match any configured Feishu account.
 - `match.peer.kind`: `"direct"` or `"group"`
 - `match.peer.id`: user Open ID (`ou_xxx`) or group ID (`oc_xxx`)
+
+Example (route one DM to a specific agent regardless of which Feishu account instance receives it):
+
+```json5
+{
+  agentId: "clawd-fan",
+  match: {
+    channel: "feishu",
+    accountId: "*",
+    peer: { kind: "direct", id: "ou_xxx" },
+  },
+}
+```
 
 See [Get group/user IDs](#get-groupuser-ids) for lookup tips.
 
@@ -764,7 +820,8 @@ When the agent handles a Drive comment event, it receives:
 - the comment thread context for in-thread replies
 
 After making document edits, the agent is guided to use `feishu_drive.reply_comment` to notify the
-commenter and then output `NO_REPLY` to avoid duplicate sends.
+commenter and then output the exact silent token `NO_REPLY` / `no_reply` to
+avoid duplicate sends.
 
 ## Runtime action surface
 

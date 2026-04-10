@@ -8,8 +8,8 @@ import {
   buildReadOnlySourceChannelAccountSnapshot,
 } from "../../channels/plugins/status.js";
 import type { ChannelAccountSnapshot } from "../../channels/plugins/types.js";
+import { resolveCommandConfigWithSecrets } from "../../cli/command-config-resolution.js";
 import { formatCliCommand } from "../../cli/command-format.js";
-import { resolveCommandSecretRefsViaGateway } from "../../cli/command-secret-gateway.js";
 import { getChannelsCommandSecretTargetIds } from "../../cli/command-secret-targets.js";
 import { withProgress } from "../../cli/progress.js";
 import { type OpenClawConfig, readConfigFileSnapshot } from "../../config/config.js";
@@ -17,6 +17,7 @@ import { callGateway } from "../../gateway/call.js";
 import { collectChannelStatusIssues } from "../../infra/channels-status-issues.js";
 import { formatTimeAgo } from "../../infra/format-time/format-relative.ts";
 import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import {
@@ -30,6 +31,31 @@ export type ChannelsStatusOptions = {
   probe?: boolean;
   timeout?: string;
 };
+
+function resolvePositiveTimeoutMs(value: unknown): number | null {
+  // Only undefined/null mean "not provided"; empty or whitespace-only string is invalid.
+  if (value === undefined || value === null) {
+    return 10_000;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || value <= 0) {
+      return null;
+    }
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+    return parsed;
+  }
+  return null;
+}
 
 function appendEnabledConfiguredLinkedBits(bits: string[], account: Record<string, unknown>) {
   if (typeof account.enabled === "boolean") {
@@ -85,7 +111,7 @@ function buildChannelAccountLine(
   bits: string[],
 ): string {
   const accountId = typeof account.accountId === "string" ? account.accountId : "default";
-  const name = typeof account.name === "string" ? account.name.trim() : "";
+  const name = normalizeOptionalString(account.name) ?? "";
   const labelText = formatChannelAccountLabel({
     channel: provider,
     accountId,
@@ -142,7 +168,10 @@ export function formatGatewayChannelsStatusLines(payload: Record<string, unknown
         bits.push(`dm:${account.dmPolicy}`);
       }
       if (Array.isArray(account.allowFrom) && account.allowFrom.length > 0) {
-        bits.push(`allow:${account.allowFrom.slice(0, 2).join(",")}`);
+        const MAX_DISPLAY = 5;
+        const displayed = account.allowFrom.slice(0, MAX_DISPLAY).join(",");
+        const remaining = account.allowFrom.length - MAX_DISPLAY;
+        bits.push(`allow:${displayed}${remaining > 0 ? `,+${remaining} more` : ""}`);
       }
       appendTokenSourceBits(bits, account);
       const application = account.application as
@@ -280,7 +309,12 @@ export async function channelsStatusCommand(
   opts: ChannelsStatusOptions,
   runtime: RuntimeEnv = defaultRuntime,
 ) {
-  const timeoutMs = Number(opts.timeout ?? 10_000);
+  const timeoutMs = resolvePositiveTimeoutMs(opts.timeout);
+  if (timeoutMs === null) {
+    runtime.error("--timeout must be a positive integer (milliseconds)");
+    runtime.exit(1);
+    return;
+  }
   const statusLabel = opts.probe ? "Checking channel status (probe)…" : "Checking channel status…";
   const shouldLogStatus = opts.json !== true && !process.stderr.isTTY;
   if (shouldLogStatus) {
@@ -306,20 +340,22 @@ export async function channelsStatusCommand(
     }
     runtime.log(formatGatewayChannelsStatusLines(payload).join("\n"));
   } catch (err) {
+    if (opts.probe) {
+      throw err;
+    }
+
     runtime.error(`Gateway not reachable: ${String(err)}`);
     const cfg = await requireValidConfigSnapshot(runtime);
     if (!cfg) {
       return;
     }
-    const { resolvedConfig, diagnostics } = await resolveCommandSecretRefsViaGateway({
+    const { resolvedConfig } = await resolveCommandConfigWithSecrets({
       config: cfg,
       commandName: "channels status",
       targetIds: getChannelsCommandSecretTargetIds(),
       mode: "read_only_status",
+      runtime,
     });
-    for (const entry of diagnostics) {
-      runtime.log(`[secrets] ${entry}`);
-    }
     const snapshot = await readConfigFileSnapshot();
     const mode = cfg.gateway?.mode === "remote" ? "remote" : "local";
     runtime.log(

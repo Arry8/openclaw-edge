@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserServerState } from "./server-context.js";
 
 vi.mock("./chrome-mcp.js", () => ({
@@ -19,8 +19,8 @@ vi.mock("./chrome-mcp.js", () => ({
   getChromeMcpPid: vi.fn(() => 4321),
 }));
 
-let createBrowserRouteContext: typeof import("./server-context.js").createBrowserRouteContext;
-let chromeMcp: typeof import("./chrome-mcp.js");
+const { createBrowserRouteContext } = await import("./server-context.js");
+const chromeMcp = await import("./chrome-mcp.js");
 
 function makeState(): BrowserServerState {
   return {
@@ -37,6 +37,7 @@ function makeState(): BrowserServerState {
       cdpIsLoopback: true,
       remoteCdpTimeoutMs: 1500,
       remoteCdpHandshakeTimeoutMs: 3000,
+      actionTimeoutMs: 20000,
       color: "#FF4500",
       headless: false,
       noSandbox: false,
@@ -57,15 +58,6 @@ function makeState(): BrowserServerState {
     profiles: new Map(),
   };
 }
-
-afterEach(() => {
-  vi.clearAllMocks();
-});
-
-beforeAll(async () => {
-  ({ createBrowserRouteContext } = await import("./server-context.js"));
-  chromeMcp = await import("./chrome-mcp.js");
-});
 
 beforeEach(() => {
   vi.clearAllMocks();

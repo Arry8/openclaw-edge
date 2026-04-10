@@ -3,6 +3,7 @@ import {
   deliverTextOrMediaReply,
   resolveSendableOutboundReplyParts,
 } from "openclaw/plugin-sdk/reply-payload";
+import { normalizeOptionalLowercaseString } from "openclaw/plugin-sdk/text-runtime";
 import type { OpenClawConfig } from "../runtime-api.js";
 import {
   createChannelReplyPipeline,
@@ -72,7 +73,7 @@ export function registerGoogleChatWebhookTarget(target: WebhookTarget): () => vo
 }
 
 function normalizeAudienceType(value?: string | null): GoogleChatAudienceType | undefined {
-  const normalized = value?.trim().toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(value);
   if (normalized === "app-url" || normalized === "app_url" || normalized === "app") {
     return "app-url";
   }
@@ -117,7 +118,8 @@ async function processGoogleChatEvent(event: GoogleChatEvent, target: WebhookTar
  * Resolve bot display name with fallback chain:
  * 1. Account config name
  * 2. Agent name from config
- * 3. "OpenClaw" as generic fallback
+ * 3. Agent identity name from config
+ * 4. "OpenClaw" as generic fallback
  */
 function resolveBotDisplayName(params: {
   accountName?: string;
@@ -131,6 +133,9 @@ function resolveBotDisplayName(params: {
   const agent = config.agents?.list?.find((a) => a.id === agentId);
   if (agent?.name?.trim()) {
     return agent.name.trim();
+  }
+  if (agent?.identity?.name?.trim()) {
+    return agent.identity.name.trim();
   }
   return "OpenClaw";
 }
@@ -155,8 +160,16 @@ async function processMessageWithPipeline(params: {
   if (!spaceId) {
     return;
   }
-  const spaceType = (space.type ?? "").toUpperCase();
-  const isGroup = spaceType !== "DM";
+  // Google Chat API v1 uses `type` ("DM" | "ROOM" | "TYPE_UNSPECIFIED").
+  // The newer API surfaces `spaceType` ("DIRECT_MESSAGE" | "SPACE") and
+  // `singleUserBotDm`.  Fall back through all three fields so that both
+  // legacy and current payloads resolve correctly.  (#58514)
+  const legacyType = (space.type ?? "").toUpperCase();
+  const modernType = (space.spaceType ?? "").toUpperCase();
+  const isGroup =
+    legacyType !== "DM" &&
+    modernType !== "DIRECT_MESSAGE" &&
+    space.singleUserBotDm !== true;
   const sender = message.sender ?? event.user;
   const senderId = sender?.name ?? "";
   const senderName = sender?.displayName ?? "";
@@ -321,7 +334,7 @@ async function processMessageWithPipeline(params: {
       ...replyPipeline,
       deliver: async (payload) => {
         await deliverGoogleChatReply({
-          payload,
+          payload: { ...payload, replyToId: payload.replyToId ?? ctxPayload.ReplyToId },
           account,
           spaceId,
           runtime,
@@ -343,6 +356,15 @@ async function processMessageWithPipeline(params: {
       onModelSelected,
     },
   });
+
+  // Clean up typing message if deliver was never called (e.g. NO_REPLY after emoji reaction)
+  if (typingMessageName) {
+    try {
+      await deleteGoogleChatMessage({ account, messageName: typingMessageName });
+    } catch (err) {
+      runtime.error?.(`Google Chat typing cleanup on NO_REPLY failed: ${String(err)}`);
+    }
+  }
 }
 
 async function downloadAttachment(

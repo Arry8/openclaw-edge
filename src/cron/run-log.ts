@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseByteSize } from "../cli/parse-bytes.js";
 import type { CronConfig } from "../config/types.cron.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+  normalizeStringifiedOptionalString,
+} from "../shared/string-coerce.js";
 import type { CronDeliveryStatus, CronRunStatus, CronRunTelemetry } from "./types.js";
 
 export type CronRunLogEntry = {
@@ -34,6 +39,8 @@ export type ReadCronRunLogPageOptions = {
   deliveryStatuses?: CronDeliveryStatus[];
   query?: string;
   sortDir?: CronRunLogSortDir;
+  /** Optional runtime-configured prune limits. Falls back to DEFAULT_CRON_RUN_LOG_MAX_BYTES / DEFAULT_CRON_RUN_LOG_KEEP_LINES. */
+  pruneOptions?: { maxBytes?: number; keepLines?: number };
 };
 
 export type CronRunLogPageResult = {
@@ -55,10 +62,15 @@ function assertSafeCronRunLogJobId(jobId: string): string {
   if (!trimmed) {
     throw new Error("invalid cron run log job id");
   }
-  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("\0")) {
+  if (trimmed.includes("\0")) {
     throw new Error("invalid cron run log job id");
   }
-  return trimmed;
+  // Encode path-separator characters for the same reason as
+  // assertSafeCronSessionTargetId — jobId is derived from sessionKey
+  // which may contain `/` for channels like DingTalk (#64030).
+  // The downstream `resolveCronRunLogPath` has an additional
+  // startsWith guard against path traversal as defense-in-depth.
+  return trimmed.replaceAll("/", "%2F").replaceAll("\\", "%5C");
 }
 
 export function resolveCronRunLogPath(params: { storePath: string; jobId: string }) {
@@ -89,7 +101,10 @@ export function resolveCronRunLogPruneOptions(cfg?: CronConfig["runLog"]): {
   let maxBytes = DEFAULT_CRON_RUN_LOG_MAX_BYTES;
   if (cfg?.maxBytes !== undefined) {
     try {
-      maxBytes = parseByteSize(String(cfg.maxBytes).trim(), { defaultUnit: "b" });
+      const configuredMaxBytes = normalizeStringifiedOptionalString(cfg.maxBytes);
+      if (configuredMaxBytes) {
+        maxBytes = parseByteSize(configuredMaxBytes, { defaultUnit: "b" });
+      }
     } catch {
       maxBytes = DEFAULT_CRON_RUN_LOG_MAX_BYTES;
     }
@@ -115,17 +130,90 @@ async function drainPendingWrite(filePath: string): Promise<void> {
   }
 }
 
+/**
+ * Enqueue a prune operation through the write serialization queue so it
+ * cannot race with a concurrent appendCronRunLog on the same file.
+ * Best-effort: errors are swallowed so reads remain resilient.
+ */
+async function serializedPruneIfNeeded(
+  filePath: string,
+  opts: { maxBytes: number; keepLines: number },
+): Promise<void> {
+  const resolved = path.resolve(filePath);
+  const prev = writesByPath.get(resolved) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(() => pruneIfNeeded(resolved, opts));
+  writesByPath.set(resolved, next);
+  try {
+    await next;
+  } finally {
+    if (writesByPath.get(resolved) === next) {
+      writesByPath.delete(resolved);
+    }
+  }
+}
+
 async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLines: number }) {
   const stat = await fs.stat(filePath).catch(() => null);
   if (!stat || stat.size <= opts.maxBytes) {
     return;
   }
 
-  const raw = await fs.readFile(filePath, "utf-8").catch(() => "");
-  const lines = raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  // Stream-safe tail: only read a bounded portion of the file from the tail
+  // instead of the entire contents, preventing OOM on extremely large run-log files.
+  const { createReadStream } = await import("node:fs");
+  const { createInterface } = await import("node:readline");
+
+  let tailBytes = Math.max(opts.maxBytes, 64 * 1024);
+  let lines: string[] = [];
+  let startPos = 0;
+
+  while (true) {
+    tailBytes = Math.min(stat.size, tailBytes);
+    startPos = Math.max(0, stat.size - tailBytes);
+    lines = [];
+
+    const rl = createInterface({
+      input: createReadStream(filePath, { start: startPos, encoding: "utf-8" }),
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        lines.push(trimmed);
+      }
+    }
+
+    // If we started mid-file, the first "line" may be a partial JSON fragment.
+    // Only drop it when we actually landed in the middle of a line.  When
+    // startPos happens to fall exactly on a newline boundary the first streamed
+    // line is already complete and should be kept.
+    if (startPos > 0 && lines.length > 0) {
+      const fd = await fs.open(filePath, "r");
+      try {
+        const buf = Buffer.alloc(1);
+        await fd.read(buf, 0, 1, startPos - 1);
+        const prevByte = buf[0];
+        // 0x0A = newline.  If the byte immediately before startPos is a newline
+        // the first streamed line starts at a line boundary and is complete.
+        if (prevByte !== 0x0a) {
+          lines.shift();
+        }
+      } finally {
+        await fd.close();
+      }
+    }
+
+    if (startPos === 0 || lines.length >= opts.keepLines) {
+      break;
+    }
+
+    if (tailBytes >= stat.size) {
+      break;
+    }
+    tailBytes *= 2;
+  }
+
   const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));
   const { randomBytes } = await import("node:crypto");
   const tmp = `${filePath}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
@@ -239,7 +327,7 @@ function normalizeDeliveryStatuses(opts?: {
 }
 
 function parseAllRunLogEntries(raw: string, opts?: { jobId?: string }): CronRunLogEntry[] {
-  const jobId = opts?.jobId?.trim() || undefined;
+  const jobId = normalizeOptionalString(opts?.jobId);
   if (!raw.trim()) {
     return [];
   }
@@ -347,7 +435,7 @@ function filterRunLogEntries(
     if (!opts.query) {
       return true;
     }
-    return opts.queryTextForEntry(entry).toLowerCase().includes(opts.query);
+    return normalizeLowercaseStringOrEmpty(opts.queryTextForEntry(entry)).includes(opts.query);
   });
 }
 
@@ -357,10 +445,18 @@ export async function readCronRunLogEntriesPage(
 ): Promise<CronRunLogPageResult> {
   await drainPendingWrite(filePath);
   const limit = Math.max(1, Math.min(200, Math.floor(opts?.limit ?? 50)));
-  const raw = await fs.readFile(path.resolve(filePath), "utf-8").catch(() => "");
+  const resolved = path.resolve(filePath);
+  // Defensive prune before reading: if async prune in appendCronRunLog failed
+  // silently (e.g. disk pressure), the file may have grown beyond the expected
+  // max size. Pruning here prevents OOM when loading the file into memory.
+  await serializedPruneIfNeeded(resolved, {
+    maxBytes: opts?.pruneOptions?.maxBytes ?? DEFAULT_CRON_RUN_LOG_MAX_BYTES,
+    keepLines: opts?.pruneOptions?.keepLines ?? DEFAULT_CRON_RUN_LOG_KEEP_LINES,
+  }).catch(() => undefined);
+  const raw = await fs.readFile(resolved, "utf-8").catch(() => "");
   const statuses = normalizeRunStatuses(opts);
   const deliveryStatuses = normalizeDeliveryStatuses(opts);
-  const query = opts?.query?.trim().toLowerCase() ?? "";
+  const query = normalizeLowercaseStringOrEmpty(opts?.query);
   const sortDir: CronRunLogSortDir = opts?.sortDir === "asc" ? "asc" : "desc";
   const all = parseAllRunLogEntries(raw, { jobId: opts?.jobId });
   const filtered = filterRunLogEntries(all, {
@@ -393,7 +489,7 @@ export async function readCronRunLogEntriesPageAll(
   const limit = Math.max(1, Math.min(200, Math.floor(opts.limit ?? 50)));
   const statuses = normalizeRunStatuses(opts);
   const deliveryStatuses = normalizeDeliveryStatuses(opts);
-  const query = opts.query?.trim().toLowerCase() ?? "";
+  const query = normalizeLowercaseStringOrEmpty(opts.query);
   const sortDir: CronRunLogSortDir = opts.sortDir === "asc" ? "asc" : "desc";
   const runsDir = path.resolve(path.dirname(path.resolve(opts.storePath)), "runs");
   const files = await fs.readdir(runsDir, { withFileTypes: true }).catch(() => []);
@@ -411,6 +507,15 @@ export async function readCronRunLogEntriesPageAll(
     };
   }
   await Promise.all(jsonlFiles.map((f) => drainPendingWrite(f)));
+  // Defensive prune on each file before reading to prevent OOM from unbounded growth
+  await Promise.all(
+    jsonlFiles.map((f) =>
+      serializedPruneIfNeeded(f, {
+        maxBytes: opts?.pruneOptions?.maxBytes ?? DEFAULT_CRON_RUN_LOG_MAX_BYTES,
+        keepLines: opts?.pruneOptions?.keepLines ?? DEFAULT_CRON_RUN_LOG_KEEP_LINES,
+      }).catch(() => undefined),
+    ),
+  );
   const chunks = await Promise.all(
     jsonlFiles.map(async (filePath) => {
       const raw = await fs.readFile(filePath, "utf-8").catch(() => "");

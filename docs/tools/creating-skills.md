@@ -31,7 +31,7 @@ For how skills are loaded and prioritized, see [Skills](/tools/skills).
 
     ```markdown
     ---
-    name: hello_world
+    name: hello-world
     description: A simple skill that says hello.
     ---
 
@@ -40,6 +40,9 @@ For how skills are loaded and prioritized, see [Skills](/tools/skills).
     When the user asks for a greeting, use the `echo` tool to say
     "Hello from your custom skill!".
     ```
+
+    Use lowercase letters, digits, and hyphens for the skill `name`. Keep the
+    folder name and frontmatter `name` aligned.
 
   </Step>
 
@@ -87,7 +90,7 @@ The YAML frontmatter supports these fields:
 
 | Field                               | Required | Description                                 |
 | ----------------------------------- | -------- | ------------------------------------------- |
-| `name`                              | Yes      | Unique identifier (snake_case)              |
+| `name`                              | Yes      | Unique identifier (hyphen-case)             |
 | `description`                       | Yes      | One-line description shown to the agent     |
 | `metadata.openclaw.os`              | No       | OS filter (`["darwin"]`, `["linux"]`, etc.) |
 | `metadata.openclaw.requires.bins`   | No       | Required binaries on PATH                   |
@@ -98,16 +101,40 @@ The YAML frontmatter supports these fields:
 - **Be concise** — instruct the model on _what_ to do, not how to be an AI
 - **Safety first** — if your skill uses `exec`, ensure prompts don't allow arbitrary command injection from untrusted input
 - **Test locally** — use `openclaw agent --message "..."` to test before sharing
-- **Use ClawHub** — browse and contribute skills at [ClawHub](https://clawhub.com)
+- **Use ClawHub** — browse and contribute skills at [ClawHub](https://clawhub.ai)
 
 ## Where skills live
 
 | Location                        | Precedence | Scope                 |
 | ------------------------------- | ---------- | --------------------- |
 | `\<workspace\>/skills/`         | Highest    | Per-agent             |
+| `\<workspace\>/.agents/skills/` | High       | Per-workspace agent   |
+| `~/.agents/skills/`             | Medium     | Shared agent profile  |
 | `~/.openclaw/skills/`           | Medium     | Shared (all agents)   |
-| Bundled (shipped with OpenClaw) | Lowest     | Global                |
+| Bundled (shipped with OpenClaw) | Low        | Global                |
 | `skills.load.extraDirs`         | Lowest     | Custom shared folders |
+
+## Advanced features
+
+Once your basic skill works, these features help you build production-quality
+skills:
+
+- **Conditional activation** — Use `requires.bins`, `requires.env`, or
+  `requires.config` to gate your skill so it only loads when dependencies
+  are available. See [Skills reference — Gating](/tools/skills#gating).
+- **API key and env injection** — Skills can receive secrets via
+  `skills.entries.<name>.apiKey` and `skills.entries.<name>.env` in your
+  config. See [Skills reference — Config/env wiring](/tools/skills#config-wiring).
+- **Invocation control** — Set `user-invocable: false` to hide a skill from
+  slash commands, or `disable-model-invocation: true` to exclude it from the
+  model prompt. See [Skills reference — Frontmatter](/tools/skills#frontmatter).
+- **Multi-command skills** — Use `command-dispatch: tool` with `command-tool`
+  to bypass the model and dispatch slash commands directly to a tool. See
+  [Skills reference — Frontmatter](/tools/skills#frontmatter).
+- **Template variables** — Use `{baseDir}` in your SKILL.md to reference
+  the skill directory portably. See [Skills reference](/tools/skills).
+- **Publish to ClawHub** — Share your skill with the community:
+  `clawhub publish <skill-dir>`. See [ClawHub](/tools/clawhub).
 
 ## Related
 

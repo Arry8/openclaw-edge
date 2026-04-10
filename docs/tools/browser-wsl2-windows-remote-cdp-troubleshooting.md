@@ -40,6 +40,8 @@ Choose this when:
 - OpenClaw and Chrome are on the same machine
 - you want the local signed-in browser state
 - you do not need cross-host browser transport
+- you do not need advanced managed/raw-CDP-only routes like `responsebody`, PDF
+  export, download interception, or batch actions
 
 For WSL2 Gateway + Windows Chrome, prefer raw remote CDP. Chrome MCP is host-local, not a WSL2-to-Windows bridge.
 
@@ -142,6 +144,9 @@ Notes:
 
 - use the WSL2-reachable address, not whatever only works on Windows
 - keep `attachOnly: true` for externally managed browsers
+- `cdpUrl` can be `http://`, `https://`, `ws://`, or `wss://`
+- use HTTP(S) when you want OpenClaw to discover `/json/version`
+- use WS(S) only when the browser provider gives you a direct DevTools socket URL
 - test the same URL with `curl` before expecting OpenClaw to succeed
 
 ### Layer 4: Verify the Control UI layer separately
@@ -187,6 +192,11 @@ Treat each message as a layer-specific clue:
   - device approval problem
 - `Remote CDP for profile "remote" is not reachable`
   - WSL2 cannot reach the configured `cdpUrl`
+- `Browser attachOnly is enabled and CDP websocket for profile "remote" is not reachable`
+  - the HTTP endpoint answered, but the DevTools WebSocket still could not be opened
+- stale viewport / dark-mode / locale / offline overrides after a remote session
+  - run `openclaw browser stop --browser-profile remote`
+  - this closes the active control session and releases Playwright/CDP emulation state without restarting the gateway or the external browser
 - `gateway timeout after 1500ms`
   - often still CDP reachability or a slow/unreachable remote endpoint
 - `No Chrome tabs found for profile="user"`
@@ -199,6 +209,71 @@ Treat each message as a layer-specific clue:
 3. OpenClaw config: does `browser.profiles.<name>.cdpUrl` use that exact WSL2-reachable address?
 4. Control UI: are you opening `http://127.0.0.1:18789/` instead of a LAN IP?
 5. Are you trying to use `existing-session` across WSL2 and Windows instead of raw remote CDP?
+
+
+## Recovery after toggling `hypervisorlaunchtype` (Windows gaming mode)
+
+If you temporarily disable Hyper-V with:
+
+```powershell
+bcdedit /set hypervisorlaunchtype off
+```
+
+and later re-enable it with:
+
+```powershell
+bcdedit /set hypervisorlaunchtype auto
+```
+
+then reboot, WSL2 and the CDP bridge can return in a partially broken state.
+
+Typical pattern:
+
+- Windows local CDP works: `curl.exe http://127.0.0.1:9222/json/version`
+- WSL2-to-host CDP fails: `curl http://WINDOWS_HOST_IP:9222/json/version` times out
+- OpenClaw shows remote profile unreachable / empty tabs
+
+### Recovery sequence
+
+Run in **PowerShell as Administrator**:
+
+```powershell
+Get-Service iphlpsvc
+Start-Service iphlpsvc
+
+# Optional cleanup if host IP changed since last boot
+netsh interface portproxy delete v4tov4 listenaddress=OLD_WINDOWS_HOST_IP listenport=9222
+
+# Recreate bridge (works when Chrome listens on localhost)
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9222 connectaddress=127.0.0.1 connectport=9222
+
+# Allow inbound CDP traffic
+netsh advfirewall firewall add rule name="Chrome CDP 9222 inbound" dir=in action=allow protocol=TCP localport=9222
+```
+
+Validate in **PowerShell** (use `curl.exe`, not `curl` alias):
+
+```powershell
+curl.exe http://127.0.0.1:9222/json/version
+curl.exe http://WINDOWS_HOST_IP:9222/json/version
+```
+
+Validate in **WSL2**:
+
+```bash
+cat /etc/resolv.conf | grep nameserver
+curl http://WINDOWS_HOST_IP:9222/json/version
+openclaw gateway restart
+openclaw browser tabs --browser-profile remote
+```
+
+`WINDOWS_HOST_IP` is usually the `nameserver` value in `/etc/resolv.conf` from WSL2.
+
+### Important notes
+
+- `netsh interface portproxy ...` requires **Administrator** shell.
+- The WSL2 host IP (`172.30.x.1`) can change after reboot; stale `listenaddress` rules must be replaced.
+- If testing in PowerShell, prefer `curl.exe`; `curl` may map to `Invoke-WebRequest` and produce misleading argument errors.
 
 ## Practical takeaway
 

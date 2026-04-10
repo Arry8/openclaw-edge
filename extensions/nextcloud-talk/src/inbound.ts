@@ -1,3 +1,4 @@
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import {
   GROUP_POLICY_BLOCKED_LABEL,
   createChannelPairingController,
@@ -5,12 +6,12 @@ import {
   dispatchInboundReplyWithBase,
   logInboundDrop,
   readStoreAllowFromForDmPolicy,
-  resolveDmGroupAccessWithCommandGate,
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
+  resolveDmGroupAccessWithCommandGate,
   warnMissingProviderGroupPolicyFallbackOnce,
-  type OutboundReplyPayload,
   type OpenClawConfig,
+  type OutboundReplyPayload,
   type RuntimeEnv,
 } from "../runtime-api.js";
 import type { ResolvedNextcloudTalkAccount } from "./accounts.js";
@@ -25,7 +26,7 @@ import {
 import { resolveNextcloudTalkRoomKind } from "./room-info.js";
 import { getNextcloudTalkRuntime } from "./runtime.js";
 import { sendMessageNextcloudTalk } from "./send.js";
-import type { CoreConfig, GroupPolicy, NextcloudTalkInboundMessage } from "./types.js";
+import type { CoreConfig, NextcloudTalkInboundMessage } from "./types.js";
 
 const CHANNEL_ID = "nextcloud-talk" as const;
 
@@ -64,7 +65,8 @@ export async function handleNextcloudTalkInbound(params: {
   });
 
   const rawBody = message.text?.trim() ?? "";
-  if (!rawBody) {
+  const hasMedia = (message.mediaUrls?.length ?? 0) > 0;
+  if (!rawBody && !hasMedia) {
     return;
   }
 
@@ -88,7 +90,7 @@ export async function handleNextcloudTalkInbound(params: {
       providerConfigPresent:
         ((config.channels as Record<string, unknown> | undefined)?.["nextcloud-talk"] ??
           undefined) !== undefined,
-      groupPolicy: account.config.groupPolicy as GroupPolicy | undefined,
+      groupPolicy: account.config.groupPolicy,
       defaultGroupPolicy,
     });
   warnMissingProviderGroupPolicyFallbackOnce({
@@ -253,7 +255,7 @@ export async function handleNextcloudTalkInbound(params: {
     body: rawBody,
   });
 
-  const groupSystemPrompt = roomConfig?.systemPrompt?.trim() || undefined;
+  const groupSystemPrompt = normalizeOptionalString(roomConfig?.systemPrompt);
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
@@ -273,6 +275,7 @@ export async function handleNextcloudTalkInbound(params: {
     Provider: CHANNEL_ID,
     Surface: CHANNEL_ID,
     WasMentioned: isGroup ? wasMentioned : undefined,
+    MediaUrls: message.mediaUrls,
     MessageSid: message.messageId,
     Timestamp: message.timestamp,
     OriginatingChannel: CHANNEL_ID,

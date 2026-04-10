@@ -26,6 +26,10 @@ import {
   CDP_READY_AFTER_LAUNCH_POLL_MS,
   CDP_READY_AFTER_LAUNCH_WINDOW_MS,
 } from "./server-context.constants.js";
+import {
+  closePlaywrightBrowserConnectionForProfile,
+  resolveIdleProfileStopOutcome,
+} from "./server-context.lifecycle.js";
 import type {
   BrowserServerState,
   ContextOptions,
@@ -100,15 +104,6 @@ export function createProfileAvailability({
     });
   };
 
-  const closePlaywrightBrowserConnectionForProfile = async (cdpUrl?: string): Promise<void> => {
-    try {
-      const mod = await import("./pw-ai.js");
-      await mod.closePlaywrightBrowserConnection(cdpUrl ? { cdpUrl } : undefined);
-    } catch {
-      // ignore
-    }
-  };
-
   const reconcileProfileRuntime = async (): Promise<void> => {
     const profileState = getProfileState();
     const reconcile = profileState.reconcile;
@@ -172,7 +167,12 @@ export function createProfileAvailability({
     );
   };
 
-  const ensureBrowserAvailable = async (): Promise<void> => {
+  // Singleton guard: concurrent callers share the same in-flight launch attempt
+  // instead of racing through isHttpReachable → launchOpenClawChrome independently,
+  // which can cause PortInUseError when two tasks trigger lazy-start simultaneously.
+  let inflightLaunch: Promise<void> | null = null;
+
+  const ensureBrowserAvailableOnce = async (): Promise<void> => {
     await reconcileProfileRuntime();
     if (capabilities.usesChromeMcp) {
       if (profile.userDataDir && !fs.existsSync(profile.userDataDir)) {
@@ -241,6 +241,9 @@ export function createProfileAvailability({
           return;
         }
       }
+      if (remoteCdp && (await isReachable(PROFILE_ATTACH_RETRY_TIMEOUT_MS))) {
+        return;
+      }
       throw new BrowserProfileUnavailableError(
         remoteCdp
           ? `Remote CDP websocket for profile "${profile.name}" is not reachable.`
@@ -269,6 +272,16 @@ export function createProfileAvailability({
     }
   };
 
+  const ensureBrowserAvailable = async (): Promise<void> => {
+    if (inflightLaunch) {
+      return inflightLaunch;
+    }
+    inflightLaunch = ensureBrowserAvailableOnce().finally(() => {
+      inflightLaunch = null;
+    });
+    return inflightLaunch;
+  };
+
   const stopRunningBrowser = async (): Promise<{ stopped: boolean }> => {
     await reconcileProfileRuntime();
     if (capabilities.usesChromeMcp) {
@@ -277,7 +290,13 @@ export function createProfileAvailability({
     }
     const profileState = getProfileState();
     if (!profileState.running) {
-      return { stopped: false };
+      const idleStop = resolveIdleProfileStopOutcome(profile);
+      if (idleStop.closePlaywright) {
+        // No process was launched for attachOnly/remote profiles, but a cached
+        // Playwright CDP connection may still be active and holding emulation state.
+        await closePlaywrightBrowserConnectionForProfile(profile.cdpUrl);
+      }
+      return { stopped: idleStop.stopped };
     }
     await stopOpenClawChrome(profileState.running);
     setProfileRunning(null);

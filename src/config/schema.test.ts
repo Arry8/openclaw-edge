@@ -94,10 +94,18 @@ describe("config schema", () => {
   it("exports schema + hints", () => {
     const res = baseSchema;
     const schema = res.schema as { properties?: Record<string, unknown> };
+    const gatewaySchema = schema.properties?.gateway as
+      | { properties?: Record<string, unknown> }
+      | undefined;
+    const gatewayPortSchema = gatewaySchema?.properties?.port as
+      | { title?: string; description?: string }
+      | undefined;
     expect(schema.properties?.gateway).toBeTruthy();
     expect(schema.properties?.agents).toBeTruthy();
     expect(schema.properties?.acp).toBeTruthy();
     expect(schema.properties?.$schema).toBeUndefined();
+    expect(gatewayPortSchema?.title).toBe("Gateway Port");
+    expect(gatewayPortSchema?.description).toContain("TCP port used by the gateway listener");
     expect(res.uiHints.gateway?.label).toBe("Gateway");
     expect(res.uiHints["gateway.auth.token"]?.sensitive).toBe(true);
     expect(res.uiHints["channels.defaults.groupPolicy"]?.label).toBeTruthy();
@@ -195,6 +203,147 @@ describe("config schema", () => {
     });
   });
 
+  it("hoists $defs from plugin schemas to root level with namespaced keys", () => {
+    const res = buildConfigSchema({
+      plugins: [
+        {
+          id: "qqbot",
+          name: "QQBot",
+          configSchema: {
+            type: "object",
+            properties: {
+              account: { $ref: "#/$defs/account" },
+            },
+            $defs: {
+              account: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const schema = res.schema as {
+      $defs?: Record<string, unknown>;
+      properties?: Record<string, unknown>;
+    };
+
+    // $defs should be hoisted to root level with namespaced key
+    expect(schema.$defs).toBeDefined();
+    expect(schema.$defs?.["qqbot_account"]).toBeDefined();
+
+    // Plugin config should have rewritten $ref
+    const pluginsNode = schema.properties?.plugins as Record<string, unknown> | undefined;
+    const entriesNode = pluginsNode?.properties as Record<string, unknown> | undefined;
+    const entriesProps = entriesNode?.entries as Record<string, unknown> | undefined;
+    const entryProps = entriesProps?.properties as Record<string, unknown> | undefined;
+    const pluginEntry = entryProps?.["qqbot"] as Record<string, unknown> | undefined;
+    const pluginConfig = pluginEntry?.properties as Record<string, unknown> | undefined;
+    const pluginConfigSchema = pluginConfig?.config as Record<string, unknown> | undefined;
+    const pluginConfigProps = pluginConfigSchema?.properties as Record<string, unknown> | undefined;
+    const accountProp = pluginConfigProps?.account as Record<string, unknown> | undefined;
+
+    // $ref should point to namespaced definition at root
+    expect(accountProp?.$ref).toBe("#/$defs/qqbot_account");
+
+    // Plugin config should NOT have its own $defs
+    expect(pluginConfigSchema?.$defs).toBeUndefined();
+  });
+
+  it("hoists $defs from channel schemas to root level with namespaced keys", () => {
+    const res = buildConfigSchema({
+      channels: [
+        {
+          id: "custom-channel",
+          label: "Custom Channel",
+          configSchema: {
+            type: "object",
+            properties: {
+              settings: { $ref: "#/$defs/settings" },
+            },
+            $defs: {
+              settings: {
+                type: "object",
+                properties: {
+                  enabled: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const schema = res.schema as {
+      $defs?: Record<string, unknown>;
+      properties?: Record<string, unknown>;
+    };
+
+    // $defs should be hoisted to root level with namespaced key
+    expect(schema.$defs).toBeDefined();
+    expect(schema.$defs?.["custom-channel_settings"]).toBeDefined();
+
+    // Channel schema should have rewritten $ref
+    const channelsNode = schema.properties?.channels as Record<string, unknown> | undefined;
+    const channelProps = channelsNode?.properties as Record<string, unknown> | undefined;
+    const channelSchema = channelProps?.["custom-channel"] as Record<string, unknown> | undefined;
+    const channelSchemaProps = channelSchema?.properties as Record<string, unknown> | undefined;
+    const settingsProp = channelSchemaProps?.settings as Record<string, unknown> | undefined;
+
+    // $ref should point to namespaced definition at root
+    expect(settingsProp?.$ref).toBe("#/$defs/custom-channel_settings");
+
+    // Channel schema should NOT have its own $defs
+    expect(channelSchema?.$defs).toBeUndefined();
+  });
+
+  it("rewrites nested $refs inside $defs definitions", () => {
+    const res = buildConfigSchema({
+      plugins: [
+        {
+          id: "nested-plugin",
+          name: "Nested Plugin",
+          configSchema: {
+            type: "object",
+            properties: {
+              parent: { $ref: "#/$defs/parent" },
+            },
+            $defs: {
+              child: {
+                type: "object",
+                properties: {
+                  value: { type: "string" },
+                },
+              },
+              parent: {
+                type: "object",
+                properties: {
+                  child: { $ref: "#/$defs/child" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const schema = res.schema as { $defs?: Record<string, unknown> };
+
+    // Both defs should be hoisted
+    expect(schema.$defs?.["nested-plugin_parent"]).toBeDefined();
+    expect(schema.$defs?.["nested-plugin_child"]).toBeDefined();
+
+    // The nested $ref inside parent should also be rewritten
+    const parentDef = schema.$defs?.["nested-plugin_parent"] as Record<string, unknown> | undefined;
+    const parentProps = parentDef?.properties as Record<string, unknown> | undefined;
+    const childRef = parentProps?.child as Record<string, unknown> | undefined;
+    expect(childRef?.$ref).toBe("#/$defs/nested-plugin_child");
+  });
+
   it("adds heartbeat target hints with dynamic channels", () => {
     const res = buildConfigSchema(heartbeatChannelInput);
 
@@ -254,6 +403,19 @@ describe("config schema", () => {
         timeoutSeconds: 15,
       },
     });
+  });
+
+  it("accepts experimental tool flags in the runtime zod schema", () => {
+    const parsed = ToolsSchema.parse({
+      experimental: {
+        planTool: true,
+      },
+    });
+    if (!parsed) {
+      throw new Error("expected parsed tools config");
+    }
+
+    expect(parsed?.experimental?.planTool).toBe(true);
   });
 
   it("accepts web fetch maxResponseBytes in the runtime zod schema", () => {
@@ -329,7 +491,13 @@ describe("config schema", () => {
     const lookup = lookupConfigSchema(baseSchema, "agents.list.0.runtime");
     expect(lookup?.path).toBe("agents.list.0.runtime");
     expect(lookup?.hintPath).toBe("agents.list[].runtime");
-    expect(lookup?.schema).toEqual({});
+    // The shallow lookup schema carries field docs, but should not expose
+    // nested composition keywords (allOf, oneOf, etc.).
+    expect(lookup?.schema).not.toHaveProperty("allOf");
+    expect(lookup?.schema).not.toHaveProperty("oneOf");
+    expect(lookup?.schema).not.toHaveProperty("anyOf");
+    expect(lookup?.schema).toHaveProperty("title", "Agent Runtime");
+    expect(lookup?.schema).toHaveProperty("description");
   });
 
   it("matches wildcard ui hints for concrete lookup paths", () => {
@@ -337,6 +505,10 @@ describe("config schema", () => {
     expect(lookup?.path).toBe("agents.list.0.identity.avatar");
     expect(lookup?.hintPath).toBe("agents.list.*.identity.avatar");
     expect(lookup?.hint?.help).toContain("workspace-relative path");
+    expect(lookup?.schema).toMatchObject({
+      title: "Identity Avatar",
+      description: expect.stringContaining("Agent avatar"),
+    });
   });
 
   it("normalizes bracketed lookup paths", () => {

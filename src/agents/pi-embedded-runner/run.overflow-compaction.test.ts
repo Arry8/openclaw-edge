@@ -81,6 +81,28 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     );
   });
 
+  it("uses configured thinking defaults for embedded runs when thinkLevel is omitted", async () => {
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      runId: "run-thinking-default",
+      config: {
+        agents: {
+          defaults: {
+            thinkingDefault: "minimal",
+          },
+        },
+      },
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thinkLevel: "minimal",
+      }),
+    );
+  });
+
   it("blocks undersized models before dispatching a provider attempt", async () => {
     mockedResolveContextWindowInfo.mockReturnValue({
       tokens: 800,
@@ -119,6 +141,58 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
         runtimeContext: expect.objectContaining({
           trigger: "overflow",
           authProfileId: "test-profile",
+        }),
+      }),
+    );
+  });
+
+  it("threads prompt-cache runtime context into overflow compaction", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: makeOverflowError(),
+          promptCache: {
+            retention: "short",
+            lastCallUsage: {
+              input: 150000,
+              cacheRead: 32000,
+              total: 182000,
+            },
+            observation: {
+              broke: false,
+              cacheRead: 32000,
+            },
+            lastCacheTouchAt: 1_700_000_000_000,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted session",
+        tokensBefore: 150000,
+        tokensAfter: 80000,
+      }),
+    );
+
+    await runEmbeddedPiAgent(overflowBaseRunParams);
+
+    expect(mockedCompactDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeContext: expect.objectContaining({
+          trigger: "overflow",
+          promptCache: expect.objectContaining({
+            retention: "short",
+            lastCallUsage: expect.objectContaining({
+              input: 150000,
+              cacheRead: 32000,
+            }),
+            observation: expect.objectContaining({
+              broke: false,
+              cacheRead: 32000,
+            }),
+            lastCacheTouchAt: 1_700_000_000_000,
+          }),
         }),
       }),
     );
@@ -262,6 +336,36 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
         }),
       }),
     );
+  });
+
+  it("detects context overflow from model_context_window_exceeded stop reason (no promptError)", async () => {
+    // Some providers (e.g. ZhipuAI/GLM) return model_context_window_exceeded as a
+    // stop reason rather than an error-coded stop. Without detection, payloads=0
+    // and the UI shows an infinite spinner instead of an error message (#63661).
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        promptError: null,
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          api: "openai-responses" as const,
+          provider: "openai",
+          model: "glm-4.5-air",
+          usage: { input: 0, output: 0, total: 0 },
+          timestamp: 0,
+          stopReason: "model_context_window_exceeded",
+          errorMessage: "Unhandled stop reason: model_context_window_exceeded",
+          content: [],
+        },
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent(overflowBaseRunParams);
+
+    // The overflow should be detected and an error payload surfaced to the user.
+    expect(result.payloads?.[0]?.isError).toBe(true);
+    expect(result.payloads?.[0]?.text).toContain("Context overflow");
+    expect(result.meta.error?.kind).toBe("context_overflow");
   });
 
   it("guards thrown engine-owned overflow compaction attempts", async () => {

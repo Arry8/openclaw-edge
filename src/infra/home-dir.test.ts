@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  expandEnvVars,
   expandHomePrefix,
   resolveEffectiveHomeDir,
   resolveHomeRelativePath,
@@ -195,6 +196,39 @@ describe("resolveHomeRelativePath", () => {
       },
       expected: path.resolve(process.cwd()),
     },
+    {
+      name: "expands ${VAR} references in paths",
+      input: "${XDG_CONFIG_HOME}/openclaw/workspace",
+      opts: {
+        env: {
+          XDG_CONFIG_HOME: "/home/node/.config",
+          HOME: "/home/node",
+        } as NodeJS.ProcessEnv,
+      },
+      expected: path.resolve("/home/node/.config/openclaw/workspace"),
+    },
+    {
+      name: "expands $VAR references in paths",
+      input: "$XDG_CONFIG_HOME/openclaw/workspace",
+      opts: {
+        env: {
+          XDG_CONFIG_HOME: "/home/node/.config",
+          HOME: "/home/node",
+        } as NodeJS.ProcessEnv,
+      },
+      expected: path.resolve("/home/node/.config/openclaw/workspace"),
+    },
+    {
+      name: "expands env vars before tilde expansion",
+      input: "~/${SUBDIR}/skills",
+      opts: {
+        env: {
+          SUBDIR: "project",
+          HOME: "/home/alice",
+        } as NodeJS.ProcessEnv,
+      },
+      expected: path.resolve("/home/alice/project/skills"),
+    },
   ])("$name", ({ input, opts, expected }) => {
     expect(resolveHomeRelativePath(input, opts)).toBe(expected);
   });
@@ -210,5 +244,69 @@ describe("resolveOsHomeRelativePath", () => {
         } as NodeJS.ProcessEnv,
       }),
     ).toBe(path.resolve("/home/alice/docs"));
+  });
+
+  it("expands ${VAR} references using the provided environment", () => {
+    expect(
+      resolveOsHomeRelativePath("${XDG_CONFIG_HOME}/workspace", {
+        env: {
+          XDG_CONFIG_HOME: "/home/alice/.config",
+          HOME: "/home/alice",
+        } as NodeJS.ProcessEnv,
+      }),
+    ).toBe(path.resolve("/home/alice/.config/workspace"));
+  });
+});
+
+describe("expandEnvVars", () => {
+  it("expands ${VAR} references", () => {
+    expect(
+      expandEnvVars("${XDG_CONFIG_HOME}/openclaw/workspace", {
+        XDG_CONFIG_HOME: "/home/alice/.config",
+      } as NodeJS.ProcessEnv),
+    ).toBe("/home/alice/.config/openclaw/workspace");
+  });
+
+  it("expands $VAR references (unbraced)", () => {
+    expect(
+      expandEnvVars("$HOME/workspace", {
+        HOME: "/home/alice",
+      } as NodeJS.ProcessEnv),
+    ).toBe("/home/alice/workspace");
+  });
+
+  it("expands multiple variables in one string", () => {
+    expect(
+      expandEnvVars("${BASE}/$SUB/file", {
+        BASE: "/srv",
+        SUB: "data",
+      } as NodeJS.ProcessEnv),
+    ).toBe("/srv/data/file");
+  });
+
+  it("replaces unknown variables with empty string", () => {
+    expect(
+      expandEnvVars("${NONEXISTENT_VAR}/path", {} as NodeJS.ProcessEnv),
+    ).toBe("/path");
+  });
+
+  it("trims whitespace from variable values", () => {
+    expect(
+      expandEnvVars("${MY_DIR}/sub", {
+        MY_DIR: "  /trimmed  ",
+      } as NodeJS.ProcessEnv),
+    ).toBe("/trimmed/sub");
+  });
+
+  it("returns input unchanged when no variables are present", () => {
+    expect(expandEnvVars("/plain/path", {} as NodeJS.ProcessEnv)).toBe("/plain/path");
+  });
+
+  it("handles empty variable values", () => {
+    expect(
+      expandEnvVars("${EMPTY}/path", {
+        EMPTY: "",
+      } as NodeJS.ProcessEnv),
+    ).toBe("/path");
   });
 });

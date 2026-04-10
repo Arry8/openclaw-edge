@@ -29,6 +29,25 @@ describe("chat-model-ref helpers", () => {
     });
   });
 
+  it("keeps provider prefix for namespaced OpenRouter ids", () => {
+    expect(
+      buildChatModelOption({
+        id: "meta-llama/llama-3.3-70b-instruct",
+        name: "Llama 3.3 70B Instruct",
+        provider: "openrouter",
+      }),
+    ).toEqual({
+      value: "openrouter/meta-llama/llama-3.3-70b-instruct",
+      label: "meta-llama/llama-3.3-70b-instruct · openrouter",
+    });
+  });
+
+  it("preserves already-qualified model refs without prepending provider", () => {
+    expect(resolveServerChatModelValue("ollama/qwen3:30b", "openai-codex")).toBe(
+      "ollama/qwen3:30b",
+    );
+  });
+
   it("normalizes raw overrides when the catalog match is unique", () => {
     expect(normalizeChatModelOverrideValue(createChatModelOverride("gpt-5-mini"), catalog)).toBe(
       "openai/gpt-5-mini",
@@ -47,6 +66,12 @@ describe("chat-model-ref helpers", () => {
   it("formats qualified model refs consistently for default labels", () => {
     expect(formatChatModelDisplay("openai/gpt-5-mini")).toBe("gpt-5-mini · openai");
     expect(formatChatModelDisplay("alias-only")).toBe("alias-only");
+  });
+
+  it("formats provider-qualified model ids using the first path segment as provider", () => {
+    expect(formatChatModelDisplay("openrouter/google/gemini-2.5-flash")).toBe(
+      "google/gemini-2.5-flash · openrouter",
+    );
   });
 
   it("resolves server session data to qualified option values", () => {
@@ -81,6 +106,49 @@ describe("chat-model-ref helpers", () => {
     });
   });
 
+  it("qualifies provider-scoped model ids whose raw ids also contain slashes", () => {
+    expect(
+      resolvePreferredServerChatModel("anthropic/claude-sonnet-4-6", "openrouter", [
+        {
+          id: "anthropic/claude-sonnet-4-6",
+          name: "Claude Sonnet 4.6",
+          provider: "openrouter",
+        },
+      ]),
+    ).toEqual({
+      value: "openrouter/anthropic/claude-sonnet-4-6",
+      source: "catalog",
+    });
+  });
+
+  it("uses a unique catalog match when the server provider is generic", () => {
+    expect(
+      resolvePreferredServerChatModel("gpt-5.4", "openai", [
+        {
+          id: "gpt-5.4",
+          name: "GPT-5.4",
+          provider: "openai-codex",
+        },
+      ]),
+    ).toEqual({
+      value: "openai-codex/gpt-5.4",
+      source: "catalog",
+    });
+  });
+
+  it("keeps already-qualified server values unchanged", () => {
+    expect(
+      resolvePreferredServerChatModel(
+        "openrouter/anthropic/claude-opus-4-6",
+        "openrouter",
+        catalog,
+      ),
+    ).toEqual({
+      value: "openrouter/anthropic/claude-opus-4-6",
+      source: "qualified",
+    });
+  });
+
   it("falls back to the server provider when the catalog misses or is ambiguous", () => {
     expect(resolvePreferredServerChatModel("gpt-5-mini", "openai", [])).toEqual({
       value: "openai/gpt-5-mini",
@@ -97,6 +165,24 @@ describe("chat-model-ref helpers", () => {
       value: "openai/gpt-5-mini",
       source: "server",
       reason: "ambiguous",
+    });
+  });
+
+  it("qualifies slash-containing model IDs with the server provider", () => {
+    expect(
+      resolvePreferredServerChatModel("nvidia/nemotron-3-super-120b-a12b:free", "openrouter", []),
+    ).toEqual({
+      value: "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      source: "server",
+    });
+  });
+
+  it("qualifies multi-slash model IDs for HuggingFace/Together providers", () => {
+    expect(
+      resolvePreferredServerChatModel("meta-llama/Llama-3-70b-chat-hf", "together", []),
+    ).toEqual({
+      value: "together/meta-llama/Llama-3-70b-chat-hf",
+      source: "server",
     });
   });
 });

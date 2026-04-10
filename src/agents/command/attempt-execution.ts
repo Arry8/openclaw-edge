@@ -21,6 +21,7 @@ import { runCliAgent } from "../cli-runner.js";
 import { clearCliSession, getCliSessionBinding, setCliSessionBinding } from "../cli-session.js";
 import { FailoverError } from "../failover-error.js";
 import { formatAgentInternalEventsForPrompt } from "../internal-events.js";
+import { hasInternalRuntimeContext } from "../internal-runtime-context.js";
 import { isCliProvider } from "../model-selection.js";
 import { prepareSessionManagerForRun } from "../pi-embedded-runner/session-manager-init.js";
 import { runEmbeddedPiAgent } from "../pi-embedded.js";
@@ -129,14 +130,24 @@ export function resolveFallbackRetryPrompt(params: {
   if (!params.sessionHasHistory) {
     return params.body;
   }
-  return "Continue where you left off. The previous model attempt failed or timed out.";
+  // Always preserve the original body on fallback retries. The previous logic
+  // replaced the body with a generic "Continue where you left off..." prompt,
+  // assuming the model could reconstruct context from transcript history. This
+  // breaks inter-agent messages (sessions_send) whose content IS the task —
+  // the fallback model gets a vague recovery prompt instead of the actual work
+  // item. It also fails when the first attempt dies before the SessionManager
+  // flushes the user turn, leaving the original message absent from history.
+  // Preserving the original body is safe: the fallback model may see a
+  // duplicate in transcript history, but that is strictly preferable to losing
+  // the message content entirely.
+  return params.body;
 }
 
 export function prependInternalEventContext(
   body: string,
   events: AgentCommandOpts["internalEvents"],
 ): string {
-  if (body.includes("OpenClaw runtime context (internal):")) {
+  if (hasInternalRuntimeContext(body)) {
     return body;
   }
   const renderedEvents = formatAgentInternalEventsForPrompt(events);
@@ -370,6 +381,9 @@ export function runAgentAttempt(params: {
         images: params.isFallbackRetry ? undefined : params.opts.images,
         imageOrder: params.isFallbackRetry ? undefined : params.opts.imageOrder,
         streamParams: params.opts.streamParams,
+        messageProvider: params.messageChannel,
+        agentAccountId: params.runContext.accountId,
+        skillsSnapshot: params.skillsSnapshot,
       });
     return runCliWithSession(cliSessionBinding?.sessionId).catch(async (err) => {
       if (
@@ -395,6 +409,7 @@ export function runAgentAttempt(params: {
             sessionKey: params.sessionKey,
             storePath: params.storePath,
             entry: updatedEntry,
+            clearedFields: ["cliSessionBindings", "cliSessionIds", "claudeCliSessionId"],
           });
 
           params.sessionEntry = updatedEntry;
@@ -469,6 +484,9 @@ export function runAgentAttempt(params: {
     lane: params.opts.lane,
     abortSignal: params.opts.abortSignal,
     extraSystemPrompt: params.opts.extraSystemPrompt,
+    bootstrapContextMode: params.opts.bootstrapContextMode,
+    bootstrapContextRunKind: params.opts.bootstrapContextRunKind,
+    internalEvents: params.opts.internalEvents,
     inputProvenance: params.opts.inputProvenance,
     streamParams: params.opts.streamParams,
     agentDir: params.agentDir,

@@ -1,5 +1,5 @@
 import type { Message } from "@grammyjs/types";
-import { createDedupeCache } from "openclaw/plugin-sdk/core";
+import { createDedupeCache } from "openclaw/plugin-sdk/infra-runtime";
 import type { TelegramContext } from "./bot/types.js";
 
 const MEDIA_GROUP_TIMEOUT_MS = 500;
@@ -21,11 +21,17 @@ export type TelegramUpdateKeyContext = {
     edited_message?: Message;
     channel_post?: Message;
     edited_channel_post?: Message;
+    business_message?: Message;
+    edited_business_message?: Message;
+    business_connection?: { id: string; user?: { id: number } };
   };
   update_id?: number;
   message?: Message;
   channelPost?: Message;
   editedChannelPost?: Message;
+  businessMessage?: Message;
+  editedBusinessMessage?: Message;
+  businessConnectionId?: string;
   callbackQuery?: { id?: string; message?: Message };
 };
 

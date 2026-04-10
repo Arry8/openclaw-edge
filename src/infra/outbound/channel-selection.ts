@@ -8,6 +8,7 @@ import {
   isDeliverableMessageChannel,
   normalizeMessageChannel,
 } from "../../utils/message-channel.js";
+import { formatErrorMessage } from "../errors.js";
 import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
 
 export type MessageChannelId = DeliverableMessageChannel;
@@ -19,6 +20,10 @@ export type MessageChannelSelectionSource =
 const getMessageChannels = () => listDeliverableMessageChannels();
 
 function isKnownChannel(value: string): boolean {
+  // Discord DMs use "user:<id>" format — allow them to pass through
+  if (value?.startsWith("user:")) {
+    return true;
+  }
   return getMessageChannels().includes(value as MessageChannelId);
 }
 
@@ -26,6 +31,10 @@ function resolveKnownChannel(value?: string | null): MessageChannelId | undefine
   const normalized = normalizeMessageChannel(value);
   if (!normalized) {
     return undefined;
+  }
+  // Discord DMs use "user:<id>" format — allow them through
+  if (normalized.startsWith("user:")) {
+    return normalized as MessageChannelId;
   }
   if (!isDeliverableMessageChannel(normalized)) {
     return undefined;
@@ -68,7 +77,7 @@ function logChannelSelectionError(params: {
   operation: "resolveAccount" | "isConfigured";
   error: unknown;
 }) {
-  const message = params.error instanceof Error ? params.error.message : String(params.error);
+  const message = formatErrorMessage(params.error);
   const key = `${params.pluginId}:${params.accountId}:${params.operation}:${message}`;
   if (loggedChannelSelectionErrors.has(key)) {
     return;

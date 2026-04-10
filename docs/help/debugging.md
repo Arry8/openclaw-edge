@@ -50,7 +50,8 @@ gateway without forcing a `tsdown` rebuild; source and config changes still
 rebuild `dist` first.
 
 Add any gateway CLI flags after `gateway:watch` and they will be passed through on
-each restart.
+each restart. Re-running the same watch command for the same repo/flag set now
+replaces the older watcher instead of leaving duplicate watcher parents behind.
 
 ## Dev profile + dev gateway (--dev)
 
@@ -110,6 +111,24 @@ Tip: if a non‑dev gateway is already running (launchd/systemd), stop it first:
 openclaw gateway stop
 ```
 
+## Recover from invalid config startup failures
+
+If gateway startup fails with `Invalid config at ...`, repair with doctor first:
+
+```bash
+openclaw doctor --fix
+openclaw gateway run
+```
+
+If startup is still blocked and you need a quick rollback, restore the latest backup:
+
+```bash
+cp ~/.openclaw/openclaw.json.bak ~/.openclaw/openclaw.json
+openclaw gateway run
+```
+
+OpenClaw keeps a small backup ring (`openclaw.json.bak`, `.bak.1`, `.bak.2`, ...). If `.bak` is also broken, try an older backup file.
+
 ## Raw stream logging (OpenClaw)
 
 OpenClaw can log the **raw assistant stream** before any filtering/formatting.
@@ -166,3 +185,35 @@ Default file:
 - Raw stream logs can include full prompts, tool output, and user data.
 - Keep logs local and delete them after debugging.
 - If you share logs, scrub secrets and PII first.
+
+## Debugging in VSCode
+
+Source maps are required to enable debugging in VSCode-based IDEs because many of the generated files end up with hashed names as part of the build process. The included `launch.json` configurations target the Gateway service, but can be adapted quickly for other purposes:
+
+1. **Rebuild and Debug Gateway** - Debugs the Gateway service after creating a new build
+2. **Debug Gateway** - Debugs the Gateway service of a pre-existing build
+
+### Setup
+
+The default **Rebuild and Debug Gateway** configuration is batteries-included, it will automatically delete the `/dist` folder and rebuild the project with debugging enabled:
+
+1. Open the **Run and Debug** panel from the Activity Bar or press `Ctrl`+`Shift`+`D`
+2. In the IDE, ensure **Rebuild and Debug Gateway** is selected in the configuration dropdown and then press the **Start Debugging** button
+
+Alternatively - if you prefer to manage the build and debug processes manually:
+
+1. Open a terminal and enable source maps:
+   - **Linux/macOS**: `export OUTPUT_SOURCE_MAPS=1`
+   - **Windows (PowerShell)**: `$env:OUTPUT_SOURCE_MAPS="1"`
+   - **Windows (CMD)**: `set OUTPUT_SOURCE_MAPS=1`
+2. In the same terminal, rebuild the project: `pnpm clean:dist && pnpm build`
+3. In the IDE, select the **Debug Gateway** option in the **Run and Debug** configuration dropdown and then press the **Start Debugging** button
+
+You can now set breakpoints in your TypeScript source files (`src/` directory) and the debugger will correctly map breakpoints to the compiled JavaScript via source maps. You'll be able to inspect variables, step through code, and examine call stacks as expected.
+
+### Notes
+
+- If using the **"Rebuild and Debug Gateway"** option, each time the debugger is launched it will completely delete the `/dist` folder and trigger the `run-node.mjs` script to rebuild the project
+- If using the **"Debug Gateway"** option, debug sessions can be started and stopped at any time without affecting the `/dist` folder, but you must use a separate terminal process to both enable debugging and manage the build cycle
+- Modify the `launch.json` settings for `args` to debug other sections of the project
+- If you need to use the built OpenClaw CLI for other tasks (i.e. `dashboard --no-open` if your debug session spawns a new auth token), you can execute it in another terminal as `node ./openclaw.mjs` or create a shell alias like `alias openclaw-build="node $(pwd)/openclaw.mjs"`

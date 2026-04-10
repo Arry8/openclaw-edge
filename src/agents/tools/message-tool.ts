@@ -18,8 +18,14 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { loadConfig } from "../../config/config.js";
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "../../gateway/protocol/client-info.js";
 import { getToolResult, runMessageAction } from "../../infra/outbound/message-action-runner.js";
-import { POLL_CREATION_PARAM_DEFS, SHARED_POLL_CREATION_PARAM_NAMES } from "../../poll-params.js";
+import {
+  POLL_CREATION_PARAM_DEFS,
+  SHARED_POLL_CREATION_PARAM_NAMES,
+  toSnakeCaseKey,
+  POLL_CREATION_PARAM_NAMES,
+} from "../../poll-params.js";
 import { normalizeAccountId } from "../../routing/session-key.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { stripReasoningTagsFromText } from "../../shared/text/reasoning-tags.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
@@ -30,6 +36,8 @@ import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import { resolveGatewayOptions } from "./gateway.js";
 
 const AllMessageActions = CHANNEL_MESSAGE_ACTION_NAMES;
+const MESSAGE_TOOL_THREAD_READ_HINT =
+  ' Use action="read" with threadId to fetch prior messages in a thread when you need conversation context you do not have yet.';
 const EXPLICIT_TARGET_ACTIONS = new Set<ChannelMessageActionName>([
   "send",
   "sendWithEffect",
@@ -43,6 +51,80 @@ const EXPLICIT_TARGET_ACTIONS = new Set<ChannelMessageActionName>([
 function actionNeedsExplicitTarget(action: ChannelMessageActionName): boolean {
   return EXPLICIT_TARGET_ACTIONS.has(action);
 }
+
+const LEGACY_TARGET_PLACEHOLDER_FIELDS = ["to", "channelId", "targets"] as const;
+
+function isBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length === 0;
+}
+
+function isEmptyArray(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length === 0;
+}
+
+function stripLegacyTargetPlaceholders(params: Record<string, unknown>): void {
+  for (const key of LEGACY_TARGET_PLACEHOLDER_FIELDS) {
+    const value = params[key];
+    if (isBlankString(value) || isEmptyArray(value)) {
+      delete params[key];
+    }
+  }
+}
+
+function isInertPollParamValue(key: string, value: unknown): boolean {
+  const def = POLL_CREATION_PARAM_DEFS[key];
+  if (!def) {
+    return false;
+  }
+  switch (def.kind) {
+    case "string":
+      return isBlankString(value);
+    case "stringArray":
+      if (typeof value === "string") {
+        return value.trim().length === 0;
+      }
+      return Array.isArray(value)
+        ? !value.some((entry) => typeof entry === "string" && entry.trim().length > 0)
+        : false;
+    case "number":
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length === 0;
+      }
+      return false;
+    case "boolean":
+      if (typeof value === "boolean") {
+        return !value;
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim().toLowerCase();
+        return trimmed.length === 0 || trimmed === "false";
+      }
+      return false;
+  }
+}
+
+function stripInertPollDefaults(
+  params: Record<string, unknown>,
+  normalizedAction: string | undefined,
+): void {
+  if (!normalizedAction || normalizedAction === "poll") {
+    return;
+  }
+  for (const key of POLL_CREATION_PARAM_NAMES) {
+    const value = params[key];
+    const snakeKey = toSnakeCaseKey(key);
+    const snakeValue = params[snakeKey];
+
+    if (isInertPollParamValue(key, value)) {
+      delete params[key];
+    }
+    if (snakeKey !== key && isInertPollParamValue(key, snakeValue)) {
+      delete params[snakeKey];
+    }
+  }
+}
+
 function buildRoutingSchema() {
   return {
     channel: Type.Optional(Type.String()),
@@ -255,6 +337,12 @@ function buildChannelTargetSchema() {
 
 function buildStickerSchema() {
   return {
+    fileId: Type.Optional(
+      Type.String({
+        description:
+          "Platform-specific file identifier (e.g. Telegram sticker file_id, Slack file id for download-file).",
+      }),
+    ),
     emojiName: Type.Optional(Type.String()),
     stickerId: Type.Optional(Type.Array(Type.String())),
     stickerName: Type.Optional(Type.String()),
@@ -280,6 +368,9 @@ function buildEventSchema() {
     endTime: Type.Optional(Type.String()),
     desc: Type.Optional(Type.String()),
     location: Type.Optional(Type.String()),
+    image: Type.Optional(
+      Type.String({ description: "Cover image URL or local file path for the event." }),
+    ),
     durationMin: Type.Optional(Type.Number()),
     until: Type.Optional(Type.String()),
   };
@@ -366,7 +457,14 @@ function buildMessageToolSchemaProps(options: {
     ...buildGatewaySchema(),
     ...buildChannelManagementSchema(),
     ...buildPresenceSchema(),
-    ...options.extraProperties,
+    // Channel plugin schema properties (from extraProperties) are always optional —
+    // channels may define card/file/etc fields but the message tool must not
+    // require them when not sending a card-based message.
+    ...(options.extraProperties
+      ? Object.fromEntries(
+          Object.entries(options.extraProperties).map(([k, v]) => [k, Type.Optional(v)]),
+        )
+      : {}),
   };
 }
 
@@ -400,7 +498,7 @@ type MessageToolOptions = {
   currentChannelProvider?: string;
   currentThreadTs?: string;
   currentMessageId?: string | number;
-  replyToMode?: "off" | "first" | "all";
+  replyToMode?: "off" | "first" | "all" | "batched";
   hasRepliedRef?: { value: boolean };
   sandboxRoot?: string;
   requireExplicitTarget?: boolean;
@@ -545,7 +643,7 @@ function buildMessageToolSchema(params: {
 }
 
 function resolveAgentAccountId(value?: string): string | undefined {
-  const trimmed = value?.trim();
+  const trimmed = normalizeOptionalString(value);
   if (!trimmed) {
     return undefined;
   }
@@ -584,7 +682,7 @@ function buildMessageToolDescription(options?: {
     });
     if (channelActions.length > 0) {
       // Always include "send" as a base action
-      const allActions = new Set(["send", ...channelActions]);
+      const allActions = new Set<ChannelMessageActionName | "send">(["send", ...channelActions]);
       const actionList = Array.from(allActions).toSorted().join(", ");
       let desc = `${baseDescription} Current channel (${currentChannel}) supports: ${actionList}.`;
 
@@ -607,7 +705,7 @@ function buildMessageToolDescription(options?: {
           requesterSenderId: resolvedOptions.requesterSenderId,
         });
         if (actions.length > 0) {
-          const all = new Set(["send", ...actions]);
+          const all = new Set<ChannelMessageActionName | "send">(["send", ...actions]);
           otherChannels.push(`${plugin.id} (${Array.from(all).toSorted().join(", ")})`);
         }
       }
@@ -615,7 +713,10 @@ function buildMessageToolDescription(options?: {
         desc += ` Other configured channels: ${otherChannels.join(", ")}.`;
       }
 
-      return desc;
+      return appendMessageToolReadHint(
+        desc,
+        Array.from(allActions) as Iterable<ChannelMessageActionName | "send">,
+      );
     }
   }
 
@@ -623,11 +724,26 @@ function buildMessageToolDescription(options?: {
   if (resolvedOptions.config) {
     const actions = listChannelMessageActions(resolvedOptions.config);
     if (actions.length > 0) {
-      return `${baseDescription} Supports actions: ${actions.join(", ")}.`;
+      return appendMessageToolReadHint(
+        `${baseDescription} Supports actions: ${actions.join(", ")}.`,
+        actions,
+      );
     }
   }
 
   return `${baseDescription} Supports actions: send, delete, react, poll, pin, threads, and more.`;
+}
+
+function appendMessageToolReadHint(
+  description: string,
+  actions: Iterable<ChannelMessageActionName | "send">,
+): string {
+  for (const action of actions) {
+    if (action === "read") {
+      return `${description}${MESSAGE_TOOL_THREAD_READ_HINT}`;
+    }
+  }
+  return description;
 }
 
 export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
@@ -684,6 +800,19 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       }
       // Shallow-copy so we don't mutate the original event args (used for logging/dedup).
       const params = { ...(args as Record<string, unknown>) };
+
+      // Some tool bridges populate legacy target placeholders with empty defaults.
+      // That breaks target normalization because fields like `to` or `channelId`
+      // appear present even when effectively unset, triggering:
+      // "Use `target` instead of `to`/`channelId`."
+      stripLegacyTargetPlaceholders(params);
+
+      // Poll fields are exposed in the shared schema, and some tool bridges fill
+      // them with default zero/false values even for plain sends. Strip those
+      // inert defaults for non-poll actions so send/edit/etc. are not rejected as
+      // accidental poll creation.
+      const normalizedAction = typeof params.action === "string" ? params.action.trim() : undefined;
+      stripInertPollDefaults(params, normalizedAction);
 
       // Strip reasoning tags from text fields — models may include <think>…</think>
       // in tool arguments, and the messaging tool send path has no other tag filtering.

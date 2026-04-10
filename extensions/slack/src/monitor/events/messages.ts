@@ -1,5 +1,5 @@
 import type { SlackEventMiddlewareArgs } from "@slack/bolt";
-import { enqueueSystemEvent } from "openclaw/plugin-sdk/channel-runtime";
+import { enqueueSystemEvent } from "openclaw/plugin-sdk/infra-runtime";
 import { danger } from "openclaw/plugin-sdk/runtime-env";
 import type { SlackAppMentionEvent, SlackMessageEvent } from "../../types.js";
 import { normalizeSlackChannelType } from "../channel-type.js";
@@ -34,10 +34,14 @@ export function registerSlackMessageEvents(params: {
         if (!ingressContext) {
           return;
         }
-        enqueueSystemEvent(subtypeHandler.describe(ingressContext.channelLabel), {
-          sessionKey: ingressContext.sessionKey,
-          contextKey: subtypeHandler.contextKey(message),
-        });
+        if (subtypeHandler.processAsMessage) {
+          await handleSlackMessage(message, { source: "message" });
+        } else {
+          enqueueSystemEvent(subtypeHandler.describe(ingressContext.channelLabel), {
+            sessionKey: ingressContext.sessionKey,
+            contextKey: subtypeHandler.contextKey(message),
+          });
+        }
         return;
       }
 

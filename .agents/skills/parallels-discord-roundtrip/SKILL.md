@@ -3,6 +3,12 @@ name: parallels-discord-roundtrip
 description: Run the macOS Parallels smoke harness with Discord end-to-end roundtrip verification, including guest send, host verification, host reply, and guest readback.
 ---
 
+```bash
+# preamble: check for openclaw updates (reads cached state, no network call)
+_UPD=$(openclaw update hint 2>/dev/null || true)
+[ -n "$_UPD" ] && echo "$_UPD" || true
+```
+
 # Parallels Discord Roundtrip
 
 Use when macOS Parallels smoke must prove Discord two-way delivery end to end.

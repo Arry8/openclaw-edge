@@ -6,7 +6,11 @@ import { getDiscordGatewayEmitter, waitForDiscordGatewayStop } from "../monitor.
 import type { DiscordVoiceManager } from "../voice/manager.js";
 import type { MutableDiscordGateway } from "./gateway-handle.js";
 import { registerGateway, unregisterGateway } from "./gateway-registry.js";
-import type { DiscordGatewayEvent, DiscordGatewaySupervisor } from "./gateway-supervisor.js";
+import {
+  DiscordGatewayLifecycleError,
+  type DiscordGatewayEvent,
+  type DiscordGatewaySupervisor,
+} from "./gateway-supervisor.js";
 import type { DiscordMonitorStatusSink } from "./status.js";
 
 const DISCORD_GATEWAY_READY_TIMEOUT_MS = 15_000;
@@ -14,11 +18,6 @@ const DISCORD_GATEWAY_RUNTIME_READY_TIMEOUT_MS = 30_000;
 const DISCORD_GATEWAY_READY_POLL_MS = 250;
 const DISCORD_GATEWAY_STARTUP_DISCONNECT_DRAIN_TIMEOUT_MS = 5_000;
 const DISCORD_GATEWAY_STARTUP_TERMINATE_CLOSE_TIMEOUT_MS = 1_000;
-
-type ExecApprovalsHandler = {
-  start: () => Promise<void>;
-  stop: () => Promise<void>;
-};
 
 type GatewayReadyWaitResult = "ready" | "stopped" | "timeout";
 
@@ -142,7 +141,7 @@ function parseGatewayCloseCode(message: string): number | undefined {
 }
 
 function createGatewayStatusObserver(params: {
-  gateway?: Pick<MutableDiscordGateway, "isConnected">;
+  gateway?: Pick<MutableDiscordGateway, "isConnected" | "ws">;
   abortSignal?: AbortSignal;
   runtime: RuntimeEnv;
   pushStatus: (patch: Parameters<DiscordMonitorStatusSink>[0]) => void;
@@ -152,8 +151,31 @@ function createGatewayStatusObserver(params: {
   let queuedForceStopError: unknown;
   let readyPollId: ReturnType<typeof setInterval> | undefined;
   let readyTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  let trackedSocket: MutableDiscordGateway["ws"] | undefined;
 
   const shouldStop = () => params.abortSignal?.aborted || params.isLifecycleStopping();
+  const onSocketMessage = () => {
+    if (shouldStop()) {
+      return;
+    }
+    params.pushStatus({ lastEventAt: Date.now() });
+  };
+  const detachSocketLivenessListener = () => {
+    if (!trackedSocket) {
+      return;
+    }
+    trackedSocket.removeListener("message", onSocketMessage);
+    trackedSocket = undefined;
+  };
+  const attachSocketLivenessListener = () => {
+    const nextSocket = params.gateway?.ws;
+    if (!nextSocket || nextSocket === trackedSocket) {
+      return;
+    }
+    detachSocketLivenessListener();
+    nextSocket.on("message", onSocketMessage);
+    trackedSocket = nextSocket;
+  };
   const clearReadyWatch = () => {
     if (readyPollId) {
       clearInterval(readyPollId);
@@ -228,11 +250,13 @@ function createGatewayStatusObserver(params: {
     const at = Date.now();
     const message = String(msg);
     if (message.includes("Gateway websocket opened")) {
+      attachSocketLivenessListener();
       params.pushStatus({ connected: false, lastEventAt: at });
       startReadyWatch();
       return;
     }
     if (message.includes("Gateway websocket closed")) {
+      detachSocketLivenessListener();
       clearReadyWatch();
       const code = parseGatewayCloseCode(message);
       params.pushStatus({
@@ -258,6 +282,7 @@ function createGatewayStatusObserver(params: {
   return {
     onGatewayDebug,
     clearReadyWatch,
+    attachSocketLivenessListener,
     registerForceStop: (handler: (err: unknown) => void) => {
       forceStopHandler = handler;
       if (queuedForceStopError !== undefined) {
@@ -268,6 +293,7 @@ function createGatewayStatusObserver(params: {
     },
     dispose: () => {
       clearReadyWatch();
+      detachSocketLivenessListener();
       forceStopHandler = undefined;
       queuedForceStopError = undefined;
     },
@@ -358,7 +384,6 @@ export async function runDiscordGatewayLifecycle(params: {
   isDisallowedIntentsError: (err: unknown) => boolean;
   voiceManager: DiscordVoiceManager | null;
   voiceManagerRef: { current: DiscordVoiceManager | null };
-  execApprovalsHandler: ExecApprovalsHandler | null;
   threadBindings: { stop: () => void };
   gatewaySupervisor: DiscordGatewaySupervisor;
   statusSink?: DiscordMonitorStatusSink;
@@ -384,6 +409,7 @@ export async function runDiscordGatewayLifecycle(params: {
     pushStatus,
     isLifecycleStopping: () => lifecycleStopping,
   });
+  statusObserver.attachSocketLivenessListener();
   gatewayEmitter?.on("debug", statusObserver.onGatewayDebug);
 
   let sawDisallowedIntents = false;
@@ -401,7 +427,13 @@ export async function runDiscordGatewayLifecycle(params: {
     if (event.shouldStopLifecycle) {
       lifecycleStopping = true;
     }
-    params.runtime.error?.(danger(`discord gateway error: ${event.message}`));
+    params.runtime.error?.(
+      danger(
+        event.shouldStopLifecycle
+          ? `discord gateway ${event.type}: ${event.message}`
+          : `discord gateway error: ${event.message}`,
+      ),
+    );
     return event.shouldStopLifecycle ? "stop" : "continue";
   };
   const drainPendingGatewayErrors = (): "continue" | "stop" =>
@@ -413,13 +445,9 @@ export async function runDiscordGatewayLifecycle(params: {
       if (event.type === "disallowed-intents") {
         return "stop";
       }
-      throw event.err;
+      throw new DiscordGatewayLifecycleError(event);
     });
   try {
-    if (params.execApprovalsHandler) {
-      await params.execApprovalsHandler.start();
-    }
-
     // Drain gateway errors emitted before lifecycle listeners were attached.
     if (drainPendingGatewayErrors() === "stop") {
       return;
@@ -448,6 +476,7 @@ export async function runDiscordGatewayLifecycle(params: {
       gatewaySupervisor: params.gatewaySupervisor,
       onGatewayEvent: handleGatewayEvent,
       registerForceStop: statusObserver.registerForceStop,
+      runtime: params.runtime,
     });
   } catch (err) {
     if (!sawDisallowedIntents && !params.isDisallowedIntentsError(err)) {
@@ -463,9 +492,6 @@ export async function runDiscordGatewayLifecycle(params: {
     if (params.voiceManager) {
       await params.voiceManager.destroy();
       params.voiceManagerRef.current = null;
-    }
-    if (params.execApprovalsHandler) {
-      await params.execApprovalsHandler.stop();
     }
     params.threadBindings.stop();
   }

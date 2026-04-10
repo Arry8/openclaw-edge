@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { type OpenClawConfig, DEFAULT_GATEWAY_PORT } from "../config/config.js";
 import {
   buildDefaultHookUrl,
+  buildGogWatchServeArgs,
   buildTopicPath,
+  DEFAULT_GMAIL_EXCLUDE_LABELS,
+  type GmailHookRuntimeConfig,
   parseTopicPath,
   resolveGmailHookRuntimeConfig,
 } from "./gmail.js";
@@ -123,5 +126,89 @@ describe("gmail hook config", () => {
       tailscale: { mode: "funnel", target },
     });
     expectResolvedPaths(result, { servePath: "/custom", publicPath: "/custom", target });
+  });
+
+  it("resolves default excludeLabels", () => {
+    const result = resolveGmailHookRuntimeConfig(baseConfig, {});
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.excludeLabels).toEqual(DEFAULT_GMAIL_EXCLUDE_LABELS);
+    }
+  });
+
+  it("resolves custom excludeLabels from config", () => {
+    const result = resolveGmailHookRuntimeConfig(
+      {
+        hooks: {
+          ...baseConfig.hooks,
+          gmail: {
+            ...baseConfig.hooks.gmail,
+            excludeLabels: ["SPAM"],
+          },
+        },
+      },
+      {},
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.excludeLabels).toEqual(["SPAM"]);
+    }
+  });
+
+  it("resolves excludeLabels from overrides", () => {
+    const result = resolveGmailHookRuntimeConfig(baseConfig, {
+      excludeLabels: ["TRASH", "DRAFT"],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.excludeLabels).toEqual(["TRASH", "DRAFT"]);
+    }
+  });
+});
+
+describe("buildGogWatchServeArgs", () => {
+  const baseCfg: GmailHookRuntimeConfig = {
+    account: "test@gmail.com",
+    label: "INBOX",
+    topic: "projects/demo/topics/gog-gmail-watch",
+    subscription: "gog-gmail-watch-push",
+    pushToken: "push-tok",
+    hookToken: "hook-tok",
+    hookUrl: "http://127.0.0.1:18789/hooks/gmail",
+    includeBody: true,
+    excludeLabels: DEFAULT_GMAIL_EXCLUDE_LABELS,
+    maxBytes: 20_000,
+    renewEveryMinutes: 720,
+    serve: { bind: "127.0.0.1", port: 8788, path: "/gmail-pubsub" },
+    tailscale: { mode: "off", path: "/gmail-pubsub" },
+  };
+
+  it("includes --exclude-labels with default labels", () => {
+    const args = buildGogWatchServeArgs(baseCfg);
+    const idx = args.indexOf("--exclude-labels");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("SPAM,TRASH,DRAFT,SENT");
+  });
+
+  it("includes --exclude-labels with custom labels", () => {
+    const args = buildGogWatchServeArgs({ ...baseCfg, excludeLabels: ["SPAM"] });
+    const idx = args.indexOf("--exclude-labels");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("SPAM");
+  });
+
+  it("omits --exclude-labels when array is empty", () => {
+    const args = buildGogWatchServeArgs({ ...baseCfg, excludeLabels: [] });
+    expect(args).not.toContain("--exclude-labels");
+  });
+
+  it("includes --include-body when enabled", () => {
+    const args = buildGogWatchServeArgs(baseCfg);
+    expect(args).toContain("--include-body");
+  });
+
+  it("omits --include-body when disabled", () => {
+    const args = buildGogWatchServeArgs({ ...baseCfg, includeBody: false });
+    expect(args).not.toContain("--include-body");
   });
 });

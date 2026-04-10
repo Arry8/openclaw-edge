@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClawdbotConfig } from "../runtime-api.js";
+import { buildMarkdownCard } from "./send.js";
 
 const {
   mockConvertMarkdownTables,
@@ -27,9 +28,13 @@ vi.mock("openclaw/plugin-sdk/config-runtime", () => ({
   resolveMarkdownTableMode: mockResolveMarkdownTableMode,
 }));
 
-vi.mock("openclaw/plugin-sdk/text-runtime", () => ({
-  convertMarkdownTables: mockConvertMarkdownTables,
-}));
+vi.mock("openclaw/plugin-sdk/text-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/text-runtime")>();
+  return {
+    ...actual,
+    convertMarkdownTables: mockConvertMarkdownTables,
+  };
+});
 
 vi.mock("./client.js", () => ({
   createFeishuClient: mockCreateFeishuClient,
@@ -59,8 +64,7 @@ let resolveFeishuCardTemplate: typeof import("./send.js").resolveFeishuCardTempl
 let sendMessageFeishu: typeof import("./send.js").sendMessageFeishu;
 
 describe("getMessageFeishu", () => {
-  beforeEach(async () => {
-    vi.resetModules();
+  beforeAll(async () => {
     ({
       buildStructuredCard,
       editMessageFeishu,
@@ -69,6 +73,9 @@ describe("getMessageFeishu", () => {
       resolveFeishuCardTemplate,
       sendMessageFeishu,
     } = await import("./send.js"));
+  });
+
+  beforeEach(() => {
     vi.clearAllMocks();
     mockResolveMarkdownTableMode.mockReturnValue("preserve");
     mockConvertMarkdownTables.mockImplementation((text: string) => text);
@@ -122,6 +129,111 @@ describe("getMessageFeishu", () => {
     });
     expect(mockConvertMarkdownTables).toHaveBeenCalledWith("hello", "preserve");
     expect(result).toEqual({ messageId: "om_send", chatId: "oc_send" });
+  });
+
+  it("passes card_msg_content_type param to message.get", async () => {
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_param",
+            chat_id: "oc_param",
+            msg_type: "text",
+            body: { content: JSON.stringify({ text: "hi" }) },
+          },
+        ],
+      },
+    });
+
+    await getMessageFeishu({ cfg: {} as ClawdbotConfig, messageId: "om_param" });
+
+    expect(mockClientGet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { card_msg_content_type: "raw_card_content" },
+      }),
+    );
+  });
+
+  it("extracts content from CardKit json_card format (streaming card)", async () => {
+    const jsonCard = {
+      config: { summary: { content: "Summary text from streaming card" } },
+      body: {
+        elements: [
+          {
+            tag: "column_set",
+            columns: [
+              {
+                elements: [{ tag: "plain_text", property: { content: "Column text" } }],
+              },
+            ],
+          },
+          { tag: "markdown", content: "Body markdown" },
+        ],
+      },
+    };
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_jsoncard",
+            chat_id: "oc_jsoncard",
+            msg_type: "interactive",
+            body: {
+              content: JSON.stringify({ json_card: JSON.stringify(jsonCard) }),
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await getMessageFeishu({
+      cfg: {} as ClawdbotConfig,
+      messageId: "om_jsoncard",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        messageId: "om_jsoncard",
+        contentType: "interactive",
+        content: "Summary text from streaming card\nColumn text\nBody markdown",
+      }),
+    );
+  });
+
+  it("falls back to legacy elements when json_card parsing fails", async () => {
+    mockClientGet.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_fallback",
+            chat_id: "oc_fallback",
+            msg_type: "interactive",
+            body: {
+              content: JSON.stringify({
+                json_card: "not valid json{{{",
+                elements: [{ tag: "markdown", content: "fallback content" }],
+              }),
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await getMessageFeishu({
+      cfg: {} as ClawdbotConfig,
+      messageId: "om_fallback",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        messageId: "om_fallback",
+        contentType: "interactive",
+        content: "fallback content",
+      }),
+    );
   });
 
   it("extracts text content from interactive card elements", async () => {
@@ -404,6 +516,20 @@ describe("resolveFeishuCardTemplate", () => {
 });
 
 describe("buildStructuredCard", () => {
+  it("uses schema-2.0 width config instead of legacy wide screen mode", () => {
+    const card = buildStructuredCard("hello") as {
+      config: {
+        width_mode?: string;
+        enable_forward?: boolean;
+        wide_screen_mode?: boolean;
+      };
+    };
+
+    expect(card.config.width_mode).toBe("fill");
+    expect(card.config.enable_forward).toBeUndefined();
+    expect(card.config.wide_screen_mode).toBeUndefined();
+  });
+
   it("falls back to blue when the header template is unsupported", () => {
     const card = buildStructuredCard("hello", {
       header: {
@@ -420,5 +546,21 @@ describe("buildStructuredCard", () => {
         },
       }),
     );
+  });
+});
+
+describe("buildMarkdownCard", () => {
+  it("uses schema-2.0 width config instead of legacy wide screen mode", () => {
+    const card = buildMarkdownCard("hello") as {
+      config: {
+        width_mode?: string;
+        enable_forward?: boolean;
+        wide_screen_mode?: boolean;
+      };
+    };
+
+    expect(card.config.width_mode).toBe("fill");
+    expect(card.config.enable_forward).toBeUndefined();
+    expect(card.config.wide_screen_mode).toBeUndefined();
   });
 });

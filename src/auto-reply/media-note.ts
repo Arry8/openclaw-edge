@@ -1,3 +1,4 @@
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import type { MsgContext } from "./templating.js";
 
 function formatMediaAttachedLine(params: {
@@ -13,7 +14,9 @@ function formatMediaAttachedLine(params: {
       : "[media attached: ";
   const typePart = params.type?.trim() ? ` (${params.type.trim()})` : "";
   const urlRaw = params.url?.trim();
-  const urlPart = urlRaw ? ` | ${urlRaw}` : "";
+  // Only append url when it differs from path to avoid duplication (issue #42791)
+  const isDistinctUrl = urlRaw && urlRaw !== params.path;
+  const urlPart = isDistinctUrl ? ` | ${urlRaw}` : "";
   return `${prefix}${params.path}${typePart}${urlPart}]`;
 }
 
@@ -37,7 +40,7 @@ function isAudioPath(path: string | undefined): boolean {
   if (!path) {
     return false;
   }
-  const lower = path.toLowerCase();
+  const lower = normalizeLowercaseStringOrEmpty(path);
   for (const ext of AUDIO_EXTENSIONS) {
     if (lower.endsWith(ext)) {
       return true;
@@ -48,12 +51,14 @@ function isAudioPath(path: string | undefined): boolean {
 
 export function buildInboundMediaNote(ctx: MsgContext): string | undefined {
   // Attachment indices follow MediaPaths/MediaUrls ordering as supplied by the channel.
+  // Only suppress audio attachments (transcript replaces the file).
+  // Image/video paths are kept so the agent can access the file on disk (e.g. photolog).
   const suppressed = new Set<number>();
   const transcribedAudioIndices = new Set<number>();
   if (Array.isArray(ctx.MediaUnderstanding)) {
     for (const output of ctx.MediaUnderstanding) {
-      suppressed.add(output.attachmentIndex);
       if (output.kind === "audio.transcription") {
+        suppressed.add(output.attachmentIndex);
         transcribedAudioIndices.add(output.attachmentIndex);
       }
     }
@@ -65,8 +70,8 @@ export function buildInboundMediaNote(ctx: MsgContext): string | undefined {
       }
       for (const attachment of decision.attachments) {
         if (attachment.chosen?.outcome === "success") {
-          suppressed.add(attachment.attachmentIndex);
           if (decision.capability === "audio") {
+            suppressed.add(attachment.attachmentIndex);
             transcribedAudioIndices.add(attachment.attachmentIndex);
           }
         }
@@ -113,7 +118,8 @@ export function buildInboundMediaNote(ctx: MsgContext): string | undefined {
       // Note: Only trust MIME type from per-entry types array, not fallback ctx.MediaType
       // which could misclassify non-audio attachments (greptile review feedback)
       const hasPerEntryType = types !== undefined;
-      const isAudioByMime = hasPerEntryType && entry.type?.toLowerCase().startsWith("audio/");
+      const isAudioByMime =
+        hasPerEntryType && normalizeLowercaseStringOrEmpty(entry.type).startsWith("audio/");
       const isAudioEntry = isAudioPath(entry.path) || isAudioByMime;
       if (!isAudioEntry) {
         return true;

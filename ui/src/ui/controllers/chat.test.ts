@@ -28,6 +28,16 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function createActiveStreamingState() {
   return createState({
     sessionKey: "main",
@@ -99,7 +109,7 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Hello");
   });
 
-  it("appends final payload from another run without clearing active stream", () => {
+  it("appends final payload from another run and clears pending run state", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-user",
@@ -115,10 +125,12 @@ describe("handleChatEvent", () => {
         content: [{ type: "text", text: "Sub-agent findings" }],
       },
     };
-    expect(handleChatEvent(state, payload)).toBe(null);
-    expect(state.chatRunId).toBe("run-user");
-    expect(state.chatStream).toBe("Working...");
-    expect(state.chatStreamStartedAt).toBe(123);
+    expect(handleChatEvent(state, payload)).toBe("final");
+    // Pending run state must be cleared so the UI exits typing indicator.
+    // See https://github.com/openclaw/openclaw/issues/57795
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
     expect(state.chatMessages).toHaveLength(1);
     expect(state.chatMessages[0]).toEqual(payload.message);
   });
@@ -610,6 +622,39 @@ describe("abortChatRun", () => {
   });
 });
 
+describe("sendChatMessage", () => {
+  it("preserves fallback attachment mime types when serializing chat.send payloads", async () => {
+    const request = vi.fn().mockResolvedValue({});
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+    });
+
+    const runId = await sendChatMessage(state, "", [
+      {
+        id: "att-1",
+        mimeType: "image/png",
+        dataUrl: "data:application/octet-stream;base64,QUJD",
+      },
+    ]);
+
+    expect(runId).not.toBeNull();
+    expect(request).toHaveBeenCalledWith("chat.send", {
+      sessionKey: "main",
+      message: "",
+      deliver: false,
+      idempotencyKey: expect.any(String),
+      attachments: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          content: "QUJD",
+        },
+      ],
+    });
+  });
+});
+
 describe("loadChatHistory", () => {
   it("filters assistant NO_REPLY messages and keeps user NO_REPLY messages", async () => {
     const request = vi.fn().mockResolvedValue({
@@ -661,5 +706,52 @@ describe("loadChatHistory", () => {
     expect(state.chatThinkingLevel).toBeNull();
     expect(state.lastError).toContain("operator.read");
     expect(state.chatLoading).toBe(false);
+  });
+
+  it("ignores stale history responses after switching sessions", async () => {
+    const mainRequest = createDeferred<{ messages: Array<unknown>; thinkingLevel?: string }>();
+    const otherRequest = createDeferred<{ messages: Array<unknown>; thinkingLevel?: string }>();
+    const request = vi.fn((_method: string, params?: { sessionKey?: string }) => {
+      if (params?.sessionKey === "main") {
+        return mainRequest.promise;
+      }
+      if (params?.sessionKey === "other") {
+        return otherRequest.promise;
+      }
+      throw new Error(`Unexpected sessionKey: ${String(params?.sessionKey)}`);
+    });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [{ role: "assistant", content: [{ type: "text", text: "visible old" }] }],
+    });
+
+    const firstLoad = loadChatHistory(state);
+    state.sessionKey = "other";
+    const secondLoad = loadChatHistory(state);
+
+    mainRequest.resolve({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "main history" }] }],
+      thinkingLevel: "high",
+    });
+    await firstLoad;
+
+    expect(state.chatLoading).toBe(true);
+    expect(state.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "visible old" }] },
+    ]);
+    expect(state.chatThinkingLevel).toBeNull();
+
+    otherRequest.resolve({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "other history" }] }],
+      thinkingLevel: "low",
+    });
+    await secondLoad;
+
+    expect(state.chatLoading).toBe(false);
+    expect(state.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "other history" }] },
+    ]);
+    expect(state.chatThinkingLevel).toBe("low");
   });
 });

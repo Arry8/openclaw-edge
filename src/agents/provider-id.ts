@@ -1,5 +1,10 @@
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
+
 export function normalizeProviderId(provider: string): string {
-  const normalized = provider.trim().toLowerCase();
+  const normalized = normalizeLowercaseStringOrEmpty(provider);
+  if (normalized === "modelstudio" || normalized === "qwencloud") {
+    return "qwen";
+  }
   if (normalized === "z.ai" || normalized === "z-ai") {
     return "zai";
   }
@@ -11,6 +16,9 @@ export function normalizeProviderId(provider: string): string {
   }
   if (normalized === "kimi" || normalized === "kimi-code" || normalized === "kimi-coding") {
     return "kimi";
+  }
+  if (normalized === "nvidia-api") {
+    return "nvidia";
   }
   if (normalized === "bedrock" || normalized === "aws-bedrock") {
     return "amazon-bedrock";

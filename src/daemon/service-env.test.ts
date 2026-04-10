@@ -29,6 +29,36 @@ describe("getMinimalServicePathParts - Linux user directories", () => {
     expect(result).toContain("/home/testuser/.asdf/shims");
     expect(result).toContain("/home/testuser/.local/share/pnpm");
     expect(result).toContain("/home/testuser/.bun/bin");
+    expect(result).toContain("/home/testuser/.nix-profile/bin");
+  });
+
+  it("includes Nix Home Manager profile directories on Linux", () => {
+    const result = getMinimalServicePathPartsFromEnv({
+      platform: "linux",
+      env: {
+        HOME: "/home/testuser",
+        NIX_PROFILES: "/nix/var/nix/profiles/default /home/testuser/.nix-profile",
+      },
+    });
+
+    // Should include default Nix profile
+    expect(result).toContain("/home/testuser/.nix-profile/bin");
+
+    // Should include all profiles from NIX_PROFILES env var
+    expect(result).toContain("/nix/var/nix/profiles/default/bin");
+  });
+
+  it("handles single Nix profile from NIX_PROFILES on Linux", () => {
+    const result = getMinimalServicePathPartsFromEnv({
+      platform: "linux",
+      env: {
+        HOME: "/home/testuser",
+        NIX_PROFILES: "/nix/var/nix/profiles/per-user/testuser/profile",
+      },
+    });
+
+    expect(result).toContain("/nix/var/nix/profiles/per-user/testuser/profile/bin");
+    expect(result).toContain("/home/testuser/.nix-profile/bin");
   });
 
   it("excludes user bin directories when HOME is undefined on Linux", () => {
@@ -119,10 +149,31 @@ describe("getMinimalServicePathParts - Linux user directories", () => {
     expect(result).toContain("/Users/testuser/Library/pnpm"); // pnpm default on macOS
     expect(result).toContain("/Users/testuser/.local/share/pnpm"); // pnpm XDG fallback
     expect(result).toContain("/Users/testuser/.bun/bin");
+    expect(result).toContain("/Users/testuser/.nix-profile/bin"); // Nix Home Manager
+
+    // Should include container runtime paths (Docker Desktop, OrbStack)
+    expect(result).toContain("/Users/testuser/.docker/bin");
+    expect(result).toContain("/Users/testuser/.orbstack/bin");
 
     // Should also include macOS system directories
     expect(result).toContain("/opt/homebrew/bin");
     expect(result).toContain("/usr/local/bin");
+  });
+
+  it("includes Nix Home Manager profile directories on macOS", () => {
+    const result = getMinimalServicePathPartsFromEnv({
+      platform: "darwin",
+      env: {
+        HOME: "/Users/testuser",
+        NIX_PROFILES: "/nix/var/nix/profiles/default /Users/testuser/.nix-profile",
+      },
+    });
+
+    // Should include default Nix profile
+    expect(result).toContain("/Users/testuser/.nix-profile/bin");
+
+    // Should include all profiles from NIX_PROFILES env var
+    expect(result).toContain("/nix/var/nix/profiles/default/bin");
   });
 
   it("includes env-configured version manager dirs on macOS", () => {
@@ -329,6 +380,7 @@ describe("buildServiceEnvironment", () => {
     const env = buildServiceEnvironment({
       env: {
         HOME: "/home/user",
+        NODE_USE_ENV_PROXY: "1",
         HTTP_PROXY: " http://proxy.local:7890 ",
         HTTPS_PROXY: "https://proxy.local:7890",
         NO_PROXY: "localhost,127.0.0.1",
@@ -338,6 +390,7 @@ describe("buildServiceEnvironment", () => {
       port: 18789,
     });
 
+    expect(env.NODE_USE_ENV_PROXY).toBe("1");
     expect(env.HTTP_PROXY).toBe("http://proxy.local:7890");
     expect(env.HTTPS_PROXY).toBe("https://proxy.local:7890");
     expect(env.NO_PROXY).toBe("localhost,127.0.0.1");
@@ -457,8 +510,8 @@ describe("shared Node TLS env defaults", () => {
     expect(env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/cert.pem");
   });
 
-  it.each(builders)("$name does not default NODE_EXTRA_CA_CERTS on non-macOS", ({ build }) => {
-    const env = build({ HOME: "/home/user" }, "linux");
+  it.each(builders)("$name does not default NODE_EXTRA_CA_CERTS on Windows", ({ build }) => {
+    const env = build({ HOME: "/home/user" }, "win32");
     expect(env.NODE_EXTRA_CA_CERTS).toBeUndefined();
   });
 
@@ -512,6 +565,30 @@ describe("resolveGatewayStateDir", () => {
   it("preserves Windows absolute paths without HOME", () => {
     const env = { OPENCLAW_STATE_DIR: "C:\\State\\openclaw" };
     expect(resolveGatewayStateDir(env)).toBe("C:\\State\\openclaw");
+  });
+
+  it("uses USERPROFILE when HOME is absent (Windows-style env)", () => {
+    // Regression test for #40563: on Windows, HOME is often unset while USERPROFILE
+    // holds the user home dir. Ensure the state dir is resolved via path.join so a
+    // backslash separator appears between the home and .openclaw (not direct concat).
+    const env = { USERPROFILE: "C:\\Users\\alice" };
+    const resolved = resolveGatewayStateDir(env);
+    // path.join on Windows: C:\Users\alice\.openclaw
+    // path.join on macOS/Linux (CI): C:\Users\alice/.openclaw (still no concat bug)
+    expect(resolved).toBe(path.join("C:\\Users\\alice", ".openclaw"));
+    // Safety check: never regress to string concatenation without separator.
+    expect(resolved).not.toBe("C:\\Users\\alice.openclaw");
+    expect(resolved).not.toContain("alice.openclaw");
+  });
+
+  it("uses USERPROFILE with a numeric username (Windows edge case)", () => {
+    // Numeric/short usernames on Windows hit the same path but are worth testing
+    // explicitly because path.join must not collapse the separator.
+    const env = { USERPROFILE: "C:\\Users\\42" };
+    const resolved = resolveGatewayStateDir(env);
+    expect(resolved).toBe(path.join("C:\\Users\\42", ".openclaw"));
+    expect(resolved).not.toBe("C:\\Users\\42.openclaw");
+    expect(resolved).not.toContain("42.openclaw");
   });
 });
 

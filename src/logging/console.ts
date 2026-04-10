@@ -5,7 +5,7 @@ import { stripAnsi } from "../terminal/ansi.js";
 import { readLoggingConfig, shouldSkipMutatingLoggingConfigRead } from "./config.js";
 import { resolveEnvLogLevelOverride } from "./env-log-level.js";
 import { type LogLevel, normalizeLogLevel } from "./levels.js";
-import { getLogger, type LoggerSettings } from "./logger.js";
+import { getLogger, isFileLogLevelEnabled, type LoggerSettings } from "./logger.js";
 import { resolveNodeRequireFromMeta } from "./node-require.js";
 import { loggingState } from "./state.js";
 import { formatLocalIsoWithOffset, formatTimestamp } from "./timestamps.js";
@@ -71,19 +71,20 @@ function resolveConsoleSettings(): ConsoleSettings {
     return { level: "silent", style: normalizeConsoleStyle(undefined) };
   }
 
-  let cfg: OpenClawConfig["logging"] | undefined =
-    (loggingState.overrideSettings as LoggerSettings | null) ?? readLoggingConfig();
-  if (!cfg && !shouldSkipMutatingLoggingConfigRead()) {
-    if (loggingState.resolvingConsoleSettings) {
-      cfg = undefined;
-    } else {
-      loggingState.resolvingConsoleSettings = true;
-      try {
-        cfg = loadConfigFallback();
-      } finally {
-        loggingState.resolvingConsoleSettings = false;
-      }
+  // Guard: prevent recursive calls to patched console.* from re-entering
+  // when loadConfig() or loadConfigFallback() themselves emit warnings.
+  if (loggingState.resolvingConsoleSettings) {
+    return { level: envLevel ?? "info", style: normalizeConsoleStyle(undefined) };
+  }
+  loggingState.resolvingConsoleSettings = true;
+  let cfg: OpenClawConfig["logging"] | undefined;
+  try {
+    cfg = (loggingState.overrideSettings as LoggerSettings | null) ?? readLoggingConfig();
+    if (!cfg && !shouldSkipMutatingLoggingConfigRead()) {
+      cfg = loadConfigFallback();
     }
+  } finally {
+    loggingState.resolvingConsoleSettings = false;
   }
   const level = envLevel ?? normalizeConsoleLevel(cfg?.consoleLevel);
   const style = normalizeConsoleStyle(cfg?.consoleStyle);
@@ -244,6 +245,16 @@ export function enableConsoleCapture(): void {
       if (shouldSuppressConsoleMessage(formatted)) {
         return;
       }
+      // Safe path: during config resolution, bypass all config-dependent logic
+      // and write directly to stderr to prevent re-entrant getConsoleSettings() calls.
+      if (loggingState.resolvingConsoleSettings) {
+        try {
+          process.stderr.write(`${formatted}\n`);
+        } catch (err) {
+          if (!isEpipeError(err)) throw err;
+        }
+        return;
+      }
       const trimmed = stripAnsi(formatted).trimStart();
       const shouldPrefixTimestamp =
         loggingState.consoleTimestampPrefix && trimmed.length > 0 && !hasTimestampPrefix(trimmed);
@@ -251,20 +262,22 @@ export function enableConsoleCapture(): void {
         ? formatConsoleTimestamp(getConsoleSettings().style)
         : "";
       try {
-        const resolvedLogger = getLoggerLazy();
-        // Map console levels to file logger
-        if (level === "trace") {
-          resolvedLogger.trace(formatted);
-        } else if (level === "debug") {
-          resolvedLogger.debug(formatted);
-        } else if (level === "info") {
-          resolvedLogger.info(formatted);
-        } else if (level === "warn") {
-          resolvedLogger.warn(formatted);
-        } else if (level === "error" || level === "fatal") {
-          resolvedLogger.error(formatted);
-        } else {
-          resolvedLogger.info(formatted);
+        if (isFileLogLevelEnabled(level)) {
+          const resolvedLogger = getLoggerLazy();
+          // Map console levels to file logger
+          if (level === "trace") {
+            resolvedLogger.trace(formatted);
+          } else if (level === "debug") {
+            resolvedLogger.debug(formatted);
+          } else if (level === "info") {
+            resolvedLogger.info(formatted);
+          } else if (level === "warn") {
+            resolvedLogger.warn(formatted);
+          } else if (level === "error" || level === "fatal") {
+            resolvedLogger.error(formatted);
+          } else {
+            resolvedLogger.info(formatted);
+          }
         }
       } catch {
         // never block console output on logging failures
