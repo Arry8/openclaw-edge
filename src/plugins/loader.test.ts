@@ -2260,7 +2260,7 @@ module.exports = { id: "throws-after-import", register() {} };`,
         },
       },
       {
-        label: "rejects duplicate channel ids during plugin registration",
+        label: "silently updates channel on same-plugin re-registration",
         pluginId: "channel-dup",
         body: `module.exports = { id: "channel-dup", register(api) {
   api.registerChannel({
@@ -2301,12 +2301,12 @@ module.exports = { id: "throws-after-import", register() {} };`,
   });
 } };`,
         assert: (registry: ReturnType<typeof loadOpenClawPlugins>) => {
+          // Same plugin re-registering the same channel is now idempotent (silent update).
           expect(registry.channels.filter((entry) => entry.plugin.id === "demo")).toHaveLength(1);
-          expectRegistryErrorDiagnostic({
-            registry,
-            pluginId: "channel-dup",
-            message: "channel already registered: demo (channel-dup)",
-          });
+          // The second registration should update the channel in place with the latest metadata.
+          expect(
+            registry.channels.find((entry) => entry.plugin.id === "demo")?.plugin.meta?.label,
+          ).toBe("Demo Duplicate");
         },
       },
       {
