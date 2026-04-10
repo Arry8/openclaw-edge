@@ -50,11 +50,17 @@ const MAX_TIMER_SAFE_TIMEOUT_MS = 2_147_000_000;
 type SubagentAnnounceDeliveryDeps = {
   callGateway: typeof callGateway;
   loadConfig: typeof loadConfig;
+  isRequesterSessionActive: (requesterSessionKey: string) => boolean;
 };
 
 const defaultSubagentAnnounceDeliveryDeps: SubagentAnnounceDeliveryDeps = {
   callGateway,
   loadConfig,
+  isRequesterSessionActive: (requesterSessionKey: string) => {
+    const { entry } = loadRequesterSessionEntry(requesterSessionKey);
+    const sessionId = entry?.sessionId;
+    return Boolean(sessionId && isEmbeddedPiRunActive(sessionId));
+  },
 };
 
 let subagentAnnounceDeliveryDeps: SubagentAnnounceDeliveryDeps =
@@ -459,6 +465,16 @@ async function sendSubagentAnnounceDirectly(params: {
       isGatewayMessageChannel(normalizedSessionOnlyOriginChannel)
         ? normalizedSessionOnlyOriginChannel
         : undefined;
+    const requesterSessionIsActive = subagentAnnounceDeliveryDeps.isRequesterSessionActive(
+      canonicalRequesterSessionKey,
+    );
+    // Completion announces are internal wake events only when the requester is
+    // already active and can resume through its own reply path. Dormant/manual
+    // requester sessions still need direct external delivery so completion
+    // results are not silently dropped.
+    const shouldDeliverExternally = deliveryTarget.deliver
+      ? !params.expectsCompletionMessage || !requesterSessionIsActive
+      : false;
     if (params.signal?.aborted) {
       return {
         delivered: false,
@@ -476,21 +492,21 @@ async function sendSubagentAnnounceDirectly(params: {
           params: {
             sessionKey: canonicalRequesterSessionKey,
             message: params.triggerMessage,
-            deliver: deliveryTarget.deliver,
-            bestEffortDeliver: params.bestEffortDeliver,
+            deliver: shouldDeliverExternally,
+            bestEffortDeliver: shouldDeliverExternally ? params.bestEffortDeliver : undefined,
             internalEvents: params.internalEvents,
-            channel: deliveryTarget.deliver ? deliveryTarget.channel : sessionOnlyOriginChannel,
-            accountId: deliveryTarget.deliver
+            channel: shouldDeliverExternally ? deliveryTarget.channel : sessionOnlyOriginChannel,
+            accountId: shouldDeliverExternally
               ? deliveryTarget.accountId
               : sessionOnlyOriginChannel
                 ? sessionOnlyOrigin?.accountId
                 : undefined,
-            to: deliveryTarget.deliver
+            to: shouldDeliverExternally
               ? deliveryTarget.to
               : sessionOnlyOriginChannel
                 ? sessionOnlyOrigin?.to
                 : undefined,
-            threadId: deliveryTarget.deliver
+            threadId: shouldDeliverExternally
               ? deliveryTarget.threadId
               : sessionOnlyOriginChannel
                 ? sessionOnlyOrigin?.threadId
