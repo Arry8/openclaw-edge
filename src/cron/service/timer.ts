@@ -1366,9 +1366,40 @@ async function executeDetachedCronJob(
     return resolveAbortError();
   }
 
+  // Defensive: extract string content from message in case the payload was
+  // persisted with an object value (e.g. { text: "..." }) instead of a plain
+  // string, which would coerce to "[object Object]" in template literals.
+  const rawMessage = job.payload.message;
+  let message: string;
+  if (typeof rawMessage === "string") {
+    message = rawMessage;
+  } else if (typeof rawMessage === "object" && rawMessage !== null) {
+    const obj = rawMessage as Record<string, unknown>;
+    // Try common string fields in priority order.
+    const extracted =
+      typeof obj.text === "string"
+        ? obj.text
+        : typeof obj.message === "string"
+          ? obj.message
+          : typeof obj.content === "string"
+            ? obj.content
+            : undefined;
+    if (extracted !== undefined) {
+      message = extracted;
+    } else {
+      message = JSON.stringify(rawMessage);
+      state.deps.log.debug(
+        { rawMessage: message },
+        "cron: message was an unrecognized object shape, used JSON.stringify fallback",
+      );
+    }
+  } else {
+    message = JSON.stringify(rawMessage);
+  }
+
   const res = await state.deps.runIsolatedAgentJob({
     job,
-    message: job.payload.message,
+    message,
     abortSignal,
   });
 
