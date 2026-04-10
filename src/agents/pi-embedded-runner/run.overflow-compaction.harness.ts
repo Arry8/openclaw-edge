@@ -68,6 +68,7 @@ export const mockedCompactDirect = mockedContextEngine.compact;
 export const mockedRunPostCompactionSideEffects = vi.fn(async () => {});
 export const mockedEnsureRuntimePluginsLoaded = vi.fn<(params?: unknown) => void>();
 export const mockedPrepareProviderRuntimeAuth = vi.fn(async () => undefined);
+export const mockedResolveProviderCapabilitiesWithPlugin = vi.fn(async () => undefined);
 export const mockedRunEmbeddedAttempt =
   vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
 export const mockedRunContextEngineMaintenance = vi.fn(async () => undefined);
@@ -215,6 +216,8 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   mockedEnsureRuntimePluginsLoaded.mockReset();
   mockedPrepareProviderRuntimeAuth.mockReset();
   mockedPrepareProviderRuntimeAuth.mockResolvedValue(undefined);
+  mockedResolveProviderCapabilitiesWithPlugin.mockReset();
+  mockedResolveProviderCapabilitiesWithPlugin.mockResolvedValue(undefined);
   mockedRunEmbeddedAttempt.mockReset();
   mockedRunContextEngineMaintenance.mockReset();
   mockedRunContextEngineMaintenance.mockResolvedValue(undefined);
@@ -336,12 +339,16 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     ensureRuntimePluginsLoaded: mockedEnsureRuntimePluginsLoaded,
   }));
 
-  vi.doMock("../../plugins/provider-runtime.js", () => ({
-    prepareProviderRuntimeAuth: mockedPrepareProviderRuntimeAuth,
-    resolveProviderCapabilitiesWithPlugin: vi.fn(() => ({})),
-    prepareProviderExtraParams: vi.fn(async () => ({})),
-    wrapProviderStreamFn: vi.fn((_cfg: unknown, _model: unknown, fn: unknown) => fn),
-  }));
+  vi.doMock("../../plugins/provider-runtime.js", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../../plugins/provider-runtime.js")>();
+    return {
+      ...actual,
+      prepareProviderRuntimeAuth: mockedPrepareProviderRuntimeAuth,
+      resolveProviderCapabilitiesWithPlugin: mockedResolveProviderCapabilitiesWithPlugin,
+      prepareProviderExtraParams: vi.fn(async () => ({})),
+      wrapProviderStreamFn: vi.fn((_cfg: unknown, _model: unknown, fn: unknown) => fn),
+    };
+  });
 
   vi.doMock("../auth-profiles.js", () => ({
     isProfileInCooldown: vi.fn(() => false),

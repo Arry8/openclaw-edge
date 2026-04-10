@@ -43,7 +43,7 @@ import {
   resolveAuthProfileOrder,
   shouldPreferExplicitConfigApiKeyAuth,
 } from "../model-auth.js";
-import { normalizeProviderId } from "../model-selection.js";
+import { normalizeProviderId, resolveThinkingDefault } from "../model-selection.js";
 import { ensureOpenClawModelsJson } from "../models-config.js";
 import { disposeSessionMcpRuntime } from "../pi-bundle-mcp-tools.js";
 import {
@@ -322,7 +322,13 @@ export async function runEmbeddedPiAgent(
           : [undefined];
       let profileIndex = 0;
 
-      const initialThinkLevel = params.thinkLevel ?? "off";
+      const initialThinkLevel =
+        params.thinkLevel ??
+        resolveThinkingDefault({
+          cfg: params.config ?? {},
+          provider,
+          model: modelId,
+        });
       let thinkLevel = initialThinkLevel;
       const attemptedThinking = new Set<ThinkLevel>();
       let apiKeyInfo: ApiKeyInfo | null = null;

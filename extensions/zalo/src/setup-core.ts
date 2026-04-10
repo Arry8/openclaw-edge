@@ -9,6 +9,7 @@ import {
   type ChannelSetupWizard,
 } from "openclaw/plugin-sdk/setup";
 import { resolveDefaultZaloAccountId, resolveZaloAccount } from "./accounts.js";
+import type { OpenClawConfig } from "./runtime-api.js";
 
 const channel = "zalo" as const;
 
