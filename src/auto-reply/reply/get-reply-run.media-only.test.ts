@@ -272,6 +272,70 @@ describe("runPreparedReply media-only handling", () => {
     expect(vi.mocked(runReplyAgent)).not.toHaveBeenCalled();
   });
 
+  it("accepts image-only WebChat messages via opts.images (empty body + non-empty images)", async () => {
+    const result = await runPreparedReply(
+      baseParams({
+        ctx: {
+          Body: "",
+          RawBody: "",
+          CommandBody: "",
+          OriginatingChannel: "webchat",
+          OriginatingTo: "session:abc",
+          ChatType: "direct",
+        },
+        sessionCtx: {
+          Body: "",
+          BodyStripped: "",
+          Provider: "webchat",
+          ChatType: "direct",
+          OriginatingChannel: "webchat",
+          OriginatingTo: "session:abc",
+          // No MediaPath or MediaPaths — images come through opts only
+        },
+        opts: {
+          images: [
+            {
+              type: "image",
+              data: "iVBORw0KGgoAAAANSUhEUg==",
+              mimeType: "image/png",
+            },
+          ],
+        },
+      }),
+    );
+
+    // Should proceed to agent run, not return empty-body rejection
+    expect(result).toEqual({ text: "ok" });
+    expect(vi.mocked(runReplyAgent)).toHaveBeenCalledOnce();
+
+    // Verify placeholder caption is used since body is empty
+    const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
+    expect(call).toBeTruthy();
+    expect(call?.followupRun.prompt).toContain("[User sent media without caption]");
+  });
+
+  it("still rejects empty body when both sessionCtx media and opts.images are absent", async () => {
+    const result = await runPreparedReply(
+      baseParams({
+        ctx: { Body: "", RawBody: "", CommandBody: "" },
+        sessionCtx: {
+          Body: "",
+          BodyStripped: "",
+          Provider: "webchat",
+          ChatType: "direct",
+        },
+        opts: {
+          images: [],
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      text: "I didn't receive any text in your message. Please resend or add a caption.",
+    });
+    expect(vi.mocked(runReplyAgent)).not.toHaveBeenCalled();
+  });
+
   it("does not send a standalone reset notice for reply-producing /new turns", async () => {
     await runPreparedReply(
       baseParams({
