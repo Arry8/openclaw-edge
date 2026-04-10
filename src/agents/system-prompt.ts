@@ -100,6 +100,14 @@ function buildProjectContextSection(params: {
         "If SOUL.md is present, embody its persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.",
       );
     }
+    const hasIdentityFile = params.files.some(
+      (file) => getContextFileBasename(file.path) === "identity.md",
+    );
+    if (hasIdentityFile) {
+      lines.push(
+        "If IDENTITY.md is present, preserve its explicit expression defaults such as naming, vibe, and preferred emoji in normal chat replies when they fit the context; do not suppress them by default.",
+      );
+    }
     lines.push("");
   }
   for (const file of params.files) {
