@@ -99,6 +99,25 @@ function listCandidateSkillDirs(dir: string): string[] {
   }
 }
 
+/**
+ * Loads a direct single skill from a directory using the same safe path rules as
+ * the normal loader. This helper only attempts to load the directory itself as
+ * one skill and does not scan nested child skill directories.
+ */
+export function loadDirectSkillFromDirSafe(params: {
+  skillDir: string;
+  source: string;
+  rootRealPath: string;
+  maxBytes?: number;
+}): Skill | null {
+  return loadSingleSkillDirectory({
+    skillDir: params.skillDir,
+    source: params.source,
+    rootRealPath: params.rootRealPath,
+    maxBytes: params.maxBytes,
+  });
+}
+
 export function loadSkillsFromDirSafe(params: { dir: string; source: string; maxBytes?: number }): {
   skills: Skill[];
 } {
