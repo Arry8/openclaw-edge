@@ -213,6 +213,19 @@ Generic media sends fall back to the existing image-only route when a LINE-speci
   `channelSecret` matches the LINE console.
 - **No inbound events:** confirm the webhook path matches `channels.line.webhookPath`
   and that the gateway is reachable from LINE.
+- **`Unable to resolve runtime module ./runtime-line.contract` on v2026.3.31:** this
+  is a known runtime path regression. Temporary workaround on global installs:
+
+  ```bash
+  DIST="$(dirname "$(which openclaw)")/../lib/node_modules/openclaw/dist"
+  # Linux global installs usually require elevated privileges.
+  sudo ln -sf "$DIST/plugins/runtime/runtime-line.contract.js" "$DIST/runtime-line.contract.js"
+  ```
+
+  If your global npm layout is different, locate OpenClaw with `npm root -g`.
+  Then restart the gateway. Re-run the `ln -sf` command after each upgrade until
+  a patch release includes the fix.
+
 - **Media download errors:** raise `channels.line.mediaMaxMb` if media exceeds the
   default limit.
 
