@@ -59,7 +59,7 @@ kotlin {
 }
 
 dependencies {
-  val composeBom = platform("androidx.compose:compose-bom:2026.02.00")
+  val composeBom = platform("androidx.compose:compose-bom:2026.03.01")
   val tilesVersion = "1.6.0-rc02"
   val protolayoutVersion = "1.4.0-rc02"
   implementation(composeBom)
