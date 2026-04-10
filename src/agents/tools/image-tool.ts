@@ -198,6 +198,12 @@ async function runImagePrompt(params: {
     DEFAULT_IMAGE_TOOL_TIMEOUT_SECONDS,
   );
 
+  const DEFAULT_IMAGE_TIMEOUT_SECONDS = 30;
+  const timeoutMs = resolveTimeoutMs(
+    effectiveCfg?.tools?.media?.image?.timeoutSeconds,
+    DEFAULT_IMAGE_TIMEOUT_SECONDS,
+  );
+
   const result = await runWithImageModelFallback({
     cfg: effectiveCfg,
     modelOverride: params.modelOverride,
