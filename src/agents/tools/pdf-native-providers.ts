@@ -74,6 +74,7 @@ export async function anthropicAnalyzePdf(params: {
       max_tokens: params.maxTokens ?? 4096,
       messages: [{ role: "user", content }],
     }),
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!res.ok) {
@@ -158,6 +159,7 @@ export async function geminiAnalyzePdf(params: {
     body: JSON.stringify({
       contents: [{ role: "user", parts }],
     }),
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!res.ok) {
