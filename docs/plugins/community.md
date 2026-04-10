@@ -175,6 +175,23 @@ and long-context decisions.
 openclaw plugins install openclaw-stimm-voice
 ```
 
+### TickFlow Assist
+
+A-share watchlist analysis, monitoring, and alert delivery powered by TickFlow and OpenClaw. Features interactive automatic installation via community configure tools.
+
+- **npm:** `tickflow-assist`
+- **repo:** [github.com/robinspt/tickflow-assist](https://github.com/robinspt/tickflow-assist)
+
+```bash
+openclaw plugins install tickflow-assist
+```
+
+After installation, run the configuration wizard:
+
+```bash
+npx -y tickflow-assist configure-openclaw
+```
+
 ### wecom
 
 WeCom channel plugin for OpenClaw by the Tencent WeCom team. Powered by
