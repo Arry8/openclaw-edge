@@ -105,9 +105,19 @@ Model note: while many providers and models are supported, prefer a current flag
 
 Runtime: **Node 24 (recommended) or Node 22.16+**.
 
+> **⚠️ Important:** Use **pnpm** for global installation. OpenClaw uses a pnpm workspace and
+> some channel plugin dependencies (Discord, Slack, Telegram, Feishu) may not resolve correctly
+> when installed via `npm install -g`. If you see errors like `Cannot find package '@slack/logger'`
+> or `Cannot find package '@buape/carbon'` after installing with npm, reinstall using pnpm.
+> Note: `openclaw doctor --fix` will also fail in this state — reinstalling with pnpm is the fix.
+> See [#61787](https://github.com/openclaw/openclaw/issues/61787) for details.
+
 ```bash
+# Recommended
+pnpm add -g openclaw@latest
+
+# npm also works for most setups, but pnpm is preferred
 npm install -g openclaw@latest
-# or: pnpm add -g openclaw@latest
 
 openclaw onboard --install-daemon
 ```
