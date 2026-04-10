@@ -176,6 +176,18 @@ formatting, built-in access control, and document/meeting/messaging skills.
 openclaw plugins install @wecom/wecom-openclaw-plugin
 ```
 
+### YDIM
+
+Connect OpenClaw to YDIM.
+Supports text, image, and file exchange.
+
+- **npm:** `openclaw-ydim`
+- **repo:** [github.com/cmic-opensource/openclaw-ydim](https://github.com/cmic-opensource/openclaw-ydim)
+
+```bash
+openclaw plugins install openclaw-ydim
+```
+
 ## Submit your plugin
 
 We welcome community plugins that are useful, documented, and safe to operate.
