@@ -358,5 +358,29 @@
     "reason": "src/agents/tools/image-tool.ts (auto-skip attempt 1)",
     "source": "auto",
     "revertedAt": "2026-04-10T17:28:30.405Z"
+  },
+  {
+    "number": 44742,
+    "reason": "drops junk files in repo root (AI_CONTRIBUTION_TEST.md)",
+    "source": "manual",
+    "skippedAt": "2026-04-11T18:05:37.158Z"
+  },
+  {
+    "number": 49393,
+    "reason": "drops junk files in repo root (SKILL docs, replyToMode guide)",
+    "source": "manual",
+    "skippedAt": "2026-04-11T18:05:37.158Z"
+  },
+  {
+    "number": 52103,
+    "reason": "drops junk files in repo root (circadian-evolution SKILL.md)",
+    "source": "manual",
+    "skippedAt": "2026-04-11T18:05:37.158Z"
+  },
+  {
+    "number": 53371,
+    "reason": "drops junk files in repo root (daily contribution SKILL files)",
+    "source": "manual",
+    "skippedAt": "2026-04-11T18:05:37.158Z"
   }
 ]
