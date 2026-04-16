@@ -59,7 +59,7 @@ kotlin {
 }
 
 dependencies {
-  val composeBom = platform("androidx.compose:compose-bom:2026.02.00")
+  val composeBom = platform("androidx.compose:compose-bom:2026.03.01")
   val tilesVersion = "1.6.0-rc02"
   val protolayoutVersion = "1.4.0-rc02"
   implementation(composeBom)
@@ -86,7 +86,7 @@ dependencies {
   // Networking + serialization
   implementation("com.squareup.okhttp3:okhttp:5.3.2")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
   // Wear input (RemoteInput for text/voice entry)
   implementation("androidx.wear:wear-input:1.2.0")
