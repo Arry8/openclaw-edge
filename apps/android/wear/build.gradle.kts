@@ -59,7 +59,7 @@ kotlin {
 }
 
 dependencies {
-  val composeBom = platform("androidx.compose:compose-bom:2026.02.00")
+  val composeBom = platform("androidx.compose:compose-bom:2026.05.00")
   val tilesVersion = "1.6.0-rc02"
   val protolayoutVersion = "1.4.0-rc02"
   implementation(composeBom)
@@ -85,15 +85,15 @@ dependencies {
 
   // Networking + serialization
   implementation("com.squareup.okhttp3:okhttp:5.3.2")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
   // Wear input (RemoteInput for text/voice entry)
   implementation("androidx.wear:wear-input:1.2.0")
 
   // Wear Data Layer (phone proxy)
   implementation("com.google.android.gms:play-services-wearable:19.0.0")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 
   // Complications
   implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.3.0")
@@ -111,5 +111,5 @@ dependencies {
   implementation("androidx.wear:wear-tooling-preview:1.0.0")
 
   testImplementation("junit:junit:4.13.2")
-  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
