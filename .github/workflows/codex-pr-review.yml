@@ -39,7 +39,7 @@ jobs:
 
       - name: AI review
         id: codex
-        uses: openai/codex-action@v1
+        uses: openai/codex-action@v1.9
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           sandbox: workspace-write
